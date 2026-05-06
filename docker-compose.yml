@@ -25,7 +25,7 @@ services:
     image: arrow-web
     container_name: arrow-web
     environment:
-      ARROW_BACKEND_URL: http://backend:6001
+      ARROW_BACKEND_URL: ${ARROW_PUBLIC_BACKEND_URL:-http://192.168.0.240:6001}
     ports:
       - "6002:6002"
     depends_on:
