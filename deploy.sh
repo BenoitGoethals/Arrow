@@ -43,7 +43,7 @@ case "$cmd" in
         echo "==> starting stack"
         $DC up -d
         echo "==> waiting for backend health"
-        for i in $(seq 1 30); do
+        for _ in $(seq 1 30); do
             status=$($DC ps --format '{{.Service}} {{.Health}}' | awk '$1=="backend"{print $2}')
             if [ "$status" = "healthy" ]; then
                 echo "    backend healthy"
