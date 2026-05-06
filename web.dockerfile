@@ -28,7 +28,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN groupadd --system arrow && useradd --system --gid arrow --home /app arrow
+RUN groupadd --system arrow && useradd --system --gid arrow --home /app arrow \
+    && chown -R arrow:arrow /app
 
 COPY --from=builder --chown=arrow:arrow /app/.venv /app/.venv
 COPY --chown=arrow:arrow web ./web
@@ -37,4 +38,7 @@ USER arrow
 
 EXPOSE 6002
 
-CMD ["gunicorn", "--bind", "0.0.0.0:6002", "--workers", "2", "--access-logfile", "-", "web.app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:6002", \
+     "--workers", "2", "--threads", "4", "--worker-class", "gthread", \
+     "--timeout", "120", "--graceful-timeout", "30", \
+     "--access-logfile", "-", "web.app:app"]
