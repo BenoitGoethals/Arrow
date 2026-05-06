@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Arrow{% endblock %}
+{% block content %}
+<section class="auth">
+    <h1>Sign in</h1>
+    <form id="login-form">
+        <label>Callsign <input name="callsign" required autofocus></label>
+        <label>Password <input name="password" type="password" required></label>
+        <button type="submit">Sign in</button>
+    </form>
+
+    <h2>Register a new operator</h2>
+    <form id="register-form">
+        <label>Callsign <input name="callsign" required></label>
+        <label>Password <input name="password" type="password" required minlength="6"></label>
+        <label>Rank <input name="rank" value="OR-1"></label>
+        <label>Role
+            <select name="role">
+                <option value="OPERATOR">Operator</option>
+                <option value="BATTLE_CAPTAIN">Battle Captain</option>
+                <option value="ADMIN">Admin</option>
+            </select>
+        </label>
+        <button type="submit">Register &amp; sign in</button>
+    </form>
+
+    <p id="auth-msg" class="auth-msg"></p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+    const msg = document.getElementById('auth-msg');
+    const next = new URLSearchParams(location.search).get('next') || '/dashboard/';
+
+    function storeAndRedirect(data) {
+        localStorage.setItem('arrow_token', data.access_token);
+        localStorage.setItem('arrow_role', data.role);
+        location.href = next;
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        msg.textContent = 'Signing in…';
+        const fd = new FormData(e.target);
+        const body = new URLSearchParams({
+            username: fd.get('callsign'),
+            password: fd.get('password'),
+        });
+        const r = await fetch(window.ARROW_BACKEND_URL + '/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body,
+        });
+        if (!r.ok) { msg.textContent = `Login failed (${r.status})`; return; }
+        storeAndRedirect(await r.json());
+    });
+
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        msg.textContent = 'Registering…';
+        const fd = new FormData(e.target);
+        const r = await fetch(window.ARROW_BACKEND_URL + '/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                callsign: fd.get('callsign'),
+                password: fd.get('password'),
+                rank: fd.get('rank') || 'OR-1',
+                role: fd.get('role') || 'OPERATOR',
+            }),
+        });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            msg.textContent = `Registration failed: ${err.detail || r.status}`;
+            return;
+        }
+        storeAndRedirect(await r.json());
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Admin — Arrow{% endblock %}
+{% block content %}
+<h1>Admin Panel</h1>
+<p>Hierarchy, operators and devices are managed via the backend REST API.</p>
+<ul>
+    <li><code>POST /companies</code>, <code>POST /platoons</code>, <code>POST /sections</code>, <code>POST /teams</code></li>
+    <li><code>POST /auth/register</code> to add operators</li>
+    <li><code>PATCH /operators/{id}</code> to assign team / role / status</li>
+</ul>
+<p>See <code>{{ backend_url }}/docs</code> for the live OpenAPI explorer.</p>
+{% endblock %}

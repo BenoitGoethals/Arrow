@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+    <server>
+        <host>0.0.0.0</host>
+        <port>6001</port>
+    </server>
+
+    <database>
+        <url>sqlite:///./arrow.db</url>
+    </database>
+
+    <auth>
+        <secret>change-me-in-production</secret>
+        <algorithm>HS256</algorithm>
+        <token_expire_minutes>1440</token_expire_minutes>
+    </auth>
+
+    <operator>
+        <callsign>ALPHA-1</callsign>
+        <team>Alpha</team>
+    </operator>
+
+    <maps>
+        <offline>true</offline>
+    </maps>
+
+    <cot>
+        <multicast_group>239.2.3.1</multicast_group>
+        <port>6969</port>
+    </cot>
+</config>

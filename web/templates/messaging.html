@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Messaging — Arrow{% endblock %}
+{% block head %}
+<style>
+    .chat-shell { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 60px); }
+    .recipients { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.5rem; }
+    .recipients h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #94a3b8; margin: 0.5rem 0.25rem; }
+    .recipients .item { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem; border-radius: 6px; cursor: pointer; user-select: none; }
+    .recipients .item:hover { background: #1f2937; }
+    .recipients .item.active { background: #1e3a2f; outline: 1px solid #34d399; }
+    .recipients .item .meta { color: #94a3b8; font-size: 0.75rem; margin-left: auto; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .dot.offline { background: #475569; }
+    .badge { font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: #2a3142; color: #cbd5e1; }
+    .badge.adm { background: #7c2d12; color: #fed7aa; }
+    .badge.bc { background: #1e40af; color: #bfdbfe; }
+
+    .chat-pane { display: grid; grid-template-rows: auto 1fr auto; }
+    .chat-header { padding: 0.6rem 1rem; background: #161b25; border-bottom: 1px solid #2a3142; font-weight: 600; }
+    .chat-header .sub { color: #94a3b8; font-weight: 400; font-size: 0.85rem; margin-left: 0.5rem; }
+    .chat-log { overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.4rem; }
+    .bubble { max-width: 70%; padding: 0.5rem 0.75rem; border-radius: 12px; line-height: 1.35; word-wrap: break-word; }
+    .bubble .from { font-size: 0.7rem; color: #94a3b8; margin-bottom: 2px; }
+    .row.mine { align-self: flex-end; }
+    .row.mine .bubble { background: #065f46; color: #ecfdf5; }
+    .row.other { align-self: flex-start; }
+    .row.other .bubble.broadcast { background: #1e3a8a; color: #dbeafe; }
+    .row.other .bubble.group { background: #5b21b6; color: #ede9fe; }
+    .row.other .bubble.direct { background: #1f2937; color: #e6e6e6; }
+
+    .composer { display: flex; gap: 0.5rem; padding: 0.6rem; background: #161b25; border-top: 1px solid #2a3142; align-items: flex-end; }
+    .composer textarea { flex: 1; background: #0e1217; color: #e6e6e6; border: 1px solid #2a3142; border-radius: 6px; padding: 0.5rem; font: inherit; resize: none; min-height: 38px; max-height: 140px; }
+    .composer button { background: #34d399; color: #0e1217; border: 0; border-radius: 6px; padding: 0 1.1rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .composer button:disabled { background: #2a3142; color: #6b7280; cursor: not-allowed; }
+    .composer .photo-btn { background: #1f2937; color: #94a3b8; padding: 0 0.7rem; font-size: 1.1rem; }
+    .composer .photo-btn:hover { background: #2a3142; color: #e2e8f0; }
+    .photo-preview { position: relative; display: inline-flex; margin: 0.4rem 0.6rem 0; }
+    .photo-preview img { max-height: 90px; max-width: 160px; border-radius: 6px; object-fit: cover; }
+    .photo-preview .rm { position: absolute; top: -6px; right: -6px; background: #ef4444; color: #fff; border: 0; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 0.7rem; line-height: 20px; text-align: center; padding: 0; }
+    .bubble img.msg-photo { max-width: 100%; max-height: 240px; border-radius: 6px; display: block; margin-top: 4px; cursor: pointer; }
+    .photo-uploading { font-size: 0.75rem; color: #94a3b8; padding: 0.2rem 0; }
+    main { padding: 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="chat-shell">
+    <aside class="recipients">
+        <h3>Channels</h3>
+        <div id="ch-broadcast" class="item active" data-recipient="broadcast">
+            <span>📢 Broadcast (everyone)</span>
+        </div>
+        <div id="ch-bc" class="item" data-recipient="group:BATTLE_CAPTAINS" style="display:none">
+            <span>⭐ Battle Captains</span>
+        </div>
+        <h3>Direct</h3>
+        <div id="operators-list">Loading…</div>
+    </aside>
+    <section class="chat-pane">
+        <header class="chat-header">
+            <span id="chat-title">📢 Broadcast (everyone)</span>
+            <span class="sub" id="chat-sub"></span>
+        </header>
+        <div id="chat-log" class="chat-log"></div>
+        <div id="photo-preview-wrap"></div>
+        <div class="composer">
+            <button class="photo-btn" id="composer-photo" title="Attach photo">📷</button>
+            <input type="file" id="photo-file-input" accept="image/*" style="display:none">
+            <textarea id="composer-input" placeholder="Type a message…" rows="1"></textarea>
+            <button id="composer-send">Send</button>
+        </div>
+    </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const role = localStorage.getItem('arrow_role') || 'OPERATOR';
+    const headers = { Authorization: `Bearer ${token}` };
+    const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+
+    // BC channel only visible to ADMIN/BATTLE_CAPTAIN.
+    if (role === 'ADMIN' || role === 'BATTLE_CAPTAIN') {
+        document.getElementById('ch-bc').style.display = '';
+    }
+
+    const state = {
+        me: null,
+        operators: [],
+        messages: [],
+        recipient: { kind: 'broadcast' }, // {kind:'broadcast'} | {kind:'group',group:'BATTLE_CAPTAINS'} | {kind:'direct',op:{...}}
+    };
+
+    function recipientKey(r) {
+        if (r.kind === 'broadcast') return 'broadcast';
+        if (r.kind === 'group') return 'group:' + r.group;
+        return 'direct:' + r.op.id;
+    }
+    function recipientTitle(r) {
+        if (r.kind === 'broadcast') return '📢 Broadcast (everyone)';
+        if (r.kind === 'group') return '⭐ ' + r.group.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        return '→ ' + r.op.callsign + '  (' + r.op.rank + ' · ' + r.op.role + ')';
+    }
+
+    function badgesFor(op) {
+        if (op.role === 'ADMIN') return '<span class="badge adm">ADM</span>';
+        if (op.role === 'BATTLE_CAPTAIN') return '<span class="badge bc">BC</span>';
+        return '';
+    }
+
+    function renderRecipients() {
+        const list = document.getElementById('operators-list');
+        if (!state.operators.length) { list.innerHTML = '<small style="color:#94a3b8">no operators</small>'; return; }
+        list.innerHTML = state.operators
+            .filter(o => state.me ? o.id !== state.me.id : true)
+            .map(o => `<div class="item" data-recipient="direct:${o.id}">
+                <span class="dot ${o.status === 'ONLINE' ? 'online' : 'offline'}"></span>
+                <span>${o.callsign}</span>
+                <span class="meta">${o.rank} ${badgesFor(o)}</span>
+            </div>`).join('');
+        // Highlight active
+        document.querySelectorAll('.recipients .item').forEach(el => {
+            el.classList.toggle('active', el.dataset.recipient === recipientKey(state.recipient));
+            el.addEventListener('click', () => {
+                const tag = el.dataset.recipient;
+                if (tag === 'broadcast') state.recipient = { kind: 'broadcast' };
+                else if (tag.startsWith('group:')) state.recipient = { kind: 'group', group: tag.slice(6) };
+                else if (tag.startsWith('direct:')) {
+                    const id = parseInt(tag.slice(7), 10);
+                    const op = state.operators.find(o => o.id === id);
+                    if (op) state.recipient = { kind: 'direct', op };
+                }
+                document.querySelectorAll('.recipients .item').forEach(e =>
+                    e.classList.toggle('active', e.dataset.recipient === recipientKey(state.recipient)));
+                document.getElementById('chat-title').textContent = recipientTitle(state.recipient);
+                renderMessages();
+            }, { once: false });
+        });
+    }
+
+    function visibleInChannel(m) {
+        const r = state.recipient;
+        const meId = state.me?.id;
+        if (r.kind === 'broadcast') return m.message_type === 'BROADCAST';
+        if (r.kind === 'group') return m.message_type === 'GROUP' && m.group_id === r.group;
+        // direct: between me and the chosen operator
+        return m.message_type === 'DIRECT'
+            && ((m.sender_id === meId && m.receiver_id === r.op.id)
+              || (m.sender_id === r.op.id && m.receiver_id === meId));
+    }
+
+    function renderMessages() {
+        const log = document.getElementById('chat-log');
+        const meId = state.me?.id;
+        const filtered = state.messages.filter(visibleInChannel)
+            .slice().sort((a, b) => a.id - b.id);
+        const opMap = new Map(state.operators.map(o => [o.id, o]));
+        const nameFor = (id) => opMap.get(id)?.callsign || `#${id}`;
+
+        log.innerHTML = filtered.map(m => {
+            const mine = m.sender_id === meId;
+            const cls = m.message_type === 'BROADCAST' ? 'broadcast'
+                : m.message_type === 'GROUP' ? 'group' : 'direct';
+            const photoHtml = m.photo_id
+                ? `<img class="msg-photo" src="${window.ARROW_BACKEND_URL}/photos/${m.photo_id}" alt="photo" onclick="window.open(this.src)">`
+                : '';
+            return `<div class="row ${mine ? 'mine' : 'other'}">
+                <div class="bubble ${cls}">
+                    <div class="from">${nameFor(m.sender_id)} · ${m.message_type}${m.group_id ? ' / ' + m.group_id : ''}</div>
+                    ${m.content ? escapeHtml(m.content) : ''}
+                    ${photoHtml}
+                </div>
+            </div>`;
+        }).join('') || '<small style="color:#94a3b8;align-self:center">no messages in this channel yet</small>';
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    async function refresh() {
+        const [meR, opsR, msgsR] = await Promise.all([
+            api('/auth/me'), api('/operators'), api('/messages'),
+        ]);
+        if (meR.ok) state.me = await meR.json();
+        if (opsR.ok) state.operators = await opsR.json();
+        if (msgsR.ok) state.messages = await msgsR.json();
+        renderRecipients();
+        renderMessages();
+    }
+
+    // ── Photo attachment ──────────────────────────────────────────────────────
+    let pendingPhotoId = null;
+
+    document.getElementById('composer-photo').addEventListener('click', () => {
+        document.getElementById('photo-file-input').click();
+    });
+
+    document.getElementById('photo-file-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const wrap = document.getElementById('photo-preview-wrap');
+        wrap.innerHTML = '<div class="photo-uploading">Uploading photo…</div>';
+
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch(window.ARROW_BACKEND_URL + '/photos', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: fd,
+        });
+        if (!res.ok) { wrap.innerHTML = ''; alert('Photo upload failed'); return; }
+        const data = await res.json();
+        pendingPhotoId = data.id;
+
+        wrap.innerHTML = `<div class="photo-preview">
+            <img src="${window.ARROW_BACKEND_URL}/photos/${data.id}" alt="preview">
+            <button class="rm" id="photo-remove" title="Remove">✕</button>
+        </div>`;
+        document.getElementById('photo-remove').addEventListener('click', () => {
+            pendingPhotoId = null;
+            wrap.innerHTML = '';
+            e.target.value = '';
+        });
+    });
+
+    async function send() {
+        const ta = document.getElementById('composer-input');
+        const content = ta.value.trim();
+        if (!content && !pendingPhotoId) return;
+
+        const r = state.recipient;
+        const body = (r.kind === 'broadcast') ? { content, message_type: 'BROADCAST' }
+            : (r.kind === 'group') ? { content, message_type: 'GROUP', group_id: r.group }
+            : { content, message_type: 'DIRECT', receiver_id: r.op.id };
+        if (pendingPhotoId) body.photo_id = pendingPhotoId;
+
+        const res = await api('/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) { alert('Send failed: ' + res.status); return; }
+        ta.value = ''; ta.style.height = 'auto';
+        pendingPhotoId = null;
+        document.getElementById('photo-preview-wrap').innerHTML = '';
+        document.getElementById('photo-file-input').value = '';
+        await refresh();
+    }
+
+    document.getElementById('composer-send').addEventListener('click', send);
+    document.getElementById('composer-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    document.getElementById('composer-input').addEventListener('input', (e) => {
+        e.target.style.height = 'auto';
+        e.target.style.height = Math.min(140, e.target.scrollHeight) + 'px';
+    });
+
+    // Apply ?open= deep-link from notification click (runs after first refresh populates operators).
+    function applyOpenParam() {
+        const open = new URLSearchParams(location.search).get('open');
+        if (!open) return;
+        if (open === 'broadcast') {
+            state.recipient = { kind: 'broadcast' };
+        } else if (open.startsWith('group:')) {
+            state.recipient = { kind: 'group', group: open.slice(6) };
+        } else if (open.startsWith('direct:')) {
+            const id = parseInt(open.slice(7), 10);
+            const op = state.operators.find(o => o.id === id);
+            if (op) state.recipient = { kind: 'direct', op };
+        }
+        document.getElementById('chat-title').textContent = recipientTitle(state.recipient);
+        renderRecipients();
+        renderMessages();
+        // Clean URL without reload so refreshing doesn't keep re-applying it
+        history.replaceState(null, '', location.pathname);
+    }
+
+    // WebSocket: pick up new messages as they arrive.
+    function connectWS() {
+        const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const ws = new WebSocket(wsUrl);
+        ws.onmessage = (ev) => {
+            const evt = JSON.parse(ev.data);
+            if (evt.channel === 'chat') refresh();
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+
+    refresh().then(applyOpenParam);
+    setInterval(refresh, 5000);
+    connectWS();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,444 @@
+{% extends "base.html" %}
+{% block title %}Tactical Map — Arrow{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+    .map-shell { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 60px); gap: 0; }
+    #sidebar { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.75rem; }
+    #sidebar h3 { margin: 0.25rem 0 0.5rem; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: #94a3b8; }
+    .tree details { margin-left: 0.5rem; }
+    .tree summary { cursor: pointer; padding: 0.2rem 0; user-select: none; }
+    .tree summary::marker { color: #6ee7b7; }
+    .tree .op { display: flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0 0.15rem 1.2rem; cursor: pointer; border-radius: 4px; }
+    .tree .op:hover { background: #1f2937; }
+    .tree .op.selected { background: #1e3a2f; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .dot.offline { background: #475569; }
+    .group-actions { display: flex; gap: 4px; margin-left: auto; }
+    .badge { font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: #2a3142; color: #cbd5e1; }
+    .badge.adm { background: #7c2d12; color: #fed7aa; }
+    .badge.bc { background: #1e40af; color: #bfdbfe; }
+    #map { height: 100%; }
+    main { padding: 0; }
+    .filter-bar { display: flex; gap: 8px; align-items: center; padding: 0.5rem 0.75rem; background: #161b25; border-bottom: 1px solid #2a3142; font-size: 0.85rem; }
+    .filter-bar label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+    .filter-bar button { background: #2a3142; color: #e6e6e6; border: 0; padding: 0.25rem 0.6rem; border-radius: 4px; cursor: pointer; font: inherit; }
+    .filter-bar button:hover { background: #3b475c; }
+    .filter-bar .count { color: #94a3b8; }
+    .leaflet-popup-content { color: #0e1217; }
+    .overlay-btns { display: flex; gap: 4px; }
+    .overlay-btn { background: #1a2233; color: #64748b; border: 1px solid #2a3142; border-radius: 5px; padding: 0.2rem 0.65rem; cursor: pointer; font: inherit; font-size: 0.8rem; white-space: nowrap; }
+    .overlay-btn:hover { border-color: #34d399; color: #e2e8f0; }
+    .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="map-shell">
+    <aside id="sidebar">
+        <div class="filter-bar" style="border-bottom:0;border-radius:6px;margin-bottom:0.5rem">
+            <label><input type="checkbox" id="online-only"/> Online only</label>
+            <button id="select-all">Show all</button>
+            <button id="clear-sel">Clear</button>
+        </div>
+        <h3>Hierarchy</h3>
+        <div id="tree" class="tree">Loading…</div>
+        <h3 style="margin-top:1rem">Enemies / Tactical objects</h3>
+        <div id="enemies"></div>
+    </aside>
+    <div>
+        <div class="filter-bar">
+            <span id="online-count" class="count">—</span>
+            <span style="flex:1"></span>
+            <div class="overlay-btns">
+                <button class="overlay-btn active" data-overlay="all">🌐 All</button>
+                <button class="overlay-btn" data-overlay="none">— None</button>
+                <button class="overlay-btn" data-overlay="enemies">⚠ Enemy</button>
+                <button class="overlay-btn" data-overlay="platoon">🪖 Own Plt</button>
+            </div>
+        </div>
+        <div id="map"></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/milsymbol@2.2.0/dist/milsymbol.js"></script>
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const role = localStorage.getItem('arrow_role') || 'OPERATOR';
+    const headers = { Authorization: `Bearer ${token}` };
+    const api = (p) => fetch(window.ARROW_BACKEND_URL + p, { headers });
+
+    const map = L.map('map').setView([50.85, 4.35], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+    // State
+    const state = {
+        hierarchy: null,            // server tree
+        operators: new Map(),       // id -> operator dto (live)
+        tacticalObjects: new Map(), // id -> dto
+        markers: new Map(),         // key -> Leaflet marker
+        selection: new Set(),       // operator ids visible (empty = all)
+        onlineOnly: false,
+        overlayMode: 'all',         // 'all' | 'platoon' | 'enemies'
+        me: null,                   // current operator from /auth/me
+        myPlatoonOpIds: new Set(),  // operator ids in own platoon
+    };
+
+    // Fetch current user and resolve platoon membership from hierarchy
+    api('/auth/me').then(r => r.ok ? r.json() : null).then(me => {
+        if (!me) return;
+        state.me = me;
+        if (state.hierarchy) state.myPlatoonOpIds = resolvePlatoonIds(state.hierarchy, me.id);
+    });
+
+    function resolvePlatoonIds(hierarchy, myId) {
+        const ids = new Set([myId]);
+        if (!hierarchy) return ids;
+        for (const co of hierarchy.companies || []) {
+            for (const plt of co.platoons || []) {
+                let found = false;
+                const pltIds = new Set();
+                for (const sec of plt.sections || []) {
+                    for (const team of sec.teams || []) {
+                        for (const op of team.operators || []) {
+                            pltIds.add(op.id);
+                            if (op.id === myId) found = true;
+                        }
+                    }
+                }
+                if (found) { pltIds.forEach(id => ids.add(id)); return ids; }
+            }
+        }
+        return ids; // unassigned — just self
+    }
+
+    // Overlay toggle buttons
+    document.querySelectorAll('.overlay-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.overlayMode = btn.dataset.overlay;
+            document.querySelectorAll('.overlay-btn').forEach(b =>
+                b.classList.toggle('active', b === btn));
+            refreshAllMarkers();
+            refreshEnemies();
+        });
+    });
+
+    function operatorIcon(op) {
+        // SIDC: friendly ground unit, infantry-ish. Online vs offline -> color via hostile flag NO,
+        // we just dim the icon when offline.
+        const sidc = op.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
+        const sym = new ms.Symbol(sidc, { size: 28, uniqueDesignation: op.callsign });
+        return L.divIcon({
+            className: 'op-icon' + (op.online ? '' : ' offline'),
+            html: `<div style="opacity:${op.online ? 1 : 0.45}">${sym.asSVG()}</div>`,
+            iconSize: [sym.getSize().width, sym.getSize().height],
+            iconAnchor: [sym.getAnchor().x, sym.getAnchor().y],
+        });
+    }
+
+    function enemyIcon(obj) {
+        // Default to hostile ground unit; symbol_code from server takes precedence if set.
+        const sidc = obj.symbol_code && obj.symbol_code.length >= 10 ? obj.symbol_code : 'SHGPU-------';
+        const sym = new ms.Symbol(sidc, { size: 30, additionalInformation: obj.notes || '' });
+        return L.divIcon({
+            className: 'enemy-icon',
+            html: sym.asSVG(),
+            iconSize: [sym.getSize().width, sym.getSize().height],
+            iconAnchor: [sym.getAnchor().x, sym.getAnchor().y],
+        });
+    }
+
+    function markerVisible(op) {
+        if (state.overlayMode === 'none')    return false;
+        if (state.overlayMode === 'enemies') return false;   // enemy-only: hide operators
+        if (state.overlayMode === 'platoon' && !state.myPlatoonOpIds.has(op.id)) return false;
+        if (state.onlineOnly && !op.online) return false;
+        if (state.selection.size > 0 && !state.selection.has(op.id)) return false;
+        return op.latitude != null && op.longitude != null;
+    }
+
+    function enemyLayerVisible() {
+        return state.overlayMode === 'all' || state.overlayMode === 'enemies';
+    }
+
+    function placeOperator(op) {
+        const key = `op-${op.id}`;
+        const existing = state.markers.get(key);
+        if (!markerVisible(op)) {
+            if (existing) { map.removeLayer(existing); state.markers.delete(key); }
+            return;
+        }
+        if (existing) {
+            existing.setLatLng([op.latitude, op.longitude]);
+            existing.setIcon(operatorIcon(op));
+        } else {
+            const m = L.marker([op.latitude, op.longitude], { icon: operatorIcon(op) }).addTo(map);
+            m.bindPopup(`<b>${op.callsign}</b><br/>${op.rank} · ${op.role}<br/>${op.online ? '<span style="color:green">● online</span>' : '<span>offline</span>'}`);
+            state.markers.set(key, m);
+        }
+    }
+
+    function placeEnemy(obj) {
+        const key = `to-${obj.id}`;
+        const existing = state.markers.get(key);
+        if (existing) { map.removeLayer(existing); state.markers.delete(key); }
+        const m = L.marker([obj.latitude, obj.longitude], { icon: enemyIcon(obj) }).addTo(map);
+        const photoHtml = obj.photo_id
+            ? `<br/><img src="${window.ARROW_BACKEND_URL}/photos/${obj.photo_id}" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:4px;cursor:pointer" onclick="window.open(this.src)" alt="photo">`
+            : '';
+        m.bindPopup(
+            `<b>${obj.type}</b><br/>${obj.notes || '<i>no notes</i>'}<br/>` +
+            `<small>SIDC: ${obj.symbol_code || '—'}</small>` +
+            photoHtml + `<br/>` +
+            ((role === 'ADMIN' || role === 'BATTLE_CAPTAIN') ?
+                `<button onclick="window.__arrowDeleteEnemy(${obj.id})">Delete</button>` : '')
+        );
+        state.markers.set(key, m);
+    }
+
+    function refreshAllMarkers() {
+        // Operators
+        state.operators.forEach((op) => placeOperator(op));
+        // Drop op markers no longer in state
+        state.markers.forEach((m, key) => {
+            if (key.startsWith('op-')) {
+                const id = parseInt(key.slice(3), 10);
+                if (!state.operators.has(id)) { map.removeLayer(m); state.markers.delete(key); }
+            }
+        });
+        const onlineCount = [...state.operators.values()].filter(o => o.online).length;
+        document.getElementById('online-count').textContent = `${onlineCount} online · ${state.operators.size} total`;
+    }
+
+    function refreshEnemies() {
+        // Remove all tactical-object markers first
+        state.markers.forEach((m, key) => {
+            if (key.startsWith('to-')) { map.removeLayer(m); state.markers.delete(key); }
+        });
+        if (!enemyLayerVisible()) {
+            // Update sidebar list but don't place map markers
+            const list = document.getElementById('enemies');
+            const items = [...state.tacticalObjects.values()].sort((a, b) => a.id - b.id);
+            list.innerHTML = items.length === 0 ? '<small style="color:#94a3b8">none</small>' :
+                items.map(o => `<div class="op" onclick="__arrowFocus(${o.latitude},${o.longitude})">
+                    <span class="dot offline" style="background:#ef4444"></span>
+                    <span>${o.type}</span>
+                    <span style="color:#94a3b8;font-size:0.75rem;margin-left:auto">#${o.id}</span>
+                </div>`).join('');
+            return;
+        }
+        state.tacticalObjects.forEach(placeEnemy);
+
+        const list = document.getElementById('enemies');
+        const items = [...state.tacticalObjects.values()].sort((a, b) => a.id - b.id);
+        list.innerHTML = items.length === 0 ? '<small style="color:#94a3b8">none</small>' :
+            items.map(o => `<div class="op" onclick="__arrowFocus(${o.latitude},${o.longitude})">
+                <span class="dot offline" style="background:#ef4444"></span>
+                <span>${o.type}</span>
+                <span style="color:#94a3b8;font-size:0.75rem;margin-left:auto">#${o.id}</span>
+            </div>`).join('');
+    }
+
+    window.__arrowFocus = (lat, lon) => map.setView([lat, lon], 14);
+    window.__arrowDeleteEnemy = async (id) => {
+        await fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id, { method: 'DELETE', headers });
+        state.tacticalObjects.delete(id); refreshEnemies();
+    };
+
+    function renderTree() {
+        const root = document.getElementById('tree');
+        if (!state.hierarchy) { root.textContent = 'Loading…'; return; }
+
+        const opIcons = (op) => {
+            const badges = [];
+            if (op.role === 'ADMIN') badges.push('<span class="badge adm">ADM</span>');
+            else if (op.role === 'BATTLE_CAPTAIN') badges.push('<span class="badge bc">BC</span>');
+            return badges.join(' ');
+        };
+
+        const opLine = (op) => {
+            const sel = state.selection.has(op.id) ? ' selected' : '';
+            const muted = (state.onlineOnly && !op.online) ? ' style="opacity:0.4"' : '';
+            return `<div class="op${sel}" data-op="${op.id}"${muted}>
+                <span class="dot ${op.online ? 'online' : 'offline'}"></span>
+                <span>${op.callsign}</span>
+                <span style="color:#94a3b8;font-size:0.75rem">${op.rank}</span>
+                ${opIcons(op)}
+            </div>`;
+        };
+
+        const teamBlock = (team) => {
+            const ops = team.operators;
+            const ids = ops.map(o => o.id).join(',');
+            const online = ops.filter(o => o.online).length;
+            return `<details>
+                <summary>${team.name} <span class="count">(${online}/${ops.length})</span>
+                    <button class="select-group" data-ids="${ids}" style="float:right;background:#2a3142;color:#cbd5e1;border:0;padding:0 6px;border-radius:3px;cursor:pointer">focus</button>
+                </summary>
+                ${ops.map(opLine).join('') || '<small style="color:#94a3b8;padding-left:1.2rem">empty</small>'}
+            </details>`;
+        };
+
+        const sectionBlock = (s) => {
+            const allOps = s.teams.flatMap(t => t.operators);
+            const ids = allOps.map(o => o.id).join(',');
+            return `<details>
+                <summary>${s.name} <span class="count">(${allOps.filter(o=>o.online).length}/${allOps.length})</span>
+                    <button class="select-group" data-ids="${ids}" style="float:right;background:#2a3142;color:#cbd5e1;border:0;padding:0 6px;border-radius:3px;cursor:pointer">focus</button>
+                </summary>
+                ${s.teams.map(teamBlock).join('')}
+            </details>`;
+        };
+
+        const platoonBlock = (p) => {
+            const allOps = p.sections.flatMap(s => s.teams.flatMap(t => t.operators));
+            const ids = allOps.map(o => o.id).join(',');
+            return `<details>
+                <summary>${p.name} <span class="count">(${allOps.filter(o=>o.online).length}/${allOps.length})</span>
+                    <button class="select-group" data-ids="${ids}" style="float:right;background:#2a3142;color:#cbd5e1;border:0;padding:0 6px;border-radius:3px;cursor:pointer">focus</button>
+                </summary>
+                ${p.sections.map(sectionBlock).join('')}
+            </details>`;
+        };
+
+        const companyBlock = (c) => {
+            const allOps = c.platoons.flatMap(p => p.sections.flatMap(s => s.teams.flatMap(t => t.operators)));
+            const ids = allOps.map(o => o.id).join(',');
+            return `<details>
+                <summary><b>${c.name}</b> <span class="count">(${allOps.filter(o=>o.online).length}/${allOps.length})</span>
+                    <button class="select-group" data-ids="${ids}" style="float:right;background:#2a3142;color:#cbd5e1;border:0;padding:0 6px;border-radius:3px;cursor:pointer">focus</button>
+                </summary>
+                ${c.platoons.map(platoonBlock).join('') || '<small style="color:#94a3b8">no platoons</small>'}
+            </details>`;
+        };
+
+        const unassigned = state.hierarchy.unassigned_operators || [];
+        const unassignedBlock = unassigned.length === 0 ? '' : `<details>
+            <summary>Unassigned <span class="count">(${unassigned.filter(o=>o.online).length}/${unassigned.length})</span>
+                <button class="select-group" data-ids="${unassigned.map(o=>o.id).join(',')}" style="float:right;background:#2a3142;color:#cbd5e1;border:0;padding:0 6px;border-radius:3px;cursor:pointer">focus</button>
+            </summary>
+            ${unassigned.map(opLine).join('')}
+        </details>`;
+
+        root.innerHTML = (state.hierarchy.companies.map(companyBlock).join('') || '<small style="color:#94a3b8">no companies defined</small>') + unassignedBlock;
+
+        // Wire up clicks
+        root.querySelectorAll('.op').forEach(el => {
+            el.addEventListener('click', () => {
+                const id = parseInt(el.dataset.op, 10);
+                const op = state.operators.get(id);
+                if (!op || op.latitude == null) return;
+                map.setView([op.latitude, op.longitude], 13);
+                const m = state.markers.get(`op-${id}`);
+                if (m) m.openPopup();
+            });
+        });
+        root.querySelectorAll('.select-group').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const ids = btn.dataset.ids ? btn.dataset.ids.split(',').map(Number) : [];
+                state.selection = new Set(ids);
+                refreshAllMarkers(); renderTree();
+                // Auto-fit
+                const pts = ids.map(i => state.operators.get(i)).filter(o => o && o.latitude != null);
+                if (pts.length > 0) {
+                    const bounds = L.latLngBounds(pts.map(o => [o.latitude, o.longitude]));
+                    map.fitBounds(bounds.pad(0.3));
+                }
+            });
+        });
+    }
+
+    document.getElementById('online-only').addEventListener('change', (e) => {
+        state.onlineOnly = e.target.checked; refreshAllMarkers(); renderTree();
+    });
+    document.getElementById('select-all').addEventListener('click', () => {
+        state.selection = new Set(); refreshAllMarkers(); renderTree();
+    });
+    document.getElementById('clear-sel').addEventListener('click', () => {
+        state.selection = new Set([-1]); refreshAllMarkers();
+    });
+
+    // Mark enemy via double-click (admin/BC only)
+    map.on('dblclick', async (e) => {
+        if (role !== 'ADMIN' && role !== 'BATTLE_CAPTAIN') return;
+        const type = prompt('Enemy type (e.g. INFANTRY, ARMOR, ARTILLERY, VEHICLE)', 'INFANTRY');
+        if (!type) return;
+        const sidcMap = {
+            INFANTRY: 'SHGPUCI-----',
+            ARMOR: 'SHGPUCA-----',
+            ARTILLERY: 'SHGPUCF-----',
+            VEHICLE: 'SHGPEV------',
+            POI: 'SNGPI-------',
+        };
+        const symbol = sidcMap[type.toUpperCase()] || 'SHGPU-------';
+        const notes = prompt('Notes', '') || '';
+        const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
+            method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: type.toUpperCase(), symbol_code: symbol, latitude: e.latlng.lat, longitude: e.latlng.lng, notes }),
+        });
+        if (!r.ok) { alert('Failed: ' + r.status); return; }
+        const obj = await r.json();
+        state.tacticalObjects.set(obj.id, obj); refreshEnemies();
+    });
+    map.doubleClickZoom.disable();
+
+    async function loadHierarchy() {
+        const r = await api('/hierarchy');
+        if (!r.ok) return;
+        state.hierarchy = await r.json();
+        // Walk tree to seed/refresh state.operators
+        const collect = (ops) => ops.forEach(o => state.operators.set(o.id, o));
+        state.hierarchy.companies.forEach(c => c.platoons.forEach(p => p.sections.forEach(s => s.teams.forEach(t => collect(t.operators)))));
+        collect(state.hierarchy.unassigned_operators);
+        // Resolve own-platoon membership whenever hierarchy or me changes
+        if (state.me) state.myPlatoonOpIds = resolvePlatoonIds(state.hierarchy, state.me.id);
+        refreshAllMarkers(); renderTree();
+    }
+
+    async function loadEnemies() {
+        const r = await api('/tactical-objects');
+        if (!r.ok) return;
+        const list = await r.json();
+        state.tacticalObjects = new Map(list.map(o => [o.id, o]));
+        refreshEnemies();
+    }
+
+    function connectWS() {
+        const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const ws = new WebSocket(wsUrl);
+        ws.onmessage = (ev) => {
+            const msg = JSON.parse(ev.data);
+            if (msg.channel === 'tracking' && msg.event === 'position') {
+                const d = msg.data;
+                const op = state.operators.get(d.operator_id) || { id: d.operator_id, callsign: d.callsign, rank: '', role: 'OPERATOR' };
+                op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
+                state.operators.set(op.id, op);
+                placeOperator(op);
+            } else if (msg.channel === 'tactical-object') {
+                if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); refreshEnemies(); }
+                else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); refreshEnemies(); }
+            } else if (msg.channel === 'alert' && msg.event === 'triggered') {
+                const d = msg.data;
+                if (d.latitude != null) {
+                    L.circleMarker([d.latitude, d.longitude], { color: 'red', radius: 14, weight: 3 })
+                        .addTo(map).bindPopup(`<b>ALERT: ${d.type}</b>`).openPopup();
+                }
+            } else if (msg.channel === 'presence') {
+                // Re-fetch hierarchy to refresh online states.
+                loadHierarchy();
+            }
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+
+    loadHierarchy(); loadEnemies();
+    setInterval(loadHierarchy, 15000);  // refresh online flags
+    connectWS();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,55 @@
+from __future__ import annotations
+
+from collections.abc import Generator
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+
+from backend.config.xml_config import load_config
+
+_cfg = load_config()
+engine = create_engine(
+    _cfg.database.url,
+    connect_args={"check_same_thread": False} if _cfg.database.url.startswith("sqlite") else {},
+)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+def _migrate(conn: object) -> None:
+    """Apply additive schema migrations that create_all cannot handle."""
+    migrations = [
+        "CREATE TABLE IF NOT EXISTS photos ("
+        "  id INTEGER PRIMARY KEY, filename VARCHAR(255) NOT NULL,"
+        "  original_name VARCHAR(255) DEFAULT '',"
+        "  mime_type VARCHAR(80) DEFAULT 'image/jpeg',"
+        "  uploaded_by INTEGER REFERENCES operators(id),"
+        "  timestamp DATETIME"
+        ")",
+        "ALTER TABLE messages ADD COLUMN photo_id INTEGER REFERENCES photos(id)",
+        "ALTER TABLE tactical_objects ADD COLUMN photo_id INTEGER REFERENCES photos(id)",
+    ]
+    for sql in migrations:
+        try:
+            conn.execute(__import__("sqlalchemy").text(sql))
+        except Exception:
+            pass  # column/table already exists — safe to skip
+
+
+def init_db() -> None:
+    from backend.storage import models  # noqa: F401  — register mappers
+
+    Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        _migrate(conn)
+
+
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

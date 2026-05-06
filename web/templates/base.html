@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Arrow — Soldier System{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+<nav class="nav">
+    <span class="brand">ARROW</span>
+    <a href="{{ url_for('dashboard.index') }}">Dashboard</a>
+    <a href="{{ url_for('tactical_map.index') }}">Tactical Map</a>
+    <a href="{{ url_for('messaging.index') }}">Messaging</a>
+    <a href="{{ url_for('admin.index') }}">Admin</a>
+    <span class="spacer"></span>
+    <span id="nav-user" class="nav-user"></span>
+    <a id="nav-auth" href="{{ url_for('login') }}">Sign in</a>
+</nav>
+<script>
+    (function () {
+        const token = localStorage.getItem('arrow_token');
+        const role = localStorage.getItem('arrow_role');
+        const user = document.getElementById('nav-user');
+        const auth = document.getElementById('nav-auth');
+        if (token) {
+            user.textContent = role ? `Signed in (${role})` : 'Signed in';
+            auth.textContent = 'Sign out';
+            auth.href = '/logout';
+        }
+    })();
+</script>
+<main>
+    {% block content %}{% endblock %}
+</main>
+<div id="arrow-toast-container"></div>
+<script>
+    window.ARROW_BACKEND_URL = "{{ backend_url }}";
+</script>
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) return;
+
+    let meId = null;
+    const api = (path, opts = {}) => fetch(window.ARROW_BACKEND_URL + path, {
+        ...opts, headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+    });
+
+    api('/auth/me').then(r => r.ok ? r.json() : null).then(me => { if (me) meId = me.id; });
+
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function recipientLabel(msgType, groupId) {
+        if (msgType === 'BROADCAST') return '📢 Broadcast';
+        if (msgType === 'GROUP') return '⭐ ' + (groupId || 'Group');
+        return 'Direct';
+    }
+
+    function openHref(msgType, groupId, senderId) {
+        if (msgType === 'BROADCAST') return '/messaging/?open=broadcast';
+        if (msgType === 'GROUP')     return '/messaging/?open=group:' + groupId;
+        return '/messaging/?open=direct:' + senderId;
+    }
+
+    function showToast(evt) {
+        const data = evt.data || {};
+        if (meId && data.sender_id === meId) return;
+        // Suppress in-page toast when already viewing messaging and tab is focused
+        if (location.pathname.startsWith('/messaging') && document.visibilityState === 'visible') return;
+
+        const from     = evt.from || 'Unknown';
+        const content  = data.content || '';
+        const msgType  = (data.message_type || 'DIRECT').toUpperCase();
+        const senderId = data.sender_id;
+        const groupId  = data.group_id || null;
+        const href     = openHref(msgType, groupId, senderId);
+
+        // Browser notification for background / other-tab case
+        if (document.visibilityState !== 'visible' && Notification.permission === 'granted') {
+            const n = new Notification('Arrow — ' + from, { body: content, tag: 'arrow-chat' });
+            n.onclick = () => { window.location.href = href; n.close(); };
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from">
+                    <a href="${href}">💬 ${esc(from)}</a>
+                    <em>${esc(recipientLabel(msgType, groupId))}</em>
+                </span>
+                <button class="arrow-toast-close" title="Dismiss">✕</button>
+            </div>
+            <div class="arrow-toast-body">${esc(content)}</div>
+            <div class="arrow-toast-reply">
+                <input class="arrow-toast-input" type="text" placeholder="Reply…" autocomplete="off" />
+                <button class="arrow-toast-send">Send</button>
+            </div>`;
+
+        const container = document.getElementById('arrow-toast-container');
+        container.appendChild(toast);
+
+        toast.querySelector('.arrow-toast-close').addEventListener('click', () => toast.remove());
+
+        const input = toast.querySelector('.arrow-toast-input');
+        const send  = toast.querySelector('.arrow-toast-send');
+
+        async function sendReply() {
+            const text = input.value.trim();
+            if (!text) return;
+            send.disabled = true;
+            const body = msgType === 'BROADCAST'
+                ? { content: text, message_type: 'BROADCAST' }
+                : msgType === 'GROUP'
+                ? { content: text, message_type: 'GROUP', group_id: groupId }
+                : { content: text, message_type: 'DIRECT', receiver_id: senderId };
+            const res = await api('/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) { toast.remove(); }
+            else { send.disabled = false; }
+        }
+
+        send.addEventListener('click', sendReply);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') sendReply(); });
+    }
+
+    function connectWS() {
+        const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const ws = new WebSocket(wsUrl);
+        ws.onmessage = ev => {
+            try { const e = JSON.parse(ev.data); if (e.channel === 'chat') showToast(e); } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+    connectWS();
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

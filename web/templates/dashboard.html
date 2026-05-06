@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Arrow{% endblock %}
+{% block content %}
+<h1>Operational Dashboard</h1>
+<div class="grid">
+    <section class="panel">
+        <h2>Live Operators</h2>
+        <ul id="operators"><li>Loading…</li></ul>
+    </section>
+    <section class="panel">
+        <h2>Active Alerts</h2>
+        <ul id="alerts"><li>Loading…</li></ul>
+    </section>
+    <section class="panel">
+        <h2>Active Battles</h2>
+        <ul id="battles"><li>Loading…</li></ul>
+    </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    async function refresh() {
+        const token = localStorage.getItem('arrow_token');
+        if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        const headers = { Authorization: `Bearer ${token}` };
+        const fetchJson = (path) => fetch(window.ARROW_BACKEND_URL + path, { headers }).then(r => r.json());
+        const [ops, alerts, battles] = await Promise.all([
+            fetchJson('/tracking/live'), fetchJson('/alerts'), fetchJson('/battles'),
+        ]);
+        document.getElementById('operators').innerHTML =
+            ops.map(o => `<li>${o.callsign} — ${o.latitude?.toFixed(4)}, ${o.longitude?.toFixed(4)}</li>`).join('') || '<li>None</li>';
+        document.getElementById('alerts').innerHTML =
+            alerts.map(a => `<li>[${a.status}] ${a.type} @ ${a.timestamp}</li>`).join('') || '<li>None</li>';
+        document.getElementById('battles').innerHTML =
+            battles.map(b => `<li>${b.name} (${b.status})</li>`).join('') || '<li>None</li>';
+    }
+    refresh();
+    setInterval(refresh, 5000);
+</script>
+{% endblock %}

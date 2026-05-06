@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Adaptive icon foreground — 108×108 dp, safe zone is the inner 66 dp (radius 33 from centre 54,54).
+
+    Design:
+      • Upward combat arrow with tail fins  — filled #34D399 (tactical green)
+      • Targeting reticle ring (radius 28)  — stroke only
+      • Four crosshair ticks at N/S/E/W    — stroke, outside ring
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Targeting reticle ring centred at (54,54) radius 28 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#34D399"
+        android:strokeWidth="2.5"
+        android:pathData="M54,26 a28,28 0 1,0 0.001,0"/>
+
+    <!-- N/S/E/W tick marks (just outside the ring, may clip on circular launchers) -->
+    <path
+        android:strokeColor="#34D399"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="square"
+        android:pathData="M54,15 L54,22  M54,86 L54,93  M15,54 L22,54  M86,54 L93,54"/>
+
+    <!--
+        Combat arrow with tail fins.
+        Path traces: tip → right head → right shaft → right fin →
+                     centre notch → left fin → left shaft → left head → close.
+    -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="
+            M54,30
+            L68,52 L61,52
+            L61,74 L66,80
+            L54,77
+            L42,80 L47,74
+            L47,52 L40,52
+            Z"/>
+
+</vector>
