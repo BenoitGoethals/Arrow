@@ -1,0 +1,37 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend.dockerfile
+    image: arrow-backend
+    container_name: arrow-backend
+    ports:
+      - "6001:6001"
+    volumes:
+      - arrow-data:/app/data
+      - ./config.xml:/app/config.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:6001/health').status==200 else 1)\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web.dockerfile
+    image: arrow-web
+    container_name: arrow-web
+    environment:
+      ARROW_BACKEND_URL: ${ARROW_PUBLIC_BACKEND_URL:-http://192.168.0.240:6001}
+    ports:
+      - "6002:6002"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  arrow-data:
