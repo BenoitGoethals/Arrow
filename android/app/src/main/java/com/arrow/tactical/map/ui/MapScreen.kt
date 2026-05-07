@@ -384,30 +384,31 @@ fun MapScreen(
             }
         }
 
-        // ── 🎯 Call for Fire FAB — no preset coords, GPS used in screen ─────
-        FloatingActionButton(
+        // ── Call for Fire button ─────────────────────────────────────────
+        ExtendedFloatingActionButton(
             onClick        = { onCallFire(Double.NaN, Double.NaN) },
             containerColor = Color(0xFFB91C1C),
+            contentColor   = Color.White,
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 72.dp)
-                .size(44.dp),
-        ) {
-            Text("🎯", fontSize = 20.sp)
-        }
+                .padding(end = 16.dp, bottom = 76.dp),
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null,
+                          modifier = Modifier.size(18.dp), tint = Color.White) },
+            text = { Text("CALL FIRE", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+        )
 
         // ── TIC FAB ───────────────────────────────────────────────────────
-        FloatingActionButton(
+        ExtendedFloatingActionButton(
             onClick        = { scope.launch { container.alertRepository.trigger("TIC") } },
             containerColor = MaterialTheme.colorScheme.error,
+            contentColor   = Color.White,
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp)
-                .size(44.dp),
-        ) {
-            Icon(Icons.Filled.Warning, contentDescription = "TIC", tint = Color.White,
-                 modifier = Modifier.size(22.dp))
-        }
+                .padding(end = 16.dp, bottom = 16.dp),
+            icon = { Icon(Icons.Filled.Warning, contentDescription = null,
+                          modifier = Modifier.size(18.dp), tint = Color.White) },
+            text = { Text("TIC", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+        )
 
     } // Box
 
