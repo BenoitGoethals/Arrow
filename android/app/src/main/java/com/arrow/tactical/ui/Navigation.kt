@@ -140,8 +140,17 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
         ) {
             composable(Tab.Map.route) {
                 MapScreen(
-                    container = container,
-                    onCallFire = { tabNav.navigate("fire-mission") },
+                    container  = container,
+                    onCallFire = { lat, lon -> tabNav.navigate("fire-mission?lat=$lat&lon=$lon") },
+                    onReport   = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
+                )
+            }
+            composable("fire-mission?lat={lat}&lon={lon}") { entry ->
+                FireMissionScreen(
+                    container  = container,
+                    presetLat  = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                    presetLon  = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                    onBack     = { tabNav.popBackStack() },
                 )
             }
             composable("fire-mission") {
@@ -170,7 +179,14 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             }
             composable(Tab.Alerts.route) { AlertsScreen(container.alertRepository) }
             composable(Tab.Chat.route) { MessagingScreen(container) }
-            composable(Tab.Reports.route) { ReportsScreen(container.reportRepository) }
+            composable("${Tab.Reports.route}?lat={lat}&lon={lon}") { entry ->
+                ReportsScreen(
+                    repo      = container.reportRepository,
+                    presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                    presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                )
+            }
+            composable(Tab.Reports.route) { ReportsScreen(repo = container.reportRepository) }
             composable(Tab.Settings.route) {
                 SettingsScreen(
                     repo = container.settingsRepository,

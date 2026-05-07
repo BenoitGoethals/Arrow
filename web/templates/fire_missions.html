@@ -293,8 +293,31 @@
     }
 
     loadAll().then(() => {
+        const params = new URLSearchParams(location.search);
+        // Pre-fill from map tap coords (?lat=&lon=)
+        const pLat = parseFloat(params.get('lat') || '');
+        const pLon = parseFloat(params.get('lon') || '');
+        if (!isNaN(pLat) && !isNaN(pLon)) {
+            history.replaceState(null, '', location.pathname);
+            // Switch to Call Fire tab and set form coords
+            document.querySelector('[data-type="ADJUST_FIRE"]')?.click?.();
+            // The form will be rendered; inject coords after a tick
+            setTimeout(() => {
+                const mgrsStr = (() => { try { return MGRS.encode(pLat, pLon); } catch(_){return '';} })();
+                const field = document.querySelector('input[name="line_1"]') || document.querySelector('#form-area input');
+                if (mgrsStr) {
+                    const el = document.createElement('p');
+                    el.style.cssText = 'color:#ef4444;font-family:monospace;font-size:0.9rem;margin:.5rem 0';
+                    el.textContent = '📍 Grid: ' + mgrsStr;
+                    document.querySelector('.nineliner')?.prepend(el);
+                    // Pre-fill grid in line 1 or 5 (target location)
+                    const gridField = document.querySelector('[name="line_5"]') || document.querySelector('[name="line_1"]');
+                    if (gridField) gridField.value = mgrsStr;
+                }
+            }, 100);
+        }
         // Auto-select mission from ?id= query param (deep-link from map sidebar)
-        const id = parseInt(new URLSearchParams(location.search).get('id') || '0');
+        const id = parseInt(params.get('id') || '0');
         if (id) {
             selectedId = id;
             const m = missions.find(x => x.id === id);

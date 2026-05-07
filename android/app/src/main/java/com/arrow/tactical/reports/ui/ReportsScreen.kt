@@ -97,7 +97,11 @@ private val REPORT_TYPES = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReportsScreen(repo: ReportRepository) {
+fun ReportsScreen(
+    repo:      ReportRepository,
+    presetLat: Double? = null,
+    presetLon: Double? = null,
+) {
     val scope = rememberCoroutineScope()
     var selectedType by remember { mutableStateOf(REPORT_TYPES[0]) }
     var values     by remember { mutableStateOf(List(9) { "" }) }
@@ -108,9 +112,16 @@ fun ReportsScreen(repo: ReportRepository) {
 
     LaunchedEffect(Unit) {
         repo.list().onSuccess { reports = it }
+        // Pre-fill line 3 (Location) when launched from map tap
+        if (presetLat != null && presetLon != null) {
+            val mgrsStr = runCatching {
+                com.arrow.tactical.network.MgrsConverter.encode(presetLat, presetLon)
+            }.getOrDefault("%.5f, %.5f".format(presetLat, presetLon))
+            values = List(9) { i -> if (i == 2) mgrsStr else "" }  // index 2 = line 3 = Location
+        }
     }
 
-    // Reset form values when type changes
+    // Reset form values when type changes (but keep preset if just launched)
     LaunchedEffect(selectedType) { values = List(9) { "" } }
 
     Scaffold(
