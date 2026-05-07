@@ -17,6 +17,7 @@ def create_app() -> Flask:
     from web.dashboard.routes import bp as dashboard_bp
     from web.messaging.routes import bp as messaging_bp
     from web.fire_missions.routes import bp as fire_missions_bp
+    from web.streams.routes import bp as streams_bp
     from web.reports.routes import bp as reports_bp
     from web.tactical_map.routes import bp as map_bp
 
@@ -24,6 +25,7 @@ def create_app() -> Flask:
     app.register_blueprint(map_bp)
     app.register_blueprint(messaging_bp)
     app.register_blueprint(fire_missions_bp)
+    app.register_blueprint(streams_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(admin_bp)
 

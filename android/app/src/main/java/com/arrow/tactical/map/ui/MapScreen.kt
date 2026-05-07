@@ -14,6 +14,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
@@ -80,6 +82,9 @@ fun MapScreen(
     var serverOnline by remember { mutableStateOf<Boolean?>(null) }
     var overlayMode by remember { mutableStateOf(OverlayMode.ALL) }
     var myPlatoonIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var isStreaming  by remember {
+        mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
+    }
 
     LaunchedEffect(Unit) {
         serverUrl = container.settingsRepository.currentServerUrl()
@@ -387,6 +392,45 @@ fun MapScreen(
                         color = if (active) Color(0xFF34D399) else Color(0xFFCBD5E1),
                     )
                 }
+            }
+
+            // Stream toggle
+            IconButton(
+                onClick = {
+                    if (isStreaming) {
+                        context.stopService(
+                            android.content.Intent(context,
+                                com.arrow.tactical.stream.CameraStreamService::class.java))
+                        isStreaming = false
+                    } else {
+                        scope.launch {
+                            // Check camera permission
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context, android.Manifest.permission.CAMERA)
+                                != android.content.pm.PackageManager.PERMISSION_GRANTED) return@launch
+                            val token   = container.tokenStore.current() ?: return@launch
+                            val server  = container.settingsRepository.currentServerUrl()
+                            val me      = container.authRepository.me().getOrNull() ?: return@launch
+                            val sid     = "stream-${me.callsign}-${System.currentTimeMillis() / 1000}"
+                            val intent  = android.content.Intent(context,
+                                com.arrow.tactical.stream.CameraStreamService::class.java).apply {
+                                putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_STREAM_ID,  sid)
+                                putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_SERVER_URL, server)
+                                putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_TOKEN,      token)
+                            }
+                            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                            isStreaming = true
+                        }
+                    }
+                },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    if (isStreaming) Icons.Filled.VideocamOff else Icons.Filled.Videocam,
+                    contentDescription = if (isStreaming) "Stop stream" else "Start stream",
+                    modifier = Modifier.size(18.dp),
+                    tint = if (isStreaming) Color(0xFFEF4444) else Color(0xFFCBD5E1),
+                )
             }
 
             IconButton(
