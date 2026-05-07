@@ -22,7 +22,7 @@ else
     exit 1
 fi
 
-CONTAINERS=("arrow-backend" "arrow-web")
+CONTAINERS=("arrow-backend" "arrow-web" "arrow-proxy")
 
 remove_existing() {
     for name in "${CONTAINERS[@]}"; do
