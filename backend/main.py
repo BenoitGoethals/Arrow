@@ -3,7 +3,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.admin.router import router as admin_api_router
 from backend.alerts.router import router as alerts_router
+from backend.cot.router import router as cot_router
 from backend.photos.router import router as photos_router
 from backend.api.companies import router as companies_router
 from backend.api.hierarchy import router as hierarchy_router
@@ -47,6 +49,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(admin_api_router)
+    app.include_router(cot_router)
     app.include_router(auth_router)
     app.include_router(operators_router)
     app.include_router(teams_router)

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import OperatorOut, OperatorUpdate
-from backend.auth.jwt_auth import get_current_operator, require_role
+from backend.api.schemas import OperatorOut, OperatorUpdate, PasswordReset
+from backend.auth.jwt_auth import get_current_operator, hash_password, require_role
 from backend.storage.database import get_db
 from backend.storage.models import Operator
 
@@ -44,6 +44,20 @@ def update_operator(
     db.commit()
     db.refresh(op)
     return op
+
+
+@router.post("/{operator_id}/set-password", status_code=status.HTTP_204_NO_CONTENT)
+def set_password(
+    operator_id: int,
+    payload: PasswordReset,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN")),
+) -> None:
+    op = db.get(Operator, operator_id)
+    if not op:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    op.password_hash = hash_password(payload.password)
+    db.commit()
 
 
 @router.delete("/{operator_id}", status_code=status.HTTP_204_NO_CONTENT)

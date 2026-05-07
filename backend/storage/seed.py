@@ -1,15 +1,14 @@
-"""Seed the database with a standard set of users for development/demo.
+"""Seed the database with the minimum named accounts required to boot.
 
 - 1 admin: benoit / ranger14
 - 1 battle captain: capt / ranger14
-- 10 operators with random callsigns, password ranger14
 
-Idempotent — does nothing if any of the named users already exist.
+Deliberately creates NO random operators — the simulator or admin panel
+should be used to build the full hierarchy and assign operators to teams.
+Idempotent — does nothing if any operators already exist.
 """
 
 from __future__ import annotations
-
-import random
 
 from sqlalchemy.orm import Session
 
@@ -21,14 +20,6 @@ DEFAULT_PASSWORD = "ranger14"
 
 ADMIN = {"callsign": "benoit", "rank": "OF-3", "role": "ADMIN"}
 CAPTAIN = {"callsign": "capt", "rank": "OF-2", "role": "BATTLE_CAPTAIN"}
-
-_PHONETIC = [
-    "ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO", "FOXTROT", "GOLF", "HOTEL",
-    "INDIA", "JULIET", "KILO", "LIMA", "MIKE", "NOVEMBER", "OSCAR", "PAPA",
-    "QUEBEC", "ROMEO", "SIERRA", "TANGO", "UNIFORM", "VICTOR", "WHISKEY",
-    "XRAY", "YANKEE", "ZULU",
-]
-_RANKS = ["OR-1", "OR-2", "OR-3", "OR-4", "OR-5", "OR-6"]
 
 
 def _ensure(db: Session, callsign: str, password: str, rank: str, role: str) -> Operator:
@@ -44,15 +35,6 @@ def _ensure(db: Session, callsign: str, password: str, rank: str, role: str) -> 
     db.add(op)
     return op
 
-
-def _random_callsigns(count: int, taken: set[str], rng: random.Random) -> list[str]:
-    out: list[str] = []
-    while len(out) < count:
-        candidate = f"{rng.choice(_PHONETIC)}-{rng.randint(1, 9)}"
-        if candidate in taken or candidate in out:
-            continue
-        out.append(candidate)
-    return out
 
 
 def seed(force: bool = False) -> dict[str, list[str]]:
@@ -74,12 +56,6 @@ def seed(force: bool = False) -> dict[str, list[str]]:
             created.append(ADMIN["callsign"])
         if capt in db.new:
             created.append(CAPTAIN["callsign"])
-
-        taken = {ADMIN["callsign"], CAPTAIN["callsign"]}
-        for callsign in _random_callsigns(10, taken, rng):
-            op = _ensure(db, callsign, DEFAULT_PASSWORD, rng.choice(_RANKS), "OPERATOR")
-            if op in db.new:
-                created.append(callsign)
 
         db.commit()
 

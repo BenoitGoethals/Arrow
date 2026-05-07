@@ -377,44 +377,51 @@ async def bootstrap(client: httpx.AsyncClient,
                     team_name_to_id[team_name] = r["id"]
                     log.info("      Created team %s (id=%d)", team_name, r["id"])
 
-    # 4. Register all non-admin operators + assign to teams
-    log.info("── Registering operators ─────────────────────────────")
-    existing_ops = {o["callsign"]: o for o in (await api(client, "GET", "/operators",
-                                                          token=admin_token) or [])}
+    # 4. Register / fix all operators — team_id included at creation (atomic)
+    log.info("── Registering / assigning operators ────────────────")
+    existing_ops = {o["callsign"]: o
+                    for o in (await api(client, "GET", "/operators",
+                                        token=admin_token) or [])}
 
     for sec in sections:
-        sec_key = f"{sec.platoon_code}-{sec.section_num}"
         for team_idx, op in enumerate(sec.operators):
             team_num  = (team_idx // 3) + 1
             team_name = f"Team {sec.platoon_code}-{sec.section_num}{team_num}"
             team_id   = team_name_to_id.get(team_name)
+            ex        = existing_ops.get(op.callsign)
 
-            if op.callsign not in existing_ops:
+            if not ex:
+                # New operator — register with team_id already set
                 r = await api(client, "POST", "/auth/register", json={
                     "callsign": op.callsign, "password": SIM_PASSWORD,
                     "rank": op.rank, "role": op.role,
+                    "team_id": team_id,
                 })
                 if r:
-                    log.info("  Registered %-14s (%s)", op.callsign, op.rank)
-                    existing_ops[op.callsign] = {"id": None}  # re-fetch below
-
-            # Assign to team via admin patch
-            op_row = existing_ops.get(op.callsign)
-            if op_row and team_id and op_row.get("team_id") != team_id:
-                ops_fresh = await api(client, "GET", "/operators",
-                                      token=admin_token) or []
-                op_row = next((o for o in ops_fresh
-                               if o["callsign"] == op.callsign), None)
-                if op_row:
-                    await api(client, "PATCH", f"/operators/{op_row['id']}",
+                    log.info("  Registered %-14s (%s) → team %s",
+                             op.callsign, op.rank, team_name)
+            else:
+                op.op_id = ex.get("id", 0)
+                # Fix unassigned or wrong-team operators
+                if team_id and ex.get("team_id") != team_id:
+                    await api(client, "PATCH", f"/operators/{ex['id']}",
                               token=admin_token, json={"team_id": team_id})
-                    op.op_id = op_row["id"]
+                    log.info("  Assigned  %-14s → team %s", op.callsign, team_name)
 
-    # 5. Register platoon commanders
+    # Resolve op_ids for newly registered operators
+    ops_all = {o["callsign"]: o
+               for o in (await api(client, "GET", "/operators",
+                                   token=admin_token) or [])}
+    for sec in sections:
+        for op in sec.operators:
+            row = ops_all.get(op.callsign)
+            if row:
+                op.op_id = row["id"]
+
+    # 5. Register platoon commanders (unassigned — command element)
     for plt_code, _ in [("ALPHA",""), ("BRAVO",""), ("CHARLIE","")]:
         callsign = f"{plt_code}-6"
-        bc_op = next((o for o in all_ops if o.callsign == callsign), None)
-        if bc_op and callsign not in existing_ops:
+        if callsign not in ops_all:
             r = await api(client, "POST", "/auth/register", json={
                 "callsign": callsign, "password": SIM_PASSWORD,
                 "rank": "OF-1", "role": "BATTLE_CAPTAIN",
