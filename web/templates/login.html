@@ -46,35 +46,43 @@
             username: fd.get('callsign'),
             password: fd.get('password'),
         });
-        const r = await fetch(window.ARROW_BACKEND_URL + '/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body,
-        });
-        if (!r.ok) { msg.textContent = `Login failed (${r.status})`; return; }
-        storeAndRedirect(await r.json());
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body,
+            });
+            if (!r.ok) { msg.textContent = `Login failed (${r.status})`; return; }
+            storeAndRedirect(await r.json());
+        } catch (err) {
+            msg.textContent = `Network error contacting ${window.ARROW_BACKEND_URL}: ${err.message}`;
+        }
     });
 
     document.getElementById('register-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         msg.textContent = 'Registering…';
         const fd = new FormData(e.target);
-        const r = await fetch(window.ARROW_BACKEND_URL + '/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                callsign: fd.get('callsign'),
-                password: fd.get('password'),
-                rank: fd.get('rank') || 'OR-1',
-                role: fd.get('role') || 'OPERATOR',
-            }),
-        });
-        if (!r.ok) {
-            const err = await r.json().catch(() => ({}));
-            msg.textContent = `Registration failed: ${err.detail || r.status}`;
-            return;
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    callsign: fd.get('callsign'),
+                    password: fd.get('password'),
+                    rank: fd.get('rank') || 'OR-1',
+                    role: fd.get('role') || 'OPERATOR',
+                }),
+            });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                msg.textContent = `Registration failed: ${err.detail || r.status}`;
+                return;
+            }
+            storeAndRedirect(await r.json());
+        } catch (err) {
+            msg.textContent = `Network error contacting ${window.ARROW_BACKEND_URL}: ${err.message}`;
         }
-        storeAndRedirect(await r.json());
     });
 </script>
 {% endblock %}
