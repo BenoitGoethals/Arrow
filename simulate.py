@@ -53,6 +53,54 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%H:%M:%S")
 log = logging.getLogger("sim")
 
+# ── MGRS conversion (WGS-84, DMATM 8358.1) ───────────────────────────────────
+
+import math as _math
+
+def _utm_zone(lat: float, lon: float) -> int:
+    if 56 <= lat < 64 and 3 <= lon < 12:
+        return 32
+    if 72 <= lat <= 84:
+        if lon < 9:  return 31
+        if lon < 21: return 33
+        if lon < 33: return 35
+        if lon < 42: return 37
+    return int((lon + 180) / 6) + 1
+
+def _lat_band(lat: float) -> str:
+    return "CDEFGHJKLMNPQRSTUVWX"[min(19, int((lat + 80) / 8))]
+
+def _to_utm(lat: float, lon: float, zone: int):
+    a=6378137; f=1/298.257223563; e2=2*f-f*f; e4=e2*e2; e6=e4*e2; ep2=e2/(1-e2); k0=0.9996
+    lr=_math.radians(lat); lo=_math.radians(lon); lo0=_math.radians((zone-1)*6-180+3)
+    N=a/_math.sqrt(1-e2*_math.sin(lr)**2)
+    T=_math.tan(lr)**2; C=ep2*_math.cos(lr)**2; av=_math.cos(lr)*(lo-lo0)
+    M=a*((1-e2/4-3*e4/64-5*e6/256)*lr-(3*e2/8+3*e4/32+45*e6/1024)*_math.sin(2*lr)
+         +(15*e4/256+45*e6/1024)*_math.sin(4*lr)-(35*e6/3072)*_math.sin(6*lr))
+    e=k0*N*(av+(1-T+C)*av**3/6+(5-18*T+T**2+72*C-58*ep2)*av**5/120)+500_000
+    n=k0*(M+N*_math.tan(lr)*(av**2/2+(5-T+9*C+4*C**2)*av**4/24
+         +(61-58*T+T**2+600*C-330*ep2)*av**6/720))
+    if lat < 0: n += 10_000_000
+    return e, n
+
+_SET_COLS = ["ABCDEFGH", "JKLMNPQR", "STUVWXYZ"]
+_ROW_ODD  = "ABCDEFGHJKLMNPQRSTUV"
+_ROW_EVEN = "FGHJKLMNPQRSTUVABCDE"
+
+def mgrs(lat: float, lon: float, acc: int = 5) -> str:
+    """Return an MGRS grid string for WGS-84 lat/lon (default 5-digit = 1 m precision)."""
+    try:
+        z = _utm_zone(lat, lon)
+        b = _lat_band(lat)
+        e, n = _to_utm(lat, lon, z)
+        col = _SET_COLS[(z - 1) % 3][max(0, min(7, int(e / 100_000) - 1))]
+        row = (_ROW_ODD if z % 2 else _ROW_EVEN)[int(n / 100_000) % 20]
+        es  = str(int(e % 100_000)).zfill(5)[:acc]
+        ns  = str(int(n % 100_000)).zfill(5)[:acc]
+        return f"{z}{b}{col}{row} {es}{ns}"
+    except Exception:
+        return f"{lat:.4f},{lon:.4f}"   # fallback
+
 # ── Simulation constants ──────────────────────────────────────────────────────
 
 BASE = ARGS.backend.rstrip("/")
@@ -521,7 +569,9 @@ async def run_section(client: httpx.AsyncClient,
                 break
 
         wp_idx = (wp_idx + 1) % len(waypoints)
-        log.info("Section %-20s → WP%d  %s", sec.name, wp_idx,
+        wlat, wlon = waypoints[wp_idx]
+        log.info("Section %-20s → WP%d  %-24s  %s",
+                 sec.name, wp_idx, mgrs(wlat, wlon),
                  "infil" if wp_idx >= infil_start else "walk")
 
 async def run_command(client: httpx.AsyncClient,
@@ -590,46 +640,50 @@ async def run_enemy_marker(client: httpx.AsyncClient,
 
         marker_count += 1
 
+        grid = mgrs(clat, clon)
+
         if evt["kind"] == "report":
             direction = random.choice(SPOT_DIRECTIONS)
             distance  = random.choice(SPOT_DISTANCES)
             payload   = {
-                "grid":     f"{clat:.4f},{clon:.4f}",
-                "direction": direction,
-                "distance":  distance,
+                "grid":        grid,
+                "direction":   direction,
+                "distance":    distance,
                 "description": "Contact spotted, awaiting orders",
             }
             r = await api(client, "POST", "/reports", token=op.token,
                           json={"type": "SPOT", "payload": payload})
             if r:
-                log.info("📋  %s  SPOT REPORT  %s %dm  (#%d)",
-                         op.callsign, direction, distance, marker_count)
+                log.info("📋  %s  SPOT REPORT  %s %dm  grid %s  (#%d)",
+                         op.callsign, direction, distance, grid, marker_count)
 
         else:
+            notes = f"{evt['notes']}  MGRS: {grid}"
             r = await api(client, "POST", "/tactical-objects", token=op.token,
                           json={"type":        evt["type"],
                                 "symbol_code": evt["sidc"],
                                 "latitude":    round(clat, 6),
                                 "longitude":   round(clon, 6),
-                                "notes":       evt["notes"],
+                                "notes":       notes,
                                 "visibility":  "COMPANY"})
             if r:
                 emoji = "⚠️ " if evt["kind"] == "enemy" else "📍"
-                log.info("%s %s  marked %-12s at %.4f,%.4f  (#%d)",
-                         emoji, op.callsign, evt["type"],
-                         clat, clon, marker_count)
+                log.info("%s %s  marked %-12s  %s  (#%d)",
+                         emoji, op.callsign, evt["type"], grid, marker_count)
 
-        # Operator broadcasts a short contact report
+        # Operator broadcasts contact report with MGRS grid
         if op.token:
             msg_map = {
-                "INFANTRY":  f"CONTACT — infantry element, grid {clat:.4f} {clon:.4f}",
-                "ARMOR":     f"CONTACT — armour, grid {clat:.4f} {clon:.4f}",
-                "SNIPER":    "CONTACT — sniper fire received, taking cover",
-                "UNKNOWN":   f"CONTACT WAIT OUT — unknown element, grid {clat:.4f} {clon:.4f}",
-                "POI":       f"INFO — POI located, grid {clat:.4f} {clon:.4f}",
+                "INFANTRY":  f"CONTACT — infantry element, grid {grid}",
+                "ARMOR":     f"CONTACT — armour, grid {grid}",
+                "ARTILLERY": f"CONTACT — arty position, grid {grid}",
+                "SNIPER":    f"CONTACT — sniper fire received, grid {grid}",
+                "VEHICLE":   f"CONTACT — vehicle sighted, grid {grid}",
+                "UNKNOWN":   f"CONTACT WAIT OUT — unknown element, grid {grid}",
+                "POI":       f"INFO — POI located, grid {grid}",
             }
             content = msg_map.get(evt["type"],
-                                  f"CONTACT — {evt['type']} at {clat:.4f},{clon:.4f}")
+                                  f"CONTACT — {evt['type']} grid {grid}")
             await api(client, "POST", "/messages", token=op.token,
                       json={"content": content, "message_type": "BROADCAST"})
 

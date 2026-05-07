@@ -35,6 +35,15 @@
     .map-rep-type { font-size: 0.65rem; font-weight: 700; }
     .map-rep-meta { font-size: 0.65rem; color: #475569; }
     .map-rep-line1 { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .map-fm { padding: 0.35rem 0.5rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid #dc2626; cursor: pointer; background: #1a0a0a; }
+    .map-fm:hover { background: #2a1010; }
+    .map-fm.pending { animation: fm-pulse 1.2s infinite; }
+    @keyframes fm-pulse { 0%,100%{border-left-color:#dc2626} 50%{border-left-color:#7f1d1d} }
+    .map-fm-header { display: flex; align-items: center; gap: 0.4rem; }
+    .map-fm-type { font-size: 0.65rem; font-weight: 700; color: #ef4444; }
+    .map-fm-status { font-size: 0.6rem; padding: 1px 4px; border-radius: 2px; margin-left: auto; }
+    .map-fm-grid { font-size: 0.7rem; color: #fca5a5; font-family: monospace; }
+    .map-fm-desc { font-size: 0.68rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
 </style>
 {% endblock %}
@@ -50,6 +59,9 @@
         <div id="tree" class="tree">Loading…</div>
         <h3 style="margin-top:1rem">Enemies / Tactical objects</h3>
         <div id="enemies"></div>
+
+        <h3 style="margin-top:1rem">Fire Missions</h3>
+        <div id="map-fire-missions"><small style="color:#475569">Loading…</small></div>
 
         <h3 style="margin-top:1rem">Reports</h3>
         <div id="map-reports"><small style="color:#475569">Loading…</small></div>
@@ -402,6 +414,44 @@
             ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
+    const FM_STATUS_COLORS = {
+        PENDING: '#dc2626', ACKNOWLEDGED: '#d97706',
+        IN_PROGRESS: '#2563eb', COMPLETED: '#16a34a', CANCELLED: '#475569',
+    };
+    const FM_TYPE_SHORT = {
+        ADJUST_FIRE: 'AF', FIRE_FOR_EFFECT: 'FFE', SUPPRESSION: 'SUPP',
+        ILLUMINATION: 'ILLUM', IMMEDIATE_SUPPRESSION: 'IMMED',
+    };
+
+    async function loadMapFireMissions() {
+        const el = document.getElementById('map-fire-missions');
+        if (!el) return;
+        try {
+            const r = await api('/fire-missions');
+            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; return; }
+            const list = await r.json();
+            if (!list.length) { el.innerHTML = '<small style="color:#475569">No missions</small>'; return; }
+            el.innerHTML = list.slice(0, 15).map(fm => {
+                const sc    = FM_STATUS_COLORS[fm.status] || '#64748b';
+                const type  = FM_TYPE_SHORT[fm.mission_type] || fm.mission_type;
+                const time  = (fm.timestamp || '').slice(11, 16);
+                const grid  = toMgrs(fm.latitude, fm.longitude);
+                const pend  = fm.status === 'PENDING' ? ' pending' : '';
+                return `<div class="map-fm${pend}"
+                             onclick="window.location='/fire-missions/?id=${fm.id}'">
+                    <div class="map-fm-header">
+                        <span class="map-fm-type">🎯 ${escHtml(type)}</span>
+                        <span class="map-fm-status" style="background:${sc}22;color:${sc}">${fm.status}</span>
+                    </div>
+                    <div class="map-fm-grid">${escHtml(grid)}</div>
+                    <div class="map-fm-desc">${escHtml(fm.ammunition)} · ${time}${fm.description ? ' · ' + fm.description.slice(0, 35) : ''}</div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
     async function loadMapReports() {
         const el = document.getElementById('map-reports');
         if (!el) return;
@@ -471,12 +521,15 @@
                 loadHierarchy();
             } else if (msg.channel === 'report') {
                 loadMapReports();
+            } else if (msg.channel === 'fire-mission') {
+                loadMapFireMissions();
             }
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
     }
 
-    loadHierarchy(); loadEnemies(); loadMapReports();
+    loadHierarchy(); loadEnemies(); loadMapFireMissions(); loadMapReports();
+    setInterval(loadMapFireMissions, 15000);
     setInterval(loadMapReports, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags
     connectWS();
