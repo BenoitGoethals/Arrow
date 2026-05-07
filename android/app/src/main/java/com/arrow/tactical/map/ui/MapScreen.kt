@@ -384,9 +384,9 @@ fun MapScreen(
             }
         }
 
-        // ── 🎯 Call for Fire FAB ──────────────────────────────────────────
+        // ── 🎯 Call for Fire FAB — no preset coords, GPS used in screen ─────
         FloatingActionButton(
-            onClick        = onCallFire,
+            onClick        = { onCallFire(Double.NaN, Double.NaN) },
             containerColor = Color(0xFFB91C1C),
             modifier       = Modifier
                 .align(Alignment.BottomEnd)

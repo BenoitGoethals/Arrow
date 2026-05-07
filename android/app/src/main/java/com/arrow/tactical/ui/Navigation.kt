@@ -141,7 +141,10 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             composable(Tab.Map.route) {
                 MapScreen(
                     container  = container,
-                    onCallFire = { lat, lon -> tabNav.navigate("fire-mission?lat=$lat&lon=$lon") },
+                    onCallFire = { lat, lon ->
+                        if (lat.isNaN()) tabNav.navigate("fire-mission")
+                        else tabNav.navigate("fire-mission?lat=$lat&lon=$lon")
+                    },
                     onReport   = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
                 )
             }
