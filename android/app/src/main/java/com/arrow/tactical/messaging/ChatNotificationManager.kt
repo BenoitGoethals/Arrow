@@ -36,14 +36,21 @@ class ChatNotificationManager(
         scope.launch { authRepository.me().onSuccess { meId = it.id } }
         ensureChannel()
         scope.launch {
-            wsClient.events().collect { event ->
-                if (event["channel"]?.jsonPrimitive?.content != "chat") return@collect
-                val data = event["data"]?.jsonObject ?: return@collect
-                val senderId = data["sender_id"]?.jsonPrimitive?.intOrNull ?: return@collect
-                if (senderId == meId) return@collect
-                val from = event["from"]?.jsonPrimitive?.content ?: "Unknown"
-                val content = data["content"]?.jsonPrimitive?.content ?: ""
-                postNotification(from, content)
+            while (true) {
+                try {
+                    wsClient.events().collect { event ->
+                        if (event["channel"]?.jsonPrimitive?.content != "chat") return@collect
+                        val data = event["data"]?.jsonObject ?: return@collect
+                        val senderId = data["sender_id"]?.jsonPrimitive?.intOrNull ?: return@collect
+                        if (senderId == meId) return@collect
+                        val from = event["from"]?.jsonPrimitive?.content ?: "Unknown"
+                        val content = data["content"]?.jsonPrimitive?.content ?: ""
+                        postNotification(from, content)
+                    }
+                } catch (_: Exception) {
+                    // WebSocket disconnected — retry after back-off
+                }
+                kotlinx.coroutines.delay(3_000)
             }
         }
     }

@@ -22,11 +22,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.arrow.tactical.di.AppContainer
@@ -64,6 +69,8 @@ fun MapScreen(container: AppContainer) {
     var hasAutocentered by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
     var serverUrl by remember { mutableStateOf("") }
+    // null = checking, true = online, false = offline
+    var serverOnline by remember { mutableStateOf<Boolean?>(null) }
     var overlayMode by remember { mutableStateOf(OverlayMode.ALL) }
     var myPlatoonIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
@@ -128,28 +135,47 @@ fun MapScreen(container: AppContainer) {
         container.authRepository.me().onSuccess { meId = it.id }
     }
 
+    // Resilient polling — never crashes on network errors, tracks server reachability
     LaunchedEffect(Unit) {
         while (true) {
-            container.tacticalRepository.listOperators()
-                .onSuccess { ops ->
-                    operators = ops
-                    fetchError = if (ops.isEmpty()) "server returned 0 operators — re-run simulator?" else null
-                }
-                .onFailure { err -> fetchError = err.toString().take(100) }
-            container.tacticalRepository.listObjects()
-                .onSuccess { enemies = it }
+            try {
+                container.tacticalRepository.listOperators()
+                    .onSuccess { ops ->
+                        operators    = ops
+                        serverOnline = true
+                        fetchError   = if (ops.isEmpty()) "0 operators — run simulator?" else null
+                    }
+                    .onFailure { err ->
+                        serverOnline = false
+                        fetchError   = err.message?.take(80)
+                    }
+                container.tacticalRepository.listObjects()
+                    .onSuccess { enemies = it }
+            } catch (_: Exception) {
+                serverOnline = false
+            }
             delay(5_000)
         }
     }
 
+    // Resilient WebSocket — reconnects automatically after any failure
     LaunchedEffect(Unit) {
-        container.wsClient.events().collect { evt: JsonObject ->
-            val channel = evt["channel"]?.toString()?.trim('"')
-            when (channel) {
-                "tracking"        -> container.tacticalRepository.listOperators().onSuccess { operators = it }
-                "tactical-object" -> container.tacticalRepository.listObjects().onSuccess { enemies = it }
-                else -> {}
+        while (true) {
+            try {
+                container.wsClient.events().collect { evt: JsonObject ->
+                    val channel = evt["channel"]?.toString()?.trim('"')
+                    when (channel) {
+                        "tracking"        -> container.tacticalRepository.listOperators()
+                            .onSuccess { ops -> operators = ops; serverOnline = true }
+                        "tactical-object" -> container.tacticalRepository.listObjects()
+                            .onSuccess { enemies = it }
+                        else -> {}
+                    }
+                }
+            } catch (_: Exception) {
+                // WebSocket disconnected — back-off then reconnect
             }
+            delay(3_000)
         }
     }
 
@@ -215,75 +241,20 @@ fun MapScreen(container: AppContainer) {
         map.invalidate()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        val online = operators.count { it.status == "ONLINE" }
-                        Text("Tactical Map  ·  $online / ${operators.size} online")
-                        val subtitle = fetchError ?: serverUrl.ifBlank { null }
-                        subtitle?.let { msg ->
-                            Text(
-                                text     = msg,
-                                style    = MaterialTheme.typography.labelSmall,
-                                color    = if (fetchError != null) MaterialTheme.colorScheme.error
-                                           else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        val id = meId ?: return@IconButton
-                        val me = operators.find { it.id == id } ?: return@IconButton
-                        if (me.latitude != null && me.longitude != null) {
-                            mapRef.value?.controller?.animateTo(
-                                GeoPoint(me.latitude, me.longitude), 15.0, null
-                            )
-                        }
-                    }) {
-                        Icon(Icons.Filled.MyLocation, contentDescription = "Locate me")
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { scope.launch { container.alertRepository.trigger("TIC") } },
-                containerColor = MaterialTheme.colorScheme.error,
-                icon = { Icon(Icons.Filled.Warning, null, tint = Color.White) },
-                text = { Text("TIC", color = Color.White) },
-            )
-        },
-    ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            // Overlay toggle chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                listOf(
-                    OverlayMode.ALL        to "🌐 All",
-                    OverlayMode.NONE       to "— None",
-                    OverlayMode.ENEMIES    to "⚠ Enemy",
-                    OverlayMode.OWN_PLATOON to "🪖 Own Plt",
-                ).forEach { (mode, label) ->
-                    FilterChip(
-                        selected = overlayMode == mode,
-                        onClick  = { overlayMode = mode },
-                        label    = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                    )
-                }
-            }
+    // AndroidView (OSMdroid) must come FIRST so it renders at the Android-View layer.
+    // All Compose content placed after it in the Box renders on the Compose canvas
+    // layer which always sits on top of embedded Android Views.
+    Box(modifier = Modifier.fillMaxSize()) {
 
+        // ── Map — full screen, Android View layer ─────────────────────────
         AndroidView(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 MapView(ctx).apply {
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
                     controller.setZoom(8.0)
@@ -306,10 +277,100 @@ fun MapScreen(container: AppContainer) {
                     overlays.add(0, events)
                 }.also { mapRef.value = it }
             },
-            update = { /* markers managed by LaunchedEffect(operators, enemies) above */ },
+            update = { /* markers managed by LaunchedEffect above */ },
         )
-        } // Column
-    }
+
+        // ── Status + overlay bar — Compose layer (always above the map) ───
+        val online = operators.count { it.online }
+        val dotColor = when (serverOnline) {
+            true  -> Color(0xFF22C55E)
+            false -> MaterialTheme.colorScheme.error
+            null  -> Color(0xFFFBBF24)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopStart)
+                .background(Color(0xE50D1117))   // 90 % opaque dark
+                .padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Canvas(Modifier.size(9.dp)) { drawCircle(dotColor) }
+
+            Text(
+                text  = if (serverOnline == false) "ARROW — OFFLINE"
+                        else "ARROW  ·  $online / ${operators.size} online",
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight    = FontWeight.Bold,
+                    letterSpacing = 0.5.sp,
+                ),
+                color = if (serverOnline == false) MaterialTheme.colorScheme.error
+                        else Color(0xFFE2E8F0),
+            )
+
+            Spacer(Modifier.weight(1f))
+
+            listOf(
+                OverlayMode.ALL         to "All",
+                OverlayMode.NONE        to "None",
+                OverlayMode.ENEMIES     to "Enemy",
+                OverlayMode.OWN_PLATOON to "Own Plt",
+            ).forEach { (mode, label) ->
+                val active = overlayMode == mode
+                Box(
+                    modifier = Modifier
+                        .clickable { overlayMode = mode }
+                        .background(
+                            if (active) Color(0xFF1E3A2F) else Color(0xFF1A2233),
+                            RoundedCornerShape(3.dp),
+                        )
+                        .then(
+                            if (active) Modifier.border(0.5.dp, Color(0xFF34D399), RoundedCornerShape(3.dp))
+                            else        Modifier.border(0.5.dp, Color(0xFF2A3142), RoundedCornerShape(3.dp))
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text  = label,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        color = if (active) Color(0xFF34D399) else Color(0xFFCBD5E1),
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = {
+                    val id = meId ?: return@IconButton
+                    val me = operators.find { it.id == id } ?: return@IconButton
+                    if (me.latitude != null && me.longitude != null) {
+                        mapRef.value?.controller?.animateTo(
+                            GeoPoint(me.latitude, me.longitude), 15.0, null
+                        )
+                    }
+                },
+                modifier = Modifier.size(24.dp),
+            ) {
+                Icon(Icons.Filled.MyLocation, contentDescription = "Locate me",
+                     modifier = Modifier.size(18.dp), tint = Color(0xFFCBD5E1))
+            }
+        }
+
+        // ── TIC FAB ───────────────────────────────────────────────────────
+        FloatingActionButton(
+            onClick = { scope.launch { container.alertRepository.trigger("TIC") } },
+            containerColor = MaterialTheme.colorScheme.error,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 16.dp)
+                .size(44.dp),
+        ) {
+            Icon(Icons.Filled.Warning, contentDescription = "TIC", tint = Color.White,
+                 modifier = Modifier.size(22.dp))
+        }
+
+    } // Box
 
     // Bottom sheet — shown whenever a map point is pending
     if (pendingPoint != null) {

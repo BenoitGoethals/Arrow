@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
 class ORMModel(BaseModel):
@@ -51,6 +51,9 @@ class TeamOut(ORMModel):
     section_id: int
 
 
+_ONLINE_WINDOW = timedelta(seconds=90)
+
+
 class OperatorOut(ORMModel):
     id: int
     callsign: str
@@ -62,6 +65,16 @@ class OperatorOut(ORMModel):
     longitude: float | None
     altitude: float | None
     last_seen: datetime
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def online(self) -> bool:
+        if self.status != "ONLINE":
+            return False
+        last = self.last_seen
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - last) <= _ONLINE_WINDOW
 
 
 class OperatorUpdate(BaseModel):

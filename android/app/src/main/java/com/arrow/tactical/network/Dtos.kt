@@ -22,6 +22,7 @@ data class OperatorDto(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val altitude: Double? = null,
+    val online: Boolean = false,   // computed by backend: status=ONLINE + last_seen ≤ 90s
 )
 
 @Serializable
@@ -95,6 +96,15 @@ data class MessageDto(
 data class ReportIn(
     val type: String,
     val payload: JsonObject,
+)
+
+@Serializable
+data class ReportDto(
+    val id: Int,
+    @SerialName("operator_id") val operatorId: Int,
+    val type: String,
+    val payload: String,          // JSON-encoded on server, parsed as-needed client-side
+    val timestamp: String? = null,
 )
 
 @Serializable

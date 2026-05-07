@@ -30,6 +30,11 @@
     .overlay-btns { display: flex; gap: 4px; }
     .overlay-btn { background: #1a2233; color: #64748b; border: 1px solid #2a3142; border-radius: 5px; padding: 0.2rem 0.65rem; cursor: pointer; font: inherit; font-size: 0.8rem; white-space: nowrap; }
     .overlay-btn:hover { border-color: #34d399; color: #e2e8f0; }
+    .map-rep { padding: 0.35rem 0.45rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid transparent; cursor: pointer; }
+    .map-rep:hover { background: #1f2937; }
+    .map-rep-type { font-size: 0.65rem; font-weight: 700; }
+    .map-rep-meta { font-size: 0.65rem; color: #475569; }
+    .map-rep-line1 { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
 </style>
 {% endblock %}
@@ -45,6 +50,9 @@
         <div id="tree" class="tree">Loading…</div>
         <h3 style="margin-top:1rem">Enemies / Tactical objects</h3>
         <div id="enemies"></div>
+
+        <h3 style="margin-top:1rem">Reports</h3>
+        <div id="map-reports"><small style="color:#475569">Loading…</small></div>
     </aside>
     <div>
         <div class="filter-bar">
@@ -387,6 +395,37 @@
     });
     map.doubleClickZoom.disable();
 
+    const REP_COLORS = { MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626', CONTACT:'#d97706', SPOT:'#7c3aed' };
+
+    function escHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function loadMapReports() {
+        const el = document.getElementById('map-reports');
+        if (!el) return;
+        try {
+            const r = await api('/reports');
+            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; return; }
+            const list = await r.json();
+            if (!list.length) { el.innerHTML = '<small style="color:#475569">No reports yet</small>'; return; }
+            el.innerHTML = list.slice(0, 20).map(rep => {
+                const c = REP_COLORS[rep.type] || '#64748b';
+                let line1 = '';
+                try { const p = JSON.parse(rep.payload); line1 = p.line_1 || ''; } catch (_) {}
+                const time = (rep.timestamp || '').slice(11, 16);
+                return `<div class="map-rep" style="border-left-color:${c}" onclick="window.location='/reports/'">
+                    <span class="map-rep-type" style="color:${c}">${rep.type}</span>
+                    <span class="map-rep-meta"> · ${time} · op#${rep.operator_id}</span>
+                    <div class="map-rep-line1">${escHtml(line1)}</div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
     async function loadHierarchy() {
         const r = await api('/hierarchy');
         if (!r.ok) return;
@@ -429,14 +468,16 @@
                         .addTo(map).bindPopup(`<b>ALERT: ${d.type}</b>`).openPopup();
                 }
             } else if (msg.channel === 'presence') {
-                // Re-fetch hierarchy to refresh online states.
                 loadHierarchy();
+            } else if (msg.channel === 'report') {
+                loadMapReports();
             }
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
     }
 
-    loadHierarchy(); loadEnemies();
+    loadHierarchy(); loadEnemies(); loadMapReports();
+    setInterval(loadMapReports, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags
     connectWS();
 })();

@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+{% block title %}Reports — Arrow{% endblock %}
+{% block head %}
+<style>
+    .rep-shell { display: grid; grid-template-columns: 260px 1fr; gap: 0; height: calc(100vh - 60px); }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────── */
+    .rep-sidebar { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
+    .rep-sidebar h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #64748b; margin: 0.4rem 0 0.2rem; }
+    .type-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.7rem; border-radius: 6px; cursor: pointer; border: 0; background: none; color: #94a3b8; width: 100%; text-align: left; font: inherit; font-size: 0.85rem; }
+    .type-btn:hover { background: #1f2937; }
+    .type-btn.active { background: #1e2736; color: #e2e8f0; font-weight: 600; }
+    .type-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .rep-sidebar .divider { height: 1px; background: #2a3142; margin: 0.4rem 0; }
+    .recent-item { padding: 0.45rem 0.5rem; border-radius: 5px; cursor: pointer; font-size: 0.8rem; border-left: 3px solid transparent; margin-bottom: 2px; }
+    .recent-item:hover { background: #1f2937; }
+    .recent-item .ri-type { font-weight: 700; font-size: 0.7rem; }
+    .recent-item .ri-meta { color: #64748b; font-size: 0.7rem; }
+    .recent-item .ri-preview { color: #94a3b8; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Main form area ──────────────────────────────────────────────── */
+    .rep-main { overflow-y: auto; padding: 1.5rem 2rem; }
+    .rep-main h2 { margin: 0 0 0.2rem; font-size: 1.1rem; }
+    .rep-main .subtitle { color: #64748b; font-size: 0.82rem; margin-bottom: 1.25rem; }
+
+    .nineliner { border: 1px solid #2a3142; border-radius: 8px; padding: 0; overflow: hidden; margin-bottom: 1.5rem; }
+    .nineliner legend { display: none; }
+
+    .nl-line { display: grid; grid-template-columns: 36px 1fr; gap: 0; border-bottom: 1px solid #1e2736; }
+    .nl-line:last-child { border-bottom: 0; }
+    .nl-num { display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; background: #0e1217; color: #475569; border-right: 1px solid #1e2736; }
+    .nl-body { padding: 0.55rem 0.75rem; }
+    .nl-label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .nl-body input, .nl-body select, .nl-body textarea {
+        width: 100%; background: transparent; color: #e2e8f0; border: 0;
+        border-bottom: 1px solid #2a3142; padding: 0.2rem 0; font: inherit;
+        font-size: 0.88rem; outline: none; font-family: 'Courier New', monospace;
+    }
+    .nl-body input:focus, .nl-body select:focus, .nl-body textarea:focus { border-color: #34d399; }
+    .nl-body select { cursor: pointer; }
+    .nl-body select option { background: #161b25; }
+    .nl-body textarea { resize: vertical; min-height: 38px; }
+
+    .submit-row { display: flex; gap: 0.75rem; align-items: center; }
+    .btn-submit { padding: 0.5rem 1.4rem; border: 0; border-radius: 6px; font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+    .btn-clear  { padding: 0.5rem 1rem; border: 1px solid #2a3142; border-radius: 6px; font: inherit; font-size: 0.85rem; background: none; color: #64748b; cursor: pointer; }
+    .btn-clear:hover { border-color: #475569; color: #94a3b8; }
+    .submit-status { font-size: 0.82rem; }
+    .submit-status.ok  { color: #34d399; }
+    .submit-status.err { color: #ef4444; }
+
+    /* ── Recent reports list (main area) ─────────────────────────────── */
+    .reports-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
+    .reports-table th { text-align: left; color: #64748b; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a3142; }
+    .reports-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #1e2736; vertical-align: top; }
+    .reports-table tr:hover td { background: #1a1f29; }
+    .type-badge { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+    .rep-detail { display: none; background: #0e1217; border-left: 3px solid #2a3142; padding: 0.6rem 0.75rem; margin-top: 0.3rem; border-radius: 0 4px 4px 0; font-size: 0.8rem; }
+    .dl-grid { display: grid; grid-template-columns: 28px 140px 1fr; gap: 0.2rem 0.5rem; }
+    .dl-num  { font-weight: 700; color: inherit; }
+    .dl-lbl  { color: #94a3b8; }
+    .dl-val  { color: #e2e8f0; font-family: monospace; }
+
+    main { padding: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rep-shell">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────────── -->
+    <aside class="rep-sidebar">
+        <h3>New Report</h3>
+        {% set types = [
+            ('MEDEVAC', '#16a34a'),
+            ('CASEVAC', '#2563eb'),
+            ('CAS',     '#dc2626'),
+            ('CONTACT', '#d97706'),
+            ('SPOT',    '#7c3aed'),
+        ] %}
+        {% for key, color in types %}
+        <button class="type-btn{% if loop.first %} active{% endif %}"
+                data-type="{{ key }}" data-color="{{ color }}"
+                onclick="selectType('{{ key }}', '{{ color }}', this)">
+            <span class="type-dot" style="background:{{ color }}"></span>
+            {{ key }}
+        </button>
+        {% endfor %}
+
+        <div class="divider"></div>
+        <h3>Recent</h3>
+        <div id="recent-list"><small style="color:#475569">Loading…</small></div>
+    </aside>
+
+    <!-- ── Main ───────────────────────────────────────────────────── -->
+    <section class="rep-main">
+        <div id="form-area"></div>
+
+        <h3 style="margin-top:2rem; margin-bottom:0.5rem">Submitted Reports</h3>
+        <table class="reports-table" id="reports-table">
+            <thead>
+                <tr><th>Type</th><th>Time</th><th>Op #</th><th>Line 1</th><th></th></tr>
+            </thead>
+            <tbody id="reports-body">
+                <tr><td colspan="5" style="color:#475569">Loading…</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: `Bearer ${token}` };
+    const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...opts, headers: { ...headers, ...(opts.headers||{}) } });
+
+    // ── 9-liner definitions ─────────────────────────────────────────
+    const LINES = {
+        MEDEVAC: [
+            { n:1, label:'Location',              hint:'Grid coordinates of pickup site' },
+            { n:2, label:'Radio / Call sign',     hint:'Freq and call sign, e.g. 46.35 DUSTOFF' },
+            { n:3, label:'Patients by precedence',hint:'e.g. 1U-2P  (U=Urgent P=Priority R=Routine C=Convenience)' },
+            { n:4, label:'Special equipment',     opts:['None','Hoist','Extraction equipment','Ventilator'] },
+            { n:5, label:'Patients by type',      hint:'e.g. 1L-2A  (L=Litter  A=Ambulatory)' },
+            { n:6, label:'Security at PZ',        opts:['N – No enemy troops','P – Possible enemy','E – Enemy in area','X – Enemy, armed escort needed'] },
+            { n:7, label:'Marking method',        opts:['Panels','Pyrotechnics','Smoke signal','None','Other'] },
+            { n:8, label:'Nationality / Status',  hint:'A=US Mil  B=Allied  C=Non-mil  D=EPW' },
+            { n:9, label:'NBC contamination',     opts:['N – None','C – Chemical','B – Biological','R – Radiological'] },
+        ],
+        CAS: [
+            { n:1, label:'IP (Initial Point)',   hint:'Name or grid of Initial Point' },
+            { n:2, label:'Heading / Distance',   hint:'Heading & distance from IP to target, e.g. 270° / 5 km' },
+            { n:3, label:'Target elevation',     hint:'Elevation in metres MSL' },
+            { n:4, label:'Target description',   hint:'Brief description of the target' },
+            { n:5, label:'Target location',      hint:'8-digit grid or lat/lon' },
+            { n:6, label:'Type mark',            opts:['Laser','Smoke','IR pointer','Mark-63','None'] },
+            { n:7, label:'Friendly location',    hint:'Friendly forces location relative to target' },
+            { n:8, label:'Egress direction',     hint:'Desired egress direction after attack' },
+            { n:9, label:'Remarks / Threats',    hint:'Restrictions, threats, TOT', textarea:true },
+        ],
+        CONTACT: [
+            { n:1, label:'Size',                 hint:'Number of personnel / vehicles' },
+            { n:2, label:'Activity',             hint:'What the enemy is doing' },
+            { n:3, label:'Location',             hint:'Grid coordinates of contact' },
+            { n:4, label:'Unit / Identification',hint:'Uniform, markings, nationality' },
+            { n:5, label:'Time',                 hint:'Time of observation (local / Zulu)' },
+            { n:6, label:'Equipment',            hint:'Weapons, vehicles, equipment observed' },
+            { n:7, label:'Direction of movement',hint:'Direction contact is moving' },
+            { n:8, label:'Additional info',      hint:'Anything else notable', textarea:true },
+            { n:9, label:'Reported by',          hint:'Callsign / position of observer' },
+        ],
+    };
+    LINES.CASEVAC = LINES.MEDEVAC;
+    LINES.SPOT    = LINES.CONTACT;
+
+    let currentType  = 'MEDEVAC';
+    let currentColor = '#16a34a';
+
+    function selectType(type, color, btn) {
+        currentType  = type;
+        currentColor = color;
+        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderForm();
+    }
+    window.selectType = selectType;
+
+    function renderForm() {
+        const lines = LINES[currentType] || [];
+        const color = currentColor;
+
+        const lineRows = lines.map(f => {
+            let input;
+            if (f.opts) {
+                input = `<select name="line_${f.n}">
+                    <option value="">— select —</option>
+                    ${f.opts.map(o => `<option>${escHtml(o)}</option>`).join('')}
+                </select>`;
+            } else if (f.textarea) {
+                input = `<textarea name="line_${f.n}" placeholder="${escAttr(f.hint||'')}"></textarea>`;
+            } else {
+                input = `<input type="text" name="line_${f.n}" placeholder="${escAttr(f.hint||'')}">`;
+            }
+            return `<div class="nl-line">
+                <div class="nl-num" style="color:${color}">${f.n}</div>
+                <div class="nl-body">
+                    <div class="nl-label" style="color:${color}aa">${escHtml(f.label)}</div>
+                    ${input}
+                </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('form-area').innerHTML = `
+            <h2 style="color:${color}">${currentType} — 9-Liner</h2>
+            <p class="subtitle">${typeSubtitle(currentType)}</p>
+            <form id="report-form" onsubmit="submitReport(event)">
+                <fieldset class="nineliner"><legend>${currentType}</legend>${lineRows}</fieldset>
+                <div class="submit-row">
+                    <button class="btn-submit" type="submit"
+                            style="background:${color};color:#fff">
+                        Submit ${currentType}
+                    </button>
+                    <button class="btn-clear" type="button" onclick="renderForm()">Clear</button>
+                    <span id="submit-status" class="submit-status"></span>
+                </div>
+            </form>`;
+    }
+
+    window.submitReport = async function(e) {
+        e.preventDefault();
+        const form   = e.target;
+        const lines  = LINES[currentType] || [];
+        const payload = {};
+        lines.forEach(f => {
+            const el = form.elements[`line_${f.n}`];
+            payload[`line_${f.n}`]  = el ? el.value : '';
+            payload[`label_${f.n}`] = f.label;
+        });
+        const status = document.getElementById('submit-status');
+        status.textContent = 'Submitting…';
+        status.className = 'submit-status';
+
+        const res = await api('/reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: currentType, payload }),
+        });
+        if (res.ok) {
+            status.textContent = '✓ Report submitted';
+            status.className = 'submit-status ok';
+            renderForm();
+            loadReports();
+        } else {
+            status.textContent = `✗ Failed (${res.status})`;
+            status.className = 'submit-status err';
+        }
+    };
+
+    function typeSubtitle(t) {
+        return { MEDEVAC:'Medical Evacuation Request', CASEVAC:'Casualty Evacuation',
+                 CAS:'Close Air Support Request', CONTACT:'SALUTE Contact Report',
+                 SPOT:'Spot Report (SALUTE format)' }[t] || '';
+    }
+
+    // ── Reports list ────────────────────────────────────────────────
+    const TYPE_COLORS = { MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626', CONTACT:'#d97706', SPOT:'#7c3aed' };
+
+    async function loadReports() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        const list = await r.json();
+
+        // Recent sidebar
+        const recent = document.getElementById('recent-list');
+        recent.innerHTML = list.slice(0, 15).map(rep => {
+            const c = TYPE_COLORS[rep.type] || '#64748b';
+            let preview = '';
+            try { const p = JSON.parse(rep.payload); preview = p.line_1 || ''; } catch(_){}
+            return `<div class="recent-item" style="border-left-color:${c}"
+                        onclick="showReportDetail(${rep.id})">
+                <span class="ri-type" style="color:${c}">${rep.type}</span>
+                <span class="ri-meta"> · ${(rep.timestamp||'').slice(11,16)}</span>
+                <div class="ri-preview">${escHtml(preview)}</div>
+            </div>`;
+        }).join('') || '<small style="color:#475569">No reports yet</small>';
+
+        // Main table
+        const tbody = document.getElementById('reports-body');
+        tbody.innerHTML = list.map(rep => {
+            const c = TYPE_COLORS[rep.type] || '#64748b';
+            let line1 = '—';
+            let detail = '';
+            try {
+                const p = JSON.parse(rep.payload);
+                line1 = p.line_1 || '—';
+                detail = Object.keys(p)
+                    .filter(k => k.startsWith('line_') && p[k])
+                    .map(k => {
+                        const n = k.slice(5);
+                        const lbl = p[`label_${n}`] || `Line ${n}`;
+                        return `<div class="dl-grid">
+                            <span class="dl-num" style="color:${c}">${n}</span>
+                            <span class="dl-lbl">${escHtml(lbl)}</span>
+                            <span class="dl-val">${escHtml(p[k])}</span>
+                        </div>`;
+                    }).join('');
+            } catch(_){}
+
+            return `<tr>
+                <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
+                <td style="color:#64748b;white-space:nowrap">${(rep.timestamp||'').slice(0,16).replace('T',' ')}</td>
+                <td style="color:#94a3b8">#${rep.operator_id}</td>
+                <td style="font-family:monospace;font-size:0.82rem">${escHtml(line1)}</td>
+                <td><button onclick="toggleDetail(this)" style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
+                    <div class="rep-detail" data-id="${rep.id}">${detail}</div>
+                </td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="5" style="color:#475569">No reports</td></tr>';
+    }
+
+    window.toggleDetail = function(btn) {
+        const detail = btn.nextElementSibling;
+        const open   = detail.style.display === 'block';
+        detail.style.display = open ? 'none' : 'block';
+        btn.textContent = open ? '▼' : '▲';
+    };
+
+    window.showReportDetail = function(id) {
+        document.querySelectorAll('.rep-detail').forEach(d => {
+            if (parseInt(d.dataset.id) === id) {
+                d.style.display = 'block';
+                d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+    };
+
+    function escHtml(s) {
+        return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escAttr(s) { return escHtml(s); }
+
+    renderForm();
+    loadReports();
+    setInterval(loadReports, 15000);
+})();
+</script>
+{% endblock %}

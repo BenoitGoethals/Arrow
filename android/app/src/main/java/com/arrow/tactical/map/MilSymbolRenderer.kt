@@ -30,7 +30,7 @@ object MilSymbolRenderer {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val online = op.status == "ONLINE"
+        val online = op.online
         val alpha = if (online) 255 else 110
 
         // Fill: brighter cyan for self, standard NATO blue for others
