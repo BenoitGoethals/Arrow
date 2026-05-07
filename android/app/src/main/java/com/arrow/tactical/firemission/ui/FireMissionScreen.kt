@@ -83,7 +83,7 @@ fun FireMissionScreen(
     LaunchedEffect(Unit) {
         container.fireMissionRepository.list().onSuccess { missions = it }
 
-        if (presetLat != null && presetLon != null) {
+        if (presetLat != null && presetLon != null && !presetLat.isNaN() && !presetLon.isNaN()) {
             // Pre-fill from map tap
             lat = presetLat; lon = presetLon
             runCatching { mgrs = MgrsConverter.encode(presetLat, presetLon) }
