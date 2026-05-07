@@ -126,15 +126,17 @@
 
     // State
     const state = {
-        hierarchy: null,            // server tree
-        operators: new Map(),       // id -> operator dto (live)
-        tacticalObjects: new Map(), // id -> dto
-        markers: new Map(),         // key -> Leaflet marker
-        selection: new Set(),       // operator ids visible (empty = all)
+        hierarchy: null,
+        operators: new Map(),
+        tacticalObjects: new Map(),
+        fireMissions: new Map(),    // id -> fire mission dto
+        markers: new Map(),
+        fmMarkers: new Map(),       // fm id -> Leaflet marker
+        selection: new Set(),
         onlineOnly: false,
-        overlayMode: 'all',         // 'all' | 'platoon' | 'enemies'
-        me: null,                   // current operator from /auth/me
-        myPlatoonOpIds: new Set(),  // operator ids in own platoon
+        overlayMode: 'all',
+        me: null,
+        myPlatoonOpIds: new Set(),
     };
 
     // Fetch current user and resolve platoon membership from hierarchy
@@ -173,6 +175,7 @@
                 b.classList.toggle('active', b === btn));
             refreshAllMarkers();
             refreshEnemies();
+            refreshFmMarkers();
         });
     });
 
@@ -787,6 +790,71 @@
         }
     }
 
+    // ── Fire mission map markers ──────────────────────────────────────────────
+
+    const FM_TYPE_ABBR = {
+        ADJUST_FIRE:'AF', FIRE_FOR_EFFECT:'FFE', SUPPRESSION:'SUP',
+        ILLUMINATION:'ILL', IMMEDIATE_SUPPRESSION:'IM',
+    };
+    const FM_STATUS_CLR = {
+        PENDING:'#dc2626', ACKNOWLEDGED:'#d97706',
+        IN_PROGRESS:'#2563eb', COMPLETED:'#6b7280', CANCELLED:'#374151',
+    };
+
+    function fmIcon(fm) {
+        const abbr  = FM_TYPE_ABBR[fm.mission_type] || 'CFF';
+        const color = FM_STATUS_CLR[fm.status] || '#dc2626';
+        const pulse = fm.status === 'PENDING'
+            ? `<style>@keyframes fmp{0%,100%{opacity:1}50%{opacity:.4}}
+               .fmp{animation:fmp 1.1s infinite}</style><g class="fmp">` : '<g>';
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">
+            ${pulse}
+            <circle cx="24" cy="24" r="21" fill="none" stroke="${color}" stroke-width="2.5"/>
+            <circle cx="24" cy="24" r="9"  fill="none" stroke="${color}" stroke-width="2"/>
+            <line x1="3"  y1="24" x2="15" y2="24" stroke="${color}" stroke-width="2"/>
+            <line x1="33" y1="24" x2="45" y2="24" stroke="${color}" stroke-width="2"/>
+            <line x1="24" y1="3"  x2="24" y2="15" stroke="${color}" stroke-width="2"/>
+            <line x1="24" y1="33" x2="24" y2="45" stroke="${color}" stroke-width="2"/>
+            <text x="24" y="28" text-anchor="middle" fill="${color}"
+                  font-family="monospace" font-size="8" font-weight="bold">${abbr}</text>
+            </g></svg>`;
+        return L.divIcon({
+            html: svg, className: '', iconSize: [48, 48], iconAnchor: [24, 24],
+        });
+    }
+
+    function refreshFmMarkers() {
+        // Remove old
+        state.fmMarkers.forEach(m => map.removeLayer(m));
+        state.fmMarkers.clear();
+
+        if (state.overlayMode === 'none') return;
+
+        state.fireMissions.forEach(fm => {
+            if (fm.status === 'CANCELLED') return;
+            const grid = toMgrs(fm.latitude, fm.longitude);
+            const m = L.marker([fm.latitude, fm.longitude], { icon: fmIcon(fm) }).addTo(map);
+            m.bindPopup(`
+                <b>🎯 ${(fm.mission_type||'').replace(/_/g,' ')}</b><br>
+                <code style="font-size:0.85rem">${escHtml(grid)}</code><br>
+                ${escHtml(fm.ammunition)} · ${fm.quantity} rnd<br>
+                <span style="color:${FM_STATUS_CLR[fm.status]||'#666'}">${fm.status}</span>
+                ${fm.description ? `<br><i>${escHtml(fm.description)}</i>` : ''}<br>
+                <a href="/fire-missions/?id=${fm.id}" style="color:#ef4444;font-weight:600">→ Open in FDC</a>
+            `);
+            state.fmMarkers.set(fm.id, m);
+        });
+    }
+
+    async function loadFmMarkers() {
+        const r = await api('/fire-missions');
+        if (!r.ok) return;
+        const list = await r.json();
+        state.fireMissions.clear();
+        list.forEach(fm => state.fireMissions.set(fm.id, fm));
+        refreshFmMarkers();
+    }
+
     async function loadHierarchy() {
         const r = await api('/hierarchy');
         if (!r.ok) return;
@@ -833,13 +901,15 @@
             } else if (msg.channel === 'report') {
                 loadMapReports();
             } else if (msg.channel === 'fire-mission') {
+                loadFmMarkers();
                 loadMapFireMissions();
             }
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
     }
 
-    loadHierarchy(); loadEnemies(); loadMapFireMissions(); loadMapReports();
+    loadHierarchy(); loadEnemies(); loadFmMarkers(); loadMapFireMissions(); loadMapReports();
+    setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);
     setInterval(loadMapReports, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags

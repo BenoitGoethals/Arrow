@@ -69,8 +69,9 @@ fun MapScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var operators by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
-    var enemies by remember { mutableStateOf<List<TacticalObjectDto>>(emptyList()) }
+    var operators    by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
+    var enemies      by remember { mutableStateOf<List<TacticalObjectDto>>(emptyList()) }
+    var fireMissions by remember { mutableStateOf<List<com.arrow.tactical.network.FireMissionDto>>(emptyList()) }
     var meId by remember { mutableStateOf<Int?>(null) }
     var hasAutocentered by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
@@ -172,6 +173,8 @@ fun MapScreen(
                         }
                     container.tacticalRepository.listObjects()
                         .onSuccess { enemies = it }
+                    container.fireMissionRepository.list()
+                        .onSuccess { fireMissions = it }
                 }
             } catch (e: Exception) {
                 serverOnline = false
@@ -192,6 +195,8 @@ fun MapScreen(
                             .onSuccess { ops -> operators = ops; serverOnline = true }
                         "tactical-object" -> container.tacticalRepository.listObjects()
                             .onSuccess { enemies = it }
+                        "fire-mission"    -> container.fireMissionRepository.list()
+                            .onSuccess { fireMissions = it }
                         else -> {}
                     }
                 }
@@ -217,7 +222,7 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, meId, overlayMode, myPlatoonIds) {
+    LaunchedEffect(operators, enemies, fireMissions, meId, overlayMode, myPlatoonIds) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
@@ -258,6 +263,23 @@ fun MapScreen(
                            else MilSymbolRenderer.hostile(res, type)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 map.overlays.add(this)
+            }
+        }
+
+        // Fire missions — always visible except in NONE mode
+        if (overlayMode != OverlayMode.NONE) {
+            for (fm in fireMissions.filter { it.status != "CANCELLED" }) {
+                val mgrsStr = runCatching {
+                    com.arrow.tactical.network.MgrsConverter.encode(fm.latitude, fm.longitude)
+                }.getOrDefault("%.4f, %.4f".format(fm.latitude, fm.longitude))
+                Marker(map).apply {
+                    position = GeoPoint(fm.latitude, fm.longitude)
+                    title    = "🎯 ${fm.missionType.replace('_', ' ')} — ${fm.status}"
+                    snippet  = "$mgrsStr · ${fm.ammunition} · ${fm.quantity} rnd"
+                    icon     = MilSymbolRenderer.fireMission(res, fm.missionType, fm.status)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
+                }
             }
         }
 
