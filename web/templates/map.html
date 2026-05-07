@@ -473,7 +473,7 @@
             showEnemyPicker(lat, lon, grid);
         }
         else if (action === 'fire') {
-            window.location.href = `/fire-missions/?lat=${lat}&lon=${lon}`;
+            showFireMissionForm(lat, lon, grid);
         }
         else if (action === 'poi') {
             const notes = prompt(`POI at ${grid}\nNotes:`, '') ?? '';
@@ -515,6 +515,167 @@
         document.body.appendChild(modal);
         modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
     }
+
+    // ── Fire Mission inline form (mirrors Android FireMissionScreen) ───────────
+    function showFireMissionForm(lat, lon, grid) {
+        document.getElementById('fm-modal')?.remove();
+
+        const MISSION_TYPES = [
+            ['ADJUST_FIRE',           'Adjust Fire (AF)'],
+            ['FIRE_FOR_EFFECT',       'Fire for Effect (FFE)'],
+            ['SUPPRESSION',           'Suppression'],
+            ['ILLUMINATION',          'Illumination'],
+            ['IMMEDIATE_SUPPRESSION', 'Immediate Suppression'],
+        ];
+        const AMMO_TYPES = ['HE','ILLUM','SMOKE','WP','ICM','AP','FRAG','MIXED'];
+
+        const modal = document.createElement('div');
+        modal.id = 'fm-modal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:900;display:flex;align-items:center;justify-content:center;padding:1rem';
+        modal.innerHTML = `
+        <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;width:520px;max-width:100%;max-height:90vh;overflow-y:auto;padding:1.25rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+                <div>
+                    <div style="font-size:1rem;font-weight:700;color:#ef4444">🎯 Call for Fire</div>
+                    <div style="font-size:0.72rem;color:#64748b;font-family:monospace">${escHtml(grid)}</div>
+                </div>
+                <button onclick="document.getElementById('fm-modal').remove()"
+                        style="background:none;border:0;color:#64748b;cursor:pointer;font-size:1.2rem">✕</button>
+            </div>
+
+            <!-- MGRS / Direction row -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+                <div>
+                    <label style="font-size:0.72rem;color:#94a3b8">MGRS Grid</label>
+                    <input id="fm-grid" value="${escHtml(grid)}"
+                           style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;padding:.4rem .6rem;font:inherit;font-family:monospace;font-size:.85rem;box-sizing:border-box">
+                </div>
+                <div>
+                    <label style="font-size:0.72rem;color:#94a3b8">Direction (°) obs → tgt</label>
+                    <input id="fm-dir" type="number" min="0" max="360" placeholder="0–360"
+                           style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;padding:.4rem .6rem;font:inherit;font-size:.85rem;box-sizing:border-box">
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+                <div>
+                    <label style="font-size:0.72rem;color:#94a3b8">Altitude (m MSL)</label>
+                    <input id="fm-alt" type="number" placeholder="0"
+                           style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;padding:.4rem .6rem;font:inherit;font-size:.85rem;box-sizing:border-box">
+                </div>
+                <div>
+                    <label style="font-size:0.72rem;color:#94a3b8">Rounds</label>
+                    <input id="fm-qty" type="number" value="1" min="1"
+                           style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;padding:.4rem .6rem;font:inherit;font-size:.85rem;box-sizing:border-box">
+                </div>
+            </div>
+
+            <!-- Mission type chips -->
+            <div style="margin-bottom:10px">
+                <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:4px">Type of Mission</div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px" id="fm-types">
+                    ${MISSION_TYPES.map(([k,lbl],i) =>
+                        `<button class="fm-chip${i===0?' active':''}" data-val="${k}"
+                            style="padding:3px 9px;border-radius:4px;border:1px solid ${i===0?'#ef4444':'#2a3142'};
+                                   background:${i===0?'#dc262622':'#1a2233'};color:${i===0?'#ef4444':'#94a3b8'};
+                                   cursor:pointer;font:inherit;font-size:0.78rem"
+                            onclick="fmChip(this,'fm-types')">${escHtml(lbl)}</button>`
+                    ).join('')}
+                </div>
+            </div>
+
+            <!-- Ammunition chips -->
+            <div style="margin-bottom:10px">
+                <div style="font-size:0.72rem;color:#94a3b8;margin-bottom:4px">Ammunition</div>
+                <div style="display:flex;flex-wrap:wrap;gap:5px" id="fm-ammo">
+                    ${AMMO_TYPES.map((a,i) =>
+                        `<button class="fm-chip${i===0?' active':''}" data-val="${a}"
+                            style="padding:3px 9px;border-radius:4px;border:1px solid ${i===0?'#d97706':'#2a3142'};
+                                   background:${i===0?'#d9770622':'#1a2233'};color:${i===0?'#f59e0b':'#94a3b8'};
+                                   cursor:pointer;font:inherit;font-size:0.78rem"
+                            onclick="fmChip(this,'fm-ammo')">${a}</button>`
+                    ).join('')}
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div style="margin-bottom:12px">
+                <label style="font-size:0.72rem;color:#94a3b8">Target Description</label>
+                <textarea id="fm-desc" rows="3" placeholder="e.g. Infantry platoon in open, moving NE"
+                    style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;
+                           padding:.4rem .6rem;font:inherit;font-size:.85rem;resize:vertical;box-sizing:border-box"></textarea>
+            </div>
+
+            <div id="fm-status" style="font-size:0.8rem;min-height:1.2em;margin-bottom:8px"></div>
+
+            <div style="display:flex;gap:.5rem;justify-content:flex-end">
+                <button onclick="document.getElementById('fm-modal').remove()"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:6px;padding:.45rem 1rem;cursor:pointer;font:inherit;font-size:.85rem">Cancel</button>
+                <button onclick="submitFireMission(${lat},${lon})"
+                        style="background:#dc2626;color:#fff;border:0;border-radius:6px;padding:.45rem 1.2rem;font:inherit;font-size:.85rem;font-weight:700;cursor:pointer">
+                    🎯 CALL FOR FIRE
+                </button>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        document.getElementById('fm-dir').focus();
+    }
+
+    window.fmChip = function(btn, groupId) {
+        document.querySelectorAll(`#${groupId} .fm-chip`).forEach(b => {
+            const isAmmo = groupId === 'fm-ammo';
+            const ac = isAmmo ? '#d97706' : '#ef4444';
+            const bg = isAmmo ? '#d9770622' : '#dc262622';
+            const active = b === btn;
+            b.classList.toggle('active', active);
+            b.style.borderColor = active ? ac : '#2a3142';
+            b.style.background  = active ? bg : '#1a2233';
+            b.style.color       = active ? (isAmmo ? '#f59e0b' : '#ef4444') : '#94a3b8';
+        });
+    };
+
+    window.submitFireMission = async function(lat, lon) {
+        const grid    = document.getElementById('fm-grid').value.trim();
+        const dirVal  = document.getElementById('fm-dir').value;
+        const altVal  = document.getElementById('fm-alt').value;
+        const qty     = parseInt(document.getElementById('fm-qty').value) || 1;
+        const desc    = document.getElementById('fm-desc').value.trim();
+        const mType   = document.querySelector('#fm-types .fm-chip.active')?.dataset.val || 'ADJUST_FIRE';
+        const ammo    = document.querySelector('#fm-ammo  .fm-chip.active')?.dataset.val || 'HE';
+        const status  = document.getElementById('fm-status');
+
+        if (!dirVal) { status.textContent = '⚠ Direction is required.'; status.style.color='#ef4444'; return; }
+
+        status.textContent = 'Transmitting…'; status.style.color = '#94a3b8';
+
+        const body = {
+            latitude:     lat,
+            longitude:    lon,
+            altitude:     parseFloat(altVal) || 0,
+            direction:    parseFloat(dirVal),
+            mission_type: mType,
+            ammunition:   ammo,
+            quantity:     qty,
+            description:  desc || `${mType} · ${ammo} · Grid ${grid}`,
+        };
+
+        const r = await api('/fire-missions', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (r.ok) {
+            status.textContent = '✓ Fire mission submitted to FDC';
+            status.style.color = '#22c55e';
+            loadMapFireMissions();
+            setTimeout(() => document.getElementById('fm-modal')?.remove(), 1200);
+        } else {
+            const txt = await r.text().catch(() => r.status);
+            status.textContent = `✗ Failed: ${txt}`;
+            status.style.color = '#ef4444';
+        }
+    };
 
     window.markEnemy = async function(type, lat, lon, grid) {
         document.getElementById('enemy-picker')?.remove();
