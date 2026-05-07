@@ -532,7 +532,6 @@ private fun parsePlatoonIds(json: String, myId: Int): Set<Int> {
 }
 
 @Composable
-@Composable
 private fun EnemyTypeMenu(onSelect: (EnemyType) -> Unit, onBack: () -> Unit) {
     val hostileTypes = EnemyType.entries.filter { it != EnemyType.POI }
 
