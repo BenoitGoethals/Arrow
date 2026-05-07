@@ -86,6 +86,30 @@ fun MapScreen(
         mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
     }
 
+    // Suspend function to launch the stream service, called after permission grant
+    val startStream: suspend () -> Unit = start@{
+        val token  = container.tokenStore.current()                    ?: return@start
+        val server = container.settingsRepository.currentServerUrl()
+        val me     = container.authRepository.me().getOrNull()         ?: return@start
+        val sid    = "stream-${me.callsign}-${System.currentTimeMillis() / 1000}"
+        val intent = android.content.Intent(
+            context, com.arrow.tactical.stream.CameraStreamService::class.java
+        ).apply {
+            putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_STREAM_ID,  sid)
+            putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_SERVER_URL, server)
+            putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_TOKEN,      token)
+        }
+        androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        isStreaming = true
+    }
+
+    // Camera permission launcher — requests permission then starts stream
+    val cameraPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) scope.launch { startStream() }
+    }
+
     LaunchedEffect(Unit) {
         serverUrl = container.settingsRepository.currentServerUrl()
     }
@@ -394,33 +418,24 @@ fun MapScreen(
                 }
             }
 
-            // Stream toggle
+            // 📡 Stream toggle
             IconButton(
                 onClick = {
                     if (isStreaming) {
-                        context.stopService(
+                        // Stop: send STOP action intent so the service cleans up gracefully
+                        context.startService(
                             android.content.Intent(context,
-                                com.arrow.tactical.stream.CameraStreamService::class.java))
+                                com.arrow.tactical.stream.CameraStreamService::class.java)
+                                .setAction(com.arrow.tactical.stream.CameraStreamService.ACTION_STOP)
+                        )
                         isStreaming = false
                     } else {
-                        scope.launch {
-                            // Check camera permission
-                            if (androidx.core.content.ContextCompat.checkSelfPermission(
-                                    context, android.Manifest.permission.CAMERA)
-                                != android.content.pm.PackageManager.PERMISSION_GRANTED) return@launch
-                            val token   = container.tokenStore.current() ?: return@launch
-                            val server  = container.settingsRepository.currentServerUrl()
-                            val me      = container.authRepository.me().getOrNull() ?: return@launch
-                            val sid     = "stream-${me.callsign}-${System.currentTimeMillis() / 1000}"
-                            val intent  = android.content.Intent(context,
-                                com.arrow.tactical.stream.CameraStreamService::class.java).apply {
-                                putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_STREAM_ID,  sid)
-                                putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_SERVER_URL, server)
-                                putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_TOKEN,      token)
-                            }
-                            androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                            isStreaming = true
-                        }
+                        val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                            context, android.Manifest.permission.CAMERA
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                        if (hasPerm) scope.launch { startStream() }
+                        else         cameraPermLauncher.launch(android.Manifest.permission.CAMERA)
                     }
                 },
                 modifier = Modifier.size(28.dp),

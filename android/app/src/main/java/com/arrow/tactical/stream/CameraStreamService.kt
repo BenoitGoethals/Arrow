@@ -16,15 +16,12 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.arrow.tactical.ArrowApp
 import com.arrow.tactical.MainActivity
-import com.arrow.tactical.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.WebSocket
@@ -36,35 +33,35 @@ import java.util.concurrent.atomic.AtomicBoolean
 class CameraStreamService : Service() {
 
     companion object {
-        const val CHANNEL_ID     = "arrow.stream"
+        const val CHANNEL_ID      = "arrow.stream"
         const val NOTIFICATION_ID = 3
-        const val EXTRA_STREAM_ID = "stream_id"
+        const val EXTRA_STREAM_ID  = "stream_id"
         const val EXTRA_SERVER_URL = "server_url"
         const val EXTRA_TOKEN      = "token"
+        const val ACTION_STOP      = "STOP"
 
-        // Compression / rate settings
+        private const val TAG       = "CameraStream"
         private const val FRAME_W   = 640
         private const val FRAME_H   = 480
-        private const val TARGET_FPS = 5
-        private val FRAME_INTERVAL_MS = 1000L / TARGET_FPS
-        private const val JPEG_QUALITY = 40   // 0–100; 40 gives good compression
-        private const val TAG = "CameraStream"
+        private const val FPS       = 5                     // target frames per second
+        private val FRAME_MS        = 1000L / FPS           // ms between captures
+        private const val JPEG_Q    = 40                    // 0–100 compression quality
 
-        var isStreaming = AtomicBoolean(false)
+        val isStreaming = AtomicBoolean(false)
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private lateinit var cameraManager: CameraManager
+    private val camThread = HandlerThread("CamStreamThread").also { it.start() }
+    private val camHandler = Handler(camThread.looper)
+
+    private var cameraManager: CameraManager? = null
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
     private var imageReader: ImageReader? = null
+    private var captureRequest: CaptureRequest? = null
     private var webSocket: WebSocket? = null
-
-    private val cameraThread = HandlerThread("CameraStreamThread").also { it.start() }
-    private val cameraHandler = Handler(cameraThread.looper)
-
-    private var lastFrameMs = 0L
+    private var capturing = false
 
     override fun onCreate() {
         super.onCreate()
@@ -74,134 +71,153 @@ class CameraStreamService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val streamId  = intent?.getStringExtra(EXTRA_STREAM_ID)  ?: "unknown"
-        val serverUrl = intent?.getStringExtra(EXTRA_SERVER_URL) ?: ""
-        val token     = intent?.getStringExtra(EXTRA_TOKEN)       ?: ""
-
-        scope.launch {
-            connectAndStream(streamId, serverUrl, token)
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
         }
+        val streamId  = intent?.getStringExtra(EXTRA_STREAM_ID)  ?: return START_NOT_STICKY
+        val serverUrl = intent.getStringExtra(EXTRA_SERVER_URL)  ?: return START_NOT_STICKY
+        val token     = intent.getStringExtra(EXTRA_TOKEN)        ?: return START_NOT_STICKY
+
+        scope.launch { connect(streamId, serverUrl, token) }
         return START_NOT_STICKY
     }
 
-    private suspend fun connectAndStream(streamId: String, serverUrl: String, token: String) {
-        val wsUrl = serverUrl.replace("http", "ws") + "/streams/$streamId/produce?token=$token"
+    // ── Connect WebSocket, then open camera ───────────────────────────────────
+
+    private fun connect(streamId: String, serverUrl: String, token: String) {
+        val wsUrl = serverUrl.replace(Regex("^http"), "ws") +
+                    "/streams/$streamId/produce?token=${token}"
+        Log.i(TAG, "Connecting to $wsUrl")
 
         val client = OkHttpClient.Builder()
-            .pingInterval(20, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
+            .connectTimeout(10, TimeUnit.SECONDS)
             .build()
 
-        val request = Request.Builder().url(wsUrl).build()
-
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(ws: okhttp3.WebSocket, response: okhttp3.Response) {
-                Log.i(TAG, "WebSocket connected for stream $streamId")
-                openCamera()
-            }
-            override fun onFailure(ws: okhttp3.WebSocket, t: Throwable, r: okhttp3.Response?) {
-                Log.w(TAG, "WebSocket failure: ${t.message}")
-                stopSelf()
-            }
-            override fun onClosed(ws: okhttp3.WebSocket, code: Int, reason: String) {
-                stopSelf()
-            }
-        })
+        webSocket = client.newWebSocket(
+            Request.Builder().url(wsUrl).build(),
+            object : WebSocketListener() {
+                override fun onOpen(ws: WebSocket, response: okhttp3.Response) {
+                    Log.i(TAG, "WS open — opening camera")
+                    camHandler.post { openCamera() }
+                }
+                override fun onFailure(ws: WebSocket, t: Throwable, r: okhttp3.Response?) {
+                    Log.w(TAG, "WS failure: ${t.message}")
+                    stopSelf()
+                }
+                override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                    stopSelf()
+                }
+            },
+        )
     }
+
+    // ── Camera2 setup ─────────────────────────────────────────────────────────
 
     @SuppressLint("MissingPermission")
     private fun openCamera() {
-        val cameraId = backFacingCamera() ?: run { stopSelf(); return }
+        val cm = cameraManager ?: return
+        val id = cm.cameraIdList.firstOrNull { cid ->
+            cm.getCameraCharacteristics(cid)
+                .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+        } ?: cm.cameraIdList.firstOrNull() ?: run { stopSelf(); return }
 
-        imageReader = ImageReader.newInstance(FRAME_W, FRAME_H, ImageFormat.JPEG, 3).also { reader ->
-            reader.setOnImageAvailableListener({ r ->
-                val now = System.currentTimeMillis()
-                val img = r.acquireLatestImage()
-                if (img == null || now - lastFrameMs < FRAME_INTERVAL_MS) {
-                    img?.close(); return@setOnImageAvailableListener
-                }
-                lastFrameMs = now
+        // ImageReader with JPEG format — driven by individual capture() calls
+        imageReader = ImageReader.newInstance(FRAME_W, FRAME_H, ImageFormat.JPEG, 2).also { ir ->
+            ir.setOnImageAvailableListener({ reader ->
+                val img = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
                 try {
                     val buf   = img.planes[0].buffer
                     val bytes = ByteArray(buf.remaining())
                     buf.get(bytes)
                     webSocket?.send(bytes.toByteString())
+                    Log.v(TAG, "Frame sent: ${bytes.size} bytes")
                 } finally {
                     img.close()
                 }
-            }, cameraHandler)
+                // Schedule next frame
+                if (capturing) camHandler.postDelayed({ triggerCapture() }, FRAME_MS)
+            }, camHandler)
         }
 
-        cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+        cm.openCamera(id, object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
                 cameraDevice = camera
-                startCapture(camera)
+                startSession(camera)
             }
             override fun onDisconnected(camera: CameraDevice) { camera.close(); stopSelf() }
-            override fun onError(camera: CameraDevice, error: Int) { camera.close(); stopSelf() }
-        }, cameraHandler)
+            override fun onError(camera: CameraDevice, error: Int) {
+                Log.e(TAG, "Camera error $error"); camera.close(); stopSelf()
+            }
+        }, camHandler)
     }
 
-    private fun startCapture(camera: CameraDevice) {
+    private fun startSession(camera: CameraDevice) {
         val surface = imageReader!!.surface
-        camera.createCaptureSession(
-            listOf(surface),
-            object : CameraCaptureSession.StateCallback() {
-                override fun onConfigured(session: CameraCaptureSession) {
-                    captureSession = session
-                    val req = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+        @Suppress("DEPRECATION")
+        camera.createCaptureSession(listOf(surface), object : CameraCaptureSession.StateCallback() {
+            override fun onConfigured(session: CameraCaptureSession) {
+                captureSession = session
+                captureRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                    .apply {
                         addTarget(surface)
-                        set(CaptureRequest.JPEG_QUALITY, JPEG_QUALITY.toByte())
-                        set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                            android.util.Range(TARGET_FPS, TARGET_FPS))
+                        set(CaptureRequest.JPEG_QUALITY,           JPEG_Q.toByte())
+                        set(CaptureRequest.CONTROL_MODE,           CameraMetadata.CONTROL_MODE_AUTO)
+                        set(CaptureRequest.CONTROL_AF_MODE,        CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                        set(CaptureRequest.CONTROL_AE_MODE,        CameraMetadata.CONTROL_AE_MODE_ON)
                     }.build()
-                    session.setRepeatingRequest(req, null, cameraHandler)
-                }
-                override fun onConfigureFailed(session: CameraCaptureSession) { stopSelf() }
-            },
-            cameraHandler,
-        )
+                capturing = true
+                triggerCapture()                       // kick off the first frame
+            }
+            override fun onConfigureFailed(session: CameraCaptureSession) {
+                Log.e(TAG, "Session configure failed"); stopSelf()
+            }
+        }, camHandler)
     }
 
-    private fun backFacingCamera(): String? =
-        cameraManager.cameraIdList.firstOrNull { id ->
-            cameraManager.getCameraCharacteristics(id)
-                .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-        }
+    private fun triggerCapture() {
+        val session = captureSession ?: return
+        val req     = captureRequest  ?: return
+        try { session.capture(req, null, camHandler) }
+        catch (e: Exception) { Log.w(TAG, "Capture error: ${e.message}") }
+    }
+
+    // ── Cleanup ───────────────────────────────────────────────────────────────
 
     override fun onDestroy() {
         isStreaming.set(false)
+        capturing = false
         captureSession?.close()
         cameraDevice?.close()
         imageReader?.close()
         webSocket?.close(1000, "Stream ended")
-        cameraThread.quitSafely()
+        camThread.quitSafely()
         scope.cancel()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // ── Foreground notification ───────────────────────────────────────────────
+
     private fun buildNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(CHANNEL_ID, "Video Stream",
-                NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
+            getSystemService(NotificationManager::class.java)
+                .createNotificationChannel(NotificationChannel(
+                    CHANNEL_ID, "Video Stream", NotificationManager.IMPORTANCE_LOW))
         }
-        val tap = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
-        val stop = PendingIntent.getService(
-            this, 0,
-            Intent(this, CameraStreamService::class.java).setAction("STOP"),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
+        val tapPi = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val stopPi = PendingIntent.getService(this, 0,
+            Intent(this, CameraStreamService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("📡 Live Streaming")
-            .setContentText("Tactical video stream active")
+            .setContentText("Tactical camera stream active — tap to return")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setContentIntent(tap)
-            .addAction(android.R.drawable.ic_delete, "Stop", stop)
+            .setContentIntent(tapPi)
+            .addAction(android.R.drawable.ic_delete, "Stop stream", stopPi)
             .setOngoing(true)
             .build()
     }
