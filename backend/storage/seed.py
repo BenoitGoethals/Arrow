@@ -42,7 +42,6 @@ def seed(force: bool = False) -> dict[str, list[str]]:
 
     Skips entirely when the DB already has operators, unless force=True.
     """
-    rng = random.Random(0xA77017)  # deterministic
     created: list[str] = []
 
     with SessionLocal() as db:
