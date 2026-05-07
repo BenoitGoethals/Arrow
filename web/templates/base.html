@@ -374,6 +374,122 @@
             ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
+    // ── Audio alert system ─────────────────────────────────────────────────────
+    let _audioCtx = null;
+    function audioCtx() {
+        if (!_audioCtx || _audioCtx.state === 'closed')
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+        return _audioCtx;
+    }
+
+    /**
+     * triggerAudioAlert(type)
+     *   'fire' → says "Fire mission" then plays a 5-second pulsing alarm (880 Hz sawtooth)
+     *   'tic'  → says "Contact" then plays a 5-second alarm (1200 Hz square)
+     */
+    function triggerAudioAlert(type) {
+        const isFireMission = type === 'fire';
+        const text     = isFireMission ? 'Fire mission, fire mission, fire mission' : 'Contact, contact, contact';
+        const freq     = isFireMission ? 880  : 1200;
+        const waveform = isFireMission ? 'sawtooth' : 'square';
+        const duration = 5;      // seconds of alarm after voice
+
+        // 1. Voice call (speech synthesis)
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();            // clear queue
+            const utt  = new SpeechSynthesisUtterance(text);
+            utt.lang   = 'en-US';
+            utt.rate   = 0.85;
+            utt.volume = 1;
+            utt.pitch  = isFireMission ? 1.0 : 1.3;
+            // Play alarm after voice finishes
+            utt.onend  = () => playAlarmTone(freq, waveform, duration);
+            speechSynthesis.speak(utt);
+        } else {
+            playAlarmTone(freq, waveform, duration);
+        }
+    }
+
+    function playAlarmTone(freq, waveform, duration) {
+        try {
+            const ctx  = audioCtx();
+            const now  = ctx.currentTime;
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type          = waveform;
+            osc.frequency.value = freq;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            // Pulsing: 0.3 s on / 0.2 s off
+            gain.gain.setValueAtTime(0, now);
+            const pulse = 0.5;   // period seconds
+            const onRatio = 0.6; // fraction of period that's "on"
+            for (let t = 0; t < duration; t += pulse) {
+                gain.gain.setValueAtTime(0.6,  now + t);
+                gain.gain.setValueAtTime(0,    now + t + pulse * onRatio);
+            }
+
+            osc.start(now);
+            osc.stop(now + duration);
+        } catch (_) {}
+    }
+
+    // Handle TIC / MEDICAL / EVAC / LOST_COMMS alerts from WebSocket
+    function handleTacAlert(evt) {
+        if (evt.event !== 'triggered') return;
+        const d = evt.data || {};
+        const type = (d.type || '').toUpperCase();
+
+        // Choose voice text by alert type
+        const voiceMap = {
+            TIC:        'Contact! Troops in contact!',
+            MEDICAL:    'Medical emergency! Casevac required!',
+            EVAC:       'Evacuation! All units evacuate!',
+            LOST_COMMS: 'Lost communications! Check radio!',
+        };
+        const voice = voiceMap[type] || `Alert: ${type}`;
+
+        // Play audio — TIC gets the full "Contact" alarm
+        triggerAudioAlertWithText('tic', voice);
+
+        // Show a persistent red toast
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.cssText += 'border-left-color:#dc2626;border-left-width:4px';
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from" style="color:#ef4444">
+                    🚨 ${type} ALERT
+                </span>
+                <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            <div class="arrow-toast-body" style="color:#fca5a5">${esc(voice)}</div>`;
+        document.getElementById('arrow-toast-container').appendChild(toast);
+
+        if (Notification.permission === 'granted') {
+            new Notification('🚨 ' + type, { body: voice, tag: 'arrow-alert' });
+        }
+    }
+
+    // Variant that takes explicit voice text
+    function triggerAudioAlertWithText(type, text) {
+        const isFireMission = type === 'fire';
+        const freq     = isFireMission ? 880  : 1200;
+        const waveform = isFireMission ? 'sawtooth' : 'square';
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();
+            const utt = new SpeechSynthesisUtterance(text);
+            utt.lang  = 'en-US'; utt.rate = 0.85; utt.volume = 1;
+            utt.onend = () => playAlarmTone(freq, waveform, 5);
+            speechSynthesis.speak(utt);
+        } else {
+            playAlarmTone(freq, waveform, 5);
+        }
+    }
+
     function connectWS() {
         const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
@@ -381,7 +497,8 @@
             try {
                 const e = JSON.parse(ev.data);
                 if (e.channel === 'chat')         showToast(e);
-                if (e.channel === 'fire-mission') showFireMissionAlert(e);
+                if (e.channel === 'fire-mission') { showFireMissionAlert(e); triggerAudioAlert('fire'); }
+                if (e.channel === 'alert')        { handleTacAlert(e); }
                 if (e.channel === 'stream')       handleStreamEvent(e);
             } catch (_) {}
         };
