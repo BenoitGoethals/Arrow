@@ -108,7 +108,7 @@ SIM_PASSWORD   = "Arrow2525!"
 WALK_MS        = 5000 / 3600          # 5 km/h in m/s
 INFIL_MS       = 1500 / 3600          # 1.5 km/h in m/s
 UPDATE_S       = 10.0                 # real seconds between position pushes
-ENEMY_S        = 300.0                # real seconds between enemy marks
+ENEMY_S        = 10.0                 # real seconds between enemy marks
 SECTION_STAGGER_S = 120.0            # section 2 starts this many (real) seconds later
 
 # ── Geographic helpers ────────────────────────────────────────────────────────
