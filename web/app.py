@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import os
 
-from flask import Flask, render_template
+import httpx
+from flask import Flask, Response, render_template, request
 
 BACKEND_URL = os.environ.get("ARROW_BACKEND_URL", "http://localhost:6001")
+PUBLIC_API_PREFIX = "/api"
+HOP_BY_HOP = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
+    "content-encoding",
+}
 
 
 def create_app() -> Flask:
@@ -31,7 +38,31 @@ def create_app() -> Flask:
 
     @app.context_processor
     def _inject_backend() -> dict:
-        return {"backend_url": app.config["BACKEND_URL"]}
+        # Browser talks to the proxy on the same origin; server-side templates
+        # can still render absolute backend URLs via BACKEND_URL when needed.
+        return {"backend_url": PUBLIC_API_PREFIX}
+
+    @app.route(
+        f"{PUBLIC_API_PREFIX}/<path:subpath>",
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    )
+    def _backend_proxy(subpath: str) -> Response:
+        url = f"{BACKEND_URL}/{subpath}"
+        headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP}
+        try:
+            upstream = httpx.request(
+                request.method,
+                url,
+                params=request.args,
+                content=request.get_data(),
+                headers=headers,
+                timeout=30.0,
+                follow_redirects=False,
+            )
+        except httpx.RequestError as exc:
+            return Response(f"Upstream error: {exc}", status=502)
+        out_headers = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP]
+        return Response(upstream.content, status=upstream.status_code, headers=out_headers)
 
     @app.route("/")
     def index() -> str:
