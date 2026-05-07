@@ -118,6 +118,64 @@ object MilSymbolRenderer {
         return BitmapDrawable(res, bmp)
     }
 
+    // ── Call for Fire / Fire Mission (red target crosshair) ──────────────────
+
+    fun fireMission(res: Resources, missionType: String, status: String): Drawable {
+        val dp    = res.displayMetrics.density
+        val size  = (52 * dp).toInt()
+        val bmp   = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val cx    = size / 2f
+        val cy    = size / 2f
+        val outer = cx - 2.5f * dp
+        val inner = outer * 0.45f
+        val alpha = when (status) {
+            "COMPLETED", "CANCELLED" -> 80
+            "IN_PROGRESS"            -> 200
+            else                     -> 255
+        }
+        val baseColor = when (status) {
+            "ACKNOWLEDGED" -> android.graphics.Color.argb(alpha, 0xD9, 0x77, 0x06)
+            "IN_PROGRESS"  -> android.graphics.Color.argb(alpha, 0x25, 0x63, 0xEB)
+            "COMPLETED"    -> android.graphics.Color.argb(alpha, 0x47, 0x55, 0x69)
+            "CANCELLED"    -> android.graphics.Color.argb(alpha, 0x47, 0x55, 0x69)
+            else           -> android.graphics.Color.argb(alpha, 0xDC, 0x26, 0x26) // PENDING — red
+        }
+
+        paint.color       = baseColor
+        paint.style       = Paint.Style.STROKE
+        paint.strokeWidth = 2.5f * dp
+
+        // Outer target ring
+        canvas.drawCircle(cx, cy, outer, paint)
+        // Inner ring
+        canvas.drawCircle(cx, cy, inner, paint)
+        // Crosshairs
+        canvas.drawLine(cx - outer, cy, cx - inner - 1 * dp, cy, paint)
+        canvas.drawLine(cx + inner + 1 * dp, cy, cx + outer, cy, paint)
+        canvas.drawLine(cx, cy - outer, cx, cy - inner - 1 * dp, paint)
+        canvas.drawLine(cx, cy + inner + 1 * dp, cx, cy + outer, paint)
+
+        // Mission type abbreviation in center
+        val abbr = when (missionType) {
+            "ADJUST_FIRE"           -> "AF"
+            "FIRE_FOR_EFFECT"       -> "FFE"
+            "SUPPRESSION"           -> "SUP"
+            "ILLUMINATION"          -> "ILL"
+            "IMMEDIATE_SUPPRESSION" -> "IM"
+            else                    -> "CFF"
+        }
+        paint.style         = Paint.Style.FILL
+        paint.textSize      = 9 * dp
+        paint.textAlign     = Paint.Align.CENTER
+        paint.isFakeBoldText = true
+        canvas.drawText(abbr, cx, cy + 3.5f * dp, paint)
+
+        return BitmapDrawable(res, bmp)
+    }
+
     // ── POI (yellow circle, neutral infrastructure) ──────────────────────────
 
     fun poi(res: Resources): Drawable {
