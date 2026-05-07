@@ -636,20 +636,20 @@
     };
 
     window.submitFireMission = async function(lat, lon) {
-        const grid    = document.getElementById('fm-grid').value.trim();
-        const dirVal  = document.getElementById('fm-dir').value;
-        const altVal  = document.getElementById('fm-alt').value;
-        const qty     = parseInt(document.getElementById('fm-qty').value) || 1;
-        const desc    = document.getElementById('fm-desc').value.trim();
-        const mType   = document.querySelector('#fm-types .fm-chip.active')?.dataset.val || 'ADJUST_FIRE';
-        const ammo    = document.querySelector('#fm-ammo  .fm-chip.active')?.dataset.val || 'HE';
-        const status  = document.getElementById('fm-status');
+        const grid   = document.getElementById('fm-grid').value.trim();
+        const dirVal = document.getElementById('fm-dir').value;
+        const altVal = document.getElementById('fm-alt').value;
+        const qty    = parseInt(document.getElementById('fm-qty').value) || 1;
+        const desc   = document.getElementById('fm-desc').value.trim();
+        const mType  = document.querySelector('#fm-types .fm-chip.active')?.dataset.val || 'ADJUST_FIRE';
+        const ammo   = document.querySelector('#fm-ammo  .fm-chip.active')?.dataset.val || 'HE';
+        const st     = document.getElementById('fm-status');
 
-        if (!dirVal) { status.textContent = '⚠ Direction is required.'; status.style.color='#ef4444'; return; }
+        if (!dirVal) { st.textContent = '⚠ Direction is required.'; st.style.color = '#ef4444'; return; }
 
-        status.textContent = 'Transmitting…'; status.style.color = '#94a3b8';
+        st.textContent = 'Transmitting…'; st.style.color = '#94a3b8';
 
-        const body = {
+        const payload = {
             latitude:     lat,
             longitude:    lon,
             altitude:     parseFloat(altVal) || 0,
@@ -660,20 +660,24 @@
             description:  desc || `${mType} · ${ammo} · Grid ${grid}`,
         };
 
-        const r = await api('/fire-missions', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
+        // Use fetch directly — the map's api() helper is GET-only
+        const r = await fetch(window.ARROW_BACKEND_URL + '/fire-missions', {
+            method:  'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload),
         });
 
         if (r.ok) {
-            status.textContent = '✓ Fire mission submitted to FDC';
-            status.style.color = '#22c55e';
-            loadMapFireMissions();
-            setTimeout(() => document.getElementById('fm-modal')?.remove(), 1200);
+            const created = await r.json();
+            st.innerHTML = `✓ Fire mission #${created.id} submitted to FDC
+                <a href="/fire-missions/?id=${created.id}"
+                   style="color:#34d399;margin-left:.5rem;font-weight:600">→ Open in FDC</a>`;
+            st.style.color = '#22c55e';
+            loadMapFireMissions();          // refresh sidebar immediately
         } else {
-            const txt = await r.text().catch(() => r.status);
-            status.textContent = `✗ Failed: ${txt}`;
-            status.style.color = '#ef4444';
+            const txt = await r.text().catch(() => String(r.status));
+            st.textContent = `✗ Failed (${r.status}): ${txt}`;
+            st.style.color = '#ef4444';
         }
     };
 
