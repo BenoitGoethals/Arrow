@@ -88,6 +88,14 @@ class ApiClient(
         ).execute().use { ApiResponse(it.code, it.body?.string().orEmpty()) }
     }
 
+    suspend fun postXml(path: String, xml: String): ApiResponse = withContext(Dispatchers.IO) {
+        val xmlMedia = "application/xml; charset=utf-8".toMediaType()
+        httpClient.newCall(
+            Request.Builder().url(baseUrl() + path)
+                .post(xml.toRequestBody(xmlMedia)).build()
+        ).execute().use { ApiResponse(it.code, it.body?.string().orEmpty()) }
+    }
+
     suspend fun postMultipart(path: String, body: MultipartBody): ApiResponse = withContext(Dispatchers.IO) {
         httpClient.newCall(
             Request.Builder().url(baseUrl() + path).post(body).build()

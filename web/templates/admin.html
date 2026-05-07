@@ -1,12 +1,565 @@
 {% extends "base.html" %}
 {% block title %}Admin — Arrow{% endblock %}
+{% block head %}
+<style>
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.adm-shell  { display: grid; grid-template-columns: 220px 1fr; height: calc(100vh - 60px); }
+.adm-nav    { background: #0d1117; border-right: 1px solid #2a3142; padding: 1rem 0.5rem; display: flex; flex-direction: column; gap: 2px; }
+.adm-nav h4 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.15em; color: #475569; margin: 0.75rem 0.5rem 0.2rem; }
+.nav-btn    { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.7rem; border-radius: 6px; cursor: pointer; border: 0; background: none; color: #94a3b8; width: 100%; text-align: left; font: inherit; font-size: 0.85rem; }
+.nav-btn:hover  { background: #1a2233; color: #e2e8f0; }
+.nav-btn.active { background: #1e3a2f; color: #34d399; font-weight: 600; }
+.nav-btn .ico   { font-size: 1rem; width: 20px; text-align: center; }
+.adm-main   { overflow-y: auto; padding: 1.5rem 2rem; }
+
+/* ── Stats cards ─────────────────────────────────────────────────────────── */
+.stat-grid  { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.stat-card  { background: #161b25; border: 1px solid #2a3142; border-radius: 8px; padding: 1rem; }
+.stat-card .val  { font-size: 2rem; font-weight: 700; color: #34d399; }
+.stat-card .lbl  { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+.stat-card.warn  .val { color: #f59e0b; }
+.stat-card.danger .val { color: #ef4444; }
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.adm-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.adm-table th { text-align: left; color: #64748b; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a3142; white-space: nowrap; }
+.adm-table td { padding: 0.55rem 0.75rem; border-bottom: 1px solid #1e2736; vertical-align: middle; }
+.adm-table tr:hover td { background: #1a1f29; }
+.dot-online  { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 5px #22c55e; }
+.dot-offline { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #475569; }
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.badge { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+.badge-adm  { background: #7c2d12; color: #fed7aa; }
+.badge-bc   { background: #1e40af; color: #bfdbfe; }
+.badge-op   { background: #1e293b; color: #94a3b8; }
+.badge-ok   { background: #166534; color: #86efac; }
+.badge-warn { background: #78350f; color: #fde68a; }
+.badge-err  { background: #7f1d1d; color: #fca5a5; }
+
+/* ── Section headers ─────────────────────────────────────────────────────── */
+.sec-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.sec-header h2 { margin: 0; font-size: 1.1rem; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn        { padding: 0.4rem 0.9rem; border: 0; border-radius: 6px; font: inherit; font-size: 0.82rem; cursor: pointer; }
+.btn-primary { background: #34d399; color: #0d1117; font-weight: 600; }
+.btn-primary:hover { background: #6ee7b7; }
+.btn-danger  { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #f87171; }
+.btn-ghost   { background: #1f2937; color: #94a3b8; border: 1px solid #2a3142; }
+.btn-ghost:hover { border-color: #475569; color: #e2e8f0; }
+.btn-sm      { padding: 0.2rem 0.55rem; font-size: 0.78rem; }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.modal-bg   { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; }
+.modal-bg.open { display: flex; }
+.modal      { background: #161b25; border: 1px solid #2a3142; border-radius: 10px; padding: 1.5rem; width: 440px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal h3   { margin: 0 0 1rem; font-size: 1rem; }
+.field      { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
+.field label { font-size: 0.78rem; color: #94a3b8; }
+.field input, .field select { background: #0d1117; color: #e2e8f0; border: 1px solid #2a3142; border-radius: 5px; padding: 0.45rem 0.6rem; font: inherit; font-size: 0.88rem; }
+.field input:focus, .field select:focus { outline: none; border-color: #34d399; }
+.field .hint { font-size: 0.72rem; color: #475569; }
+.modal-footer { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1.2rem; }
+.form-error { color: #ef4444; font-size: 0.8rem; margin-top: 0.4rem; }
+
+/* ── Hierarchy tree ──────────────────────────────────────────────────────── */
+.htree details { margin-left: 1rem; }
+.htree summary { cursor: pointer; padding: 0.3rem 0; display: flex; align-items: center; gap: 0.5rem; }
+.htree summary::marker { color: #34d399; }
+.htree .h-item { display: flex; align-items: center; gap: 0.5rem; }
+.htree .h-name { flex: 1; font-size: 0.88rem; }
+.htree .h-meta { font-size: 0.72rem; color: #475569; }
+
+/* ── Config ──────────────────────────────────────────────────────────────── */
+.cfg-section { background: #161b25; border: 1px solid #2a3142; border-radius: 8px; margin-bottom: 1rem; }
+.cfg-section h3 { margin: 0; padding: 0.75rem 1rem; border-bottom: 1px solid #2a3142; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; }
+.cfg-row { display: grid; grid-template-columns: 180px 1fr; gap: 0; border-bottom: 1px solid #1e2736; }
+.cfg-row:last-child { border-bottom: 0; }
+.cfg-key { padding: 0.55rem 1rem; font-size: 0.8rem; color: #64748b; font-family: monospace; border-right: 1px solid #1e2736; }
+.cfg-val { padding: 0.55rem 1rem; font-size: 0.88rem; font-family: monospace; color: #e2e8f0; }
+.cfg-val.warn { color: #f59e0b; }
+
+main { padding: 0; }
+</style>
+{% endblock %}
+
 {% block content %}
-<h1>Admin Panel</h1>
-<p>Hierarchy, operators and devices are managed via the backend REST API.</p>
-<ul>
-    <li><code>POST /companies</code>, <code>POST /platoons</code>, <code>POST /sections</code>, <code>POST /teams</code></li>
-    <li><code>POST /auth/register</code> to add operators</li>
-    <li><code>PATCH /operators/{id}</code> to assign team / role / status</li>
-</ul>
-<p>See <code>{{ backend_url }}/docs</code> for the live OpenAPI explorer.</p>
+<div class="adm-shell">
+
+  <!-- ── Sidebar nav ─────────────────────────────────────────────────── -->
+  <nav class="adm-nav">
+    <h4>Overview</h4>
+    <button class="nav-btn active" onclick="show('overview',this)"><span class="ico">📊</span> Dashboard</button>
+
+    <h4>Users</h4>
+    <button class="nav-btn" onclick="show('operators',this)"><span class="ico">👥</span> Operators</button>
+
+    <h4>Organisation</h4>
+    <button class="nav-btn" onclick="show('hierarchy',this)"><span class="ico">🏛</span> Hierarchy</button>
+
+    <h4>System</h4>
+    <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
+    <button class="nav-btn" onclick="show('alerts',this)"><span class="ico">🚨</span> Alerts</button>
+  </nav>
+
+  <!-- ── Main area ───────────────────────────────────────────────────── -->
+  <div class="adm-main" id="adm-main"></div>
+</div>
+
+<!-- ── Modals ──────────────────────────────────────────────────────────── -->
+
+<!-- Create operator -->
+<div class="modal-bg" id="modal-create-op">
+  <div class="modal">
+    <h3>➕ New Operator</h3>
+    <div class="field"><label>Callsign *</label><input id="new-callsign" placeholder="e.g. BRAVO-42"/></div>
+    <div class="field"><label>Password *</label><input id="new-password" type="password" placeholder="min 8 chars"/></div>
+    <div class="field"><label>Rank</label>
+      <select id="new-rank">
+        {% for r in ['OR-1','OR-2','OR-3','OR-4','OR-5','OR-6','OF-1','OF-2','OF-3'] %}
+        <option>{{ r }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Role</label>
+      <select id="new-role">
+        <option value="OPERATOR">OPERATOR</option>
+        <option value="BATTLE_CAPTAIN">BATTLE_CAPTAIN</option>
+        <option value="ADMIN">ADMIN</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Team <span style="color:#ef4444">*</span></label>
+      <select id="new-team"><option value="">— select a team —</option></select>
+      <span class="hint">Every operator must belong to a team.</span>
+    </div>
+    <div id="create-op-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-create-op')">Cancel</button>
+      <button class="btn btn-primary" onclick="createOperator()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit operator -->
+<div class="modal-bg" id="modal-edit-op">
+  <div class="modal">
+    <h3>✏️ Edit Operator: <span id="edit-callsign-label"></span></h3>
+    <input type="hidden" id="edit-op-id"/>
+    <div class="field"><label>Rank</label>
+      <select id="edit-rank">
+        {% for r in ['OR-1','OR-2','OR-3','OR-4','OR-5','OR-6','OF-1','OF-2','OF-3'] %}
+        <option>{{ r }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Role</label>
+      <select id="edit-role">
+        <option value="OPERATOR">OPERATOR</option>
+        <option value="BATTLE_CAPTAIN">BATTLE_CAPTAIN</option>
+        <option value="ADMIN">ADMIN</option>
+      </select>
+    </div>
+    <div class="field"><label>Status</label>
+      <select id="edit-status">
+        <option value="ONLINE">ONLINE</option>
+        <option value="OFFLINE">OFFLINE</option>
+      </select>
+    </div>
+    <div class="field"><label>Team</label><select id="edit-team"><option value="">— unassigned —</option></select></div>
+    <hr style="border-color:#2a3142;margin:1rem 0">
+    <div class="field"><label>New password <span style="color:#475569">(leave blank = no change)</span></label>
+      <input id="edit-password" type="password" placeholder="new password…"/>
+    </div>
+    <div id="edit-op-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-op')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveOperator()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add hierarchy node -->
+<div class="modal-bg" id="modal-add-node">
+  <div class="modal">
+    <h3 id="add-node-title">Add…</h3>
+    <div class="field"><label>Name *</label><input id="add-node-name" placeholder="Name"/></div>
+    <div class="field" id="add-node-parent-field" style="display:none">
+      <label id="add-node-parent-label">Parent</label>
+      <select id="add-node-parent"></select>
+    </div>
+    <div id="add-node-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-node')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNode()">Add</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const role = localStorage.getItem('arrow_role') || '';
+    if (role !== 'ADMIN') {
+        document.getElementById('adm-main').innerHTML =
+            '<p style="color:#ef4444;padding:2rem">Access denied — ADMIN role required.</p>';
+        return;
+    }
+    const hdr  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    const api  = (p, o = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...o, headers: { ...hdr, ...(o.headers||{}) } });
+
+    // ── Global data cache ──────────────────────────────────────────────────
+    let operators = [], teams = [], sections = [], platoons = [], companies = [], alertsList = [];
+
+    async function loadAll() {
+        [operators, teams, sections, platoons, companies] = await Promise.all([
+            api('/operators').then(r => r.ok ? r.json() : []),
+            api('/teams').then(r => r.ok ? r.json() : []),
+            api('/sections').then(r => r.ok ? r.json() : []),
+            api('/platoons').then(r => r.ok ? r.json() : []),
+            api('/companies').then(r => r.ok ? r.json() : []),
+        ]);
+    }
+
+    // ── Section router ─────────────────────────────────────────────────────
+    window.show = function(section, btn) {
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadAll().then(() => render(section));
+    };
+
+    function render(section) {
+        const main = document.getElementById('adm-main');
+        switch (section) {
+            case 'overview':  main.innerHTML = ''; renderOverview(main); break;
+            case 'operators': main.innerHTML = ''; renderOperators(main); break;
+            case 'hierarchy': main.innerHTML = ''; renderHierarchy(main); break;
+            case 'config':    main.innerHTML = ''; renderConfig(main); break;
+            case 'alerts':    main.innerHTML = ''; renderAlerts(main); break;
+        }
+    }
+
+    // ── Overview ───────────────────────────────────────────────────────────
+    async function renderOverview(el) {
+        const stats = await api('/admin/stats').then(r => r.ok ? r.json() : null);
+        if (!stats) { el.innerHTML = '<p style="color:#ef4444">Could not load stats.</p>'; return; }
+        const roles = stats.operators.by_role || {};
+        el.innerHTML = `
+        <h2 style="margin-top:0">Dashboard</h2>
+        <div class="stat-grid">
+            <div class="stat-card"><div class="val">${stats.operators.total}</div><div class="lbl">Total operators</div></div>
+            <div class="stat-card"><div class="val">${stats.operators.online}</div><div class="lbl">Online now</div></div>
+            <div class="stat-card ${stats.operators.unassigned ? 'warn' : ''}">
+                <div class="val">${stats.operators.unassigned || 0}</div><div class="lbl">Unassigned</div></div>
+            <div class="stat-card ${stats.alerts.active ? 'danger' : ''}">
+                <div class="val">${stats.alerts.active}</div><div class="lbl">Active alerts</div></div>
+            <div class="stat-card"><div class="val">${stats.reports.total}</div><div class="lbl">Reports</div></div>
+            <div class="stat-card"><div class="val">${stats.tactical_objects.total}</div><div class="lbl">Tactical objects</div></div>
+            <div class="stat-card"><div class="val">${stats.messages.total}</div><div class="lbl">Messages</div></div>
+        </div>
+        <h3>Operators by role</h3>
+        <div class="stat-grid">
+            ${Object.entries(roles).map(([r,c]) => `<div class="stat-card"><div class="val">${c}</div><div class="lbl">${r}</div></div>`).join('')}
+        </div>`;
+    }
+
+    // ── Operators ──────────────────────────────────────────────────────────
+    function renderOperators(el) {
+        const teamMap    = Object.fromEntries(teams.map(t => [t.id, t.name]));
+        const unassigned = operators.filter(o => !o.team_id);
+        const warnBanner = unassigned.length
+            ? `<div style="background:#78350f22;border:1px solid #d97706;border-radius:6px;padding:0.65rem 1rem;margin-bottom:1rem;color:#fde68a;font-size:0.83rem">
+                ⚠️  <strong>${unassigned.length} operator${unassigned.length>1?'s':''} unassigned</strong>:
+                ${unassigned.map(o => `<span style="font-family:monospace">${esc(o.callsign)}</span>`).join(', ')}
+                — edit each operator and assign a team.
+               </div>` : '';
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Operators (${operators.length})</h2>
+            <button class="btn btn-primary" onclick="openCreateOp()">➕ New operator</button>
+        </div>
+        ${warnBanner}
+        <table class="adm-table">
+            <thead><tr>
+                <th></th><th>Callsign</th><th>Rank</th><th>Role</th>
+                <th>Team</th><th>Status</th><th>Last seen</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${operators.map(op => {
+                const badge = op.role === 'ADMIN' ? 'badge-adm' : op.role === 'BATTLE_CAPTAIN' ? 'badge-bc' : 'badge-op';
+                const dot   = op.online ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>';
+                const team  = op.team_id ? teamMap[op.team_id] || `#${op.team_id}` : '—';
+                const ts    = (op.last_seen || '').slice(0, 16).replace('T', ' ');
+                return `<tr>
+                    <td>${dot}</td>
+                    <td style="font-weight:600">${esc(op.callsign)}</td>
+                    <td><code style="font-size:0.78rem">${esc(op.rank)}</code></td>
+                    <td><span class="badge ${badge}">${op.role}</span></td>
+                    <td style="color:#94a3b8">${esc(team)}</td>
+                    <td><span class="badge ${op.status==='ONLINE'?'badge-ok':'badge-warn'}">${op.status}</span></td>
+                    <td style="color:#64748b;font-size:0.78rem">${ts}</td>
+                    <td>
+                        <button class="btn btn-ghost btn-sm" onclick='openEditOp(${JSON.stringify(op)})'>Edit</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteOp(${op.id}, '${esc(op.callsign)}')">Del</button>
+                    </td>
+                </tr>`;
+            }).join('')}
+            </tbody>
+        </table>`;
+    }
+
+    window.openCreateOp = function() {
+        document.getElementById('new-callsign').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('new-rank').value = 'OR-3';
+        document.getElementById('new-role').value = 'OPERATOR';
+        document.getElementById('create-op-err').textContent = '';
+        populateTeamSelect('new-team', null);
+        openModal('modal-create-op');
+    };
+
+    window.createOperator = async function() {
+        const callsign = document.getElementById('new-callsign').value.trim();
+        const password = document.getElementById('new-password').value;
+        const rank     = document.getElementById('new-rank').value;
+        const role     = document.getElementById('new-role').value;
+        const team_val = document.getElementById('new-team').value;
+        const errEl    = document.getElementById('create-op-err');
+        if (!callsign || !password) { errEl.textContent = 'Callsign and password are required.'; return; }
+        if (!team_val) { errEl.textContent = 'Please assign the operator to a team.'; return; }
+        const team_id = parseInt(team_val);
+        // Single atomic call — team_id set at registration
+        const r = await api('/auth/register', { method:'POST',
+            body: JSON.stringify({ callsign, password, rank, role, team_id }) });
+        if (!r.ok) { errEl.textContent = `Error ${r.status}: ${await r.text()}`; return; }
+        closeModal('modal-create-op');
+        await loadAll(); render('operators');
+    };
+
+    window.openEditOp = function(op) {
+        document.getElementById('edit-op-id').value = op.id;
+        document.getElementById('edit-callsign-label').textContent = op.callsign;
+        document.getElementById('edit-rank').value   = op.rank;
+        document.getElementById('edit-role').value   = op.role;
+        document.getElementById('edit-status').value = op.status;
+        document.getElementById('edit-password').value = '';
+        document.getElementById('edit-op-err').textContent = '';
+        populateTeamSelect('edit-team', op.team_id);
+        openModal('modal-edit-op');
+    };
+
+    window.saveOperator = async function() {
+        const id  = document.getElementById('edit-op-id').value;
+        const pwd = document.getElementById('edit-password').value;
+        const errEl = document.getElementById('edit-op-err');
+        const body = {
+            rank:    document.getElementById('edit-rank').value,
+            role:    document.getElementById('edit-role').value,
+            status:  document.getElementById('edit-status').value,
+            team_id: document.getElementById('edit-team').value
+                     ? parseInt(document.getElementById('edit-team').value) : null,
+        };
+        const r = await api(`/operators/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status}`; return; }
+        if (pwd) {
+            const rp = await api(`/operators/${id}/set-password`,
+                { method:'POST', body: JSON.stringify({ password: pwd }) });
+            if (!rp.ok) { errEl.textContent = `Password update failed: ${rp.status}`; return; }
+        }
+        closeModal('modal-edit-op');
+        await loadAll(); render('operators');
+    };
+
+    window.deleteOp = async function(id, callsign) {
+        if (!confirm(`Delete operator "${callsign}"? This cannot be undone.`)) return;
+        await api(`/operators/${id}`, { method:'DELETE' });
+        await loadAll(); render('operators');
+    };
+
+    // ── Hierarchy ──────────────────────────────────────────────────────────
+    function renderHierarchy(el) {
+        const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
+        const pltMap = Object.fromEntries(platoons.map(p => [p.id, p]));
+
+        const teamsBySection  = groupBy(teams,    t => t.section_id);
+        const sectionsByPlt   = groupBy(sections, s => s.platoon_id);
+        const platoonsByCo    = groupBy(platoons, p => p.company_id);
+        const teamOpCount     = Object.fromEntries(teams.map(t => [t.id, operators.filter(o => o.team_id === t.id).length]));
+
+        const treeHtml = companies.length === 0
+            ? '<p style="color:#475569">No companies yet.</p>'
+            : companies.map(co => `
+              <details>
+                <summary>
+                  <span class="h-item">
+                    <strong>${esc(co.name)}</strong>
+                    <span class="h-meta">${(platoonsByCo[co.id]||[]).length} platoons</span>
+                    <button class="btn btn-ghost btn-sm" onclick="addNode('platoon',${co.id},'${esc(co.name)}')">+ Platoon</button>
+                    <button class="btn btn-danger btn-sm" onclick="delNode('companies',${co.id},'${esc(co.name)}')">×</button>
+                  </span>
+                </summary>
+                ${(platoonsByCo[co.id]||[]).map(plt => `
+                  <details>
+                    <summary>
+                      <span class="h-item">
+                        ${esc(plt.name)}
+                        <span class="h-meta">${(sectionsByPlt[plt.id]||[]).length} sections</span>
+                        <button class="btn btn-ghost btn-sm" onclick="addNode('section',${plt.id},'${esc(plt.name)}')">+ Section</button>
+                        <button class="btn btn-danger btn-sm" onclick="delNode('platoons',${plt.id},'${esc(plt.name)}')">×</button>
+                      </span>
+                    </summary>
+                    ${(sectionsByPlt[plt.id]||[]).map(sec => `
+                      <details>
+                        <summary>
+                          <span class="h-item">
+                            ${esc(sec.name)}
+                            <span class="h-meta">${(teamsBySection[sec.id]||[]).length} teams</span>
+                            <button class="btn btn-ghost btn-sm" onclick="addNode('team',${sec.id},'${esc(sec.name)}')">+ Team</button>
+                            <button class="btn btn-danger btn-sm" onclick="delNode('sections',${sec.id},'${esc(sec.name)}')">×</button>
+                          </span>
+                        </summary>
+                        ${(teamsBySection[sec.id]||[]).map(t => `
+                          <div style="margin-left:1rem;padding:0.25rem 0;display:flex;align-items:center;gap:0.5rem">
+                            <span style="font-size:0.82rem">${esc(t.name)}</span>
+                            <span class="h-meta">${teamOpCount[t.id]||0} ops</span>
+                            <button class="btn btn-danger btn-sm" onclick="delNode('teams',${t.id},'${esc(t.name)}')">×</button>
+                          </div>`).join('')}
+                      </details>`).join('')}
+                  </details>`).join('')}
+              </details>`).join('');
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Hierarchy</h2>
+            <button class="btn btn-primary" onclick="addNode('company',null,'')">➕ Add Company</button>
+        </div>
+        <div class="htree">${treeHtml}</div>`;
+    }
+
+    let _nodeType = '', _nodeParentId = null;
+
+    window.addNode = function(type, parentId, parentName) {
+        _nodeType = type; _nodeParentId = parentId;
+        const titles = { company:'Add Company', platoon:`Add Platoon to ${parentName}`,
+                         section:`Add Section to ${parentName}`, team:`Add Team to ${parentName}` };
+        document.getElementById('add-node-title').textContent = titles[type] || 'Add';
+        document.getElementById('add-node-name').value = '';
+        document.getElementById('add-node-err').textContent = '';
+        document.getElementById('add-node-parent-field').style.display = 'none';
+        openModal('modal-add-node');
+    };
+
+    window.saveNode = async function() {
+        const name = document.getElementById('add-node-name').value.trim();
+        const errEl = document.getElementById('add-node-err');
+        if (!name) { errEl.textContent = 'Name is required.'; return; }
+        const bodies = {
+            company:  { name },
+            platoon:  { name, company_id: _nodeParentId },
+            section:  { name, platoon_id: _nodeParentId },
+            team:     { name, section_id: _nodeParentId },
+        };
+        const paths = { company:'companies', platoon:'platoons', section:'sections', team:'teams' };
+        const r = await api(`/${paths[_nodeType]}`, { method:'POST', body: JSON.stringify(bodies[_nodeType]) });
+        if (!r.ok) { errEl.textContent = `Failed: ${r.status} ${await r.text()}`; return; }
+        closeModal('modal-add-node');
+        await loadAll(); render('hierarchy');
+    };
+
+    window.delNode = async function(path, id, name) {
+        if (!confirm(`Delete "${name}"? This will also delete all children.`)) return;
+        const r = await api(`/${path}/${id}`, { method:'DELETE' });
+        if (!r.ok) alert(`Delete failed: ${r.status}`);
+        await loadAll(); render('hierarchy');
+    };
+
+    // ── Config ─────────────────────────────────────────────────────────────
+    async function renderConfig(el) {
+        const cfg = await api('/admin/config').then(r => r.ok ? r.json() : null);
+        if (!cfg) { el.innerHTML = '<p style="color:#ef4444">Could not load config. Admin role required.</p>'; return; }
+
+        const section = (title, rows) => `
+          <div class="cfg-section">
+            <h3>${title}</h3>
+            ${rows.map(([k,v,warn]) => `
+              <div class="cfg-row">
+                <div class="cfg-key">${k}</div>
+                <div class="cfg-val ${warn?'warn':''}">${esc(String(v))}</div>
+              </div>`).join('')}
+          </div>`;
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Configuration</h2>
+            <span style="color:#64748b;font-size:0.8rem">Source: config.xml · restart server to apply changes</span>
+        </div>
+        ${section('Server', [['host', cfg.server.host], ['port', cfg.server.port]])}
+        ${section('Database', [['url', cfg.database.url]])}
+        ${section('Authentication', [
+            ['secret',               cfg.auth.secret, cfg.auth.secret.includes('DEFAULT')],
+            ['algorithm',            cfg.auth.algorithm],
+            ['token_expire_minutes', cfg.auth.token_expire_minutes],
+        ])}
+        ${section('CoT (Cursor on Target)', [
+            ['multicast_group', cfg.cot.multicast_group],
+            ['port',            cfg.cot.port],
+        ])}
+        ${section('Maps', [['offline', cfg.maps.offline]])}
+        ${section('Default Operator', [['callsign', cfg.operator.callsign], ['team', cfg.operator.team]])}
+        <p style="color:#64748b;font-size:0.8rem;margin-top:1rem">
+            ℹ️  Edit <code>config.xml</code> in the project root to change these values, then restart the server.
+        </p>`;
+    }
+
+    // ── Alerts ─────────────────────────────────────────────────────────────
+    async function renderAlerts(el) {
+        const alerts = await api('/alerts').then(r => r.ok ? r.json() : []);
+        const opMap  = Object.fromEntries(operators.map(o => [o.id, o.callsign]));
+        const colors = { ACTIVE:'badge-err', ACKNOWLEDGED:'badge-warn', CLOSED:'badge-op' };
+        el.innerHTML = `
+        <div class="sec-header"><h2>Alerts (${alerts.length})</h2></div>
+        <table class="adm-table">
+            <thead><tr><th>Type</th><th>Operator</th><th>Location</th><th>Time</th><th>Status</th></tr></thead>
+            <tbody>
+            ${alerts.map(a => `<tr>
+                <td><strong>${esc(a.type)}</strong></td>
+                <td>${esc(opMap[a.operator_id] || '#' + a.operator_id)}</td>
+                <td style="font-size:0.78rem;font-family:monospace">${a.latitude != null ? `${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)}` : '—'}</td>
+                <td style="color:#64748b;font-size:0.78rem">${(a.timestamp||'').slice(0,16).replace('T',' ')}</td>
+                <td><span class="badge ${colors[a.status]||'badge-op'}">${a.status}</span></td>
+            </tr>`).join('') || '<tr><td colspan="5" style="color:#475569">No alerts</td></tr>'}
+            </tbody>
+        </table>`;
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function populateTeamSelect(selectId, selected) {
+        const sel = document.getElementById(selectId);
+        sel.innerHTML = '<option value="">— unassigned —</option>' +
+            teams.map(t => `<option value="${t.id}" ${t.id == selected ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+    }
+
+    function groupBy(arr, fn) {
+        return arr.reduce((acc, x) => { const k = fn(x); (acc[k] = acc[k]||[]).push(x); return acc; }, {});
+    }
+
+    function esc(s) {
+        return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    window.openModal  = id => document.getElementById(id).classList.add('open');
+    window.closeModal = id => document.getElementById(id).classList.remove('open');
+
+    // Click-outside to close modals
+    document.querySelectorAll('.modal-bg').forEach(bg =>
+        bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); }));
+
+    // Boot
+    loadAll().then(() => renderOverview(document.getElementById('adm-main')));
+})();
+</script>
 {% endblock %}

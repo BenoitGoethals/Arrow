@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.api.schemas import OperatorOut, PositionIn
 from backend.auth.jwt_auth import get_current_operator
+from backend.cot.cot import CotEvent, role_to_cot_type
 from backend.storage.database import get_db
 from backend.storage.models import Operator
 from backend.websocket.manager import broadcaster
@@ -26,17 +27,30 @@ async def update_position(
     db.commit()
     db.refresh(current)
 
+    cot_type = role_to_cot_type(current.role)
+    cot_xml  = CotEvent(
+        uid      = f"ARROW.{current.callsign}",
+        cot_type = cot_type,
+        lat      = current.latitude,
+        lon      = current.longitude,
+        hae      = current.altitude or 0.0,
+        callsign = current.callsign,
+        role     = current.role,
+    ).to_xml_str()
+
     await broadcaster.broadcast(
         {
-            "channel": "tracking",
-            "event": "position",
+            "channel":  "tracking",
+            "event":    "position",
+            "cot_xml":  cot_xml,
             "data": {
                 "operator_id": current.id,
-                "callsign": current.callsign,
-                "latitude": current.latitude,
-                "longitude": current.longitude,
-                "altitude": current.altitude,
-                "team_id": current.team_id,
+                "callsign":    current.callsign,
+                "latitude":    current.latitude,
+                "longitude":   current.longitude,
+                "altitude":    current.altitude,
+                "team_id":     current.team_id,
+                "cot_type":    cot_type,
             },
         }
     )

@@ -26,8 +26,9 @@ class TokenOut(BaseModel):
 class RegisterIn(BaseModel):
     callsign: str
     password: str
-    rank: str = "OR-1"
-    role: str = "OPERATOR"
+    rank: str    = "OR-1"
+    role: str    = "OPERATOR"
+    team_id: int | None = None   # assign directly at creation — no separate PATCH needed
 
 
 @router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
@@ -39,6 +40,7 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> TokenOut:
         callsign=payload.callsign,
         rank=payload.rank,
         role=payload.role,
+        team_id=payload.team_id,
         password_hash=hash_password(payload.password),
     )
     db.add(op)

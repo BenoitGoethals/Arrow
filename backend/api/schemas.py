@@ -79,8 +79,13 @@ class OperatorOut(ORMModel):
 
 class OperatorUpdate(BaseModel):
     rank: str | None = None
+    role: str | None = None
     status: str | None = None
     team_id: int | None = None
+
+
+class PasswordReset(BaseModel):
+    password: str
 
 
 class TacticalObjectIn(BaseModel):

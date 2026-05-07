@@ -19,7 +19,6 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -27,32 +26,59 @@ import kotlinx.coroutines.launch
 class LocationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private lateinit var fused: com.google.android.gms.location.FusedLocationProviderClient
     private lateinit var trackingRepo: TrackingRepository
+
+    // Cached identity — resolved once on service start so every GPS callback
+    // can build a proper CoT event without a network round-trip.
+    @Volatile private var callsign: String = ""
+    @Volatile private var role:     String = "OPERATOR"
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
             scope.launch {
-                trackingRepo.pushPosition(loc.latitude, loc.longitude, loc.altitude)
+                if (callsign.isNotBlank()) {
+                    // Primary path: CoT XML — MIL-STD-2525C conformant
+                    trackingRepo.pushPositionCot(
+                        callsign = callsign,
+                        role     = role,
+                        lat      = loc.latitude,
+                        lon      = loc.longitude,
+                        hae      = loc.altitude,
+                    ).onFailure {
+                        // Fallback to JSON if CoT endpoint is unavailable
+                        trackingRepo.pushPosition(loc.latitude, loc.longitude, loc.altitude)
+                    }
+                } else {
+                    // Identity not yet resolved — use JSON fallback
+                    trackingRepo.pushPosition(loc.latitude, loc.longitude, loc.altitude)
+                }
             }
         }
     }
 
     override fun onCreate() {
         super.onCreate()
-        trackingRepo = (application as ArrowApp).container.trackingRepository
-        fused = LocationServices.getFusedLocationProviderClient(this)
+        val container = (application as ArrowApp).container
+        trackingRepo  = container.trackingRepository
         startForeground(NOTIFICATION_ID, buildNotification())
+
+        // Resolve operator identity for CoT header fields
+        scope.launch {
+            container.authRepository.me().onSuccess { op ->
+                callsign = op.callsign
+                role     = op.role
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L)
             .setMinUpdateIntervalMillis(2_000L)
             .build()
-
         try {
-            fused.requestLocationUpdates(request, callback, Looper.getMainLooper())
+            LocationServices.getFusedLocationProviderClient(this)
+                .requestLocationUpdates(request, callback, Looper.getMainLooper())
         } catch (_: SecurityException) {
             stopSelf()
         }
@@ -60,7 +86,7 @@ class LocationService : Service() {
     }
 
     override fun onDestroy() {
-        fused.removeLocationUpdates(callback)
+        LocationServices.getFusedLocationProviderClient(this).removeLocationUpdates(callback)
         scope.cancel()
         super.onDestroy()
     }
@@ -90,7 +116,7 @@ class LocationService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "arrow.tracking"
+        private const val CHANNEL_ID     = "arrow.tracking"
         private const val NOTIFICATION_ID = 1
     }
 }
