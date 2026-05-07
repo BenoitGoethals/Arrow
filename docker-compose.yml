@@ -5,8 +5,8 @@ services:
       dockerfile: backend.dockerfile
     image: arrow-backend
     container_name: arrow-backend
-    ports:
-      - "6001:6001"
+    expose:
+      - "6001"
     volumes:
       - arrow-data:/app/data
       - ./config.xml:/app/config.xml:ro
@@ -25,13 +25,31 @@ services:
     image: arrow-web
     container_name: arrow-web
     environment:
-      ARROW_BACKEND_URL: ${ARROW_PUBLIC_BACKEND_URL:-http://192.168.0.240:6001}
-    ports:
-      - "6002:6002"
+      # Browser hits same origin -> Caddy -> backend. Server-side BACKEND_URL
+      # is used by the Flask /api proxy fallback only.
+      ARROW_BACKEND_URL: http://backend:6001
+    expose:
+      - "6002"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
 
+  proxy:
+    image: caddy:2-alpine
+    container_name: arrow-proxy
+    ports:
+      - "6200:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - backend
+      - web
+    restart: unless-stopped
+
 volumes:
   arrow-data:
+  caddy-data:
+  caddy-config:

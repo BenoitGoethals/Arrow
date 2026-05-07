@@ -1,0 +1,13 @@
+:80 {
+    encode gzip
+
+    # Backend REST + WebSocket under /api/* — strip prefix so
+    # /api/auth/login -> /auth/login and /api/ws -> /ws (Caddy preserves
+    # WebSocket upgrade headers automatically).
+    handle_path /api/* {
+        reverse_proxy backend:6001
+    }
+
+    # Everything else -> Flask web app (HTML/CSS/JS)
+    reverse_proxy web:6002
+}
