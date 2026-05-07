@@ -55,7 +55,12 @@ private val STATUS_COLORS = mapOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FireMissionScreen(container: AppContainer, onBack: () -> Unit) {
+fun FireMissionScreen(
+    container:  AppContainer,
+    presetLat:  Double? = null,
+    presetLon:  Double? = null,
+    onBack:     () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(0) }  // 0 = Call Fire, 1 = Log
 
@@ -77,15 +82,21 @@ fun FireMissionScreen(container: AppContainer, onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         container.fireMissionRepository.list().onSuccess { missions = it }
-        // Pre-fill MGRS from GPS position
-        container.authRepository.me().onSuccess { me ->
-            container.tacticalRepository.listOperators().onSuccess { ops ->
-                val op = ops.find { it.id == me.id }
-                if (op?.latitude != null && op.longitude != null) {
-                    lat = op.latitude
-                    lon = op.longitude
-                    alt = "%.0f".format(op.altitude ?: 0.0)
-                    runCatching { mgrs = MgrsConverter.encode(op.latitude, op.longitude) }
+
+        if (presetLat != null && presetLon != null) {
+            // Pre-fill from map tap
+            lat = presetLat; lon = presetLon
+            runCatching { mgrs = MgrsConverter.encode(presetLat, presetLon) }
+        } else {
+            // Pre-fill from GPS
+            container.authRepository.me().onSuccess { me ->
+                container.tacticalRepository.listOperators().onSuccess { ops ->
+                    val op = ops.find { it.id == me.id }
+                    if (op?.latitude != null && op.longitude != null) {
+                        lat = op.latitude; lon = op.longitude
+                        alt = "%.0f".format(op.altitude ?: 0.0)
+                        runCatching { mgrs = MgrsConverter.encode(op.latitude, op.longitude) }
+                    }
                 }
             }
         }

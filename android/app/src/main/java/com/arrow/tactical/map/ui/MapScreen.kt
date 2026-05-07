@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -55,12 +56,17 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 
-private enum class MenuStep { CATEGORY, ENEMY_TYPE, NOTES }
+// CATEGORY is gone — replaced by RadialMenu; ENEMY_TYPE and NOTES are direct bottom sheets
+private enum class MenuStep { ENEMY_TYPE, NOTES }
 private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen(container: AppContainer, onCallFire: () -> Unit = {}) {
+fun MapScreen(
+    container:   AppContainer,
+    onCallFire:  (lat: Double, lon: Double) -> Unit = { _, _ -> },
+    onReport:    (lat: Double, lon: Double) -> Unit = { _, _ -> },
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var operators by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
@@ -87,10 +93,13 @@ fun MapScreen(container: AppContainer, onCallFire: () -> Unit = {}) {
             }
     }
 
-    // Bottom-sheet state — written from the OSMdroid tap callback
-    val pendingPointState = remember { mutableStateOf<GeoPoint?>(null) }
-    var pendingPoint by pendingPointState
-    var menuStep by remember { mutableStateOf(MenuStep.CATEGORY) }
+    // Tap state — written from the OSMdroid tap callback
+    val pendingPointState     = remember { mutableStateOf<GeoPoint?>(null) }
+    val pendingScreenPosState = remember { mutableStateOf<Offset?>(null) }
+    var pendingPoint     by pendingPointState
+    var pendingScreenPos by pendingScreenPosState
+    // null screenPos = bottom-sheet showing; non-null = radial menu showing
+    var menuStep     by remember { mutableStateOf(MenuStep.ENEMY_TYPE) }
     var selectedType by remember { mutableStateOf(EnemyType.INFANTRY) }
     var notes by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
@@ -277,8 +286,12 @@ fun MapScreen(container: AppContainer, onCallFire: () -> Unit = {}) {
                     val events = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             p ?: return false
-                            pendingPointState.value = p
-                            menuStep        = MenuStep.CATEGORY
+                            // Capture both geo point and screen pixel position
+                            val px = projection?.toPixels(p, android.graphics.Point())
+                            pendingPointState.value     = p
+                            pendingScreenPosState.value = if (px != null)
+                                Offset(px.x.toFloat(), px.y.toFloat()) else null
+                            // Reset form state
                             notes           = ""
                             selectedType    = EnemyType.INFANTRY
                             submitError     = null
@@ -398,28 +411,51 @@ fun MapScreen(container: AppContainer, onCallFire: () -> Unit = {}) {
 
     } // Box
 
-    // Bottom sheet — shown whenever a map point is pending
-    if (pendingPoint != null) {
+    // ── Radial menu — shown immediately on tap (pendingScreenPos != null) ────
+    if (pendingPoint != null && pendingScreenPos != null) {
+        val point = pendingPoint!!
+        RadialMenu(
+            tapOffset = pendingScreenPos!!,
+            items = listOf(
+                RadialItem("⚠", "Enemy",    Color(0xFFDC2626)) {
+                    pendingScreenPos = null          // dismiss radial, show enemy picker
+                    menuStep = MenuStep.ENEMY_TYPE
+                },
+                RadialItem("🎯", "Fire\nMission", Color(0xFFB91C1C)) {
+                    val lat = point.latitude; val lon = point.longitude
+                    pendingPoint = null; pendingScreenPos = null
+                    onCallFire(lat, lon)
+                },
+                RadialItem("📋", "Report",  Color(0xFF2563EB)) {
+                    val lat = point.latitude; val lon = point.longitude
+                    pendingPoint = null; pendingScreenPos = null
+                    onReport(lat, lon)
+                },
+                RadialItem("📍", "POI",     Color(0xFFD97706)) {
+                    selectedType = EnemyType.POI
+                    pendingScreenPos = null          // dismiss radial, show notes sheet
+                    menuStep = MenuStep.NOTES
+                },
+            ),
+            onDismiss = { pendingPoint = null; pendingScreenPos = null },
+        )
+    }
+
+    // ── Bottom sheets — shown after selecting from radial (pendingScreenPos == null) ─
+    if (pendingPoint != null && pendingScreenPos == null) {
         ModalBottomSheet(
             onDismissRequest = { pendingPoint = null },
         ) {
             val point = pendingPoint ?: return@ModalBottomSheet
             when (menuStep) {
-                MenuStep.CATEGORY -> CategoryMenu(
-                    point = point,
-                    onEnemy = { menuStep = MenuStep.ENEMY_TYPE },
-                    onPoi = {
-                        selectedType = EnemyType.POI
-                        menuStep = MenuStep.NOTES
-                    },
-                )
+                MenuStep.ENEMY_TYPE -> Unit   // handled below, kept for exhaustive when
 
                 MenuStep.ENEMY_TYPE -> EnemyTypeMenu(
                     onSelect = { type ->
                         selectedType = type
                         menuStep = MenuStep.NOTES
                     },
-                    onBack = { menuStep = MenuStep.CATEGORY },
+                    onBack = { pendingPoint = null },   // back = full dismiss
                 )
 
                 MenuStep.NOTES -> NotesMenu(
@@ -433,7 +469,8 @@ fun MapScreen(container: AppContainer, onCallFire: () -> Unit = {}) {
                     onPickPhoto    = { galleryLauncher.launch("image/*") },
                     onClearPhoto   = { pendingPhotoUri = null; pendingPhotoId = null },
                     onBack = {
-                        menuStep        = if (selectedType == EnemyType.POI) MenuStep.CATEGORY else MenuStep.ENEMY_TYPE
+                        if (selectedType == EnemyType.POI) pendingPoint = null
+                        else menuStep = MenuStep.ENEMY_TYPE
                         pendingPhotoId  = null
                         pendingPhotoUri = null
                     },
@@ -495,41 +532,6 @@ private fun parsePlatoonIds(json: String, myId: Int): Set<Int> {
 }
 
 @Composable
-private fun CategoryMenu(point: GeoPoint, onEnemy: () -> Unit, onPoi: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            "Mark location",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            "%.5f, %.5f".format(point.latitude, point.longitude),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(4.dp))
-        Button(
-            onClick = onEnemy,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-        ) {
-            Text("⚠ Enemy location")
-        }
-        OutlinedButton(
-            onClick = onPoi,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("📍 POI / Observation")
-        }
-    }
-}
-
 @Composable
 private fun EnemyTypeMenu(onSelect: (EnemyType) -> Unit, onBack: () -> Unit) {
     val hostileTypes = EnemyType.entries.filter { it != EnemyType.POI }
