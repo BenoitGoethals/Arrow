@@ -31,7 +31,6 @@ class SettingsRepository(private val context: Context) {
     }
 
     companion object {
-        // Use 10.0.2.2 for Android emulator → host machine.
-        const val DEFAULT_SERVER = "http://10.0.2.2:6001"
+        const val DEFAULT_SERVER = "http://192.168.0.240:6001"
     }
 }

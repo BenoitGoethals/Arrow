@@ -182,3 +182,37 @@ class ReportOut(ORMModel):
     operator_id: int
     payload: str
     timestamp: datetime
+
+
+class FireMissionIn(BaseModel):
+    latitude:     float
+    longitude:    float
+    altitude:     float  = 0.0
+    direction:    float               # azimuth ° (observer → target)
+    mission_type: str                 # ADJUST_FIRE | FIRE_FOR_EFFECT | SUPPRESSION | ILLUMINATION
+    ammunition:   str                 # HE | ILLUM | SMOKE | WP | ICM | MIXED
+    quantity:     int    = 1
+    description:  str    = ""
+
+
+class FireMissionUpdate(BaseModel):
+    status:          str | None = None
+    fdc_operator_id: int | None = None
+    notes:           str | None = None
+
+
+class FireMissionOut(ORMModel):
+    id:              int
+    operator_id:     int
+    latitude:        float
+    longitude:       float
+    altitude:        float
+    direction:       float
+    mission_type:    str
+    ammunition:      str
+    quantity:        int
+    description:     str
+    status:          str
+    fdc_operator_id: int | None
+    timestamp:       datetime
+    notes:           str

@@ -60,7 +60,7 @@ private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MapScreen(container: AppContainer) {
+fun MapScreen(container: AppContainer, onCallFire: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var operators by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
@@ -135,24 +135,38 @@ fun MapScreen(container: AppContainer) {
         container.authRepository.me().onSuccess { meId = it.id }
     }
 
-    // Resilient polling — never crashes on network errors, tracks server reachability
+    // Resilient polling — two-stage: health ping (no auth) then authenticated fetch.
+    // This separates "server unreachable" from "token / auth problem" in the error text.
     LaunchedEffect(Unit) {
         while (true) {
             try {
-                container.tacticalRepository.listOperators()
-                    .onSuccess { ops ->
-                        operators    = ops
-                        serverOnline = true
-                        fetchError   = if (ops.isEmpty()) "0 operators — run simulator?" else null
-                    }
-                    .onFailure { err ->
-                        serverOnline = false
-                        fetchError   = err.message?.take(80)
-                    }
-                container.tacticalRepository.listObjects()
-                    .onSuccess { enemies = it }
-            } catch (_: Exception) {
+                val health = container.apiClient.get("/health")
+                if (!health.ok) {
+                    serverOnline = false
+                    fetchError   = "Server returned ${health.code}"
+                } else {
+                    container.tacticalRepository.listOperators()
+                        .onSuccess { ops ->
+                            operators    = ops
+                            serverOnline = true
+                            fetchError   = if (ops.isEmpty()) "0 operators — run simulator?" else null
+                        }
+                        .onFailure { err ->
+                            serverOnline = false
+                            fetchError   = when {
+                                err.message?.contains("401") == true ->
+                                    "Not authenticated — log out and back in"
+                                err.message?.contains("403") == true ->
+                                    "Access denied"
+                                else -> err.message?.take(80)
+                            }
+                        }
+                    container.tacticalRepository.listObjects()
+                        .onSuccess { enemies = it }
+                }
+            } catch (e: Exception) {
                 serverOnline = false
+                fetchError   = "Cannot reach ${serverUrl.ifBlank { "server" }}: ${e.message?.take(50)}"
             }
             delay(5_000)
         }
@@ -357,11 +371,23 @@ fun MapScreen(container: AppContainer) {
             }
         }
 
+        // ── 🎯 Call for Fire FAB ──────────────────────────────────────────
+        FloatingActionButton(
+            onClick        = onCallFire,
+            containerColor = Color(0xFFB91C1C),
+            modifier       = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 72.dp)
+                .size(44.dp),
+        ) {
+            Text("🎯", fontSize = 20.sp)
+        }
+
         // ── TIC FAB ───────────────────────────────────────────────────────
         FloatingActionButton(
-            onClick = { scope.launch { container.alertRepository.trigger("TIC") } },
+            onClick        = { scope.launch { container.alertRepository.trigger("TIC") } },
             containerColor = MaterialTheme.colorScheme.error,
-            modifier = Modifier
+            modifier       = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 16.dp)
                 .size(44.dp),

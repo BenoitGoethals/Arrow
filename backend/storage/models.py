@@ -136,6 +136,26 @@ class Battle(Base):
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
 
 
+class FireMission(Base):
+    """Artillery / mortar call-for-fire request."""
+    __tablename__ = "fire_missions"
+
+    id:             Mapped[int]         = mapped_column(primary_key=True)
+    operator_id:    Mapped[int]         = mapped_column(ForeignKey("operators.id"))
+    latitude:       Mapped[float]       = mapped_column(Float)
+    longitude:      Mapped[float]       = mapped_column(Float)
+    altitude:       Mapped[float]       = mapped_column(Float, default=0.0)   # metres MSL
+    direction:      Mapped[float]       = mapped_column(Float)                # azimuth °
+    mission_type:   Mapped[str]         = mapped_column(String(30))           # ADJUST_FIRE etc.
+    ammunition:     Mapped[str]         = mapped_column(String(40))           # HE / ILLUM / SMOKE …
+    quantity:       Mapped[int]         = mapped_column(default=1)
+    description:    Mapped[str]         = mapped_column(Text, default="")
+    status:         Mapped[str]         = mapped_column(String(20), default="PENDING")
+    fdc_operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    timestamp:      Mapped[datetime]    = mapped_column(DateTime(timezone=True), default=_utcnow)
+    notes:          Mapped[str]         = mapped_column(Text, default="")
+
+
 class Report(Base):
     __tablename__ = "reports"
 

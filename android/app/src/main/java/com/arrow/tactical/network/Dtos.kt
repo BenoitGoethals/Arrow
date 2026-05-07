@@ -108,6 +108,36 @@ data class ReportDto(
 )
 
 @Serializable
+data class FireMissionIn(
+    val latitude:     Double,
+    val longitude:    Double,
+    val altitude:     Double  = 0.0,
+    val direction:    Double,
+    @SerialName("mission_type") val missionType: String,
+    val ammunition:   String,
+    val quantity:     Int    = 1,
+    val description:  String = "",
+)
+
+@Serializable
+data class FireMissionDto(
+    val id:             Int,
+    @SerialName("operator_id")     val operatorId:    Int,
+    val latitude:       Double,
+    val longitude:      Double,
+    val altitude:       Double,
+    val direction:      Double,
+    @SerialName("mission_type")    val missionType:   String,
+    val ammunition:     String,
+    val quantity:       Int,
+    val description:    String,
+    val status:         String,
+    @SerialName("fdc_operator_id") val fdcOperatorId: Int? = null,
+    val timestamp:      String? = null,
+    val notes:          String  = "",
+)
+
+@Serializable
 data class RegisterIn(
     val callsign: String,
     val password: String,

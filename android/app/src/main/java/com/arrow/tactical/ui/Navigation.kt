@@ -32,6 +32,7 @@ import androidx.navigation.compose.rememberNavController
 import com.arrow.tactical.alerts.ui.AlertsScreen
 import com.arrow.tactical.auth.ui.LoginScreen
 import com.arrow.tactical.di.AppContainer
+import com.arrow.tactical.firemission.ui.FireMissionScreen
 import com.arrow.tactical.map.ui.MapScreen
 import com.arrow.tactical.map.ui.MarkEnemyScreen
 import com.arrow.tactical.messaging.ui.MessagingScreen
@@ -138,7 +139,16 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             modifier = Modifier.padding(padding),
         ) {
             composable(Tab.Map.route) {
-                MapScreen(container = container)
+                MapScreen(
+                    container = container,
+                    onCallFire = { tabNav.navigate("fire-mission") },
+                )
+            }
+            composable("fire-mission") {
+                FireMissionScreen(
+                    container = container,
+                    onBack    = { tabNav.popBackStack() },
+                )
             }
             composable("${Tab.Mark.route}?lat={lat}&lon={lon}") { entry ->
                 val lat = entry.arguments?.getString("lat")?.toDoubleOrNull()
