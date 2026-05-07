@@ -13,6 +13,7 @@
     <a href="{{ url_for('tactical_map.index') }}">Tactical Map</a>
     <a href="{{ url_for('messaging.index') }}">Messaging</a>
     <a href="{{ url_for('reports.index') }}">Reports</a>
+    <a href="{{ url_for('fire_missions.index') }}" style="color:#ef4444;font-weight:600">🎯 Fire Missions</a>
     <a href="{{ url_for('admin.index') }}">Admin</a>
     <span class="spacer"></span>
     <span id="nav-user" class="nav-user"></span>
@@ -136,11 +137,60 @@
         input.addEventListener('keydown', e => { if (e.key === 'Enter') sendReply(); });
     }
 
+    function showFireMissionAlert(evt) {
+        const d    = evt.data || {};
+        const cs   = d.callsign || 'Unknown';
+        const type = (d.mission_type || '').replace(/_/g, ' ');
+        const ammo = d.ammunition || '';
+        const grid = d.latitude != null ? `${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}` : '—';
+
+        // Prominent red banner regardless of tab visibility
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.borderLeftColor = '#dc2626';
+        toast.style.borderLeftWidth = '4px';
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from">
+                    <a href="/fire-missions/" style="color:#ef4444">🎯 FIRE MISSION</a>
+                    <em style="color:#f87171">${esc(type)}</em>
+                </span>
+                <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            <div class="arrow-toast-body">
+                <strong>${esc(cs)}</strong> requests ${esc(ammo)} — Grid: ${esc(grid)}<br>
+                ${d.description ? `<span style="color:#94a3b8">${esc(d.description)}</span>` : ''}
+            </div>
+            <div class="arrow-toast-reply">
+                <a href="/fire-missions/" class="arrow-toast-send" style="text-decoration:none;text-align:center">
+                    Open FDC →
+                </a>
+            </div>`;
+
+        document.getElementById('arrow-toast-container').appendChild(toast);
+
+        // Browser notification
+        if (Notification.permission === 'granted') {
+            const n = new Notification('🎯 FIRE MISSION — ' + cs,
+                { body: `${type} · ${ammo} · ${grid}`, tag: 'arrow-fire' });
+            n.onclick = () => { window.location.href = '/fire-missions/'; n.close(); };
+        }
+    }
+
+    function esc(s) {
+        return String(s||'').replace(/[&<>"']/g, c =>
+            ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
     function connectWS() {
         const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
         ws.onmessage = ev => {
-            try { const e = JSON.parse(ev.data); if (e.channel === 'chat') showToast(e); } catch (_) {}
+            try {
+                const e = JSON.parse(ev.data);
+                if (e.channel === 'chat')         showToast(e);
+                if (e.channel === 'fire-mission') showFireMissionAlert(e);
+            } catch (_) {}
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
     }
