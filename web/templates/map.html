@@ -28,25 +28,50 @@
     .filter-bar .count { color: #94a3b8; }
     .leaflet-popup-content { color: #0e1217; }
 
-    /* ── Radial context menu ──────────────────────────────────────── */
-    #radial-bg { display:none; position:fixed; inset:0; z-index:800; background:rgba(0,0,0,.45); }
+    /* ── Radial context menu ─────────────────────────────────────── */
+    #radial-bg  { display:none; position:fixed; inset:0; z-index:800; background:rgba(0,0,0,.50); }
     #radial-bg.open { display:block; }
     #radial-menu { position:fixed; z-index:801; pointer-events:none; }
     #radial-menu.open { pointer-events:all; }
-    .r-tap { position:absolute; width:12px; height:12px; border-radius:50%; background:#fff;
-             transform:translate(-50%,-50%); }
-    .r-item { position:absolute; width:54px; height:54px; border-radius:50%;
-               display:flex; flex-direction:column; align-items:center; justify-content:center;
-               cursor:pointer; font-size:1.1rem; line-height:1; transform:translate(-50%,-50%) scale(0);
-               transition:transform .2s cubic-bezier(.34,1.56,.64,1), opacity .15s;
-               opacity:0; box-shadow:0 3px 10px rgba(0,0,0,.5); }
-    .r-item.open { transform:translate(-50%,-50%) scale(1); opacity:1; }
-    .r-item:hover { filter:brightness(1.15); }
-    .r-label { font-size:0.55rem; font-weight:700; color:#fff; margin-top:2px; letter-spacing:.03em; }
-    .r-enemy  { background:#dc2626; }
-    .r-fire   { background:#991b1b; }
-    .r-poi    { background:#d97706; }
-    .r-report { background:#1d4ed8; }
+
+    /* Ring SVG — centred on the tap point, animates in as one unit */
+    #r-rings {
+        position:absolute;
+        transform:translate(-50%,-50%) scale(0);
+        opacity:0;
+        pointer-events:none;
+        overflow:visible;
+        transition: transform .35s cubic-bezier(.34,1.56,.64,1),
+                    opacity   .20s ease;
+    }
+    #radial-menu.open #r-rings {
+        transform:translate(-50%,-50%) scale(1);
+        opacity:1;
+    }
+
+    /* Item buttons — sit on the outer ring */
+    .r-item {
+        position:absolute;
+        width:54px; height:54px;
+        border-radius:50%;
+        display:flex; flex-direction:column;
+        align-items:center; justify-content:center;
+        cursor:pointer; font-size:1.1rem; line-height:1;
+        transform:translate(-50%,-50%) scale(0);
+        transition:transform .25s cubic-bezier(.34,1.56,.64,1),
+                   opacity   .18s ease;
+        opacity:0;
+    }
+    .r-item.open  { transform:translate(-50%,-50%) scale(1); opacity:1; }
+    .r-item:hover { filter:brightness(1.2); }
+    .r-label { font-size:0.55rem; font-weight:700; color:#fff;
+               margin-top:2px; letter-spacing:.04em; text-align:center; }
+
+    /* Coloured ring on each button (border matches the item accent) */
+    .r-enemy  { background:rgba(220, 38, 38,.82); box-shadow:0 0 0 1.5px #dc2626, 0 4px 12px rgba(0,0,0,.55); }
+    .r-fire   { background:rgba(153, 27, 27,.82); box-shadow:0 0 0 1.5px #991b1b, 0 4px 12px rgba(0,0,0,.55); }
+    .r-poi    { background:rgba(217,119, 6,.82);  box-shadow:0 0 0 1.5px #d97706, 0 4px 12px rgba(0,0,0,.55); }
+    .r-report { background:rgba( 29, 78,216,.82); box-shadow:0 0 0 1.5px #1d4ed8, 0 4px 12px rgba(0,0,0,.55); }
     .overlay-btns { display: flex; gap: 4px; }
     .overlay-btn { background: #1a2233; color: #64748b; border: 1px solid #2a3142; border-radius: 5px; padding: 0.2rem 0.65rem; cursor: pointer; font: inherit; font-size: 0.8rem; white-space: nowrap; }
     .overlay-btn:hover { border-color: #34d399; color: #e2e8f0; }
@@ -90,7 +115,29 @@
         <!-- Radial context menu overlay -->
         <div id="radial-bg" onclick="closeRadial()"></div>
         <div id="radial-menu">
-            <div class="r-tap" id="r-tap"></div>
+            <!--
+              SVG rings centred on the tap point.
+              Layers (inside-out):
+                1. Inner hub  — dark fill + teal ring (r=26)
+                2. Mid ring   — faint separator       (r=64)
+                3. Outer ring — items sit here         (r=110)
+                4. Spokes     — drawn dynamically by JS
+            -->
+            <svg id="r-rings" viewBox="-150 -150 300 300" width="300" height="300">
+                <g id="r-spokes"></g>
+                <!-- Outer ring -->
+                <circle cx="0" cy="0" r="110" fill="none"
+                        stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+                <!-- Mid ring -->
+                <circle cx="0" cy="0" r="64"  fill="none"
+                        stroke="rgba(255,255,255,0.13)" stroke-width="1"/>
+                <!-- Inner hub fill -->
+                <circle cx="0" cy="0" r="26"  fill="#0d1117"/>
+                <!-- Inner hub teal ring -->
+                <circle cx="0" cy="0" r="26"  fill="none"
+                        stroke="#6ee7b7" stroke-width="1.5"/>
+            </svg>
+
             <div class="r-item r-enemy"  id="ri-enemy"  onclick="radialAction('enemy')">⚠<div class="r-label">ENEMY</div></div>
             <div class="r-item r-fire"   id="ri-fire"   onclick="radialAction('fire')">🎯<div class="r-label">FIRE</div></div>
             <div class="r-item r-poi"    id="ri-poi"    onclick="radialAction('poi')">📍<div class="r-label">POI</div></div>
@@ -428,28 +475,44 @@
     function openRadial(cx, cy) {
         const bg   = document.getElementById('radial-bg');
         const menu = document.getElementById('radial-menu');
-        const tap  = document.getElementById('r-tap');
 
         bg.classList.add('open');
         menu.classList.add('open');
         menu.style.left = cx + 'px';
         menu.style.top  = cy + 'px';
-        tap.style.left  = '0px';
-        tap.style.top   = '0px';
 
-        const R = 88, items = [
-            { id:'ri-enemy',  angle:-90 },
-            { id:'ri-fire',   angle:  0 },
-            { id:'ri-poi',    angle: 90 },
-            { id:'ri-report', angle:180 },
+        // Must match the SVG outer ring radius (r="110")
+        const R_OUTER = 110, R_HUB = 26;
+
+        const items = [
+            { id:'ri-enemy',  angle: -90 },
+            { id:'ri-fire',   angle:   0 },
+            { id:'ri-poi',    angle:  90 },
+            { id:'ri-report', angle: 180 },
         ];
+
+        // Draw spoke lines from hub edge → outer ring for each item
+        const spokes = document.getElementById('r-spokes');
+        spokes.innerHTML = '';
+        items.forEach(({ angle }) => {
+            const rad  = angle * Math.PI / 180;
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', (R_HUB   * Math.cos(rad)).toFixed(2));
+            line.setAttribute('y1', (R_HUB   * Math.sin(rad)).toFixed(2));
+            line.setAttribute('x2', (R_OUTER * Math.cos(rad)).toFixed(2));
+            line.setAttribute('y2', (R_OUTER * Math.sin(rad)).toFixed(2));
+            line.setAttribute('stroke', 'rgba(255,255,255,0.12)');
+            line.setAttribute('stroke-width', '1');
+            spokes.appendChild(line);
+        });
+
+        // Position items on the outer ring, stagger their open animation
         items.forEach(({ id, angle }, i) => {
             const el  = document.getElementById(id);
             const rad = angle * Math.PI / 180;
-            el.style.left = (R * Math.cos(rad)) + 'px';
-            el.style.top  = (R * Math.sin(rad)) + 'px';
-            // Stagger animation
-            setTimeout(() => el.classList.add('open'), i * 30);
+            el.style.left = (R_OUTER * Math.cos(rad)) + 'px';
+            el.style.top  = (R_OUTER * Math.sin(rad)) + 'px';
+            setTimeout(() => el.classList.add('open'), i * 40);
         });
     }
 
@@ -457,6 +520,7 @@
         document.getElementById('radial-bg').classList.remove('open');
         document.getElementById('radial-menu').classList.remove('open');
         document.querySelectorAll('.r-item').forEach(el => el.classList.remove('open'));
+        document.getElementById('r-spokes').innerHTML = '';
     };
 
     const SIDC_MAP = {
