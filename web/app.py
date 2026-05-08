@@ -33,6 +33,7 @@ def create_app() -> Flask:
     from web.streams.routes import bp as streams_bp
     from web.reports.routes import bp as reports_bp
     from web.tactical_map.routes import bp as map_bp
+    from web.history.routes import bp as history_bp
 
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(map_bp)
@@ -40,6 +41,7 @@ def create_app() -> Flask:
     app.register_blueprint(fire_missions_bp)
     app.register_blueprint(streams_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(history_bp)
     app.register_blueprint(admin_bp)
 
     @app.after_request
