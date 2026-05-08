@@ -178,12 +178,19 @@ class ReportIn(BaseModel):
     payload: dict
 
 
+class ReportUpdate(BaseModel):
+    status: str
+    reviewer_note: str = ""
+
+
 class ReportOut(ORMModel):
     id: int
     type: str
     operator_id: int
     payload: str
     timestamp: datetime
+    status: str = "RECEIVED"
+    reviewer_note: str = ""
 
 
 class FireMissionIn(BaseModel):

@@ -172,6 +172,9 @@ class Report(Base):
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
     payload: Mapped[str] = mapped_column(Text)  # JSON-encoded structured data
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # Status lifecycle managed by BC/ADMIN; sent back to originating operator via WS
+    status: Mapped[str] = mapped_column(String(20), default="RECEIVED")
+    reviewer_note: Mapped[str] = mapped_column(Text, default="")
 
 
 class AuditLog(Base):

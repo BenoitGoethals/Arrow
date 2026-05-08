@@ -37,6 +37,9 @@ def _migrate(conn: object) -> None:
         # TOTP MFA
         "ALTER TABLE operators ADD COLUMN totp_secret VARCHAR(64)",
         "ALTER TABLE operators ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0",
+        # Report status lifecycle
+        "ALTER TABLE reports ADD COLUMN status VARCHAR(20) DEFAULT 'RECEIVED'",
+        "ALTER TABLE reports ADD COLUMN reviewer_note TEXT DEFAULT ''",
     ]
     for sql in migrations:
         try:
