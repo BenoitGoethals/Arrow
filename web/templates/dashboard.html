@@ -1,60 +1,403 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Arrow{% endblock %}
-{% block content %}
-<h1>Operational Dashboard</h1>
-<div class="grid">
-    <section class="panel">
-        <h2>Live Operators</h2>
-        <ul id="operators"><li>Loading…</li></ul>
-    </section>
-    <section class="panel">
-        <h2>Active Alerts</h2>
-        <ul id="alerts"><li>Loading…</li></ul>
-    </section>
-    <section class="panel">
-        <h2>Active Battles</h2>
-        <ul id="battles"><li>Loading…</li></ul>
-    </section>
-</div>
+
+{% block head %}
+<style>
+/* ── Dashboard layout ──────────────────────────────────────────────────────── */
+.db-hero {
+    display: flex; align-items: center; gap: 1.5rem;
+    padding: 1.75rem 0 1.25rem;
+    border-bottom: 1px solid #2a3142;
+    margin-bottom: 1.5rem;
+}
+.db-hero-logo {
+    font-size: 2rem; font-weight: 900; letter-spacing: .25em;
+    color: #6ee7b7; text-shadow: 0 0 28px rgba(110,231,183,.4);
+}
+.db-hero-sub   { color: #64748b; font-size: .8rem; margin-top: .1rem; letter-spacing: .08em; }
+.db-hero-right { margin-left: auto; display: flex; align-items: center; gap: .75rem; }
+.db-time       { color: #94a3b8; font-size: .85rem; font-family: monospace; }
+.db-mission-badge {
+    padding: .25rem .75rem; border-radius: 99px; font-size: .72rem; font-weight: 700;
+    letter-spacing: .06em;
+}
+.db-mission-badge.active {
+    background: rgba(110,231,183,.12); border: 1px solid #6ee7b7; color: #6ee7b7;
+}
+.db-mission-badge.none {
+    background: rgba(100,116,139,.1); border: 1px solid #475569; color: #64748b;
+}
+
+/* ── Stat cards ────────────────────────────────────────────────────────────── */
+.db-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: .75rem; margin-bottom: 1.5rem;
+}
+.db-stat {
+    background: #161b25; border: 1px solid #2a3142; border-radius: 10px;
+    padding: .85rem 1rem; position: relative; overflow: hidden;
+    transition: border-color .2s;
+}
+.db-stat::before {
+    content: ''; position: absolute; top: 0; left: 0;
+    width: 100%; height: 3px; background: var(--accent, #6ee7b7);
+}
+.db-stat:hover { border-color: var(--accent, #6ee7b7); }
+.db-stat-val {
+    font-size: 2rem; font-weight: 800; line-height: 1;
+    color: var(--accent, #6ee7b7);
+}
+.db-stat-lbl { font-size: .68rem; color: #64748b; text-transform: uppercase;
+               letter-spacing: .08em; margin-top: .3rem; }
+.db-stat-icon { position: absolute; top: .75rem; right: .85rem;
+                font-size: 1.4rem; opacity: .18; }
+.db-stat-sub  { font-size: .7rem; color: #94a3b8; margin-top: .35rem;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Nav blocks ────────────────────────────────────────────────────────────── */
+.db-nav {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: .75rem; margin-bottom: 1.5rem;
+}
+.db-nav-block {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: .5rem; padding: 1.25rem .75rem;
+    background: #161b25; border: 1px solid #2a3142; border-radius: 12px;
+    text-decoration: none; color: #e6e6e6;
+    transition: border-color .18s, background .18s, transform .15s, box-shadow .18s;
+    cursor: pointer;
+}
+.db-nav-block:hover {
+    border-color: var(--accent, #6ee7b7);
+    background: color-mix(in srgb, var(--accent, #6ee7b7) 6%, #161b25);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(0,0,0,.4);
+    color: #fff;
+    text-decoration: none;
+}
+.db-nav-icon { font-size: 2rem; line-height: 1; }
+.db-nav-lbl  { font-size: .8rem; font-weight: 600; letter-spacing: .04em; }
+.db-nav-sub  { font-size: .66rem; color: #64748b; }
+
+/* ── Status feed panels ────────────────────────────────────────────────────── */
+.db-feeds {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: .75rem;
+}
+.db-feed {
+    background: #161b25; border: 1px solid #2a3142; border-radius: 10px;
+    overflow: hidden;
+}
+.db-feed-hdr {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .6rem 1rem; background: #1a1f29;
+    border-bottom: 1px solid #2a3142;
+    font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .1em; color: #94a3b8;
+}
+.db-feed-hdr span { color: var(--accent, #6ee7b7); }
+.db-feed-body { padding: .5rem 0; min-height: 60px; max-height: 220px; overflow-y: auto; }
+.db-row {
+    display: flex; align-items: center; gap: .6rem;
+    padding: .35rem 1rem; font-size: .8rem;
+    border-bottom: 1px solid rgba(42,49,66,.5);
+    transition: background .12s;
+}
+.db-row:last-child { border-bottom: 0; }
+.db-row:hover { background: rgba(255,255,255,.03); }
+.db-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.db-row-main { flex: 1; min-width: 0; white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; }
+.db-row-meta { color: #475569; font-size: .7rem; white-space: nowrap; flex-shrink: 0; }
+.db-badge {
+    font-size: .62rem; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+    letter-spacing: .04em; white-space: nowrap;
+}
+.db-empty { color: #475569; font-size: .78rem; padding: .75rem 1rem; }
+.db-err   { color: #ef4444;  font-size: .78rem; padding: .75rem 1rem; }
+</style>
 {% endblock %}
+
+{% block content %}
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+<div class="db-hero">
+    <div>
+        <div class="db-hero-logo">ARROW</div>
+        <div class="db-hero-sub">TACTICAL OPERATIONS CENTRE</div>
+    </div>
+    <div class="db-hero-right">
+        <div class="db-time" id="db-clock">--:-- UTC</div>
+        <div class="db-mission-badge none" id="db-mission-badge">NO ACTIVE BATTLE</div>
+    </div>
+</div>
+
+<!-- ── Stat counters ─────────────────────────────────────────────────────── -->
+<div class="db-stats">
+    <div class="db-stat" style="--accent:#6ee7b7">
+        <div class="db-stat-icon">🟢</div>
+        <div class="db-stat-val" id="s-online">—</div>
+        <div class="db-stat-lbl">Online operators</div>
+        <div class="db-stat-sub" id="s-online-names">—</div>
+    </div>
+    <div class="db-stat" style="--accent:#ef4444">
+        <div class="db-stat-icon">⚠</div>
+        <div class="db-stat-val" id="s-alerts">—</div>
+        <div class="db-stat-lbl">Active alerts</div>
+        <div class="db-stat-sub" id="s-alerts-types">—</div>
+    </div>
+    <div class="db-stat" style="--accent:#dc2626">
+        <div class="db-stat-icon">🎯</div>
+        <div class="db-stat-val" id="s-fm">—</div>
+        <div class="db-stat-lbl">Fire missions</div>
+        <div class="db-stat-sub" id="s-fm-pending">—</div>
+    </div>
+    <div class="db-stat" style="--accent:#3b82f6">
+        <div class="db-stat-icon">📋</div>
+        <div class="db-stat-val" id="s-reports">—</div>
+        <div class="db-stat-lbl">Reports</div>
+        <div class="db-stat-sub" id="s-reports-latest">—</div>
+    </div>
+    <div class="db-stat" style="--accent:#f59e0b">
+        <div class="db-stat-icon">⚔️</div>
+        <div class="db-stat-val" id="s-battles">—</div>
+        <div class="db-stat-lbl">Active battles</div>
+        <div class="db-stat-sub" id="s-battles-name">—</div>
+    </div>
+</div>
+
+<!-- ── Navigation blocks ─────────────────────────────────────────────────── -->
+<div class="db-nav">
+    <a class="db-nav-block" style="--accent:#6ee7b7" href="{{ url_for('tactical_map.index') }}">
+        <div class="db-nav-icon">🗺️</div>
+        <div class="db-nav-lbl">Tactical Map</div>
+        <div class="db-nav-sub">Live positions &amp; marking</div>
+    </a>
+    <a class="db-nav-block" style="--accent:#34d399" href="{{ url_for('messaging.index') }}">
+        <div class="db-nav-icon">💬</div>
+        <div class="db-nav-lbl">Messaging</div>
+        <div class="db-nav-sub">Chat &amp; direct comms</div>
+    </a>
+    <a class="db-nav-block" style="--accent:#ef4444" href="{{ url_for('fire_missions.index') }}">
+        <div class="db-nav-icon">🎯</div>
+        <div class="db-nav-lbl">Fire Missions</div>
+        <div class="db-nav-sub">Call for fire — FDC</div>
+    </a>
+    <a class="db-nav-block" style="--accent:#3b82f6" href="{{ url_for('reports.index') }}">
+        <div class="db-nav-icon">📋</div>
+        <div class="db-nav-lbl">Reports</div>
+        <div class="db-nav-sub">9-liners &amp; contact</div>
+    </a>
+    <a class="db-nav-block" style="--accent:#a78bfa" href="{{ url_for('streams.index') }}">
+        <div class="db-nav-icon">📡</div>
+        <div class="db-nav-lbl">Live Streams</div>
+        <div class="db-nav-sub">Operator video feeds</div>
+    </a>
+    <a class="db-nav-block" style="--accent:#f59e0b" href="{{ url_for('admin.index') }}">
+        <div class="db-nav-icon">⚙️</div>
+        <div class="db-nav-lbl">Admin</div>
+        <div class="db-nav-sub">Operators &amp; config</div>
+    </a>
+</div>
+
+<!-- ── Live status feeds ─────────────────────────────────────────────────── -->
+<div class="db-feeds">
+
+    <div class="db-feed">
+        <div class="db-feed-hdr" style="--accent:#6ee7b7">
+            🟢 Online Operators &nbsp;<span id="f-online-count">—</span>
+        </div>
+        <div class="db-feed-body" id="f-operators"></div>
+    </div>
+
+    <div class="db-feed">
+        <div class="db-feed-hdr" style="--accent:#ef4444">
+            ⚠ Active Alerts &nbsp;<span id="f-alerts-count">—</span>
+        </div>
+        <div class="db-feed-body" id="f-alerts"></div>
+    </div>
+
+    <div class="db-feed">
+        <div class="db-feed-hdr" style="--accent:#dc2626">
+            🎯 Fire Missions &nbsp;<span id="f-fm-count">—</span>
+        </div>
+        <div class="db-feed-body" id="f-fm"></div>
+    </div>
+
+    <div class="db-feed">
+        <div class="db-feed-hdr" style="--accent:#3b82f6">
+            📋 Recent Reports &nbsp;<span id="f-reports-count">—</span>
+        </div>
+        <div class="db-feed-body" id="f-reports"></div>
+    </div>
+
+</div>
+
+{% endblock %}
+
 {% block scripts %}
 <script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: `Bearer ${token}` };
+
+    // ── UTC clock ─────────────────────────────────────────────────────────
+    function tickClock() {
+        const now = new Date();
+        document.getElementById('db-clock').textContent =
+            now.toUTCString().slice(17, 22) + ' UTC';
+    }
+    tickClock(); setInterval(tickClock, 1000);
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, c =>
+            ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+    function reltime(iso) {
+        if (!iso) return '—';
+        const diff = (Date.now() - new Date(iso)) / 1000;
+        if (diff < 60)    return `${Math.floor(diff)}s ago`;
+        if (diff < 3600)  return `${Math.floor(diff/60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+        return new Date(iso).toLocaleDateString();
+    }
+    async function api(path) {
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + path, { headers });
+            const d = await r.json();
+            return r.ok ? d : null;
+        } catch { return null; }
+    }
+
+    // ── Alert colour map ──────────────────────────────────────────────────
+    const ALERT_COLOR = { TIC:'#dc2626', MEDICAL:'#16a34a', EVAC:'#d97706', LOST_COMMS:'#2563eb' };
+    const FM_COLOR    = { PENDING:'#dc2626', ACKNOWLEDGED:'#d97706', IN_PROGRESS:'#2563eb',
+                          COMPLETED:'#16a34a', CANCELLED:'#475569' };
+    const REPORT_COLOR= { MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626',
+                          CONTACT:'#d97706', SPOT:'#7c3aed' };
+
+    function badge(label, color) {
+        return `<span class="db-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${esc(label)}</span>`;
+    }
+
+    // ── Main refresh ──────────────────────────────────────────────────────
     async function refresh() {
-        const token = localStorage.getItem('arrow_token');
-        if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
-        const headers = { Authorization: `Bearer ${token}` };
-
-        async function fetchList(path) {
-            try {
-                const r = await fetch(window.ARROW_BACKEND_URL + path, { headers });
-                const data = await r.json();
-                if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
-                return { data: Array.isArray(data) ? data : [] };
-            } catch (err) {
-                return { error: err.message };
-            }
-        }
-
-        function errHtml(msg) {
-            return `<li style="color:#ef4444">Error: ${msg}</li>`;
-        }
-
-        const [ops, alerts, battles] = await Promise.all([
-            fetchList('/tracking/live'),
-            fetchList('/alerts'),
-            fetchList('/battles'),
+        const [ops, alerts, fms, reports, battles] = await Promise.all([
+            api('/tracking/live'),
+            api('/alerts'),
+            api('/fire-missions'),
+            api('/reports'),
+            api('/battles'),
         ]);
 
-        document.getElementById('operators').innerHTML = ops.error ? errHtml(ops.error)
-            : ops.data.map(o => `<li>${o.callsign} — ${o.latitude?.toFixed(4)}, ${o.longitude?.toFixed(4)}</li>`).join('') || '<li>None</li>';
+        // ── Battles — mission badge ───────────────────────────────────────
+        const activeBattles = (battles || []).filter(b => b.status === 'ACTIVE');
+        const badge_el = document.getElementById('db-mission-badge');
+        if (activeBattles.length) {
+            badge_el.className = 'db-mission-badge active';
+            badge_el.textContent = activeBattles[0].name.toUpperCase();
+        } else {
+            badge_el.className = 'db-mission-badge none';
+            badge_el.textContent = 'NO ACTIVE BATTLE';
+        }
 
-        document.getElementById('alerts').innerHTML = alerts.error ? errHtml(alerts.error)
-            : alerts.data.map(a => `<li>[${a.status}] ${a.type} @ ${a.timestamp}</li>`).join('') || '<li>None</li>';
+        // ── Stat: online operators ────────────────────────────────────────
+        const online = (ops || []).filter(o => o.online !== false);
+        document.getElementById('s-online').textContent = online.length;
+        document.getElementById('s-online-names').textContent =
+            online.slice(0,3).map(o => o.callsign).join(', ') +
+            (online.length > 3 ? ` +${online.length-3}` : '') || '—';
 
-        document.getElementById('battles').innerHTML = battles.error ? errHtml(battles.error)
-            : battles.data.map(b => `<li>${b.name} (${b.status})</li>`).join('') || '<li>None</li>';
+        // ── Stat: alerts ──────────────────────────────────────────────────
+        const activeAlerts = (alerts || []).filter(a => a.status === 'ACTIVE');
+        document.getElementById('s-alerts').textContent = activeAlerts.length;
+        const alertTypes = [...new Set(activeAlerts.map(a => a.type))];
+        document.getElementById('s-alerts-types').textContent =
+            alertTypes.join(', ') || 'None';
+
+        // ── Stat: fire missions ────────────────────────────────────────────
+        const pendingFM = (fms || []).filter(f => ['PENDING','IN_PROGRESS'].includes(f.status));
+        document.getElementById('s-fm').textContent = (fms || []).length;
+        document.getElementById('s-fm-pending').textContent =
+            pendingFM.length ? `${pendingFM.length} active` : 'None active';
+
+        // ── Stat: reports ──────────────────────────────────────────────────
+        document.getElementById('s-reports').textContent = (reports || []).length;
+        const latestReport = (reports || [])[0];
+        document.getElementById('s-reports-latest').textContent =
+            latestReport ? `${latestReport.type} ${reltime(latestReport.timestamp)}` : '—';
+
+        // ── Stat: battles ──────────────────────────────────────────────────
+        document.getElementById('s-battles').textContent = activeBattles.length;
+        document.getElementById('s-battles-name').textContent =
+            activeBattles[0]?.name || 'None';
+
+        // ── Feed: online operators ────────────────────────────────────────
+        document.getElementById('f-online-count').textContent = online.length;
+        document.getElementById('f-operators').innerHTML = online.length
+            ? online.map(o => `
+                <div class="db-row">
+                    <div class="db-dot" style="background:#22c55e;box-shadow:0 0 5px #22c55e"></div>
+                    <div class="db-row-main">
+                        <strong>${esc(o.callsign)}</strong>
+                        <span style="color:#64748b;font-size:.7rem"> · ${esc(o.rank||'')} · ${esc(o.role||'')}</span>
+                    </div>
+                    <div class="db-row-meta">${o.latitude!=null ? `${o.latitude.toFixed(3)}, ${o.longitude.toFixed(3)}` : 'no GPS'}</div>
+                </div>`).join('')
+            : '<div class="db-empty">No operators online</div>';
+
+        // ── Feed: alerts ──────────────────────────────────────────────────
+        document.getElementById('f-alerts-count').textContent = activeAlerts.length;
+        document.getElementById('f-alerts').innerHTML = activeAlerts.length
+            ? activeAlerts.slice(0,8).map(a => {
+                const col = ALERT_COLOR[a.type] || '#94a3b8';
+                return `<div class="db-row">
+                    <div class="db-dot" style="background:${col}"></div>
+                    <div class="db-row-main">${badge(a.type, col)} op #${a.operator_id}</div>
+                    <div class="db-row-meta">${reltime(a.timestamp)}</div>
+                </div>`;
+            }).join('')
+            : '<div class="db-empty">No active alerts</div>';
+
+        // ── Feed: fire missions ───────────────────────────────────────────
+        const fmList = (fms || []).slice(0, 8);
+        document.getElementById('f-fm-count').textContent = (fms||[]).length;
+        document.getElementById('f-fm').innerHTML = fmList.length
+            ? fmList.map(f => {
+                const col = FM_COLOR[f.status] || '#94a3b8';
+                return `<div class="db-row">
+                    <div class="db-dot" style="background:${col}"></div>
+                    <div class="db-row-main">
+                        ${badge(f.status, col)}
+                        <span style="margin-left:.3rem">${esc(f.mission_type||'')} · ${esc(f.ammunition||'')}</span>
+                    </div>
+                    <div class="db-row-meta">${reltime(f.timestamp)}</div>
+                </div>`;
+            }).join('')
+            : '<div class="db-empty">No fire missions</div>';
+
+        // ── Feed: reports ─────────────────────────────────────────────────
+        const repList = (reports || []).slice(0, 8);
+        document.getElementById('f-reports-count').textContent = (reports||[]).length;
+        document.getElementById('f-reports').innerHTML = repList.length
+            ? repList.map(r => {
+                const col = REPORT_COLOR[r.type] || '#94a3b8';
+                return `<div class="db-row">
+                    <div class="db-dot" style="background:${col}"></div>
+                    <div class="db-row-main">${badge(r.type, col)} op #${r.operator_id}</div>
+                    <div class="db-row-meta">${reltime(r.timestamp)}</div>
+                </div>`;
+            }).join('')
+            : '<div class="db-empty">No reports yet</div>';
     }
+
     refresh();
     setInterval(refresh, 5000);
+})();
 </script>
 {% endblock %}
