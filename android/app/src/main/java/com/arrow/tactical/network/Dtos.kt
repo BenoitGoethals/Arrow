@@ -147,6 +147,64 @@ data class FireMissionDto(
     val notes:          String  = "",
 )
 
+// ── L16 81mm mortar plan ─────────────────────────────────────────────────────
+
+@Serializable
+data class GunIn(
+    val callsign:           String = "",
+    val latitude:           Double,
+    val longitude:          Double,
+    val altitude:           Double = 0.0,
+    @SerialName("reference_az_mils") val referenceAzMils: Double = 0.0,
+)
+
+@Serializable
+data class MortarPlanIn(
+    val guns:           List<GunIn>,
+    val pattern:        String,
+    val target:         JsonObject,
+    @SerialName("rounds_per_gun") val roundsPerGun:   Int    = 1,
+    @SerialName("target_alt_m")   val targetAltM:     Double = 0.0,
+    val ammunition:     String = "HE",
+    @SerialName("charge_override") val chargeOverride: Int? = null,
+    val description:    String = "",
+)
+
+@Serializable
+data class FiringSolutionDto(
+    val charge:    Int,
+    @SerialName("qe_mils")   val qeMils:   Int,
+    @SerialName("defl_mils") val deflMils: Int,
+    @SerialName("tof_s")     val tofS:     Double,
+    @SerialName("mv_ms")     val mvMs:     Double,
+    @SerialName("range_m")   val rangeM:   Double,
+    @SerialName("azimuth_mils") val azimuthMils: Int,
+    val impact:    LatLon,
+    val error:     String? = null,
+)
+
+@Serializable
+data class LatLon(val latitude: Double, val longitude: Double)
+
+@Serializable
+data class GunSolutionDto(
+    @SerialName("gun_idx")   val gunIdx:   Int,
+    val callsign:  String,
+    val latitude:  Double,
+    val longitude: Double,
+    val altitude:  Double = 0.0,
+    @SerialName("reference_az_mils") val referenceAzMils: Double = 0.0,
+    val solutions: List<FiringSolutionDto>,
+)
+
+@Serializable
+data class MortarPlanResult(
+    val guns:    List<GunSolutionDto>,
+    val impacts: List<LatLon>,
+    val summary: JsonObject,
+)
+
+
 @Serializable
 data class RegisterIn(
     val callsign: String,

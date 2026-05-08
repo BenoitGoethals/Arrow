@@ -56,10 +56,11 @@ private val STATUS_COLORS = mapOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FireMissionScreen(
-    container:  AppContainer,
-    presetLat:  Double? = null,
-    presetLon:  Double? = null,
-    onBack:     () -> Unit,
+    container:    AppContainer,
+    presetLat:    Double? = null,
+    presetLon:    Double? = null,
+    onBack:       () -> Unit,
+    onOpenMortar: (Double?, Double?) -> Unit = { _, _ -> },
 ) {
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(0) }  // 0 = Call Fire, 1 = Log
@@ -273,6 +274,17 @@ fun FireMissionScreen(
                         Text(msg,
                              color = if (ok) Color(0xFF22C55E) else MaterialTheme.colorScheme.error,
                              style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            val parsed = runCatching { MgrsConverter.decode(mgrs) }.getOrNull()
+                            if (parsed != null) onOpenMortar(parsed.first, parsed.second)
+                            else onOpenMortar(null, null)
+                        },
+                    ) {
+                        Text("🛡️  Mortar Section — L16 81 mm  (1–4 guns, sheaf, solve & fire)")
                     }
 
                     Button(

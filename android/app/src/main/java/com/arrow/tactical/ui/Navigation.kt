@@ -32,6 +32,7 @@ import com.arrow.tactical.alerts.ui.AlertsScreen
 import com.arrow.tactical.auth.ui.LoginScreen
 import com.arrow.tactical.di.AppContainer
 import com.arrow.tactical.firemission.ui.FireMissionScreen
+import com.arrow.tactical.firemission.ui.MortarScreen
 import com.arrow.tactical.map.ui.MapScreen
 import com.arrow.tactical.map.ui.MarkEnemyScreen
 import com.arrow.tactical.messaging.ui.MessagingScreen
@@ -148,13 +149,38 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                     presetLat  = entry.arguments?.getString("lat")?.toDoubleOrNull(),
                     presetLon  = entry.arguments?.getString("lon")?.toDoubleOrNull(),
                     onBack     = { tabNav.popBackStack() },
+                    onOpenMortar = { lat, lon ->
+                        if (lat == null || lon == null) tabNav.navigate("mortar")
+                        else tabNav.navigate("mortar?lat=$lat&lon=$lon")
+                    },
                 )
             }
             composable("fire-mission") {
                 FireMissionScreen(
                     container = container,
                     onBack    = { tabNav.popBackStack() },
+                    onOpenMortar = { lat, lon ->
+                        if (lat == null || lon == null) tabNav.navigate("mortar")
+                        else tabNav.navigate("mortar?lat=$lat&lon=$lon")
+                    },
                 )
+            }
+            composable(
+                "mortar?lat={lat}&lon={lon}",
+                arguments = listOf(
+                    navArgument("lat") { type = NavType.StringType },
+                    navArgument("lon") { type = NavType.StringType },
+                ),
+            ) { entry ->
+                MortarScreen(
+                    container = container,
+                    presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                    presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                    onBack    = { tabNav.popBackStack() },
+                )
+            }
+            composable("mortar") {
+                MortarScreen(container = container, onBack = { tabNav.popBackStack() })
             }
             composable("${Tab.Mark.route}?lat={lat}&lon={lon}") { entry ->
                 val lat = entry.arguments?.getString("lat")?.toDoubleOrNull()

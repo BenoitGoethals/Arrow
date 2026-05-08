@@ -183,6 +183,7 @@
         cbrnVisible: true,
         markers: new Map(),
         fmMarkers: new Map(),       // fm id -> Leaflet marker
+        fmImpactLayers: new Map(),  // fm id -> Leaflet LayerGroup of impact splashes
         selection: new Set(),
         onlineOnly: false,
         overlayMode: 'all',
@@ -1074,10 +1075,29 @@
         });
     }
 
+    // Splash colours per ammo type for mortar impact rendering.
+    const AMMO_COLOR = {
+        HE:    '#dc2626',
+        ILLUM: '#facc15',
+        SMOKE: '#9ca3af',
+        WP:    '#f97316',
+    };
+
+    function _parseFmPlan(fm) {
+        if (!fm || !fm.notes) return null;
+        try {
+            const j = JSON.parse(fm.notes);
+            if (j && j.weapon === 'L16_81MM' && Array.isArray(j.impacts)) return j;
+        } catch (_) {}
+        return null;
+    }
+
     function refreshFmMarkers() {
-        // Remove old
+        // Remove old markers + impact layers
         state.fmMarkers.forEach(m => map.removeLayer(m));
         state.fmMarkers.clear();
+        state.fmImpactLayers.forEach(l => map.removeLayer(l));
+        state.fmImpactLayers.clear();
 
         if (state.overlayMode === 'none') return;
 
@@ -1094,7 +1114,65 @@
                 <a href="/fire-missions/?id=${fm.id}" style="color:#ef4444;font-weight:600">→ Open in FDC</a>
             `);
             state.fmMarkers.set(fm.id, m);
+
+            // Mortar plan? Render every impact point + footprint.
+            const plan = _parseFmPlan(fm);
+            if (plan) drawMortarPlan(fm, plan);
         });
+    }
+
+    function drawMortarPlan(fm, plan) {
+        const color  = AMMO_COLOR[plan.ammunition] || AMMO_COLOR.HE;
+        const layers = L.layerGroup().addTo(map);
+
+        // Splash radius hint: HE ~25 m, ILLUM ~250 m (illuminated area), SMOKE ~80 m
+        const burstR = ({HE: 25, SMOKE: 80, ILLUM: 250, WP: 35})[plan.ammunition] || 25;
+        const fillO  = plan.ammunition === 'ILLUM' ? 0.06 : 0.18;
+
+        plan.impacts.forEach((p, i) => {
+            L.circle([p.latitude, p.longitude], {
+                radius: burstR, color, weight: 1.2,
+                fillColor: color, fillOpacity: fillO,
+            }).addTo(layers).bindTooltip(`Impact #${i+1}`, { direction:'top' });
+        });
+
+        // Pattern footprint
+        if (plan.pattern === 'LINE' && plan.target?.start && plan.target?.end) {
+            L.polyline([
+                [plan.target.start.latitude, plan.target.start.longitude],
+                [plan.target.end.latitude,   plan.target.end.longitude],
+            ], { color, weight: 1.5, dashArray: '4 6', opacity: 0.7 }).addTo(layers);
+        } else if (plan.pattern === 'ZONE' && plan.target?.center) {
+            const c = plan.target.center;
+            const w = (plan.target.width_m  || 100) / 2;
+            const h = (plan.target.height_m || 100) / 2;
+            const dLat = h / 111000;
+            const dLon = w / (111000 * Math.cos(c.latitude * Math.PI / 180));
+            L.rectangle(
+                [[c.latitude - dLat, c.longitude - dLon],
+                 [c.latitude + dLat, c.longitude + dLon]],
+                { color, weight: 1.5, dashArray: '4 6', fill: false, opacity: 0.7 },
+            ).addTo(layers);
+        }
+
+        // Gun positions (small triangles)
+        (plan.guns || []).forEach(g => {
+            L.marker([g.latitude, g.longitude], {
+                icon: L.divIcon({
+                    html: `<div style="font:bold 12px monospace;color:${color};
+                           text-shadow:0 0 2px #000">▲ ${g.callsign||('M'+g.gun_idx)}</div>`,
+                    className:'', iconSize:[44,16], iconAnchor:[22,8],
+                }),
+            }).addTo(layers).bindTooltip(
+                `Gun ${g.callsign||g.gun_idx}<br>` +
+                (g.solutions||[]).map(s =>
+                    `Ch ${s.charge} · QE ${s.qe_mils} · Defl ${s.defl_mils} · TOF ${s.tof_s}s`
+                ).join('<br>'),
+                { sticky: true }
+            );
+        });
+
+        state.fmImpactLayers.set(fm.id, layers);
     }
 
     async function loadFmMarkers() {
