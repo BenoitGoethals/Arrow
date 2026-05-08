@@ -124,6 +124,21 @@
         {% endfor %}
 
         <div class="divider"></div>
+        <h3>CBRN Import</h3>
+        <p style="font-size:.7rem;color:#64748b;margin:.1rem 0 .4rem">
+            NATO CBRN 1–6 messages (STANAG 2103). Select one or more <code>.txt</code>
+            files; each is parsed and shown on the tactical map with hazard zones.
+        </p>
+        <input type="file" id="cbrn-file" accept=".txt,.cbrn,.msg,text/plain" multiple
+               style="display:none" onchange="importCbrn(this.files)">
+        <button class="type-btn" style="background:#1a2233;color:#fbbf24"
+                onclick="document.getElementById('cbrn-file').click()">
+            <span class="type-dot" style="background:#fbbf24"></span>
+            ☢ Import CBRN file…
+        </button>
+        <div id="cbrn-import-status" style="font-size:.72rem;color:#94a3b8;margin:.25rem 0 0;min-height:1em"></div>
+
+        <div class="divider"></div>
         <h3>Recent</h3>
         <div id="recent-list"><small style="color:#475569">Loading…</small></div>
     </aside>
@@ -288,7 +303,12 @@
     }
 
     // ── Reports list ────────────────────────────────────────────────
-    const TYPE_COLORS = { MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626', CONTACT:'#d97706', SPOT:'#7c3aed' };
+    const TYPE_COLORS = {
+        MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626',
+        CONTACT:'#d97706', SPOT:'#7c3aed',
+        CBRN_1:'#fbbf24', CBRN_2:'#fbbf24', CBRN_3:'#f97316',
+        CBRN_4:'#fbbf24', CBRN_5:'#ef4444', CBRN_6:'#fbbf24',
+    };
 
     async function loadReports() {
         const r = await api('/reports');
@@ -411,6 +431,43 @@
                 d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         });
+    };
+
+    // ── CBRN file import ─────────────────────────────────────────────
+    window.importCbrn = async function(fileList) {
+        const status = document.getElementById('cbrn-import-status');
+        const files  = Array.from(fileList || []);
+        if (!files.length) return;
+
+        status.style.color = '#94a3b8';
+        status.textContent = `Uploading ${files.length} file(s)…`;
+
+        const form = new FormData();
+        files.forEach(f => form.append('files', f, f.name));
+
+        let r;
+        try {
+            r = await fetch(window.ARROW_BACKEND_URL + '/reports/cbrn/import', {
+                method: 'POST', headers, body: form,
+            });
+        } catch (e) {
+            status.textContent = '✗ ' + e.message;
+            status.style.color = '#ef4444';
+            return;
+        }
+
+        if (r.ok) {
+            const list = await r.json();
+            const types = list.map(x => x.type).join(', ');
+            status.textContent = `✓ Imported ${list.length} report(s): ${types}`;
+            status.style.color = '#34d399';
+            loadReports();
+        } else {
+            const err = await r.text().catch(() => String(r.status));
+            status.textContent = `✗ Failed (${r.status}): ${err.slice(0,200)}`;
+            status.style.color = '#ef4444';
+        }
+        document.getElementById('cbrn-file').value = '';
     };
 
     // ── WebSocket — live refresh when any report status changes ──────

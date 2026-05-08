@@ -41,7 +41,7 @@ import httpx
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Arrow tactical simulator")
-parser.add_argument("--backend", default="http://192.168.0.240:6001")
+parser.add_argument("--backend", default="http://78.21.255.210:6200/api")
 parser.add_argument("--speed", type=float, default=1.0,
                     help="Time multiplier: 6 = 6× faster, 1 = real time")
 parser.add_argument("--reset", action="store_true",
