@@ -118,7 +118,7 @@ fun FireMissionScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1A0A0A),
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
                 ),
             )
         },
@@ -126,7 +126,7 @@ fun FireMissionScreen(
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
 
             // Tab bar
-            TabRow(selectedTabIndex = tab, containerColor = Color(0xFF1A0A0A)) {
+            TabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 },
                     text = { Text("Call Fire", fontSize = 12.sp) })
                 Tab(selected = tab == 1, onClick = {
@@ -148,7 +148,7 @@ fun FireMissionScreen(
                 ) {
                     // Target location — MGRS
                     Text("Target Location", style = MaterialTheme.typography.labelLarge,
-                         color = Color(0xFFEF4444))
+                         color = MaterialTheme.colorScheme.error)
                     OutlinedTextField(
                         value         = mgrs,
                         onValueChange = { v ->
@@ -169,18 +169,24 @@ fun FireMissionScreen(
                                          else null,
                         modifier    = Modifier.fillMaxWidth(),
                         singleLine  = true,
+                        textStyle   = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = alt, onValueChange = { alt = it },
                             label = { Text("Altitude (m MSL)") }, singleLine = true,
                             modifier = Modifier.weight(1f),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                         )
                         OutlinedTextField(
                             value = direction, onValueChange = { direction = it },
                             label = { Text("Direction (°)") },
                             placeholder = { Text("0–360") }, singleLine = true,
                             modifier = Modifier.weight(1f),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
                         )
                     }
 
@@ -188,18 +194,18 @@ fun FireMissionScreen(
 
                     // Mission type (AF / FFE)
                     Text("Type of Mission", style = MaterialTheme.typography.labelLarge,
-                         color = Color(0xFFEF4444))
+                         color = MaterialTheme.colorScheme.error)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()) {
                         MISSION_TYPES.forEach { (key, lbl) ->
                             FilterChip(
                                 selected = missionType == key,
                                 onClick  = { missionType = key },
-                                label    = { Text(lbl.substringBefore(" (").take(12), fontSize = 10.sp) },
+                                label    = { Text(lbl.substringBefore(" (").take(12), fontSize = 12.sp) },
                                 modifier = Modifier.weight(1f),
                                 colors   = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFFEF4444).copy(alpha = 0.2f),
-                                    selectedLabelColor     = Color(0xFFEF4444),
+                                    selectedContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
+                                    selectedLabelColor     = MaterialTheme.colorScheme.error,
                                 ),
                             )
                         }
@@ -209,7 +215,7 @@ fun FireMissionScreen(
 
                     // Ammunition
                     Text("Ammunition", style = MaterialTheme.typography.labelLarge,
-                         color = Color(0xFFEF4444))
+                         color = MaterialTheme.colorScheme.error)
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth(),
@@ -218,7 +224,7 @@ fun FireMissionScreen(
                             FilterChip(
                                 selected = ammunition == key,
                                 onClick  = { ammunition = key },
-                                label    = { Text(key, fontSize = 10.sp) },
+                                label    = { Text(key, fontSize = 12.sp) },
                                 modifier = Modifier.weight(1f),
                                 colors   = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = Color(0xFFD97706).copy(alpha = 0.2f),
@@ -235,7 +241,7 @@ fun FireMissionScreen(
                             FilterChip(
                                 selected = ammunition == key,
                                 onClick  = { ammunition = key },
-                                label    = { Text(key, fontSize = 10.sp) },
+                                label    = { Text(key, fontSize = 12.sp) },
                                 modifier = Modifier.weight(1f),
                                 colors   = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = Color(0xFFD97706).copy(alpha = 0.2f),
@@ -255,7 +261,7 @@ fun FireMissionScreen(
 
                     // Target description
                     Text("Target Description", style = MaterialTheme.typography.labelLarge,
-                         color = Color(0xFFEF4444))
+                         color = MaterialTheme.colorScheme.error)
                     OutlinedTextField(
                         value = description, onValueChange = { description = it },
                         label = { Text("e.g. Infantry platoon in open, moving NE") },

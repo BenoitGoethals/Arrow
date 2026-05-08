@@ -530,14 +530,12 @@ fun MapScreen(
         ) {
             val point = pendingPoint ?: return@ModalBottomSheet
             when (menuStep) {
-                MenuStep.ENEMY_TYPE -> Unit   // handled below, kept for exhaustive when
-
                 MenuStep.ENEMY_TYPE -> EnemyTypeMenu(
                     onSelect = { type ->
                         selectedType = type
                         menuStep = MenuStep.NOTES
                     },
-                    onBack = { pendingPoint = null },   // back = full dismiss
+                    onBack = { pendingPoint = null },
                 )
 
                 MenuStep.NOTES -> NotesMenu(
