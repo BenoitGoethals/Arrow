@@ -44,7 +44,7 @@ class ApiClient(
     private val jsonMedia = "application/json; charset=utf-8".toMediaType()
     private val formMedia  = "application/x-www-form-urlencoded".toMediaType()
 
-    private val httpClient: OkHttpClient = OkHttpClient.Builder()
+    val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
@@ -52,7 +52,13 @@ class ApiClient(
             val token = cachedToken
             val req = if (token.isNullOrBlank()) chain.request()
             else chain.request().newBuilder().header("Authorization", "Bearer $token").build()
-            chain.proceed(req)
+            val response = chain.proceed(req)
+            // Token was sent but backend rejected it — expired or revoked. Clear it so
+            // the nav graph detects the missing token and redirects to login automatically.
+            if (response.code == 401 && !token.isNullOrBlank()) {
+                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { tokenStore.clear() }
+            }
+            response
         }
         .build()
 

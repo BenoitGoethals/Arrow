@@ -1,6 +1,7 @@
 package com.arrow.tactical.di
 
 import android.content.Context
+import coil.ImageLoader
 import com.arrow.tactical.alerts.AlertRepository
 import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.auth.TokenStore
@@ -26,6 +27,12 @@ class AppContainer(private val context: Context) {
     val tokenStore = TokenStore(context)
     val apiClient = ApiClient(settingsRepository, tokenStore)
     val wsClient = WsClient(settingsRepository, tokenStore, apiClient.json)
+
+    // Coil image loader that re-uses the auth-aware OkHttpClient so requests to
+    // /photos/{id} (which now require a JWT) include the Authorization header.
+    val imageLoader: ImageLoader = ImageLoader.Builder(context)
+        .okHttpClient(apiClient.httpClient)
+        .build()
 
     val authRepository = AuthRepository(apiClient, tokenStore)
     val trackingRepository = TrackingRepository(apiClient)
