@@ -185,11 +185,14 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             ) { entry ->
                 ReportsScreen(
                     repo      = container.reportRepository,
+                    container = container,
                     presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
                     presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
                 )
             }
-            composable(Tab.Reports.route) { ReportsScreen(repo = container.reportRepository) }
+            composable(Tab.Reports.route) {
+                ReportsScreen(repo = container.reportRepository, container = container)
+            }
             composable(Tab.Settings.route) {
                 SettingsScreen(
                     repo = container.settingsRepository,
