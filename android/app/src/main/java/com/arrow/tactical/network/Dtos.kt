@@ -113,6 +113,8 @@ data class ReportDto(
     val type: String,
     val payload: String,          // JSON-encoded on server, parsed as-needed client-side
     val timestamp: String? = null,
+    val status: String = "RECEIVED",
+    @SerialName("reviewer_note") val reviewerNote: String = "",
 )
 
 @Serializable

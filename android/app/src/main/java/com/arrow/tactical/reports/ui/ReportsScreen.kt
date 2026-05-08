@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,33 +100,53 @@ private val REPORT_TYPES = listOf(
 @Composable
 fun ReportsScreen(
     repo:      ReportRepository,
+    container: com.arrow.tactical.di.AppContainer? = null,
     presetLat: Double? = null,
     presetLon: Double? = null,
 ) {
-    val scope = rememberCoroutineScope()
-    var selectedType by remember { mutableStateOf(REPORT_TYPES[0]) }
-    var values     by remember { mutableStateOf(List(9) { "" }) }
-    var submitting by remember { mutableStateOf(false) }
-    var statusMsg  by remember { mutableStateOf<String?>(null) }
-    var reports    by remember { mutableStateOf<List<ReportDto>>(emptyList()) }
-    var showForm   by remember { mutableStateOf(true) }
+    val scope          = rememberCoroutineScope()
+    val snackbarHost   = remember { SnackbarHostState() }
+    var selectedType   by remember { mutableStateOf(REPORT_TYPES[0]) }
+    var values         by remember { mutableStateOf(List(9) { "" }) }
+    var submitting     by remember { mutableStateOf(false) }
+    var statusMsg      by remember { mutableStateOf<String?>(null) }
+    var reports        by remember { mutableStateOf<List<ReportDto>>(emptyList()) }
+    var showForm       by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         repo.list().onSuccess { reports = it }
-        // Pre-fill line 3 (Location) when launched from map tap
         if (presetLat != null && presetLon != null) {
             val mgrsStr = runCatching {
                 com.arrow.tactical.network.MgrsConverter.encode(presetLat, presetLon)
             }.getOrDefault("%.5f, %.5f".format(presetLat, presetLon))
-            values = List(9) { i -> if (i == 2) mgrsStr else "" }  // index 2 = line 3 = Location
+            values = List(9) { i -> if (i == 2) mgrsStr else "" }
         }
     }
 
-    // Reset form values when type changes (but keep preset if just launched)
+    // Listen for report status updates from the server via WebSocket
+    LaunchedEffect(Unit) {
+        container?.wsClient?.events()?.collect { msg ->
+            val channel = msg["channel"]?.toString()?.trim('"')
+            val event   = msg["event"]?.toString()?.trim('"')
+            if (channel == "report" && event == "status_updated") {
+                // Refresh list so the new status badge appears immediately
+                repo.list().onSuccess { reports = it }
+                // Notify operator if this is their own report
+                val data   = msg["data"] as? kotlinx.serialization.json.JsonObject
+                val status = data?.get("status")?.toString()?.trim('"') ?: return@collect
+                val note   = data["reviewer_note"]?.toString()?.trim('"') ?: ""
+                val type   = data["type"]?.toString()?.trim('"') ?: "report"
+                val notif  = "$type → $status" + if (note.isNotBlank()) ": $note" else ""
+                snackbarHost.showSnackbar(notif)
+            }
+        }
+    }
+
     LaunchedEffect(selectedType) { values = List(9) { "" } }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Tactical Reports") }) },
+        topBar       = { TopAppBar(title = { Text("Tactical Reports") }) },
+        snackbarHost = { SnackbarHost(snackbarHost) },
     ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding).fillMaxSize(),
@@ -341,11 +362,19 @@ private fun DropdownLineField(
     }
 }
 
+private fun statusColor(status: String) = when (status) {
+    "ACKNOWLEDGED" -> Color(0xFFF59E0B)
+    "PROCESSED"    -> Color(0xFF22C55E)
+    "REJECTED"     -> Color(0xFFEF4444)
+    else           -> Color(0xFF64748B)   // RECEIVED
+}
+
 @Composable
 private fun ReportRow(report: ReportDto) {
-    val typeDef = REPORT_TYPES.find { it.key == report.type }
-    val color   = typeDef?.color ?: Color(0xFF64748B)
-    var expanded by remember { mutableStateOf(false) }
+    val typeDef   = REPORT_TYPES.find { it.key == report.type }
+    val color     = typeDef?.color ?: Color(0xFF64748B)
+    val statColor = statusColor(report.status)
+    var expanded  by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -359,10 +388,8 @@ private fun ReportRow(report: ReportDto) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Surface(
-                color  = color.copy(alpha = 0.18f),
-                shape  = RoundedCornerShape(4.dp),
-            ) {
+            // Type badge
+            Surface(color = color.copy(alpha = 0.18f), shape = RoundedCornerShape(4.dp)) {
                 Text(
                     report.type,
                     modifier   = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -371,16 +398,27 @@ private fun ReportRow(report: ReportDto) {
                     color      = color,
                 )
             }
+            // Status badge
+            Surface(
+                color  = statColor.copy(alpha = 0.15f),
+                shape  = RoundedCornerShape(4.dp),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, statColor.copy(alpha = 0.5f)),
+            ) {
+                Text(
+                    report.status,
+                    modifier   = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                    style      = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color      = statColor,
+                )
+            }
             Text(
                 report.timestamp?.take(16) ?: "—",
-                style  = MaterialTheme.typography.labelSmall,
-                color  = MaterialTheme.colorScheme.onSurfaceVariant,
+                style    = MaterialTheme.typography.labelSmall,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
-            IconButton(
-                onClick  = { expanded = !expanded },
-                modifier = Modifier.size(20.dp),
-            ) {
+            IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(20.dp)) {
                 Icon(
                     if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     contentDescription = null,
@@ -426,6 +464,31 @@ private fun ReportRow(report: ReportDto) {
                     style      = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                 )
+            }
+
+            // Reviewer note (shown when BC/Admin has responded)
+            if (report.reviewerNote.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    color  = statusColor(report.status).copy(alpha = 0.08f),
+                    shape  = RoundedCornerShape(4.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        0.5.dp, statusColor(report.status).copy(alpha = 0.4f)
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text("◈", color = statusColor(report.status),
+                             style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            report.reviewerNote,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
             }
         }
     }
