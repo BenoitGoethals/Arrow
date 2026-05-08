@@ -23,16 +23,36 @@
         const token = localStorage.getItem('arrow_token');
         if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
         const headers = { Authorization: `Bearer ${token}` };
-        const fetchJson = (path) => fetch(window.ARROW_BACKEND_URL + path, { headers }).then(r => r.json());
+
+        async function fetchList(path) {
+            try {
+                const r = await fetch(window.ARROW_BACKEND_URL + path, { headers });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+                return { data: Array.isArray(data) ? data : [] };
+            } catch (err) {
+                return { error: err.message };
+            }
+        }
+
+        function errHtml(msg) {
+            return `<li style="color:#ef4444">Error: ${msg}</li>`;
+        }
+
         const [ops, alerts, battles] = await Promise.all([
-            fetchJson('/tracking/live'), fetchJson('/alerts'), fetchJson('/battles'),
+            fetchList('/tracking/live'),
+            fetchList('/alerts'),
+            fetchList('/battles'),
         ]);
-        document.getElementById('operators').innerHTML =
-            ops.map(o => `<li>${o.callsign} — ${o.latitude?.toFixed(4)}, ${o.longitude?.toFixed(4)}</li>`).join('') || '<li>None</li>';
-        document.getElementById('alerts').innerHTML =
-            alerts.map(a => `<li>[${a.status}] ${a.type} @ ${a.timestamp}</li>`).join('') || '<li>None</li>';
-        document.getElementById('battles').innerHTML =
-            battles.map(b => `<li>${b.name} (${b.status})</li>`).join('') || '<li>None</li>';
+
+        document.getElementById('operators').innerHTML = ops.error ? errHtml(ops.error)
+            : ops.data.map(o => `<li>${o.callsign} — ${o.latitude?.toFixed(4)}, ${o.longitude?.toFixed(4)}</li>`).join('') || '<li>None</li>';
+
+        document.getElementById('alerts').innerHTML = alerts.error ? errHtml(alerts.error)
+            : alerts.data.map(a => `<li>[${a.status}] ${a.type} @ ${a.timestamp}</li>`).join('') || '<li>None</li>';
+
+        document.getElementById('battles').innerHTML = battles.error ? errHtml(battles.error)
+            : battles.data.map(b => `<li>${b.name} (${b.status})</li>`).join('') || '<li>None</li>';
     }
     refresh();
     setInterval(refresh, 5000);

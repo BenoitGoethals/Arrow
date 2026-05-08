@@ -120,7 +120,7 @@
         if (activeWs) { activeWs.close(); activeWs = null; }
         activeId = id;
 
-        const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws')
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws')
             + `/streams/${id}/consume?token=${encodeURIComponent(token)}`;
         const ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
@@ -192,7 +192,7 @@
     // ── WebSocket: live stream notifications ─────────────────────
     function connectWS() {
         const ws = new WebSocket(
-            window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
+            window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
         ws.onmessage = ev => {
             try {
                 const e = JSON.parse(ev.data);

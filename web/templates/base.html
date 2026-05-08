@@ -94,6 +94,7 @@
 <div id="arrow-toast-container"></div>
 <script>
     window.ARROW_BACKEND_URL = "{{ backend_url }}";
+    window.ARROW_WS_URL = "{{ ws_url }}";
 </script>
 <script>
 (function () {
@@ -208,7 +209,7 @@
         document.getElementById('sf-fps').textContent       = '— fps';
 
         const token = localStorage.getItem('arrow_token') || '';
-        const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws')
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws')
             + `/streams/${encodeURIComponent(id)}/consume?token=${encodeURIComponent(token)}`;
         const ws = new WebSocket(wsUrl);
         ws.binaryType = 'arraybuffer';
@@ -491,7 +492,7 @@
     }
 
     function connectWS() {
-        const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
         ws.onmessage = ev => {
             try {

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.arrow.tactical.di.AppContainer
@@ -28,19 +29,21 @@ fun MarkEnemyScreen(
     onMarked: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope   = rememberCoroutineScope()
 
-    var selected by remember { mutableStateOf(EnemyType.INFANTRY) }
-    var notes by remember { mutableStateOf("") }
+    var selected   by remember { mutableStateOf(EnemyType.INFANTRY) }
+    var notes      by remember { mutableStateOf("") }
     var visibility by remember { mutableStateOf("COMPANY") }
-    var lat by remember { mutableStateOf(presetLat?.toString() ?: "") }
-    var lon by remember { mutableStateOf(presetLon?.toString() ?: "") }
-    var status by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var lat        by remember { mutableStateOf(presetLat?.toString() ?: "") }
+    var lon        by remember { mutableStateOf(presetLon?.toString() ?: "") }
+    var status     by remember { mutableStateOf<String?>(null) }
+    var busy       by remember { mutableStateOf(false) }
 
     @SuppressLint("MissingPermission")
     fun fillFromCurrentLocation() {
-        val ok = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val ok = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
         if (!ok) { status = "Location permission required"; return }
         LocationServices.getFusedLocationProviderClient(context).lastLocation
             .addOnSuccessListener { loc ->
@@ -53,59 +56,94 @@ fun MarkEnemyScreen(
         topBar = { TopAppBar(title = { Text("Mark Enemy / Object") }) },
     ) { padding ->
         Column(
-            modifier = Modifier.padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Type", style = MaterialTheme.typography.labelLarge)
+            Text("Type", style = MaterialTheme.typography.labelLarge,
+                 color = MaterialTheme.colorScheme.primary)
             FlowRowChips(
-                items = EnemyType.entries,
+                items    = EnemyType.entries,
                 selected = selected,
                 onSelect = { selected = it },
-                label = { it.label },
+                label    = { it.label },
             )
 
             HorizontalDivider()
-            Text("Location", style = MaterialTheme.typography.labelLarge)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = lat, onValueChange = { lat = it }, label = { Text("Latitude") },
-                    singleLine = true, modifier = Modifier.weight(1f))
-                OutlinedTextField(value = lon, onValueChange = { lon = it }, label = { Text("Longitude") },
-                    singleLine = true, modifier = Modifier.weight(1f))
+            Text("Location", style = MaterialTheme.typography.labelLarge,
+                 color = MaterialTheme.colorScheme.primary)
+            Row(
+                verticalAlignment     = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value         = lat,
+                    onValueChange = { lat = it },
+                    label         = { Text("Latitude") },
+                    singleLine    = true,
+                    modifier      = Modifier.weight(1f),
+                    textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                )
+                OutlinedTextField(
+                    value         = lon,
+                    onValueChange = { lon = it },
+                    label         = { Text("Longitude") },
+                    singleLine    = true,
+                    modifier      = Modifier.weight(1f),
+                    textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                )
             }
             TextButton(onClick = { fillFromCurrentLocation() }) { Text("Use my current GPS") }
 
             HorizontalDivider()
-            Text("Comment / details", style = MaterialTheme.typography.labelLarge)
+            Text("Comment / details", style = MaterialTheme.typography.labelLarge,
+                 color = MaterialTheme.colorScheme.primary)
             OutlinedTextField(
-                value = notes,
+                value         = notes,
                 onValueChange = { notes = it },
-                label = { Text("e.g. ~10 dismounts heading north, light contact") },
-                minLines = 3,
-                modifier = Modifier.fillMaxWidth(),
+                label         = { Text("e.g. ~10 dismounts heading north, light contact") },
+                minLines      = 3,
+                modifier      = Modifier.fillMaxWidth(),
             )
 
             HorizontalDivider()
-            Text("Visibility", style = MaterialTheme.typography.labelLarge)
+            Text("Visibility", style = MaterialTheme.typography.labelLarge,
+                 color = MaterialTheme.colorScheme.primary)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("TEAM", "SECTION", "PLATOON", "COMPANY").forEach {
-                    FilterChip(selected = visibility == it, onClick = { visibility = it }, label = { Text(it) })
+                    FilterChip(
+                        selected = visibility == it,
+                        onClick  = { visibility = it },
+                        label    = { Text(it) },
+                        colors   = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                            selectedLabelColor     = MaterialTheme.colorScheme.primary,
+                        ),
+                    )
                 }
             }
 
-            Text("SIDC: ${selected.sidc}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "SIDC: ${selected.sidc}",
+                style      = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color      = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Button(
-                enabled = !busy && lat.toDoubleOrNull() != null && lon.toDoubleOrNull() != null,
-                onClick = {
+                enabled  = !busy && lat.toDoubleOrNull() != null && lon.toDoubleOrNull() != null,
+                onClick  = {
                     busy = true; status = null
                     scope.launch {
                         val payload = TacticalObjectIn(
-                            type = selected.name,
+                            type       = selected.name,
                             symbolCode = selected.sidc,
-                            latitude = lat.toDouble(),
-                            longitude = lon.toDouble(),
-                            notes = notes,
+                            latitude   = lat.toDouble(),
+                            longitude  = lon.toDouble(),
+                            notes      = notes,
                             visibility = visibility,
                         )
                         container.tacticalRepository.mark(payload)
@@ -114,7 +152,9 @@ fun MarkEnemyScreen(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text(if (busy) "Marking…" else "Mark on map") }
+            ) {
+                Text(if (busy) "Marking…" else "Mark on map")
+            }
 
             status?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
@@ -124,20 +164,24 @@ fun MarkEnemyScreen(
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun <T> FlowRowChips(
-    items: List<T>,
+    items:    List<T>,
     selected: T,
     onSelect: (T) -> Unit,
-    label: (T) -> String,
+    label:    (T) -> String,
 ) {
     androidx.compose.foundation.layout.FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement   = Arrangement.spacedBy(6.dp),
     ) {
         items.forEach { item ->
             FilterChip(
                 selected = item == selected,
-                onClick = { onSelect(item) },
-                label = { Text(label(item)) },
+                onClick  = { onSelect(item) },
+                label    = { Text(label(item)) },
+                colors   = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.18f),
+                    selectedLabelColor     = MaterialTheme.colorScheme.error,
+                ),
             )
         }
     }

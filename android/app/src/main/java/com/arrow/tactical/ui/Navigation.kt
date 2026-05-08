@@ -1,8 +1,6 @@
 package com.arrow.tactical.ui
 
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
@@ -21,14 +19,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.arrow.tactical.alerts.ui.AlertsScreen
 import com.arrow.tactical.auth.ui.LoginScreen
 import com.arrow.tactical.di.AppContainer
@@ -103,7 +102,7 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
 
     Scaffold(
         bottomBar = {
-            NavigationBar(modifier = Modifier.height(48.dp)) {
+            NavigationBar {
                 TABS.forEach { tab ->
                     val selected = currentRoute?.startsWith(tab.route) == true
                     NavigationBarItem(
@@ -115,19 +114,8 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                                 restoreState = true
                             }
                         },
-                        icon = {
-                            Icon(
-                                tab.icon,
-                                contentDescription = tab.label,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        },
-                        label = {
-                            Text(
-                                tab.label,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            )
-                        },
+                        icon = { Icon(tab.icon, contentDescription = tab.label) },
+                        label = { Text(tab.label) },
                     )
                 }
             }
@@ -148,7 +136,13 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                     onReport   = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
                 )
             }
-            composable("fire-mission?lat={lat}&lon={lon}") { entry ->
+            composable(
+                "fire-mission?lat={lat}&lon={lon}",
+                arguments = listOf(
+                    navArgument("lat") { type = NavType.StringType },
+                    navArgument("lon") { type = NavType.StringType },
+                ),
+            ) { entry ->
                 FireMissionScreen(
                     container  = container,
                     presetLat  = entry.arguments?.getString("lat")?.toDoubleOrNull(),
@@ -182,7 +176,13 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             }
             composable(Tab.Alerts.route) { AlertsScreen(container.alertRepository) }
             composable(Tab.Chat.route) { MessagingScreen(container) }
-            composable("${Tab.Reports.route}?lat={lat}&lon={lon}") { entry ->
+            composable(
+                "${Tab.Reports.route}?lat={lat}&lon={lon}",
+                arguments = listOf(
+                    navArgument("lat") { type = NavType.StringType },
+                    navArgument("lon") { type = NavType.StringType },
+                ),
+            ) { entry ->
                 ReportsScreen(
                     repo      = container.reportRepository,
                     presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),

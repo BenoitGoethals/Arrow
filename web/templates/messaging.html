@@ -282,7 +282,7 @@
 
     // WebSocket: pick up new messages as they arrive.
     function connectWS() {
-        const wsUrl = window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
         ws.onmessage = (ev) => {
             const evt = JSON.parse(ev.data);

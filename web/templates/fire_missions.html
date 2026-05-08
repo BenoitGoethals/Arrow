@@ -282,7 +282,7 @@
     // WebSocket — instant update on new mission
     function connectWS() {
         const ws = new WebSocket(
-            window.ARROW_BACKEND_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
+            window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
         ws.onmessage = ev => {
             try {
                 const e = JSON.parse(ev.data);
