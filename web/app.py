@@ -42,6 +42,24 @@ def create_app() -> Flask:
     app.register_blueprint(reports_bp)
     app.register_blueprint(admin_bp)
 
+    @app.after_request
+    def _security_headers(response: Response) -> Response:
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        # CSP: allows self + CDN (Leaflet, milsymbol on unpkg) + OSM tiles + WS
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+            "img-src 'self' data: blob: https://*.tile.openstreetmap.org; "
+            "connect-src 'self' ws: wss:; "
+            "frame-ancestors 'none'"
+        )
+        return response
+
     @app.context_processor
     def _inject_backend() -> dict:
         # Browser talks to the proxy on the same origin; server-side templates

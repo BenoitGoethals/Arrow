@@ -164,3 +164,17 @@ class Report(Base):
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
     payload: Mapped[str] = mapped_column(Text)  # JSON-encoded structured data
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AuditLog(Base):
+    """Immutable security event log — CSF 2.0 DE.CM / GV.OV."""
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(50), index=True)
+    outcome: Mapped[str] = mapped_column(String(10))          # SUCCESS | FAILURE
+    operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    resource: Mapped[str | None] = mapped_column(String(120), nullable=True)  # e.g. "operator:5"
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
