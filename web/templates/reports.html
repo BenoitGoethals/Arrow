@@ -61,6 +61,42 @@
     .dl-lbl  { color: #94a3b8; }
     .dl-val  { color: #e2e8f0; font-family: monospace; }
 
+    /* ── Status management panel ─────────────────────────────────────── */
+    .status-panel {
+        margin-top: 0.75rem; padding: 0.75rem; border-radius: 6px;
+        background: #0e1217; border: 1px solid #2a3142;
+    }
+    .status-panel h4 { margin: 0 0 0.5rem; font-size: 0.75rem;
+                       color: #64748b; text-transform: uppercase; letter-spacing: .08em; }
+    .status-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .status-note { width: 100%; margin-bottom: 0.5rem;
+                   background: #161b25; color: #e2e8f0;
+                   border: 1px solid #2a3142; border-radius: 4px;
+                   padding: 0.35rem 0.5rem; font: inherit; font-size: 0.82rem;
+                   resize: vertical; min-height: 36px; }
+    .status-note:focus { outline: none; border-color: #34d399; }
+    .btn-status {
+        padding: 0.3rem 0.75rem; border: 1px solid; border-radius: 5px;
+        font: inherit; font-size: 0.78rem; font-weight: 600;
+        cursor: pointer; background: transparent; transition: background .15s;
+    }
+    .btn-status:hover { filter: brightness(1.2); }
+    .btn-ack    { color: #f59e0b; border-color: #f59e0b; }
+    .btn-ack:hover { background: rgba(245,158,11,.12); }
+    .btn-proc   { color: #22c55e; border-color: #22c55e; }
+    .btn-proc:hover { background: rgba(34,197,94,.12); }
+    .btn-rej    { color: #ef4444; border-color: #ef4444; }
+    .btn-rej:hover { background: rgba(239,68,68,.12); }
+    .status-result { font-size: 0.75rem; color: #64748b; }
+
+    /* ── Status badge ────────────────────────────────────────────────── */
+    .s-badge { display:inline-block; font-size:.62rem; font-weight:700;
+               padding:1px 6px; border-radius:3px; letter-spacing:.04em; }
+    .s-RECEIVED     { background:rgba(100,116,139,.2); color:#94a3b8;  border:1px solid #475569; }
+    .s-ACKNOWLEDGED { background:rgba(245,158,11,.15); color:#f59e0b;  border:1px solid #b45309; }
+    .s-PROCESSED    { background:rgba(34,197,94,.15);  color:#22c55e;  border:1px solid #16a34a; }
+    .s-REJECTED     { background:rgba(239,68,68,.15);  color:#ef4444;  border:1px solid #dc2626; }
+
     main { padding: 0; }
 </style>
 {% endblock %}
@@ -96,13 +132,18 @@
     <section class="rep-main">
         <div id="form-area"></div>
 
-        <h3 style="margin-top:2rem; margin-bottom:0.5rem">Submitted Reports</h3>
+        <h3 style="margin-top:2rem; margin-bottom:0.5rem">
+            Incoming Reports
+            <span id="unreviewed-badge" style="display:none;margin-left:.5rem;
+                  background:#dc2626;color:#fff;font-size:.65rem;font-weight:700;
+                  padding:2px 7px;border-radius:99px;vertical-align:middle"></span>
+        </h3>
         <table class="reports-table" id="reports-table">
             <thead>
-                <tr><th>Type</th><th>Time</th><th>Op #</th><th>Line 1</th><th></th></tr>
+                <tr><th>Type</th><th>Status</th><th>Time</th><th>Op #</th><th>Line 1</th><th></th></tr>
             </thead>
             <tbody id="reports-body">
-                <tr><td colspan="5" style="color:#475569">Loading…</td></tr>
+                <tr><td colspan="6" style="color:#475569">Loading…</td></tr>
             </tbody>
         </table>
     </section>
@@ -254,7 +295,13 @@
         if (!r.ok) return;
         const list = await r.json();
 
-        // Recent sidebar
+        // Unreviewed badge
+        const unreviewed = list.filter(rep => rep.status === 'RECEIVED').length;
+        const badge = document.getElementById('unreviewed-badge');
+        badge.style.display = unreviewed ? 'inline' : 'none';
+        badge.textContent   = unreviewed + ' new';
+
+        // Sidebar (sort by timestamp desc, most recent first)
         const recent = document.getElementById('recent-list');
         recent.innerHTML = list.slice(0, 15).map(rep => {
             const c = TYPE_COLORS[rep.type] || '#64748b';
@@ -271,13 +318,13 @@
         // Main table
         const tbody = document.getElementById('reports-body');
         tbody.innerHTML = list.map(rep => {
-            const c = TYPE_COLORS[rep.type] || '#64748b';
-            let line1 = '—';
-            let detail = '';
+            const c  = TYPE_COLORS[rep.type] || '#64748b';
+            const st = rep.status || 'RECEIVED';
+            let line1 = '—', detail = '';
             try {
                 const p = JSON.parse(rep.payload);
-                line1 = p.line_1 || '—';
-                detail = Object.keys(p)
+                line1   = p.line_1 || '—';
+                detail  = Object.keys(p)
                     .filter(k => k.startsWith('line_') && p[k])
                     .map(k => {
                         const n = k.slice(5);
@@ -290,17 +337,65 @@
                     }).join('');
             } catch(_){}
 
+            // Reviewer note (if any)
+            const note = rep.reviewer_note
+                ? `<div style="margin-top:.5rem;padding:.4rem .6rem;background:#1a2030;
+                               border-left:2px solid #34d399;border-radius:0 4px 4px 0;
+                               font-size:.78rem;color:#94a3b8">
+                       <strong style="color:#34d399">Review note:</strong> ${escHtml(rep.reviewer_note)}
+                   </div>` : '';
+
+            // Status action panel (only show for BC/Admin — visible to all, server enforces role)
+            const actionPanel = `
+                <div class="status-panel">
+                    <h4>Update status</h4>
+                    <textarea class="status-note" id="note-${rep.id}"
+                              placeholder="Optional note sent back to the operator…">${escHtml(rep.reviewer_note||'')}</textarea>
+                    <div class="status-actions">
+                        <button class="btn-status btn-ack"
+                                onclick="updateStatus(${rep.id},'ACKNOWLEDGED')">✓ Acknowledge</button>
+                        <button class="btn-status btn-proc"
+                                onclick="updateStatus(${rep.id},'PROCESSED')">✔ Processed</button>
+                        <button class="btn-status btn-rej"
+                                onclick="updateStatus(${rep.id},'REJECTED')">✕ Reject</button>
+                        <span class="status-result" id="sr-${rep.id}"></span>
+                    </div>
+                </div>`;
+
             return `<tr>
                 <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
+                <td><span class="s-badge s-${st}">${st}</span></td>
                 <td style="color:#64748b;white-space:nowrap">${(rep.timestamp||'').slice(0,16).replace('T',' ')}</td>
                 <td style="color:#94a3b8">#${rep.operator_id}</td>
                 <td style="font-family:monospace;font-size:0.82rem">${escHtml(line1)}</td>
-                <td><button onclick="toggleDetail(this)" style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
-                    <div class="rep-detail" data-id="${rep.id}">${detail}</div>
+                <td>
+                    <button onclick="toggleDetail(this)"
+                            style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
+                    <div class="rep-detail" data-id="${rep.id}">
+                        ${detail}${note}${actionPanel}
+                    </div>
                 </td>
             </tr>`;
-        }).join('') || '<tr><td colspan="5" style="color:#475569">No reports</td></tr>';
+        }).join('') || '<tr><td colspan="6" style="color:#475569">No reports</td></tr>';
     }
+
+    window.updateStatus = async function(id, newStatus) {
+        const note   = document.getElementById(`note-${id}`)?.value || '';
+        const result = document.getElementById(`sr-${id}`);
+        if (result) result.textContent = 'Saving…';
+        const r = await api(`/reports/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus, reviewer_note: note }),
+        });
+        if (r.ok) {
+            if (result) result.textContent = `✓ Status set to ${newStatus}`;
+            loadReports();
+        } else {
+            const err = await r.json().catch(() => ({}));
+            if (result) result.textContent = `✗ ${err.detail || r.status}`;
+        }
+    };
 
     window.toggleDetail = function(btn) {
         const detail = btn.nextElementSibling;
@@ -318,6 +413,20 @@
         });
     };
 
+    // ── WebSocket — live refresh when any report status changes ──────
+    function connectWS() {
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const ws    = new WebSocket(wsUrl);
+        ws.onmessage = ev => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.channel === 'report') loadReports();
+            } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+    connectWS();
+
     function escHtml(s) {
         return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
@@ -325,7 +434,7 @@
 
     renderForm();
     loadReports();
-    setInterval(loadReports, 15000);
+    setInterval(loadReports, 30000);
 })();
 </script>
 {% endblock %}
