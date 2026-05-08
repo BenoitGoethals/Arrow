@@ -1,5 +1,6 @@
 package com.arrow.tactical.auth.ui
 
+import android.content.pm.ActivityInfo
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,7 +8,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.di.AppContainer
@@ -22,6 +26,14 @@ fun LoginScreen(
     onOpenSettings: () -> Unit = {},
     settingsRepository: SettingsRepository? = null,
 ) {
+    val activity = LocalContext.current as? android.app.Activity
+    DisposableEffect(Unit) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
+
     var callsign by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var registering by remember { mutableStateOf(false) }
@@ -29,6 +41,9 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var serverShown by remember { mutableStateOf(false) }
+    // MFA second-step state
+    var mfaSession by remember { mutableStateOf<String?>(null) }
+    var totpCode by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     val server by (settingsRepository?.serverUrl?.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
@@ -74,28 +89,66 @@ fun LoginScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Button(
-            enabled = !busy && callsign.isNotBlank() && password.isNotBlank(),
-            onClick = {
-                error = null; busy = true
-                scope.launch {
-                    val res = if (registering) {
-                        authRepository.register(RegisterIn(callsign.trim(), password, role = role))
-                    } else {
-                        authRepository.login(callsign.trim(), password)
-                    }
-                    busy = false
-                    res.onSuccess { onAuthenticated() }
-                        .onFailure { error = it.message }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (registering) "Register & sign in" else "Sign in")
-        }
 
-        TextButton(onClick = { registering = !registering }) {
-            Text(if (registering) "Back to sign-in" else "Register a new operator")
+        if (mfaSession != null) {
+            // ── MFA second step ───────────────────────────────────────────
+            Text("🔐 Two-factor authentication",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = totpCode,
+                onValueChange = { if (it.length <= 6) totpCode = it },
+                label = { Text("6-digit authenticator code") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                enabled = !busy && totpCode.length == 6,
+                onClick = {
+                    error = null; busy = true
+                    scope.launch {
+                        authRepository.verifyMfa(mfaSession!!, totpCode)
+                            .onSuccess { busy = false; onAuthenticated() }
+                            .onFailure { busy = false; error = it.message; totpCode = "" }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (busy) "Verifying…" else "Verify") }
+            TextButton(onClick = { mfaSession = null; totpCode = ""; error = null }) {
+                Text("Cancel — back to login")
+            }
+        } else {
+            // ── Normal login / register ───────────────────────────────────
+            Button(
+                enabled = !busy && callsign.isNotBlank() && password.isNotBlank(),
+                onClick = {
+                    error = null; busy = true
+                    scope.launch {
+                        val res = if (registering) {
+                            authRepository.register(RegisterIn(callsign.trim(), password, role = role))
+                        } else {
+                            authRepository.login(callsign.trim(), password)
+                        }
+                        busy = false
+                        res.onSuccess { token ->
+                            if (token.mfaRequired && token.mfaSession != null) {
+                                mfaSession = token.mfaSession
+                            } else {
+                                onAuthenticated()
+                            }
+                        }.onFailure { error = it.message }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (registering) "Register & sign in" else "Sign in")
+            }
+            TextButton(onClick = { registering = !registering }) {
+                Text(if (registering) "Back to sign-in" else "Register a new operator")
+            }
         }
 
         TextButton(onClick = { serverShown = !serverShown }) {

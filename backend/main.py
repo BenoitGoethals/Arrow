@@ -1,7 +1,12 @@
+import logging
+import logging.config
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from backend.admin.router import router as admin_api_router
 from backend.alerts.router import router as alerts_router
@@ -19,6 +24,7 @@ from backend.api.teams import router as teams_router
 from backend.auth.router import router as auth_router
 from backend.battle_management.router import router as battles_router
 from backend.config.xml_config import load_config
+from backend.limiter import limiter
 from backend.map.router import router as map_router
 from backend.messaging.router import router as messaging_router
 from backend.reports.router import router as reports_router
@@ -27,12 +33,43 @@ from backend.storage.seed import seed as seed_db
 from backend.tracking.router import router as tracking_router
 from backend.websocket.router import router as ws_router
 
+_WEAK_SECRET = "change-me-in-production"
+
+
+def _configure_logging() -> None:
+    """Structured JSON logging for log aggregation (Loki / CloudWatch / ELK)."""
+    use_json = os.environ.get("ARROW_JSON_LOGS", "1") == "1"
+    if use_json:
+        from pythonjsonlogger.json import JsonFormatter
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonFormatter(
+            fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
+            rename_fields={"asctime": "ts", "name": "logger", "levelname": "level"},
+        ))
+        root = logging.getLogger()
+        root.handlers.clear()
+        root.addHandler(handler)
+    logging.getLogger("arrow.security").setLevel(logging.INFO)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.config = load_config()
+    _configure_logging()
+    cfg = load_config()
+    if cfg.auth.secret == _WEAK_SECRET and not os.environ.get("ARROW_INSECURE_SECRET_OK"):
+        raise RuntimeError(
+            "JWT secret is the default weak value. "
+            "Set <secret> in config.xml or ARROW_INSECURE_SECRET_OK=1 for dev."
+        )
+    app.state.config = cfg
     init_db()
-    seed_db()  # no-op if operators already exist
+    seed_db()
+
+    # Token revocation blacklist (Redis, falls back to in-memory)
+    from backend import token_blacklist
+    token_blacklist.init(os.environ.get("ARROW_REDIS_URL"))
+
     yield
 
 
@@ -43,9 +80,16 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Rate limiting
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # CORS
+    _raw_origins = os.environ.get("ARROW_ALLOWED_ORIGINS", "http://localhost:6002")
+    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=".*",
+        allow_origins=_allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -84,14 +128,8 @@ app = create_app()
 
 def run() -> None:
     import uvicorn
-
     cfg = load_config()
-    uvicorn.run(
-        "backend.main:app",
-        host=cfg.server.host,
-        port=cfg.server.port,
-        reload=True,
-    )
+    uvicorn.run("backend.main:app", host=cfg.server.host, port=cfg.server.port, reload=True)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
 services:
+
+  # ── Backend (FastAPI) ────────────────────────────────────────────────────────
   backend:
     build:
       context: .
@@ -7,9 +9,17 @@ services:
     container_name: arrow-backend
     expose:
       - "6001"
+    environment:
+      ARROW_INSECURE_SECRET_OK: ""          # unset → startup check enforces strong secret
+      ARROW_REDIS_URL: redis://redis:6379/0
+      ARROW_JSON_LOGS: "1"
+      # ARROW_PHOTO_KEY: <64-char hex>      # enable photo encryption at rest
     volumes:
       - arrow-data:/app/data
       - ./config.xml:/app/config.xml:ro
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:6001/health').status==200 else 1)\""]
       interval: 10s
@@ -17,7 +27,13 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
+  # ── Web dashboard (Flask) ────────────────────────────────────────────────────
   web:
     build:
       context: .
@@ -25,21 +41,47 @@ services:
     image: arrow-web
     container_name: arrow-web
     environment:
-      # Browser hits same origin -> Caddy -> backend. Server-side BACKEND_URL
-      # is used by the Flask /api proxy fallback only.
       ARROW_BACKEND_URL: http://backend:6001
+      ARROW_ALLOWED_ORIGINS: "http://localhost:6200,https://${ARROW_DOMAIN:-localhost}"
+      FLASK_DEBUG: "0"
+      ARROW_JSON_LOGS: "1"
     expose:
       - "6002"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
+  # ── Redis (token blacklist + rate-limit state) ───────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: arrow-redis
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Caddy reverse proxy ──────────────────────────────────────────────────────
   proxy:
     image: caddy:2-alpine
     container_name: arrow-proxy
     ports:
-      - "6200:80"
+      - "${ARROW_HTTP_PORT:-6200}:6200"
+      - "443:443"           # needed for Let's Encrypt in production
+      - "80:80"             # needed for ACME HTTP-01 challenge
+    environment:
+      ARROW_DOMAIN:  "${ARROW_DOMAIN::6200}"   # e.g. my.host or :6200 for dev
+      CADDY_EMAIL:   "${CADDY_EMAIL:-admin@example.com}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -49,7 +91,83 @@ services:
       - web
     restart: unless-stopped
 
+  # ── Automated backup ─────────────────────────────────────────────────────────
+  backup:
+    image: alpine:3.20
+    container_name: arrow-backup
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache sqlite
+        echo "Backup service started (interval: $${BACKUP_INTERVAL_HOURS:-24}h)"
+        while true; do
+          DATE=$$(date -u +%Y-%m-%dT%H%M%SZ)
+          sqlite3 /data/arrow.db ".dump" | gzip > /backups/arrow-db-$${DATE}.sql.gz \
+            && echo "DB backup ok: $${DATE}" \
+            || echo "DB backup FAILED"
+          tar czf /backups/arrow-photos-$${DATE}.tar.gz -C /data photos 2>/dev/null \
+            && echo "Photo backup ok: $${DATE}"
+          # Prune old backups
+          find /backups -name "*.gz" -mtime +$${BACKUP_KEEP_DAYS:-7} -delete
+          echo "Next backup in $${BACKUP_INTERVAL_HOURS:-24}h"
+          sleep $$(( $${BACKUP_INTERVAL_HOURS:-24} * 3600 ))
+        done
+    volumes:
+      - arrow-data:/data:ro
+      - arrow-backups:/backups
+    environment:
+      BACKUP_KEEP_DAYS: "${BACKUP_KEEP_DAYS:-7}"
+      BACKUP_INTERVAL_HOURS: "${BACKUP_INTERVAL_HOURS:-24}"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Log aggregation (optional — enable with: docker compose --profile logging up) ──
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: arrow-loki
+    profiles: ["logging"]
+    command: -config.file=/etc/loki/config.yaml
+    volumes:
+      - ./infra/loki-config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    expose:
+      - "3100"
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.0.0
+    container_name: arrow-promtail
+    profiles: ["logging"]
+    command: -config.file=/etc/promtail/config.yaml
+    volumes:
+      - ./infra/promtail-config.yaml:/etc/promtail/config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: arrow-grafana
+    profiles: ["logging"]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-changeme}"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on: [loki]
+    restart: unless-stopped
+
 volumes:
   arrow-data:
+  arrow-backups:
+  redis-data:
   caddy-data:
   caddy-config:
+  loki-data:
+  grafana-data:

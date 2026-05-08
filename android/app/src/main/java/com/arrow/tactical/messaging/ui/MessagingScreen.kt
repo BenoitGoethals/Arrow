@@ -22,6 +22,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.ImageLoader
 import coil.compose.AsyncImage
 import com.arrow.tactical.di.AppContainer
 import com.arrow.tactical.network.MessageDto
@@ -138,9 +139,10 @@ fun MessagingScreen(container: AppContainer) {
             ) {
                 items(messages) { m ->
                     MessageBubble(
-                        message  = m,
-                        isMine   = m.senderId == meId,
-                        baseUrl  = baseUrl.value,
+                        message      = m,
+                        isMine       = m.senderId == meId,
+                        baseUrl      = baseUrl.value,
+                        imageLoader  = container.imageLoader,
                     )
                 }
             }
@@ -212,7 +214,7 @@ fun MessagingScreen(container: AppContainer) {
 }
 
 @Composable
-private fun MessageBubble(message: MessageDto, isMine: Boolean, baseUrl: String) {
+private fun MessageBubble(message: MessageDto, isMine: Boolean, baseUrl: String, imageLoader: ImageLoader) {
     val align = if (isMine) Alignment.End else Alignment.Start
     val bg = when {
         isMine -> MaterialTheme.colorScheme.primary
@@ -256,6 +258,7 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, baseUrl: String)
                     AsyncImage(
                         model              = "$baseUrl/photos/${message.photoId}",
                         contentDescription = "Photo",
+                        imageLoader        = imageLoader,
                         modifier           = Modifier
                             .widthIn(max = 240.dp)
                             .clip(RoundedCornerShape(8.dp)),

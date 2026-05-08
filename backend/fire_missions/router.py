@@ -67,9 +67,9 @@ async def update_mission(
     fm_id:   int,
     payload: FireMissionUpdate,
     db:      Session  = Depends(get_db),
-    current: Operator = Depends(get_current_operator),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
 ) -> FireMission:
-    """Acknowledge, assign to FDC, change status, or add notes."""
+    """Acknowledge, assign to FDC, change status, or add notes. Requires BATTLE_CAPTAIN or ADMIN."""
     fm = db.get(FireMission, fm_id)
     if not fm:
         raise HTTPException(status.HTTP_404_NOT_FOUND)

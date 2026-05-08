@@ -45,8 +45,10 @@ async def receive_cot(
     try:
         evt = parse_cot(body)
     except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("CoT parse error: %s", exc)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"Invalid CoT XML: {exc}") from exc
+                            "Invalid CoT XML") from exc
 
     # Update operator position
     current.latitude  = evt.lat
