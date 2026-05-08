@@ -46,6 +46,10 @@ parser.add_argument("--speed", type=float, default=1.0,
                     help="Time multiplier: 6 = 6× faster, 1 = real time")
 parser.add_argument("--reset", action="store_true",
                     help="Delete all sim operators before starting")
+parser.add_argument("--seed-admin", default="benoit",
+                    help="Callsign of the pre-seeded ADMIN used to bootstrap (default: benoit)")
+parser.add_argument("--seed-admin-password", default="ranger14",
+                    help="Password for --seed-admin (default: ranger14)")
 ARGS = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO,
@@ -110,6 +114,8 @@ INFIL_MS       = 1500 / 3600          # 1.5 km/h in m/s
 UPDATE_S       = 10.0                 # real seconds between position pushes
 ENEMY_S        = 10.0                 # real seconds between enemy marks
 SECTION_STAGGER_S = 120.0            # section 2 starts this many (real) seconds later
+CBRN_S         = 90.0                 # real seconds between worldwide CBRN incidents
+CAS_S          = 60.0                 # real seconds between CAS requests
 
 # ── Geographic helpers ────────────────────────────────────────────────────────
 
@@ -322,13 +328,14 @@ async def api(client: httpx.AsyncClient, method: str, path: str,
         log.warning("%-6s %-30s → %s", method, path, exc)
         return None
 
-async def login(client: httpx.AsyncClient, callsign: str) -> Optional[str]:
+async def login(client: httpx.AsyncClient, callsign: str,
+                password: str = SIM_PASSWORD) -> Optional[str]:
     try:
         r = await client.post(f"{BASE}/auth/login",
-                              data={"username": callsign, "password": SIM_PASSWORD},
+                              data={"username": callsign, "password": password},
                               timeout=10)
         if r.status_code == 200:
-            return r.json()["access_token"]
+            return r.json().get("access_token")
     except Exception:
         pass
     return None
@@ -345,36 +352,63 @@ async def bootstrap(client: httpx.AsyncClient,
     """
     log.info("── Bootstrap ─────────────────────────────────────────")
 
-    # 1. Admin account
+    # 1. Seed admin — already created by backend/storage/seed.py (benoit/ranger14
+    #    by default). All authenticated bootstrap calls go through this token.
+    seed_token = await login(client, ARGS.seed_admin, ARGS.seed_admin_password)
+    if not seed_token:
+        raise RuntimeError(
+            f"Cannot login as seed admin {ARGS.seed_admin!r}. "
+            "Ensure the backend has been seeded (it auto-seeds on first boot) "
+            "and pass --seed-admin / --seed-admin-password if you've changed them."
+        )
+    log.info("Logged in as seed admin %s", ARGS.seed_admin)
+
+    # 2. Sim company commander (DELTA-6) — register if missing, ensure ADMIN role.
+    #    All bootstrap reads/writes go through the seed admin token (guaranteed ADMIN);
+    #    DELTA-6's own token is only used for DELTA-6's own actions later.
+    admin_token = seed_token
     admin_op = next(o for o in all_ops if o.role == "ADMIN")
-    admin_token = await login(client, admin_op.callsign)
-    if not admin_token:
-        r = await api(client, "POST", "/auth/register", json={
+    sim_admin_token = await login(client, admin_op.callsign)
+    if not sim_admin_token:
+        r = await api(client, "POST", "/auth/register/admin", token=seed_token, json={
             "callsign": admin_op.callsign, "password": SIM_PASSWORD,
             "rank": admin_op.rank, "role": "ADMIN",
         })
-        if r:
-            admin_token = r["access_token"]
+        if r and r.get("access_token"):
+            sim_admin_token = r["access_token"]
             log.info("Registered %s (ADMIN)", admin_op.callsign)
-        else:
-            raise RuntimeError("Cannot create admin operator")
-    admin_op.token = admin_token
+    else:
+        # DELTA-6 already exists; make sure it's actually ADMIN (an earlier run
+        # may have created it as OPERATOR via the un-elevated /auth/register).
+        ops = await api(client, "GET", "/operators", token=seed_token) or []
+        row = next((o for o in ops if o["callsign"] == admin_op.callsign), None)
+        if row and row.get("role") != "ADMIN":
+            patched = await api(client, "PATCH", f"/operators/{row['id']}",
+                                token=seed_token, json={"role": "ADMIN"})
+            if patched:
+                log.info("Promoted %s to ADMIN (was %s)", admin_op.callsign, row.get("role"))
+                # Re-login to obtain a token with the elevated role claim.
+                sim_admin_token = await login(client, admin_op.callsign) or sim_admin_token
 
-    # 2. Company
-    companies = await api(client, "GET", "/companies") or []
+    admin_op.token = sim_admin_token or seed_token
+
+    # 3. Company
+    companies = await api(client, "GET", "/companies", token=admin_token) or []
     company = next((c for c in companies if c["name"] == "Delta Company"), None)
     if not company:
         company = await api(client, "POST", "/companies", token=admin_token,
                             json={"name": "Delta Company"})
+        if not company:
+            raise RuntimeError("Failed to create Delta Company (insufficient role?)")
         log.info("Created Delta Company (id=%d)", company["id"])
     company_id = company["id"]
 
-    # 3. Platoons → sections → teams
+    # 4. Platoons → sections → teams
     #    We walk through sections and build the tree lazily.
     plt_ids:  dict[str, int] = {}   # code → id
     sec_ids:  dict[str, int] = {}   # "{code}-{num}" → id
 
-    platoons_resp = await api(client, "GET", "/platoons") or []
+    platoons_resp = await api(client, "GET", "/platoons", token=admin_token) or []
     for p in platoons_resp:
         for code, name in [("ALPHA","1st Platoon (Alpha)"),
                            ("BRAVO","2nd Platoon (Bravo)"),
@@ -392,13 +426,13 @@ async def bootstrap(client: httpx.AsyncClient,
                 plt_ids[code] = r["id"]
                 log.info("  Created platoon %s (id=%d)", name, r["id"])
 
-    sections_resp = await api(client, "GET", "/sections") or []
+    sections_resp = await api(client, "GET", "/sections", token=admin_token) or []
     for s in sections_resp:
         for sec in sections:
             if s["name"] == sec.name:
                 sec_ids[f"{sec.platoon_code}-{sec.section_num}"] = s["id"]
 
-    teams_resp = await api(client, "GET", "/teams") or []
+    teams_resp = await api(client, "GET", "/teams", token=admin_token) or []
     team_name_to_id: dict[str, int] = {t["name"]: t["id"] for t in teams_resp}
 
     for sec in sections:
@@ -425,7 +459,7 @@ async def bootstrap(client: httpx.AsyncClient,
                     team_name_to_id[team_name] = r["id"]
                     log.info("      Created team %s (id=%d)", team_name, r["id"])
 
-    # 4. Register / fix all operators — team_id included at creation (atomic)
+    # 5. Register / fix all operators — team_id included at creation (atomic)
     log.info("── Registering / assigning operators ────────────────")
     existing_ops = {o["callsign"]: o
                     for o in (await api(client, "GET", "/operators",
@@ -439,8 +473,10 @@ async def bootstrap(client: httpx.AsyncClient,
             ex        = existing_ops.get(op.callsign)
 
             if not ex:
-                # New operator — register with team_id already set
-                r = await api(client, "POST", "/auth/register", json={
+                # New operator — register with team_id already set.
+                # Use the admin-elevated endpoint so the requested role sticks.
+                r = await api(client, "POST", "/auth/register/admin",
+                              token=admin_token, json={
                     "callsign": op.callsign, "password": SIM_PASSWORD,
                     "rank": op.rank, "role": op.role,
                     "team_id": team_id,
@@ -466,11 +502,12 @@ async def bootstrap(client: httpx.AsyncClient,
             if row:
                 op.op_id = row["id"]
 
-    # 5. Register platoon commanders (unassigned — command element)
+    # 6. Register platoon commanders (unassigned — command element)
     for plt_code, _ in [("ALPHA",""), ("BRAVO",""), ("CHARLIE","")]:
         callsign = f"{plt_code}-6"
         if callsign not in ops_all:
-            r = await api(client, "POST", "/auth/register", json={
+            r = await api(client, "POST", "/auth/register/admin",
+                          token=admin_token, json={
                 "callsign": callsign, "password": SIM_PASSWORD,
                 "rank": "OF-1", "role": "BATTLE_CAPTAIN",
             })
@@ -687,6 +724,211 @@ async def run_enemy_marker(client: httpx.AsyncClient,
             await api(client, "POST", "/messages", token=op.token,
                       json={"content": content, "message_type": "BROADCAST"})
 
+# ── CBRN worldwide incident generator ────────────────────────────────────────
+
+# Notable cities used as "near" anchors so the marker isn't always in open ocean.
+# Each entry: (name, lat, lon).
+_WORLD_ANCHORS: list[tuple[str, float, float]] = [
+    ("Brussels",      50.85,   4.35),
+    ("London",        51.51,  -0.13),
+    ("Paris",         48.86,   2.35),
+    ("Berlin",        52.52,  13.40),
+    ("Madrid",        40.42,  -3.70),
+    ("Rome",          41.90,  12.50),
+    ("Warsaw",        52.23,  21.01),
+    ("Kyiv",          50.45,  30.52),
+    ("Istanbul",      41.01,  28.98),
+    ("Cairo",         30.04,  31.24),
+    ("Lagos",          6.52,   3.38),
+    ("Nairobi",       -1.29,  36.82),
+    ("Johannesburg", -26.20,  28.05),
+    ("Dubai",         25.20,  55.27),
+    ("Tehran",        35.69,  51.39),
+    ("Karachi",       24.86,  67.01),
+    ("Mumbai",        19.08,  72.88),
+    ("New Delhi",     28.61,  77.21),
+    ("Bangkok",       13.76, 100.50),
+    ("Singapore",      1.35, 103.82),
+    ("Jakarta",       -6.21, 106.85),
+    ("Manila",        14.60, 120.98),
+    ("Tokyo",         35.68, 139.69),
+    ("Seoul",         37.57, 126.98),
+    ("Beijing",       39.90, 116.41),
+    ("Shanghai",      31.23, 121.47),
+    ("Sydney",       -33.87, 151.21),
+    ("Auckland",     -36.85, 174.76),
+    ("Buenos Aires", -34.60, -58.38),
+    ("São Paulo",    -23.55, -46.63),
+    ("Bogotá",         4.71, -74.07),
+    ("Mexico City",   19.43, -99.13),
+    ("Los Angeles",   34.05,-118.24),
+    ("New York",      40.71, -74.01),
+    ("Toronto",       43.65, -79.38),
+    ("Reykjavík",     64.13, -21.94),
+    ("Anchorage",     61.22,-149.90),
+    ("Cape Town",    -33.92,  18.42),
+]
+
+_AGENT_CATALOGUE: list[tuple[str, str, str, str]] = [
+    # (agent_category, msg_type, agent label, descriptive notes)
+    ("C", "CBRN_4", "SARIN (GB)",      "Nerve agent release detected"),
+    ("C", "CBRN_4", "VX",              "Persistent nerve agent contamination"),
+    ("C", "CBRN_4", "MUSTARD (HD)",    "Vesicant gas — blistering hazard"),
+    ("C", "CBRN_4", "CHLORINE",        "Industrial toxic chemical release"),
+    ("B", "CBRN_4", "ANTHRAX",         "Suspected biological release — anthrax"),
+    ("B", "CBRN_4", "PLAGUE",          "Suspected biological release — plague"),
+    ("B", "CBRN_4", "BOTULINUM",       "Suspected biological toxin release"),
+    ("R", "CBRN_3", "DIRTY BOMB",      "Radiological dispersal device — gamma rate elevated"),
+    ("R", "CBRN_3", "REACTOR LEAK",    "Civilian reactor leak suspected"),
+    ("N", "CBRN_2", "TACTICAL NUCLEAR","Suspected sub-kilotonne nuclear detonation"),
+    ("N", "CBRN_2", "STRATEGIC YIELD", "Multi-kilotonne nuclear event — confirm yield"),
+]
+
+
+def _random_world_location() -> tuple[float, float, str]:
+    """Pick a random anchor city and offset by up to ~50 km in any direction."""
+    name, lat, lon = random.choice(_WORLD_ANCHORS)
+    dlat = random.uniform(-0.45, 0.45)   # ≈ 50 km N/S
+    dlon = random.uniform(-0.45, 0.45) / max(0.2, math.cos(math.radians(lat)))
+    return lat + dlat, lon + dlon, name
+
+
+async def run_cbrn_worldwide(client: httpx.AsyncClient,
+                             admin_op: SimOp,
+                             speed_mult: float) -> None:
+    """Every CBRN_S real seconds emit a CBRN incident at a random worldwide location."""
+    real_interval = CBRN_S / speed_mult
+    await asyncio.sleep(real_interval * 0.5)
+    count = 0
+
+    while True:
+        await asyncio.sleep(real_interval)
+        if not admin_op.token:
+            continue
+
+        lat, lon, near = _random_world_location()
+        agent_cat, msg_type, agent_label, notes = random.choice(_AGENT_CATALOGUE)
+        wind_dir   = random.randint(0, 359)
+        wind_speed = random.randint(5, 45)
+
+        zone_inner = {
+            "C": random.randint(500, 1500),
+            "B": random.randint(1000, 3000),
+            "R": random.randint(800, 2500),
+            "N": random.randint(2000, 6000),
+        }[agent_cat]
+        zone_downwind = zone_inner * random.randint(3, 8)
+
+        payload = {
+            "msg_type": msg_type,
+            "agent_category": agent_cat,
+            "agent": agent_label,
+            "latitude":  round(lat, 5),
+            "longitude": round(lon, 5),
+            "wind_direction":  wind_dir,
+            "wind_speed":      wind_speed,
+            "zone_inner_m":    zone_inner,
+            "zone_downwind_m": zone_downwind,
+            "zone_downwind_angle_deg": 30,
+            "dtg":     "",
+            "serial":  f"WW{count:04d}",
+            "near":    near,
+            "notes":   notes,
+            "lines":   {},
+        }
+        count += 1
+
+        r = await api(client, "POST", "/reports", token=admin_op.token,
+                      json={"type": msg_type, "payload": payload})
+        if r:
+            log.info("☣️  CBRN %s  %-18s  near %-12s  %.4f,%.4f  wind %d°@%dkm/h  (#%d)",
+                     msg_type, agent_label, near, lat, lon, wind_dir, wind_speed, count)
+
+
+# ── CAS request generator ────────────────────────────────────────────────────
+
+_CAS_AIRCRAFT  = ["F-16C", "F-35A", "A-10C", "AH-64D", "AH-1Z", "EUROFIGHTER", "RAFALE"]
+_CAS_ORDNANCE  = ["GBU-12 LGB", "AGM-65 MAVERICK", "20MM CANNON", "HELLFIRE", "ROCKETS", "GBU-39 SDB"]
+_CAS_MARK      = ["IR STROBE", "VS-17 PANEL", "SMOKE GREEN", "LASER 1688", "GLINT TAPE"]
+_CAS_TARGETS   = [
+    "Dug-in infantry platoon",
+    "Armoured column halted",
+    "Mortar firing position",
+    "Technical with HMG",
+    "Sniper team in building",
+    "Anti-air position",
+    "Massed dismounts in tree-line",
+]
+
+
+async def run_cas_requests(client: httpx.AsyncClient,
+                           sections: list[SimSection],
+                           admin_op: SimOp,
+                           speed_mult: float) -> None:
+    """Every CAS_S real seconds a forward operator (or admin) requests CAS."""
+    real_interval = CAS_S / speed_mult
+    await asyncio.sleep(real_interval * 0.7)
+    count = 0
+
+    while True:
+        await asyncio.sleep(real_interval)
+
+        # Prefer a forward operator with a position; fall back to admin.
+        live_ops = [
+            o for sec in sections for o in sec.operators
+            if o.token and o.lat != 0
+        ]
+        op = random.choice(live_ops) if live_ops else admin_op
+        if not op.token:
+            continue
+
+        # Target is 300–1500 m from requester
+        spread_m = random.uniform(300, 1500)
+        brg_rad  = random.uniform(0, 2 * math.pi)
+        if op.lat == 0 and op.lon == 0:
+            tlat, tlon, near = _random_world_location()
+        else:
+            tlat = op.lat + spread_m * math.cos(brg_rad) * LAT_DEG_PER_M
+            tlon = op.lon + spread_m * math.sin(brg_rad) * lon_deg_per_m(op.lat)
+            near = op.callsign
+
+        grid = mgrs(tlat, tlon)
+        target_desc = random.choice(_CAS_TARGETS)
+        aircraft    = random.choice(_CAS_AIRCRAFT)
+        ordnance    = random.choice(_CAS_ORDNANCE)
+        marking     = random.choice(_CAS_MARK)
+        friendly_m  = random.choice([200, 300, 400, 500, 600])
+        bearing_friendly = random.choice(SPOT_DIRECTIONS)
+
+        # CAS 9-line payload
+        payload = {
+            "line_1_ip":               f"IP {random.choice(['ALPHA','BRAVO','CHARLIE','DELTA'])}",
+            "line_2_heading":          random.randint(0, 359),
+            "line_3_distance_m":       random.randint(2000, 8000),
+            "line_4_target_elevation": random.randint(5, 500),
+            "line_5_target_desc":      target_desc,
+            "line_6_target_location": {"latitude": round(tlat, 5),
+                                       "longitude": round(tlon, 5),
+                                       "mgrs": grid},
+            "line_7_marking":          marking,
+            "line_8_friendlies":       f"{friendly_m}m {bearing_friendly}",
+            "line_9_egress":           random.choice(["NORTH", "SOUTH", "EAST", "WEST"]),
+            "aircraft_requested":      aircraft,
+            "ordnance_requested":      ordnance,
+            "remarks":                 f"Type 2 control. Requesting CAS on {target_desc.lower()}",
+            "latitude":  round(tlat, 5),
+            "longitude": round(tlon, 5),
+            "grid":      grid,
+        }
+
+        count += 1
+        r = await api(client, "POST", "/reports", token=op.token,
+                      json={"type": "CAS", "payload": payload})
+        if r:
+            log.info("✈️  %s  CAS REQ  %-26s  %s  %s/%s  (#%d)",
+                     op.callsign, target_desc[:26], grid, aircraft, ordnance, count)
+
+
 # ── Reset helper ──────────────────────────────────────────────────────────────
 
 async def reset_sim(client: httpx.AsyncClient, all_ops: list[SimOp]) -> None:
@@ -716,9 +958,11 @@ async def main() -> None:
     log.info("Backend : %s", BASE)
     log.info("Operators: %d  |  Sections: %d  |  Speed: %.1f×",
              len(all_ops), len(sections), speed_mult)
-    log.info("Walk %.1f km/h  Infil %.1f km/h  Update every %gs  Enemy every %gs",
+    log.info("Walk %.1f km/h  Infil %.1f km/h  Update every %gs  Enemy every %gs  "
+             "CBRN every %gs  CAS every %gs",
              WALK_MS * 3.6, INFIL_MS * 3.6,
-             UPDATE_S / speed_mult, ENEMY_S / speed_mult)
+             UPDATE_S / speed_mult, ENEMY_S / speed_mult,
+             CBRN_S / speed_mult, CAS_S / speed_mult)
 
     async with httpx.AsyncClient() as client:
 
@@ -741,6 +985,11 @@ async def main() -> None:
 
         # Enemy / report marker
         coros.append(run_enemy_marker(client, sections, speed_mult))
+
+        # Worldwide CBRN incidents + random CAS requests
+        admin_op = next(o for o in all_ops if o.role == "ADMIN")
+        coros.append(run_cbrn_worldwide(client, admin_op, speed_mult))
+        coros.append(run_cas_requests(client, sections, admin_op, speed_mult))
 
         log.info("=== Simulation running — Ctrl-C to stop ===")
         try:
