@@ -16,11 +16,7 @@ import time
 
 
 def _run_backend() -> None:
-    import os
     import uvicorn
-
-    # Allow the default weak JWT secret in local dev. Production must change it.
-    os.environ.setdefault("ARROW_INSECURE_SECRET_OK", "1")
 
     from backend.config.xml_config import load_config
 

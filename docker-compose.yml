@@ -10,7 +10,9 @@ services:
     expose:
       - "6001"
     environment:
-      ARROW_INSECURE_SECRET_OK: ""          # unset → startup check enforces strong secret
+      # ARROW_JWT_SECRET: ""    # set a 64-char hex secret here or in .env for production
+      #                         # if unset, a random secret is auto-generated on first boot
+      #                         # and saved to data/jwt_secret.key (persisted in arrow-data volume)
       ARROW_REDIS_URL: redis://redis:6379/0
       ARROW_JSON_LOGS: "1"
       # ARROW_PHOTO_KEY: <64-char hex>      # enable photo encryption at rest
