@@ -33,6 +33,9 @@ class RegisterIn(BaseModel):
 
 @router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterIn, db: Session = Depends(get_db)) -> TokenOut:
+    if len(payload.password) < 8:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Password must be at least 8 characters")
     if db.query(Operator).filter(Operator.callsign == payload.callsign).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Callsign already taken")
 

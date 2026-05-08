@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -28,9 +29,18 @@ from backend.tracking.router import router as tracking_router
 from backend.websocket.router import router as ws_router
 
 
+_WEAK_SECRET = "change-me-in-production"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.config = load_config()
+    cfg = load_config()
+    if cfg.auth.secret == _WEAK_SECRET and not os.environ.get("ARROW_INSECURE_SECRET_OK"):
+        raise RuntimeError(
+            "JWT secret is the default weak value. "
+            "Set <secret> in config.xml or set ARROW_INSECURE_SECRET_OK=1 to allow in dev."
+        )
+    app.state.config = cfg
     init_db()
     seed_db()  # no-op if operators already exist
     yield
@@ -43,9 +53,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    _raw_origins = os.environ.get("ARROW_ALLOWED_ORIGINS", "http://localhost:6002")
+    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=".*",
+        allow_origins=_allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

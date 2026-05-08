@@ -2,15 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import CompanyIn, CompanyOut
-from backend.auth.jwt_auth import require_role
+from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage.database import get_db
-from backend.storage.models import Company
+from backend.storage.models import Company, Operator
 
 router = APIRouter(prefix="/companies", tags=["hierarchy"])
 
 
 @router.get("", response_model=list[CompanyOut])
-def list_companies(db: Session = Depends(get_db)) -> list[Company]:
+def list_companies(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[Company]:
     return db.query(Company).all()
 
 

@@ -2,15 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import SectionIn, SectionOut
-from backend.auth.jwt_auth import require_role
+from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage.database import get_db
-from backend.storage.models import Section
+from backend.storage.models import Operator, Section
 
 router = APIRouter(prefix="/sections", tags=["hierarchy"])
 
 
 @router.get("", response_model=list[SectionOut])
-def list_sections(db: Session = Depends(get_db)) -> list[Section]:
+def list_sections(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[Section]:
     return db.query(Section).all()
 
 

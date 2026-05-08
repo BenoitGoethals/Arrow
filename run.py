@@ -16,7 +16,11 @@ import time
 
 
 def _run_backend() -> None:
+    import os
     import uvicorn
+
+    # Allow the default weak JWT secret in local dev. Production must change it.
+    os.environ.setdefault("ARROW_INSECURE_SECRET_OK", "1")
 
     from backend.config.xml_config import load_config
 
@@ -32,6 +36,8 @@ def _run_backend() -> None:
 
 def _run_web() -> None:
     os.environ.setdefault("ARROW_BACKEND_URL", "http://localhost:6001")
+    # In dev, browser must reach the backend directly for WebSocket (Flask can't proxy WS).
+    os.environ.setdefault("ARROW_PUBLIC_BACKEND_URL", "http://localhost:6001")
     from web.app import app
 
     app.run(host="0.0.0.0", port=6002, debug=False, use_reloader=False)

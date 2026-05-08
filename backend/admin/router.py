@@ -53,14 +53,12 @@ def get_stats(
     total_objects  = db.query(TacticalObject).count()
     total_messages = db.query(Message).count()
 
-    roles = {}
-    for (r, cnt) in db.query(Operator.role, db.query(Operator).count()).all():
-        pass  # simplified below
-    role_rows = db.execute(
-        __import__("sqlalchemy").text(
-            "SELECT role, COUNT(*) FROM operators GROUP BY role"
-        )
-    ).fetchall()
+    from sqlalchemy import func
+    role_rows = (
+        db.query(Operator.role, func.count(Operator.id))
+        .group_by(Operator.role)
+        .all()
+    )
 
     return {
         "operators": {
