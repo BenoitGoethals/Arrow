@@ -1,22 +1,24 @@
-"""Tactical reports: contact, spot, 9-liners (CASEVAC, MEDEVAC, CAS)."""
+"""Tactical reports: contact, spot, 9-liners (CASEVAC, MEDEVAC, CAS) and NATO CBRN 1..6."""
 
 from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import ReportIn, ReportOut, ReportUpdate
 from backend.audit import log_event
 from backend.auth.jwt_auth import get_current_operator, require_role
+from backend.reports.cbrn import CbrnParseError, parse_cbrn
 from backend.storage.database import get_db
 from backend.storage.models import Operator, Report
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-VALID_TYPES   = {"CONTACT", "SPOT", "CASEVAC", "MEDEVAC", "CAS"}
+CBRN_TYPES    = {f"CBRN_{i}" for i in range(1, 7)}
+VALID_TYPES   = {"CONTACT", "SPOT", "CASEVAC", "MEDEVAC", "CAS"} | CBRN_TYPES
 VALID_STATUSES = {"RECEIVED", "ACKNOWLEDGED", "PROCESSED", "REJECTED"}
 
 
@@ -55,6 +57,64 @@ async def submit_report(
         },
     })
     return rep
+
+
+@router.post("/cbrn/import", response_model=list[ReportOut], status_code=status.HTTP_201_CREATED)
+async def import_cbrn(
+    files: list[UploadFile] = File(..., description="One or more NATO CBRN 1..6 text files"),
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> list[Report]:
+    """Parse uploaded NATO CBRN message files and store each as a Report.
+
+    Each file is parsed with :func:`backend.reports.cbrn.parse_cbrn`. The
+    resulting structured payload is stored as the report payload and a
+    realtime event is broadcast on the ``report`` channel so map clients
+    can render it (marker + hazard zones).
+    """
+    created: list[Report] = []
+    errors:  list[str]    = []
+
+    for up in files:
+        raw = (await up.read()).decode("utf-8", errors="replace")
+        try:
+            parsed = parse_cbrn(raw)
+        except CbrnParseError as exc:
+            errors.append(f"{up.filename}: {exc}")
+            continue
+
+        rtype = parsed.get("msg_type", "CBRN_1")
+        if rtype not in CBRN_TYPES:
+            rtype = "CBRN_1"
+
+        # Tag the source filename so operators can trace the import.
+        parsed["source_file"] = up.filename or "uploaded.cbrn"
+
+        rep = Report(
+            type=rtype, operator_id=current.id,
+            payload=json.dumps(parsed), status="RECEIVED",
+        )
+        db.add(rep)
+        db.commit()
+        db.refresh(rep)
+
+        await broadcaster.broadcast({
+            "channel": "report",
+            "event":   "submitted",
+            "data": {
+                "id":          rep.id,
+                "type":        rep.type,
+                "status":      rep.status,
+                "operator_id": rep.operator_id,
+                "payload":     parsed,
+            },
+        })
+        created.append(rep)
+
+    if not created and errors:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "; ".join(errors))
+    return created
 
 
 @router.patch("/{report_id}", response_model=ReportOut)

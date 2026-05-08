@@ -151,6 +151,7 @@
                 <button class="overlay-btn" data-overlay="none">— None</button>
                 <button class="overlay-btn" data-overlay="enemies">⚠ Enemy</button>
                 <button class="overlay-btn" data-overlay="platoon">🪖 Own Plt</button>
+                <button class="overlay-btn active" id="cbrn-toggle">☢ CBRN</button>
             </div>
         </div>
         <div id="map"></div>
@@ -177,6 +178,9 @@
         operators: new Map(),
         tacticalObjects: new Map(),
         fireMissions: new Map(),    // id -> fire mission dto
+        cbrnReports: new Map(),     // id -> parsed CBRN payload
+        cbrnLayers:  new Map(),     // id -> [marker, zone1, zone2]
+        cbrnVisible: true,
         markers: new Map(),
         fmMarkers: new Map(),       // fm id -> Leaflet marker
         selection: new Set(),
@@ -760,7 +764,12 @@
         else alert('Failed: ' + r.status);
     };
 
-    const REP_COLORS = { MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626', CONTACT:'#d97706', SPOT:'#7c3aed' };
+    const REP_COLORS = {
+        MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626',
+        CONTACT:'#d97706', SPOT:'#7c3aed',
+        CBRN_1:'#fbbf24', CBRN_2:'#fbbf24', CBRN_3:'#f97316',
+        CBRN_4:'#fbbf24', CBRN_5:'#ef4444', CBRN_6:'#fbbf24',
+    };
 
     function escHtml(s) {
         return String(s || '').replace(/[&<>"']/g, c =>
@@ -829,6 +838,184 @@
             el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
         }
     }
+
+    // ── CBRN hazard markers + zones (NATO STANAG 2002 / ATP-45) ────────────
+    // Marker convention follows the NATO CBRN ground-marking standard:
+    //   Chemical    — YELLOW triangle, legend "GAS"
+    //   Biological  — BLUE   triangle, legend "BIO"
+    //   Radiological— WHITE  triangle (black border), legend "ATOM"
+    //   Nuclear     — WHITE  triangle (black border), legend "ATOM" + radiation trefoil
+    const CBRN_STYLE = {
+        C: { fill:'#fbbf24', text:'#0d1117', legend:'GAS',  border:'#0d1117', zone:'#fbbf24' },
+        B: { fill:'#1d4ed8', text:'#ffffff', legend:'BIO',  border:'#0d1117', zone:'#3b82f6' },
+        R: { fill:'#ffffff', text:'#0d1117', legend:'ATOM', border:'#0d1117', zone:'#f97316' },
+        N: { fill:'#ffffff', text:'#0d1117', legend:'ATOM', border:'#0d1117', zone:'#ef4444' },
+    };
+    const CBRN_LABEL = { C:'CHEM', B:'BIO', R:'RAD', N:'NUC' };
+
+    function cbrnIcon(cat) {
+        const s = CBRN_STYLE[cat] || { fill:'#94a3b8', text:'#0d1117', legend:'?', border:'#0d1117', zone:'#94a3b8' };
+
+        // Optional radiation trefoil overlay for R / N (small, top-right)
+        const trefoil = (cat === 'R' || cat === 'N') ? `
+            <g transform="translate(34 12)">
+                <circle r="6" fill="#ffffff" stroke="${s.border}" stroke-width="1"/>
+                <circle r="1.6" fill="${s.border}"/>
+                ${[0,120,240].map(a => `
+                    <path d="M 0 0 L 4.5 -2.5 A 5.5 5.5 0 0 1 4.5 2.5 Z"
+                          transform="rotate(${a})" fill="${s.border}"/>`).join('')}
+            </g>` : '';
+
+        // Mushroom-cloud accent above the triangle for nuclear
+        const nuke = cat === 'N' ? `
+            <g transform="translate(22 4)" fill="${s.border}" opacity="0.9">
+                <ellipse cx="0" cy="0" rx="6" ry="2.3"/>
+                <rect x="-1" y="1.5" width="2" height="3.5"/>
+            </g>` : '';
+
+        // Equilateral isoceles triangle, point up (NATO ground-marking sign shape)
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+            ${nuke}
+            <polygon points="24,8 44,42 4,42"
+                     fill="${s.fill}" stroke="${s.border}" stroke-width="2.5" stroke-linejoin="round"/>
+            <text x="24" y="34" text-anchor="middle"
+                  font-family="Arial, sans-serif" font-size="9" font-weight="900"
+                  fill="${s.text}" letter-spacing="0.5">${s.legend}</text>
+            ${trefoil}
+        </svg>`;
+        return L.divIcon({ html: svg, className: 'cbrn-icon',
+                           iconSize:[48,48], iconAnchor:[24,42] });
+    }
+
+    // Spherical destination — given start, bearing (°, true), distance (m)
+    function destPoint(lat, lon, brgDeg, distM) {
+        const R = 6371000;
+        const br = brgDeg * Math.PI / 180;
+        const φ1 = lat * Math.PI / 180, λ1 = lon * Math.PI / 180;
+        const dr = distM / R;
+        const φ2 = Math.asin(Math.sin(φ1)*Math.cos(dr) + Math.cos(φ1)*Math.sin(dr)*Math.cos(br));
+        const λ2 = λ1 + Math.atan2(Math.sin(br)*Math.sin(dr)*Math.cos(φ1),
+                                   Math.cos(dr) - Math.sin(φ1)*Math.sin(φ2));
+        return [φ2 * 180/Math.PI, ((λ2 * 180/Math.PI) + 540) % 360 - 180];
+    }
+
+    // Build a downwind sector polygon: apex at event, opening downwind ±halfAngle.
+    function downwindSector(lat, lon, downwindBrg, distM, halfAngle) {
+        const pts = [[lat, lon]];
+        const n = 12;
+        for (let i = 0; i <= n; i++) {
+            const brg = downwindBrg - halfAngle + (2 * halfAngle * i / n);
+            pts.push(destPoint(lat, lon, brg, distM));
+        }
+        pts.push([lat, lon]);
+        return pts;
+    }
+
+    function clearCbrnLayer(id) {
+        const layers = state.cbrnLayers.get(id);
+        if (!layers) return;
+        layers.forEach(l => map.removeLayer(l));
+        state.cbrnLayers.delete(id);
+    }
+
+    function renderCbrn(id, p) {
+        clearCbrnLayer(id);
+        if (!state.cbrnVisible) return;
+        if (p.latitude == null || p.longitude == null) return;
+
+        const cat   = (p.agent_category || '').toUpperCase();
+        const style = CBRN_STYLE[cat] || { zone: '#94a3b8' };
+        const color = style.zone;
+        const lat = p.latitude, lon = p.longitude;
+        const layers = [];
+
+        // Zone I — immediate hazard area (solid dashed circle)
+        if (p.zone_inner_m && p.zone_inner_m > 0) {
+            const z1 = L.circle([lat, lon], {
+                radius: p.zone_inner_m,
+                color, weight: 2, dashArray: '6 6',
+                fillColor: color, fillOpacity: 0.18,
+            }).addTo(map);
+            z1.bindTooltip(`Zone I — ${CBRN_LABEL[cat]||'CBRN'} immediate hazard (${(p.zone_inner_m/1000).toFixed(1)} km)`);
+            layers.push(z1);
+        }
+
+        // Zone II — downwind sector (only if we know the wind direction)
+        // wind_direction is meteorological (FROM) → downwind bearing = wind + 180°
+        if (p.wind_direction != null && p.zone_downwind_m && p.zone_downwind_m > 0) {
+            const downwindBrg = (Number(p.wind_direction) + 180) % 360;
+            const half = Number(p.zone_downwind_angle_deg || 30);
+            const poly = L.polygon(downwindSector(lat, lon, downwindBrg, p.zone_downwind_m, half), {
+                color, weight: 1.5, opacity: 0.7,
+                fillColor: color, fillOpacity: 0.12,
+            }).addTo(map);
+            poly.bindTooltip(`Zone II — downwind hazard (${(p.zone_downwind_m/1000).toFixed(0)} km @ ${downwindBrg.toFixed(0)}°)`);
+            layers.push(poly);
+        }
+
+        // Marker
+        const m = L.marker([lat, lon], { icon: cbrnIcon(cat) }).addTo(map);
+        m.bindPopup(cbrnPopup(p));
+        layers.push(m);
+
+        state.cbrnLayers.set(id, layers);
+    }
+
+    function cbrnPopup(p) {
+        const cat   = (p.agent_category || '?').toUpperCase();
+        const color = (CBRN_STYLE[cat] || { zone:'#666' }).zone;
+        const fmt = (v) => v == null ? '—' : v;
+        return `<div style="min-width:240px">
+            <div style="font-weight:700;color:${color};font-size:.95rem">
+                ☢ ${escHtml(p.msg_type || 'CBRN')} — ${escHtml(CBRN_LABEL[cat] || 'unknown')}
+            </div>
+            <div style="font-size:.72rem;color:#475569;margin-bottom:.4rem">
+                Source: <code>${escHtml(p.source_file || '—')}</code>
+            </div>
+            <table style="font-size:.78rem;border-collapse:collapse">
+                <tr><td style="color:#475569;padding-right:.5rem">Serial</td><td>${escHtml(fmt(p.serial))}</td></tr>
+                <tr><td style="color:#475569">DTG</td><td>${escHtml(fmt(p.dtg))}</td></tr>
+                <tr><td style="color:#475569">Agent</td><td>${escHtml(fmt(p.agent))}</td></tr>
+                <tr><td style="color:#475569">Delivery</td><td>${escHtml(fmt(p.delivery))}</td></tr>
+                <tr><td style="color:#475569">Wind</td><td>${fmt(p.wind_direction)}° / ${fmt(p.wind_speed)} km/h</td></tr>
+                <tr><td style="color:#475569">Zone I</td><td>${(p.zone_inner_m||0)/1000} km</td></tr>
+                <tr><td style="color:#475569">Zone II</td><td>${(p.zone_downwind_m||0)/1000} km</td></tr>
+            </table>
+        </div>`;
+    }
+
+    function refreshAllCbrn() {
+        // Remove layers for ids no longer present
+        state.cbrnLayers.forEach((_, id) => {
+            if (!state.cbrnReports.has(id)) clearCbrnLayer(id);
+        });
+        state.cbrnReports.forEach((p, id) => renderCbrn(id, p));
+    }
+
+    async function loadCbrnReports() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        const list = await r.json();
+        const seen = new Set();
+        list.forEach(rep => {
+            if (!rep.type || !rep.type.startsWith('CBRN_')) return;
+            seen.add(rep.id);
+            try {
+                const p = JSON.parse(rep.payload);
+                state.cbrnReports.set(rep.id, p);
+            } catch (_) {}
+        });
+        // Drop reports that have been deleted server-side
+        state.cbrnReports.forEach((_, id) => { if (!seen.has(id)) state.cbrnReports.delete(id); });
+        refreshAllCbrn();
+    }
+
+    document.getElementById('cbrn-toggle').addEventListener('click', () => {
+        state.cbrnVisible = !state.cbrnVisible;
+        document.getElementById('cbrn-toggle').classList.toggle('active', state.cbrnVisible);
+        if (state.cbrnVisible) refreshAllCbrn();
+        else state.cbrnLayers.forEach((_, id) => clearCbrnLayer(id));
+    });
 
     async function loadMapReports() {
         const el = document.getElementById('map-reports');
@@ -964,6 +1151,7 @@
                 loadHierarchy();
             } else if (msg.channel === 'report') {
                 loadMapReports();
+                loadCbrnReports();
             } else if (msg.channel === 'fire-mission') {
                 loadFmMarkers();
                 loadMapFireMissions();
@@ -972,10 +1160,11 @@
         ws.onclose = () => setTimeout(connectWS, 3000);
     }
 
-    loadHierarchy(); loadEnemies(); loadFmMarkers(); loadMapFireMissions(); loadMapReports();
+    loadHierarchy(); loadEnemies(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
     setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);
     setInterval(loadMapReports, 30000);
+    setInterval(loadCbrnReports, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags
     connectWS();
 })();
