@@ -10,14 +10,64 @@
 
 | Severity | Count | Fixed in this PR |
 |----------|-------|-----------------|
-| Critical | 2 | 2 |
-| High | 4 | 3 |
+| Critical | 3 | 3 |
+| High | 6 | 5 |
 | Medium | 9 | 5 |
 | Low | 2 | 1 |
 
 ---
 
 ## Findings & Fixes
+
+---
+
+## Additional Findings (Authorization Audit — Pass 2)
+
+### A01 — Self-privilege escalation via `/auth/register` `CRITICAL` ✅ Fixed
+
+**File:** `backend/auth/router.py`
+
+`POST /auth/register` accepted a `role` field as a free string with no validation and no authentication
+required. An unauthenticated attacker could self-register as ADMIN:
+
+```bash
+curl -X POST /auth/register \
+  -d '{"callsign":"hacker","password":"password1","role":"ADMIN"}'
+# → returns a valid ADMIN JWT token
+```
+
+**Fix:** Self-registration (`POST /auth/register`) now always creates `OPERATOR` role and ignores the
+`role` field. A new `POST /auth/register/admin` endpoint (requires existing ADMIN JWT) handles
+creation of elevated accounts (`BATTLE_CAPTAIN`, `ADMIN`). The admin web UI is updated to call
+`/auth/register/admin`.
+
+---
+
+### A01 — Unauthenticated photo access `HIGH` ✅ Fixed
+
+**File:** `backend/photos/router.py:53`
+
+`GET /photos/{photo_id}` had no authentication. Photos contain sensitive tactical imagery (CASEVAC
+scenes, enemy positions). Photo IDs are sequential integers — trivially enumerable.
+
+```bash
+curl http://server:6001/photos/1   # → returns photo with no token required
+```
+
+**Fix:** Added `get_current_operator` dependency to `GET /photos/{photo_id}`.
+
+---
+
+### A01 — Unauthenticated stream listing `HIGH` ✅ Fixed
+
+**File:** `backend/streams/router.py:72`
+
+`GET /streams` listed all active live streams (including operator callsigns, operator IDs, and viewer
+counts) with no authentication. An attacker could enumerate who is actively streaming in the field.
+
+**Fix:** Added `get_current_operator` dependency to `GET /streams`.
+
+---
 
 ### A01 — Broken Access Control
 

@@ -51,7 +51,11 @@ async def upload_photo(
 
 
 @router.get("/{photo_id}")
-def serve_photo(photo_id: int, db: Session = Depends(get_db)) -> FileResponse:
+def serve_photo(
+    photo_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> FileResponse:
     photo = db.get(Photo, photo_id)
     if not photo:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
