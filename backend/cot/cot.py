@@ -152,10 +152,13 @@ class CotEvent:
         return self.to_xml().decode("utf-8")
 
 
+_SAFE_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
+
+
 def parse_cot(xml: bytes | str) -> CotEvent:
     if isinstance(xml, str):
         xml = xml.encode("utf-8")
-    root    = etree.fromstring(xml)
+    root    = etree.fromstring(xml, _SAFE_PARSER)
     point   = root.find("point")
     contact = root.find("detail/contact")
     uid_el  = root.find("detail/uid")

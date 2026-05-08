@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from backend.auth.jwt_auth import require_role
 from backend.config.xml_config import load_config
 from backend.storage.database import get_db
-from backend.storage.models import Alert, Message, Operator, Report, TacticalObject
+from backend.storage.models import Alert, AuditLog, Message, Operator, Report, TacticalObject
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -72,3 +72,32 @@ def get_stats(
         "tactical_objects": {"total": total_objects},
         "messages":      {"total": total_messages},
     }
+
+
+@router.get("/audit")
+def get_audit(
+    limit: int = 200,
+    event_type: str | None = None,
+    outcome: str | None = None,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN")),
+) -> list[dict]:
+    """Return recent security audit log entries — CSF 2.0 DE.CM / GV.OV."""
+    q = db.query(AuditLog).order_by(AuditLog.timestamp.desc())
+    if event_type:
+        q = q.filter(AuditLog.event_type == event_type.upper())
+    if outcome:
+        q = q.filter(AuditLog.outcome == outcome.upper())
+    return [
+        {
+            "id":          e.id,
+            "event_type":  e.event_type,
+            "outcome":     e.outcome,
+            "operator_id": e.operator_id,
+            "resource":    e.resource,
+            "ip_address":  e.ip_address,
+            "detail":      e.detail,
+            "timestamp":   e.timestamp.isoformat() if e.timestamp else None,
+        }
+        for e in q.limit(limit).all()
+    ]

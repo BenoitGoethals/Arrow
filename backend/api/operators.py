@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from backend.audit import log_event
 from backend.api.schemas import OperatorOut, OperatorUpdate, PasswordReset
 from backend.auth.jwt_auth import get_current_operator, hash_password, require_role
 from backend.storage.database import get_db
@@ -34,15 +35,18 @@ def update_operator(
     operator_id: int,
     payload: OperatorUpdate,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_role("ADMIN")),
+    current: Operator = Depends(require_role("ADMIN")),
 ) -> Operator:
     op = db.get(Operator, operator_id)
     if not op:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(op, field, value)
     db.commit()
     db.refresh(op)
+    log_event(db, "OPERATOR_UPDATE", operator_id=current.id,
+              resource=f"operator:{operator_id}", detail=str(changes))
     return op
 
 
@@ -51,23 +55,28 @@ def set_password(
     operator_id: int,
     payload: PasswordReset,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_role("ADMIN")),
+    current: Operator = Depends(require_role("ADMIN")),
 ) -> None:
     op = db.get(Operator, operator_id)
     if not op:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     op.password_hash = hash_password(payload.password)
     db.commit()
+    log_event(db, "PASSWORD_RESET", operator_id=current.id,
+              resource=f"operator:{operator_id}")
 
 
 @router.delete("/{operator_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_operator(
     operator_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_role("ADMIN")),
+    current: Operator = Depends(require_role("ADMIN")),
 ) -> None:
     op = db.get(Operator, operator_id)
     if not op:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    callsign = op.callsign
     db.delete(op)
     db.commit()
+    log_event(db, "OPERATOR_DELETE", operator_id=current.id,
+              resource=f"operator:{operator_id}", detail=f"callsign:{callsign}")

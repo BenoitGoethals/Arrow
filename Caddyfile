@@ -1,6 +1,18 @@
 :80 {
     encode gzip
 
+    # Security headers — CSF 2.0 PR.PS
+    header {
+        X-Content-Type-Options    nosniff
+        X-Frame-Options           DENY
+        X-XSS-Protection          "1; mode=block"
+        Referrer-Policy           strict-origin-when-cross-origin
+        Permissions-Policy        "geolocation=(), camera=(), microphone=()"
+        # Remove server fingerprinting headers
+        -Server
+        -X-Powered-By
+    }
+
     # Backend REST + WebSocket under /api/* — strip prefix so
     # /api/auth/login -> /auth/login and /api/ws -> /ws (Caddy preserves
     # WebSocket upgrade headers automatically).
