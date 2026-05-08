@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+_NAME = Field(min_length=1, max_length=120)
 
 
 class ORMModel(BaseModel):
@@ -10,7 +12,7 @@ class ORMModel(BaseModel):
 
 
 class CompanyIn(BaseModel):
-    name: str
+    name: str = _NAME
 
 
 class CompanyOut(ORMModel):
@@ -19,7 +21,7 @@ class CompanyOut(ORMModel):
 
 
 class PlatoonIn(BaseModel):
-    name: str
+    name: str = _NAME
     company_id: int
 
 
@@ -30,7 +32,7 @@ class PlatoonOut(ORMModel):
 
 
 class SectionIn(BaseModel):
-    name: str
+    name: str = _NAME
     platoon_id: int
 
 
@@ -41,7 +43,7 @@ class SectionOut(ORMModel):
 
 
 class TeamIn(BaseModel):
-    name: str
+    name: str = _NAME
     section_id: int
 
 

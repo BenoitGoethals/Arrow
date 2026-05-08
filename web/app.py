@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 import httpx
@@ -9,6 +10,11 @@ from flask import Flask, Response, render_template, request
 
 BACKEND_URL = os.environ.get("ARROW_BACKEND_URL", "http://localhost:6001")
 PUBLIC_API_PREFIX = "/api"
+# Browser-reachable backend base (for WebSocket).
+# Dev: set ARROW_PUBLIC_BACKEND_URL=http://localhost:6001
+# Prod (Docker+Caddy): leave unset — browser uses same-origin /api, Caddy proxies WS.
+_PUBLIC_BACKEND = os.environ.get("ARROW_PUBLIC_BACKEND_URL", "").rstrip("/")
+WS_BASE = _PUBLIC_BACKEND if _PUBLIC_BACKEND else PUBLIC_API_PREFIX
 HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
@@ -40,7 +46,7 @@ def create_app() -> Flask:
     def _inject_backend() -> dict:
         # Browser talks to the proxy on the same origin; server-side templates
         # can still render absolute backend URLs via BACKEND_URL when needed.
-        return {"backend_url": PUBLIC_API_PREFIX}
+        return {"backend_url": PUBLIC_API_PREFIX, "ws_url": WS_BASE}
 
     @app.route(
         f"{PUBLIC_API_PREFIX}/<path:subpath>",
@@ -60,7 +66,8 @@ def create_app() -> Flask:
                 follow_redirects=False,
             )
         except httpx.RequestError as exc:
-            return Response(f"Upstream error: {exc}", status=502)
+            body = json.dumps({"detail": f"Backend unreachable: {exc}"})
+            return Response(body, status=502, content_type="application/json")
         out_headers = [(k, v) for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP]
         return Response(upstream.content, status=upstream.status_code, headers=out_headers)
 
@@ -83,7 +90,8 @@ app = create_app()
 
 
 def run() -> None:
-    app.run(host="0.0.0.0", port=6002, debug=True)
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=6002, debug=debug)
 
 
 if __name__ == "__main__":

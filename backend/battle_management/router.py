@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import BattleIn, BattleOut
-from backend.auth.jwt_auth import require_role
+from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage.database import get_db
 from backend.storage.models import Battle
 
@@ -12,7 +12,10 @@ router = APIRouter(prefix="/battles", tags=["battles"])
 
 
 @router.get("", response_model=list[BattleOut])
-def list_battles(db: Session = Depends(get_db)) -> list[Battle]:
+def list_battles(
+    db: Session = Depends(get_db),
+    _: object = Depends(get_current_operator),
+) -> list[Battle]:
     return db.query(Battle).order_by(Battle.started_at.desc()).all()
 
 

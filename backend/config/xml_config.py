@@ -23,7 +23,7 @@ class DatabaseConfig:
 class AuthConfig:
     secret: str = "change-me-in-production"
     algorithm: str = "HS256"
-    token_expire_minutes: int = 1440
+    token_expire_minutes: int = 60
 
 
 @dataclass(slots=True)

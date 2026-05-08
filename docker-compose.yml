@@ -28,6 +28,8 @@ services:
       # Browser hits same origin -> Caddy -> backend. Server-side BACKEND_URL
       # is used by the Flask /api proxy fallback only.
       ARROW_BACKEND_URL: http://backend:6001
+      # Restrict CORS to the Caddy public port. Extend for custom domains.
+      ARROW_ALLOWED_ORIGINS: "http://localhost:6200"
     expose:
       - "6002"
     depends_on:
