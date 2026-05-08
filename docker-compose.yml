@@ -79,8 +79,9 @@ services:
     container_name: arrow-proxy
     ports:
       - "${ARROW_HTTP_PORT:-6200}:6200"
-      - "443:443"           # needed for Let's Encrypt in production
-      - "80:80"             # needed for ACME HTTP-01 challenge
+      # Uncomment for production HTTPS with Let's Encrypt:
+      # - "443:443"
+      # - "80:80"
     environment:
       ARROW_DOMAIN:  "${ARROW_DOMAIN:-:6200}"   # e.g. my.host or :6200 for dev
       CADDY_EMAIL:   "${CADDY_EMAIL:-admin@example.com}"
