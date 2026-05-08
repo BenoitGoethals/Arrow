@@ -44,7 +44,7 @@ services:
     container_name: arrow-web
     environment:
       ARROW_BACKEND_URL: http://backend:6001
-      ARROW_ALLOWED_ORIGINS: "http://localhost:6200,https://${ARROW_DOMAIN:-localhost}"
+      ARROW_ALLOWED_ORIGINS: "${ARROW_ALLOWED_ORIGINS:-http://localhost:6200}"
       FLASK_DEBUG: "0"
       ARROW_JSON_LOGS: "1"
     expose:
