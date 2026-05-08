@@ -90,8 +90,9 @@ def create_app() -> Flask:
         return Response(upstream.content, status=upstream.status_code, headers=out_headers)
 
     @app.route("/")
-    def index() -> str:
-        return render_template("index.html")
+    def index():
+        from flask import redirect, url_for
+        return redirect(url_for("dashboard.index"))
 
     @app.route("/login")
     def login() -> str:
