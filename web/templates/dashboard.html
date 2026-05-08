@@ -278,8 +278,10 @@
     const ALERT_COLOR = { TIC:'#dc2626', MEDICAL:'#16a34a', EVAC:'#d97706', LOST_COMMS:'#2563eb' };
     const FM_COLOR    = { PENDING:'#dc2626', ACKNOWLEDGED:'#d97706', IN_PROGRESS:'#2563eb',
                           COMPLETED:'#16a34a', CANCELLED:'#475569' };
-    const REPORT_COLOR= { MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626',
-                          CONTACT:'#d97706', SPOT:'#7c3aed' };
+    const REPORT_COLOR  = { MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626',
+                            CONTACT:'#d97706', SPOT:'#7c3aed' };
+    const REPORT_STATUS = { RECEIVED:'#64748b', ACKNOWLEDGED:'#f59e0b',
+                            PROCESSED:'#22c55e', REJECTED:'#ef4444' };
 
     function badge(label, color) {
         return `<span class="db-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${esc(label)}</span>`;
@@ -381,15 +383,32 @@
             }).join('')
             : '<div class="db-empty">No fire missions</div>';
 
-        // ── Feed: reports ─────────────────────────────────────────────────
+        // ── Stat: reports — highlight unreviewed ─────────────────────────────
+        const unreviewed = (reports || []).filter(r => r.status === 'RECEIVED').length;
+        document.getElementById('s-reports-latest').textContent =
+            unreviewed ? `${unreviewed} awaiting review` :
+            latestReport ? `${latestReport.type} ${reltime(latestReport.timestamp)}` : '—';
+
+        // ── Feed: reports ─────────────────────────────────────────────────────
         const repList = (reports || []).slice(0, 8);
         document.getElementById('f-reports-count').textContent = (reports||[]).length;
         document.getElementById('f-reports').innerHTML = repList.length
             ? repList.map(r => {
-                const col = REPORT_COLOR[r.type] || '#94a3b8';
-                return `<div class="db-row">
+                const col  = REPORT_COLOR[r.type]   || '#94a3b8';
+                const sc   = REPORT_STATUS[r.status] || '#64748b';
+                const note = r.reviewer_note
+                    ? `<span style="color:#64748b;font-size:.68rem;display:block;
+                                   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                                   max-width:180px"> ◈ ${esc(r.reviewer_note)}</span>`
+                    : '';
+                return `<div class="db-row" style="flex-wrap:wrap">
                     <div class="db-dot" style="background:${col}"></div>
-                    <div class="db-row-main">${badge(r.type, col)} op #${r.operator_id}</div>
+                    <div class="db-row-main">
+                        ${badge(r.type, col)}
+                        ${badge(r.status || 'RECEIVED', sc)}
+                        <span style="color:#64748b;font-size:.7rem"> op #${r.operator_id}</span>
+                        ${note}
+                    </div>
                     <div class="db-row-meta">${reltime(r.timestamp)}</div>
                 </div>`;
             }).join('')
