@@ -20,9 +20,10 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
-from backend.auth.jwt_auth import _cfg as _auth_cfg  # re-use JWT config
+from backend.auth.jwt_auth import _cfg as _auth_cfg, get_current_operator  # re-use JWT config
+from backend.storage.models import Operator
 from backend.websocket.manager import broadcaster
 
 log = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ def _verify_token(token: str) -> dict | None:
 # ── REST: list active streams ─────────────────────────────────────────────────
 
 @router.get("")
-def get_streams() -> list[dict]:
+def get_streams(_: Operator = Depends(get_current_operator)) -> list[dict]:
     return list_streams()
 
 

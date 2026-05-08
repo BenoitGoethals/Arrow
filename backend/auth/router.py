@@ -9,12 +9,16 @@ from backend.auth.jwt_auth import (
     create_access_token,
     get_current_operator,
     hash_password,
+    require_role,
     verify_password,
 )
 from backend.storage.database import get_db
 from backend.storage.models import Operator
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_VALID_ROLES = {"OPERATOR", "BATTLE_CAPTAIN", "ADMIN"}
+_ELEVATED_ROLES = {"BATTLE_CAPTAIN", "ADMIN"}
 
 
 class TokenOut(BaseModel):
@@ -28,11 +32,12 @@ class RegisterIn(BaseModel):
     password: str
     rank: str    = "OR-1"
     role: str    = "OPERATOR"
-    team_id: int | None = None   # assign directly at creation — no separate PATCH needed
+    team_id: int | None = None
 
 
 @router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterIn, db: Session = Depends(get_db)) -> TokenOut:
+    """Self-registration — always creates an OPERATOR. Role field is ignored."""
     if len(payload.password) < 8:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Password must be at least 8 characters")
@@ -42,7 +47,38 @@ def register(payload: RegisterIn, db: Session = Depends(get_db)) -> TokenOut:
     op = Operator(
         callsign=payload.callsign,
         rank=payload.rank,
-        role=payload.role,
+        role="OPERATOR",          # self-registration is always OPERATOR
+        team_id=payload.team_id,
+        password_hash=hash_password(payload.password),
+    )
+    db.add(op)
+    db.commit()
+    db.refresh(op)
+
+    return TokenOut(access_token=create_access_token(op.callsign, op.role), role=op.role)
+
+
+@router.post("/register/admin", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+def register_elevated(
+    payload: RegisterIn,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN")),
+) -> TokenOut:
+    """Admin-only: create an operator with any role (BATTLE_CAPTAIN, ADMIN, OPERATOR)."""
+    if len(payload.password) < 8:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Password must be at least 8 characters")
+    role = payload.role.upper()
+    if role not in _VALID_ROLES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"Invalid role. Must be one of: {', '.join(_VALID_ROLES)}")
+    if db.query(Operator).filter(Operator.callsign == payload.callsign).first():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Callsign already taken")
+
+    op = Operator(
+        callsign=payload.callsign,
+        rank=payload.rank,
+        role=role,
         team_id=payload.team_id,
         password_hash=hash_password(payload.password),
     )
