@@ -31,6 +31,12 @@ def _migrate(conn: object) -> None:
         ")",
         "ALTER TABLE messages ADD COLUMN photo_id INTEGER REFERENCES photos(id)",
         "ALTER TABLE tactical_objects ADD COLUMN photo_id INTEGER REFERENCES photos(id)",
+        # account lockout
+        "ALTER TABLE operators ADD COLUMN failed_login_count INTEGER DEFAULT 0",
+        "ALTER TABLE operators ADD COLUMN locked_until DATETIME",
+        # TOTP MFA
+        "ALTER TABLE operators ADD COLUMN totp_secret VARCHAR(64)",
+        "ALTER TABLE operators ADD COLUMN mfa_enabled BOOLEAN DEFAULT 0",
     ]
     for sql in migrations:
         try:
