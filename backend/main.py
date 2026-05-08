@@ -34,6 +34,50 @@ from backend.tracking.router import router as tracking_router
 from backend.websocket.router import router as ws_router
 
 _WEAK_SECRET = "change-me-in-production"
+_SECRET_FILE = "data/jwt_secret.key"
+
+
+def _resolve_jwt_secret(cfg_secret: str) -> str:
+    """Return a strong JWT secret, auto-generating one on first boot if needed.
+
+    Priority order:
+      1. ARROW_JWT_SECRET env var (production .env / Kubernetes secret)
+      2. config.xml <secret> if it is not the default weak value
+      3. Persisted auto-generated secret from data/jwt_secret.key
+      4. Generate a new secret, persist it, log it prominently, and use it
+    """
+    import secrets as _secrets
+    from pathlib import Path
+
+    # 1. Explicit env var always wins
+    env_secret = os.environ.get("ARROW_JWT_SECRET", "").strip()
+    if env_secret and env_secret != _WEAK_SECRET:
+        return env_secret
+
+    # 2. config.xml has a real secret
+    if cfg_secret != _WEAK_SECRET:
+        return cfg_secret
+
+    # 3. Already auto-generated on a previous boot
+    key_path = Path(_SECRET_FILE)
+    if key_path.exists():
+        saved = key_path.read_text().strip()
+        if saved:
+            return saved
+
+    # 4. First boot with default secret → generate, persist, warn loudly
+    new_secret = _secrets.token_hex(32)
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    key_path.write_text(new_secret)
+    key_path.chmod(0o600)
+    log = logging.getLogger(__name__)
+    log.warning(
+        "SECURITY: JWT secret was the default weak value. "
+        "A random secret has been generated and saved to %s. "
+        "To use a fixed secret set ARROW_JWT_SECRET env var or <secret> in config.xml.",
+        _SECRET_FILE,
+    )
+    return new_secret
 
 
 def _configure_logging() -> None:
@@ -57,11 +101,16 @@ def _configure_logging() -> None:
 async def lifespan(app: FastAPI):
     _configure_logging()
     cfg = load_config()
-    if cfg.auth.secret == _WEAK_SECRET and not os.environ.get("ARROW_INSECURE_SECRET_OK"):
-        raise RuntimeError(
-            "JWT secret is the default weak value. "
-            "Set <secret> in config.xml or ARROW_INSECURE_SECRET_OK=1 for dev."
-        )
+
+    # Resolve JWT secret (auto-generates on first boot if config still has the default)
+    resolved_secret = _resolve_jwt_secret(cfg.auth.secret)
+    from backend.auth import jwt_auth as _jwt_auth
+    _jwt_auth._cfg = type(_jwt_auth._cfg)(
+        secret=resolved_secret,
+        algorithm=cfg.auth.algorithm,
+        token_expire_minutes=cfg.auth.token_expire_minutes,
+    )
+
     app.state.config = cfg
     init_db()
     seed_db()
