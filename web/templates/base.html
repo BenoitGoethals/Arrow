@@ -52,6 +52,7 @@
     <a href="{{ url_for('tactical_map.index') }}">Tactical Map</a>
     <a href="{{ url_for('messaging.index') }}">Messaging</a>
     <a href="{{ url_for('reports.index') }}">Reports</a>
+    <a href="{{ url_for('objectives.index') }}" style="color:#22c55e;font-weight:600">🚩 Objectives</a>
     <a href="{{ url_for('history.index') }}">📜 History</a>
     <a href="{{ url_for('fire_missions.index') }}" style="color:#ef4444;font-weight:600">🎯 Fire Missions</a>
     <a href="{{ url_for('streams.index') }}" style="color:#a78bfa;font-weight:600">📡 Live Streams</a>
@@ -97,6 +98,31 @@
 <script>
     window.ARROW_BACKEND_URL = "{{ backend_url }}";
     window.ARROW_WS_URL = "{{ ws_url }}";
+
+    /* Photo loader — `/photos/{id}` requires Authorization: Bearer, which an
+       <img> tag cannot send. Fetch with auth, expose as blob URL, cache by id. */
+    (function () {
+        const cache = new Map();   // id -> Promise<blobUrl>
+        window.arrowPhotoUrl = function (id) {
+            if (cache.has(id)) return cache.get(id);
+            const tok = localStorage.getItem('arrow_token') || '';
+            const p = fetch(window.ARROW_BACKEND_URL + '/photos/' + id, {
+                headers: { Authorization: 'Bearer ' + tok },
+            }).then(r => r.ok ? r.blob() : Promise.reject(r.status))
+              .then(b => URL.createObjectURL(b));
+            cache.set(id, p);
+            return p;
+        };
+        window.arrowApplyPhotos = function (root) {
+            (root || document).querySelectorAll('img[data-photo-id]').forEach(img => {
+                if (img.dataset.photoLoaded) return;
+                img.dataset.photoLoaded = '1';
+                window.arrowPhotoUrl(img.dataset.photoId)
+                    .then(url => { img.src = url; })
+                    .catch(()  => { img.alt = '⚠ photo unavailable'; });
+            });
+        };
+    })();
 </script>
 <script>
 (function () {

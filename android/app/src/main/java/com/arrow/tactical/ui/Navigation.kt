@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.EmojiFlags
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Place
@@ -37,6 +38,7 @@ import com.arrow.tactical.firemission.ui.MortarScreen
 import com.arrow.tactical.map.ui.MapScreen
 import com.arrow.tactical.map.ui.MarkEnemyScreen
 import com.arrow.tactical.messaging.ui.MessagingScreen
+import com.arrow.tactical.objectives.ui.ObjectivesScreen
 import com.arrow.tactical.reports.ui.ReportsScreen
 import com.arrow.tactical.settings.ui.SettingsScreen
 import kotlinx.coroutines.launch
@@ -48,10 +50,11 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
     data object Chat : Tab("tab/chat", "Chat", Icons.Filled.Email)
     data object Reports : Tab("tab/reports", "Reports", Icons.Filled.Flag)
     data object Mortar : Tab("tab/mortar", "Mortar FDC", Icons.Filled.Adjust)
+    data object Objectives : Tab("tab/objectives", "Objectives", Icons.Filled.EmojiFlags)
     data object Settings : Tab("tab/settings", "Settings", Icons.Filled.Settings)
 }
 
-private val TABS = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Mortar, Tab.Settings)
+private val TABS = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Mortar, Tab.Objectives, Tab.Settings)
 
 object Routes {
     const val LOGIN = "login"
@@ -225,6 +228,7 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             composable(Tab.Reports.route) {
                 ReportsScreen(repo = container.reportRepository, container = container)
             }
+            composable(Tab.Objectives.route) { ObjectivesScreen(container) }
             composable(Tab.Settings.route) {
                 SettingsScreen(
                     repo = container.settingsRepository,

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Objectives — Arrow{% endblock %}
+{% block head %}
+<style>
+    .obj-shell  { padding: 1rem 1.25rem; max-width: 1200px; margin: 0 auto; }
+    .obj-header { display:flex; align-items:center; gap:0.6rem; margin-bottom: 0.85rem; }
+    .obj-header h1 { font-size: 1.1rem; margin:0; color:#22c55e; letter-spacing:.05em; }
+    .obj-header .count { color:#94a3b8; font-size:.85rem; }
+    .obj-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: 0.75rem; }
+    .obj-card { background:#161b25; border:1px solid #2a3142; border-left: 3px solid #16a34a;
+                border-radius:6px; padding: 0.75rem 0.85rem; cursor:pointer; transition: border-color .15s; }
+    .obj-card:hover { border-color: #22c55e; }
+    .obj-card .title { font-weight:700; color:#e2e8f0; font-size:.95rem; }
+    .obj-card .desc  { color:#94a3b8; font-size:.78rem; margin-top:.3rem; max-height:3em; overflow:hidden;
+                       display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+    .obj-card .meta  { color:#475569; font-size:.7rem; font-family:monospace; margin-top:.4rem;
+                       display:flex; justify-content:space-between; align-items:center; }
+    .obj-thumb { width:100%; height:120px; object-fit:cover; border-radius:4px; margin-top:.5rem; }
+    .empty { color:#475569; padding: 2rem; text-align:center; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="obj-shell">
+    <div class="obj-header">
+        <h1>🚩 OBJECTIVES</h1>
+        <span id="obj-count" class="count">—</span>
+    </div>
+    <div id="obj-list" class="obj-grid"><div class="empty">Loading…</div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: 'Bearer ' + token };
+
+    function esc(s) {
+        return String(s || '').replace(/[&<>"']/g, c =>
+            ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    }
+
+    function splitNotes(notes) {
+        const s = String(notes || '');
+        const nl = s.indexOf('\n');
+        const title = nl >= 0 ? s.slice(0, nl) : s;
+        const rest  = nl >= 0 ? s.slice(nl + 1) : '';
+        // Strip trailing MGRS line if present
+        const lines = rest.split('\n').filter(l => !/^MGRS:/i.test(l));
+        return { title: title.replace(/^MGRS:.*$/i, '').trim() || 'Objective',
+                 desc: lines.join('\n').trim() };
+    }
+
+    async function load() {
+        const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', { headers });
+        if (!r.ok) {
+            document.getElementById('obj-list').innerHTML =
+                `<div class="empty">Failed to load (${r.status}).</div>`;
+            return;
+        }
+        const all = await r.json();
+        const objs = all.filter(o => o.type === 'OBJECTIVE')
+                        .sort((a, b) => b.id - a.id);
+
+        document.getElementById('obj-count').textContent = `${objs.length} total`;
+        const list = document.getElementById('obj-list');
+        if (objs.length === 0) {
+            list.innerHTML = '<div class="empty">No objectives marked yet. Use the radial menu on the Tactical Map (double-click) → 🚩 OBJECTIVE.</div>';
+            return;
+        }
+        list.innerHTML = objs.map(o => {
+            const { title, desc } = splitNotes(o.notes);
+            const thumb = o.photo_id
+                ? `<img class="obj-thumb" data-photo-id="${o.photo_id}" alt="photo" style="background:#0d1117">`
+                : '';
+            const grid = `${o.latitude.toFixed(4)}, ${o.longitude.toFixed(4)}`;
+            return `
+                <div class="obj-card" onclick="location.href='/objectives/${o.id}'">
+                    <div class="title">🚩 ${esc(title)}</div>
+                    <div class="desc">${esc(desc) || '<i>no description</i>'}</div>
+                    ${thumb}
+                    <div class="meta"><span>#${o.id}</span><span>${esc(grid)}</span></div>
+                </div>`;
+        }).join('');
+        window.arrowApplyPhotos(list);
+    }
+
+    load();
+})();
+</script>
+{% endblock %}

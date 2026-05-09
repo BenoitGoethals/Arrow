@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Objective #{{ object_id }} — Arrow{% endblock %}
+{% block head %}
+<style>
+    .det-shell { padding: 1rem 1.25rem; max-width: 880px; margin: 0 auto; }
+    .det-back  { color:#94a3b8; text-decoration:none; font-size:.8rem; }
+    .det-back:hover { color:#22c55e; }
+    .det-card  { background:#161b25; border:1px solid #2a3142; border-left:3px solid #16a34a;
+                 border-radius:8px; padding: 1.1rem 1.25rem; margin-top: 0.75rem; }
+    .det-title { color:#22c55e; font-size: 1.25rem; font-weight: 700; margin: 0 0 0.2rem; }
+    .det-meta  { color:#475569; font-size: 0.78rem; font-family: monospace; margin-bottom: 0.9rem; }
+    .det-section h3 { color:#94a3b8; font-size: 0.72rem; letter-spacing: .15em;
+                       text-transform: uppercase; margin: 0.85rem 0 0.3rem; }
+    .det-desc  { color:#e2e8f0; white-space: pre-wrap; font-size: 0.92rem; line-height: 1.45; }
+    .det-photo { max-width: 100%; max-height: 480px; border-radius: 6px; cursor: pointer;
+                 border: 1px solid #2a3142; }
+    .det-actions { margin-top: 1rem; display:flex; gap:0.5rem; }
+    .btn-danger { background: #dc2626; color: #fff; border: 0; border-radius: 5px;
+                  padding: .4rem .9rem; cursor: pointer; font: inherit; font-size: .85rem; font-weight: 600; }
+    .btn-secondary { background: #1f2937; color:#cbd5e1; border:1px solid #2a3142;
+                  border-radius:5px; padding: .4rem .9rem; cursor:pointer; font:inherit; font-size:.85rem; }
+    .empty { color:#475569; padding: 2rem; text-align:center; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="det-shell">
+    <a class="det-back" href="/objectives/">← All objectives</a>
+    <div id="det-body"><div class="empty">Loading…</div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const role = localStorage.getItem('arrow_role') || 'OPERATOR';
+    const headers = { Authorization: 'Bearer ' + token };
+    const objectId = {{ object_id }};
+
+    function esc(s) {
+        return String(s || '').replace(/[&<>"']/g, c =>
+            ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    }
+
+    function splitNotes(notes) {
+        const s = String(notes || '');
+        const nl = s.indexOf('\n');
+        const title = nl >= 0 ? s.slice(0, nl) : s;
+        const rest  = nl >= 0 ? s.slice(nl + 1) : '';
+        const lines = rest.split('\n');
+        const mgrsLine = lines.find(l => /^MGRS:/i.test(l)) || '';
+        const desc = lines.filter(l => !/^MGRS:/i.test(l)).join('\n').trim();
+        return {
+            title: title.replace(/^MGRS:.*$/i, '').trim() || 'Objective',
+            desc,
+            mgrs:  mgrsLine.replace(/^MGRS:\s*/i, '').trim(),
+        };
+    }
+
+    async function load() {
+        // No /tactical-objects/{id} on backend → fetch list and find.
+        const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', { headers });
+        const body = document.getElementById('det-body');
+        if (!r.ok) { body.innerHTML = `<div class="empty">Failed (${r.status}).</div>`; return; }
+        const all = await r.json();
+        const o = all.find(x => x.id === objectId);
+        if (!o) { body.innerHTML = '<div class="empty">Objective not found.</div>'; return; }
+
+        const { title, desc, mgrs } = splitNotes(o.notes);
+        const grid = `${o.latitude.toFixed(5)}, ${o.longitude.toFixed(5)}`;
+        const photoHtml = o.photo_id
+            ? `<img class="det-photo" data-photo-id="${o.photo_id}" alt="photo"
+                    style="background:#0d1117"
+                    onclick="this.src && window.open(this.src)">`
+            : '<div style="color:#475569;font-size:.85rem">No photo attached.</div>';
+
+        const canDelete = role === 'ADMIN' || role === 'BATTLE_CAPTAIN';
+
+        body.innerHTML = `
+            <div class="det-card">
+                <h1 class="det-title">🚩 ${esc(title)}</h1>
+                <div class="det-meta">
+                    #${o.id} · created by op ${o.created_by} · ${esc(o.timestamp || '')}
+                </div>
+
+                <div class="det-section">
+                    <h3>Position</h3>
+                    <div style="font-family:monospace;color:#cbd5e1">
+                        ${mgrs ? `<div>MGRS: ${esc(mgrs)}</div>` : ''}
+                        <div>Lat/Lon: ${esc(grid)}</div>
+                    </div>
+                </div>
+
+                <div class="det-section">
+                    <h3>Description</h3>
+                    <div class="det-desc">${esc(desc) || '<i style="color:#475569">— no description —</i>'}</div>
+                </div>
+
+                <div class="det-section">
+                    <h3>Photo</h3>
+                    ${photoHtml}
+                </div>
+
+                <div class="det-actions">
+                    <button class="btn-secondary" onclick="location.href='/map/'">← Back to map</button>
+                    ${canDelete ? `<button class="btn-danger" onclick="del(${o.id})">Delete objective</button>` : ''}
+                </div>
+            </div>`;
+        window.arrowApplyPhotos(body);
+    }
+
+    window.del = async function(id) {
+        if (!confirm('Delete this objective?')) return;
+        const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id, {
+            method: 'DELETE', headers,
+        });
+        if (r.ok) location.href = '/objectives/';
+        else alert('Delete failed: ' + r.status);
+    };
+
+    load();
+})();
+</script>
+{% endblock %}

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
@@ -26,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,6 +78,7 @@ fun MapScreen(
     var operators    by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
     var enemies      by remember { mutableStateOf<List<TacticalObjectDto>>(emptyList()) }
     var fireMissions by remember { mutableStateOf<List<com.arrow.tactical.network.FireMissionDto>>(emptyList()) }
+    var selectedObjective by remember { mutableStateOf<TacticalObjectDto?>(null) }
     var meId by remember { mutableStateOf<Int?>(null) }
     var hasAutocentered by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
@@ -278,15 +282,38 @@ fun MapScreen(
                 title    = if (isMe) "📍 You — ${op.callsign}" else "${op.callsign}  ·  ${op.rank}"
                 snippet  = "${op.role}${if (op.online) " · online" else " · offline"}"
                 icon     = MilSymbolRenderer.friendly(res, op, isMe)
-                // Own-position bitmap has extra label below the circle —
-                // anchor at circle centre (vertically 18dp+4dp from top / total height).
-                if (isMe) setAnchor(Marker.ANCHOR_CENTER, 0.37f)
+                // Own-position bitmap has a label below the arrow —
+                // anchor at arrow centre (pad+halfH / total height ≈ 22/57).
+                if (isMe) setAnchor(Marker.ANCHOR_CENTER, 0.39f)
                 else      setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 map.overlays.add(this)
             }
         }
 
         for (e in visibleEnemies) {
+            if (e.type == "OBJECTIVE") {
+                // Objectives store "title\ndescription\nMGRS:..." in notes (web format).
+                val notes  = e.notes
+                val nl     = notes.indexOf('\n')
+                val titleS = if (nl >= 0) notes.substring(0, nl) else notes
+                val rest   = if (nl >= 0) notes.substring(nl + 1) else ""
+                val descS  = rest.lineSequence().filterNot { it.startsWith("MGRS:") }
+                                  .joinToString("\n").trim()
+                Marker(map).apply {
+                    position = GeoPoint(e.latitude, e.longitude)
+                    title    = "🚩 ${titleS.ifBlank { "Objective" }}"
+                    snippet  = descS.ifBlank { "(no description)" }
+                    icon     = MilSymbolRenderer.objective(res)
+                    setAnchor(Marker.ANCHOR_BOTTOM, Marker.ANCHOR_BOTTOM)
+                    setOnMarkerClickListener { m, _ ->
+                        selectedObjective = e
+                        m.showInfoWindow()
+                        true
+                    }
+                    map.overlays.add(this)
+                }
+                continue
+            }
             val type = runCatching { EnemyType.valueOf(e.type) }.getOrElse { EnemyType.UNKNOWN }
             Marker(map).apply {
                 position = GeoPoint(e.latitude, e.longitude)
@@ -469,31 +496,33 @@ fun MapScreen(
             }
         }
 
-        // ── Call for Fire button ─────────────────────────────────────────
-        ExtendedFloatingActionButton(
+        // ── Call for Fire button — icon-only, compact ────────────────────
+        SmallFloatingActionButton(
             onClick        = { onCallFire(Double.NaN, Double.NaN) },
             containerColor = Color(0xFFB91C1C),
             contentColor   = Color.White,
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 76.dp),
-            icon = { Icon(Icons.Filled.Warning, contentDescription = null,
-                          modifier = Modifier.size(18.dp), tint = Color.White) },
-            text = { Text("CALL FIRE", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
-        )
+                .padding(end = 12.dp, bottom = 60.dp)
+                .size(40.dp),
+        ) {
+            Icon(Icons.Filled.GpsFixed, contentDescription = "Call for Fire",
+                 modifier = Modifier.size(20.dp))
+        }
 
-        // ── TIC FAB ───────────────────────────────────────────────────────
-        ExtendedFloatingActionButton(
+        // ── TIC FAB — icon-only, compact ─────────────────────────────────
+        SmallFloatingActionButton(
             onClick        = { scope.launch { container.alertRepository.trigger("TIC") } },
             containerColor = MaterialTheme.colorScheme.error,
             contentColor   = Color.White,
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 16.dp),
-            icon = { Icon(Icons.Filled.Warning, contentDescription = null,
-                          modifier = Modifier.size(18.dp), tint = Color.White) },
-            text = { Text("TIC", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
-        )
+                .padding(end = 12.dp, bottom = 12.dp)
+                .size(40.dp),
+        ) {
+            Icon(Icons.Filled.Warning, contentDescription = "TIC",
+                 modifier = Modifier.size(20.dp))
+        }
 
     } // Box
 
@@ -591,6 +620,75 @@ fun MapScreen(
             }
         }
     }
+
+    // ── Objective detail dialog ──────────────────────────────────────────────
+    selectedObjective?.let { obj ->
+        ObjectiveDetailDialog(
+            obj         = obj,
+            baseUrl     = serverUrl,
+            imageLoader = container.imageLoader,
+            onDismiss   = { selectedObjective = null },
+        )
+    }
+}
+
+@Composable
+private fun ObjectiveDetailDialog(
+    obj: TacticalObjectDto,
+    baseUrl: String,
+    imageLoader: coil.ImageLoader,
+    onDismiss: () -> Unit,
+) {
+    val notes  = obj.notes
+    val nl     = notes.indexOf('\n')
+    val title  = (if (nl >= 0) notes.substring(0, nl) else notes).ifBlank { "Objective" }
+    val rest   = if (nl >= 0) notes.substring(nl + 1) else ""
+    val mgrs   = rest.lineSequence().firstOrNull { it.startsWith("MGRS:") }
+                     ?.removePrefix("MGRS:")?.trim() ?: ""
+    val desc   = rest.lineSequence().filterNot { it.startsWith("MGRS:") }
+                     .joinToString("\n").trim()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        title = { Text("🚩 $title", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (mgrs.isNotBlank()) {
+                    Text("MGRS: $mgrs", style = MaterialTheme.typography.labelSmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(
+                    "%.5f, %.5f".format(obj.latitude, obj.longitude),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (desc.isNotBlank()) {
+                    Text(desc, style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text("(no description)", style = MaterialTheme.typography.bodySmall,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (obj.photoId != null && baseUrl.isNotBlank()) {
+                    AsyncImage(
+                        model              = "$baseUrl/photos/${obj.photoId}",
+                        contentDescription = "Objective photo",
+                        imageLoader        = imageLoader,
+                        modifier           = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                            .clip(RoundedCornerShape(6.dp)),
+                        contentScale       = ContentScale.Fit,
+                    )
+                }
+            }
+        },
+    )
 }
 
 /** Walk the /hierarchy JSON and return all operator IDs in the same platoon as [myId]. */

@@ -1,5 +1,6 @@
 package com.arrow.tactical.firemission.ui
 
+import android.content.pm.ActivityInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -55,6 +56,13 @@ fun MortarScreen(
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val activity = context as? android.app.Activity
+    DisposableEffect(Unit) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
     var gunCount by remember { mutableStateOf(2) }   // 1..4
     var guns by remember { mutableStateOf(List(4) { GunInput(callsign = "M${it + 1}") }) }
     var pattern  by remember { mutableStateOf("POINT") }
