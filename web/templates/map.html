@@ -68,10 +68,12 @@
                margin-top:2px; letter-spacing:.04em; text-align:center; }
 
     /* Coloured ring on each button (border matches the item accent) */
-    .r-enemy  { background:rgba(220, 38, 38,.82); box-shadow:0 0 0 1.5px #dc2626, 0 4px 12px rgba(0,0,0,.55); }
-    .r-fire   { background:rgba(153, 27, 27,.82); box-shadow:0 0 0 1.5px #991b1b, 0 4px 12px rgba(0,0,0,.55); }
-    .r-poi    { background:rgba(217,119, 6,.82);  box-shadow:0 0 0 1.5px #d97706, 0 4px 12px rgba(0,0,0,.55); }
-    .r-report { background:rgba( 29, 78,216,.82); box-shadow:0 0 0 1.5px #1d4ed8, 0 4px 12px rgba(0,0,0,.55); }
+    .r-enemy     { background:rgba(220, 38, 38,.82); box-shadow:0 0 0 1.5px #dc2626, 0 4px 12px rgba(0,0,0,.55); }
+    .r-fire      { background:rgba(153, 27, 27,.82); box-shadow:0 0 0 1.5px #991b1b, 0 4px 12px rgba(0,0,0,.55); }
+    .r-poi       { background:rgba(217,119, 6,.82);  box-shadow:0 0 0 1.5px #d97706, 0 4px 12px rgba(0,0,0,.55); }
+    .r-report    { background:rgba( 29, 78,216,.82); box-shadow:0 0 0 1.5px #1d4ed8, 0 4px 12px rgba(0,0,0,.55); }
+    .r-objective { background:rgba( 22,163, 74,.85); box-shadow:0 0 0 1.5px #16a34a, 0 4px 12px rgba(0,0,0,.55); }
+    .objective-icon { font-size: 26px; line-height: 1; text-shadow: 0 0 4px #000, 0 0 6px #000; cursor: pointer; }
     .overlay-btns { display: flex; gap: 4px; }
     .overlay-btn { background: #1a2233; color: #64748b; border: 1px solid #2a3142; border-radius: 5px; padding: 0.2rem 0.65rem; cursor: pointer; font: inherit; font-size: 0.8rem; white-space: nowrap; }
     .overlay-btn:hover { border-color: #34d399; color: #e2e8f0; }
@@ -138,10 +140,11 @@
                         stroke="#6ee7b7" stroke-width="1.5"/>
             </svg>
 
-            <div class="r-item r-enemy"  id="ri-enemy"  onclick="radialAction('enemy')">⚠<div class="r-label">ENEMY</div></div>
-            <div class="r-item r-fire"   id="ri-fire"   onclick="radialAction('fire')">🎯<div class="r-label">FIRE</div></div>
-            <div class="r-item r-poi"    id="ri-poi"    onclick="radialAction('poi')">📍<div class="r-label">POI</div></div>
-            <div class="r-item r-report" id="ri-report" onclick="radialAction('report')">📋<div class="r-label">REPORT</div></div>
+            <div class="r-item r-enemy"     id="ri-enemy"     onclick="radialAction('enemy')">⚠<div class="r-label">ENEMY</div></div>
+            <div class="r-item r-fire"      id="ri-fire"      onclick="radialAction('fire')">🎯<div class="r-label">FIRE</div></div>
+            <div class="r-item r-objective" id="ri-objective" onclick="radialAction('objective')">🚩<div class="r-label">OBJECTIVE</div></div>
+            <div class="r-item r-poi"       id="ri-poi"       onclick="radialAction('poi')">📍<div class="r-label">POI</div></div>
+            <div class="r-item r-report"    id="ri-report"    onclick="radialAction('report')">📋<div class="r-label">REPORT</div></div>
         </div>
         <div class="filter-bar">
             <span id="online-count" class="count">—</span>
@@ -327,21 +330,54 @@
         }
     }
 
+    function objectiveIcon() {
+        return L.divIcon({
+            className: 'objective-icon',
+            html: '🚩',
+            iconSize:   [28, 28],
+            iconAnchor: [6, 26],
+        });
+    }
+
     function placeEnemy(obj) {
         const key = `to-${obj.id}`;
         const existing = state.markers.get(key);
         if (existing) { map.removeLayer(existing); state.markers.delete(key); }
-        const m = L.marker([obj.latitude, obj.longitude], { icon: enemyIcon(obj) }).addTo(map);
+        const isObjective = obj.type === 'OBJECTIVE';
+        const icon = isObjective ? objectiveIcon() : enemyIcon(obj);
+        const m = L.marker([obj.latitude, obj.longitude], { icon }).addTo(map);
+        // Photo endpoint requires auth → use data-photo-id placeholder, swapped to a
+        // blob URL by arrowApplyPhotos() on popup open (see base.html).
         const photoHtml = obj.photo_id
-            ? `<br/><img src="${window.ARROW_BACKEND_URL}/photos/${obj.photo_id}" style="max-width:200px;max-height:150px;border-radius:4px;margin-top:4px;cursor:pointer" onclick="window.open(this.src)" alt="photo">`
+            ? `<br/><img data-photo-id="${obj.photo_id}" alt="photo"
+                    style="max-width:200px;max-height:150px;border-radius:4px;margin-top:4px;cursor:pointer;background:#0d1117"
+                    onclick="this.src && window.open(this.src)">`
             : '';
-        m.bindPopup(
-            `<b>${obj.type}</b><br/>${obj.notes || '<i>no notes</i>'}<br/>` +
-            `<small>SIDC: ${obj.symbol_code || '—'}</small>` +
-            photoHtml + `<br/>` +
-            ((role === 'ADMIN' || role === 'BATTLE_CAPTAIN') ?
-                `<button onclick="window.__arrowDeleteEnemy(${obj.id})">Delete</button>` : '')
-        );
+        m.on('popupopen', () => window.arrowApplyPhotos(document));
+        if (isObjective) {
+            // First line of notes is title; rest is description.
+            const notesStr = String(obj.notes || '');
+            const nl       = notesStr.indexOf('\n');
+            const title    = nl >= 0 ? notesStr.slice(0, nl) : notesStr;
+            const desc     = nl >= 0 ? notesStr.slice(nl + 1) : '';
+            m.bindPopup(
+                `<b style="color:#16a34a">🚩 ${escHtml(title) || 'Objective'}</b><br/>` +
+                (desc ? `<div style="white-space:pre-wrap;max-width:240px">${escHtml(desc)}</div>` : '<i>no description</i>') +
+                photoHtml +
+                `<br/><a href="/objectives/${obj.id}" style="color:#22c55e;font-weight:600">→ Details</a>` +
+                ((role === 'ADMIN' || role === 'BATTLE_CAPTAIN')
+                    ? ` · <a href="#" onclick="window.__arrowDeleteEnemy(${obj.id});return false" style="color:#ef4444">Delete</a>`
+                    : '')
+            );
+        } else {
+            m.bindPopup(
+                `<b>${obj.type}</b><br/>${obj.notes || '<i>no notes</i>'}<br/>` +
+                `<small>SIDC: ${obj.symbol_code || '—'}</small>` +
+                photoHtml + `<br/>` +
+                ((role === 'ADMIN' || role === 'BATTLE_CAPTAIN') ?
+                    `<button onclick="window.__arrowDeleteEnemy(${obj.id})">Delete</button>` : '')
+            );
+        }
         state.markers.set(key, m);
     }
 
@@ -530,11 +566,13 @@
         // Must match the SVG outer ring radius (r="110")
         const R_OUTER = 110, R_HUB = 26;
 
+        // 5 items at 72° spacing, starting at -90° (top), going clockwise.
         const items = [
-            { id:'ri-enemy',  angle: -90 },
-            { id:'ri-fire',   angle:   0 },
-            { id:'ri-poi',    angle:  90 },
-            { id:'ri-report', angle: 180 },
+            { id:'ri-enemy',     angle: -90 },
+            { id:'ri-fire',      angle: -18 },
+            { id:'ri-objective', angle:  54 },
+            { id:'ri-poi',       angle: 126 },
+            { id:'ri-report',    angle: 198 },
         ];
 
         // Draw spoke lines from hub edge → outer ring for each item
@@ -599,6 +637,118 @@
         }
         else if (action === 'report') {
             window.location.href = `/reports/?lat=${lat}&lon=${lon}`;
+        }
+        else if (action === 'objective') {
+            showObjectiveForm(lat, lon, grid);
+        }
+    };
+
+    // ── Objective modal: title, description, photo ────────────────────────
+    function showObjectiveForm(lat, lon, grid) {
+        document.getElementById('objective-modal')?.remove();
+        const modal = document.createElement('div');
+        modal.id = 'objective-modal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:900;display:flex;align-items:center;justify-content:center;padding:1rem';
+        modal.innerHTML = `
+        <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;width:480px;max-width:100%;max-height:90vh;overflow-y:auto;padding:1.25rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem">
+                <div>
+                    <div style="font-size:1rem;font-weight:700;color:#22c55e">🚩 New Objective</div>
+                    <div style="font-size:0.72rem;color:#64748b;font-family:monospace">${escHtml(grid)}</div>
+                </div>
+                <button onclick="document.getElementById('objective-modal').remove()"
+                        style="background:none;border:0;color:#64748b;cursor:pointer;font-size:1.2rem">✕</button>
+            </div>
+
+            <div style="margin-bottom:10px">
+                <label style="font-size:0.72rem;color:#94a3b8">Title / Short name</label>
+                <input id="obj-title" placeholder="e.g. OBJ EAGLE"
+                       style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;padding:.4rem .6rem;font:inherit;font-size:.88rem;box-sizing:border-box">
+            </div>
+
+            <div style="margin-bottom:10px">
+                <label style="font-size:0.72rem;color:#94a3b8">Detailed description</label>
+                <textarea id="obj-desc" rows="5" placeholder="Mission, key terrain, conditions for success, ROE, timeline…"
+                    style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;
+                           padding:.4rem .6rem;font:inherit;font-size:.85rem;resize:vertical;box-sizing:border-box"></textarea>
+            </div>
+
+            <div style="margin-bottom:10px">
+                <label style="font-size:0.72rem;color:#94a3b8">Photo (optional)</label>
+                <input id="obj-photo" type="file" accept="image/*"
+                       style="width:100%;color:#cbd5e1;font:inherit;font-size:.78rem">
+                <div id="obj-photo-status" style="font-size:0.7rem;color:#64748b;margin-top:3px"></div>
+            </div>
+
+            <div id="obj-status" style="font-size:0.8rem;min-height:1.2em;margin-bottom:8px"></div>
+
+            <div style="display:flex;gap:.5rem;justify-content:flex-end">
+                <button onclick="document.getElementById('objective-modal').remove()"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:6px;padding:.45rem 1rem;cursor:pointer;font:inherit;font-size:.85rem">Cancel</button>
+                <button onclick="submitObjective(${lat},${lon},'${escHtml(grid)}')"
+                        style="background:#16a34a;color:#fff;border:0;border-radius:6px;padding:.45rem 1.2rem;font:inherit;font-size:.85rem;font-weight:700;cursor:pointer">
+                    🚩 MARK OBJECTIVE
+                </button>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        document.getElementById('obj-title').focus();
+    }
+
+    window.submitObjective = async function(lat, lon, grid) {
+        const title = document.getElementById('obj-title').value.trim();
+        const desc  = document.getElementById('obj-desc').value.trim();
+        const file  = document.getElementById('obj-photo').files[0] || null;
+        const st    = document.getElementById('obj-status');
+
+        if (!title) { st.textContent = '⚠ Title is required.'; st.style.color = '#ef4444'; return; }
+
+        let photoId = null;
+        if (file) {
+            const photoStatus = document.getElementById('obj-photo-status');
+            photoStatus.textContent = 'Uploading photo…';
+            const fd = new FormData();
+            fd.append('file', file);
+            const pr = await fetch(window.ARROW_BACKEND_URL + '/photos', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body:    fd,
+            });
+            if (!pr.ok) {
+                st.textContent = `✗ Photo upload failed (${pr.status})`;
+                st.style.color = '#ef4444';
+                return;
+            }
+            const photo = await pr.json();
+            photoId = photo.id;
+            photoStatus.textContent = `✓ photo #${photoId}`;
+        }
+
+        st.textContent = 'Saving…'; st.style.color = '#94a3b8';
+        // Title is the first line of notes; full description follows. Marker uses
+        // notes for popup. Detail page splits on first newline.
+        const notes = title + (desc ? `\n${desc}` : '') + `\nMGRS:${grid}`;
+        const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
+            method:  'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+                type: 'OBJECTIVE',
+                symbol_code: 'GFGPGAO---X',  // MIL-STD-2525 friendly objective area
+                latitude:  lat,
+                longitude: lon,
+                notes,
+                photo_id:  photoId,
+            }),
+        });
+        if (r.ok) {
+            const o = await r.json();
+            state.tacticalObjects.set(o.id, o);
+            refreshEnemies();
+            document.getElementById('objective-modal').remove();
+        } else {
+            st.textContent = `✗ Failed (${r.status})`;
+            st.style.color = '#ef4444';
         }
     };
 

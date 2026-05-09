@@ -21,55 +21,58 @@ import com.arrow.tactical.tactical.EnemyType
  */
 object MilSymbolRenderer {
 
-    // ── Own position (blue dot + callsign label) ────────────────────────────
+    // ── Own position (blue arrow + callsign label) ──────────────────────────
 
     fun ownPosition(res: Resources, op: OperatorDto): Drawable {
         val dp    = res.displayMetrics.density
-        val r     = 18 * dp          // circle radius
+        val halfW = 14 * dp          // arrow half-width
+        val halfH = 18 * dp          // arrow half-height (tip to tail)
         val pad   = 4 * dp
-        val textH = 13 * dp          // space reserved below circle for label
-        val w     = ((r + pad) * 2).toInt()
-        val h     = (r * 2 + pad * 2 + textH).toInt()
+        val textH = 13 * dp
+        val w     = ((halfW + pad) * 2).toInt()
+        val h     = (halfH * 2 + pad * 2 + textH).toInt()
         val bmp   = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
 
         val cx = w / 2f
-        val cy = pad + r             // circle centre
+        val cy = pad + halfH         // arrow centre
 
-        // Outer glow ring (semi-transparent blue)
-        paint.color = Color.argb(60, 37, 99, 235)
-        paint.style = Paint.Style.FILL
-        canvas.drawCircle(cx, cy, r + 4 * dp, paint)
+        // Arrow points up (north). Notch at the tail makes a chevron.
+        val arrow = Path().apply {
+            moveTo(cx,           cy - halfH)               // tip
+            lineTo(cx + halfW,   cy + halfH)               // bottom-right
+            lineTo(cx,           cy + halfH * 0.45f)       // tail notch
+            lineTo(cx - halfW,   cy + halfH)               // bottom-left
+            close()
+        }
 
-        // Main blue dot
+        // Fill: bright blue
         paint.color = Color.rgb(37, 99, 235)   // #2563EB
-        canvas.drawCircle(cx, cy, r, paint)
+        paint.style = Paint.Style.FILL
+        canvas.drawPath(arrow, paint)
 
         // White border
         paint.color = Color.WHITE
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 3 * dp
-        canvas.drawCircle(cx, cy, r, paint)
+        paint.strokeWidth = 2.5f * dp
+        paint.strokeJoin = Paint.Join.ROUND
+        canvas.drawPath(arrow, paint)
 
-        // Inner dark-blue centre dot for depth
-        paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(30, 64, 175)   // #1E40AF
-        canvas.drawCircle(cx, cy, 5 * dp, paint)
-
-        // Callsign label below circle — dark pill background
+        // Callsign label below arrow — dark pill background
         val label = op.callsign.take(8)
+        paint.style = Paint.Style.FILL
+        paint.strokeWidth = 0f
         paint.textSize = 9 * dp
         paint.textAlign = Paint.Align.CENTER
         val textW = paint.measureText(label)
         val pillL = cx - textW / 2 - 4 * dp
         val pillR = cx + textW / 2 + 4 * dp
-        val pillT = cy + r + 3 * dp
+        val pillT = cy + halfH + 3 * dp
         val pillB = pillT + 11 * dp
         paint.color = Color.argb(200, 13, 17, 23)
         canvas.drawRoundRect(RectF(pillL, pillT, pillR, pillB), 4 * dp, 4 * dp, paint)
 
-        // Label text
         paint.color = Color.rgb(147, 197, 253)  // #93C5FD light blue
         paint.isFakeBoldText = true
         canvas.drawText(label, cx, pillB - 3 * dp, paint)
@@ -83,41 +86,27 @@ object MilSymbolRenderer {
         if (isMe) return ownPosition(res, op)
 
         val dp = res.displayMetrics.density
-        val w = (56 * dp).toInt()
-        val h = (30 * dp).toInt()
-        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val r  = 5 * dp                          // small dot radius
+        val pad = 2 * dp
+        val size = ((r + pad) * 2).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val online = op.online
-        val alpha = if (online) 255 else 110
+        val alpha = if (op.online) 255 else 110
 
-        val inset = 3 * dp
-        val frame = RectF(inset, inset, w - inset, h - inset)
-        paint.color = Color.argb(alpha, 128, 224, 255)  // NATO light blue
+        val cx = size / 2f
+        val cy = size / 2f
+
+        // Blue dot
+        paint.color = Color.argb(alpha, 37, 99, 235)   // #2563EB
         paint.style = Paint.Style.FILL
-        canvas.drawRoundRect(frame, 4 * dp, 4 * dp, paint)
+        canvas.drawCircle(cx, cy, r, paint)
 
-        paint.color = Color.argb(alpha, 0, 70, 180)
+        // Thin white outline for contrast on map
+        paint.color = Color.argb(alpha, 255, 255, 255)
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2.5f * dp
-        canvas.drawRoundRect(frame, 4 * dp, 4 * dp, paint)
-
-        // Role indicator line at top for BC/ADMIN
-        if (op.role == "BATTLE_CAPTAIN" || op.role == "ADMIN") {
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 3 * dp
-            paint.color = Color.argb(alpha, 0, 40, 140)
-            val topY = inset + 6 * dp
-            canvas.drawLine(inset + 6 * dp, topY, w - inset - 6 * dp, topY, paint)
-        }
-
-        // Callsign text
-        paint.style = Paint.Style.FILL
-        paint.color = Color.argb(alpha, 0, 0, 0)
-        paint.textSize = 8 * dp
-        paint.textAlign = Paint.Align.CENTER
-        paint.isFakeBoldText = op.role != "OPERATOR"
-        canvas.drawText(op.callsign.take(9), w / 2f, h / 2f + 3 * dp, paint)
+        paint.strokeWidth = 1.5f * dp
+        canvas.drawCircle(cx, cy, r, paint)
 
         return BitmapDrawable(res, bmp)
     }
@@ -219,6 +208,49 @@ object MilSymbolRenderer {
         paint.textAlign     = Paint.Align.CENTER
         paint.isFakeBoldText = true
         canvas.drawText(abbr, cx, cy + 3.5f * dp, paint)
+
+        return BitmapDrawable(res, bmp)
+    }
+
+    // ── Objective (green flag, friendly task graphic) ────────────────────────
+
+    fun objective(res: Resources): Drawable {
+        val dp   = res.displayMetrics.density
+        val w    = (30 * dp).toInt()
+        val h    = (34 * dp).toInt()
+        val bmp  = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Pole
+        val poleX = 6 * dp
+        paint.color = Color.rgb(20, 20, 20)
+        paint.style = Paint.Style.FILL
+        canvas.drawRect(poleX - 1.5f * dp, 2 * dp, poleX + 1.5f * dp, h - 2 * dp, paint)
+
+        // Flag triangle (green, points right, then back)
+        val flag = Path().apply {
+            moveTo(poleX,            3 * dp)
+            lineTo(w - 3 * dp,       9 * dp)
+            lineTo(poleX,            15 * dp)
+            close()
+        }
+        paint.color = Color.rgb(22, 163, 74)   // #16A34A
+        canvas.drawPath(flag, paint)
+
+        paint.color = Color.rgb(6, 95, 40)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.5f * dp
+        canvas.drawPath(flag, paint)
+
+        // Base disc at pole foot
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(22, 163, 74)
+        canvas.drawCircle(poleX, h - 4 * dp, 3 * dp, paint)
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1f * dp
+        canvas.drawCircle(poleX, h - 4 * dp, 3 * dp, paint)
 
         return BitmapDrawable(res, bmp)
     }
