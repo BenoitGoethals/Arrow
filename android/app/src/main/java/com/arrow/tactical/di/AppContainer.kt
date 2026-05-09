@@ -2,6 +2,7 @@ package com.arrow.tactical.di
 
 import android.content.Context
 import coil.ImageLoader
+import com.arrow.tactical.admin.LogRepository
 import com.arrow.tactical.alerts.AlertRepository
 import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.auth.TokenStore
@@ -43,6 +44,7 @@ class AppContainer(private val context: Context) {
 
     val photoRepository       = PhotoRepository(apiClient)
     val fireMissionRepository = FireMissionRepository(apiClient)
+    val logRepository         = LogRepository()
     val chatNotificationManager = ChatNotificationManager(context, wsClient, authRepository)
 
     private val _navigateToChatChannel = Channel<Unit>(Channel.BUFFERED)

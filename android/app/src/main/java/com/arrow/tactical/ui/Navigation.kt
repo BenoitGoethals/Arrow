@@ -3,6 +3,7 @@ package com.arrow.tactical.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.EmojiFlags
@@ -19,6 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -30,6 +32,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.arrow.tactical.admin.ui.AdminScreen
 import com.arrow.tactical.alerts.ui.AlertsScreen
 import com.arrow.tactical.auth.ui.LoginScreen
 import com.arrow.tactical.di.AppContainer
@@ -51,10 +54,13 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
     data object Reports : Tab("tab/reports", "Reports", Icons.Filled.Flag)
     data object Mortar : Tab("tab/mortar", "Mortar FDC", Icons.Filled.Adjust)
     data object Objectives : Tab("tab/objectives", "Objectives", Icons.Filled.EmojiFlags)
+    data object Admin : Tab("tab/admin", "Admin", Icons.Filled.AdminPanelSettings)
     data object Settings : Tab("tab/settings", "Settings", Icons.Filled.Settings)
 }
 
-private val TABS = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Mortar, Tab.Objectives, Tab.Settings)
+private val TABS_BASE = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Mortar, Tab.Objectives, Tab.Settings)
+// Admin tab is appended only when the signed-in user has the ADMIN role.
+private val TABS_ADMIN = TABS_BASE + Tab.Admin
 
 object Routes {
     const val LOGIN = "login"
@@ -96,6 +102,9 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
     val currentRoute = backStackEntry?.destination?.route
     val scope = rememberCoroutineScope()
 
+    val role by container.tokenStore.roleFlow.collectAsState(initial = null)
+    val tabs = if (role == "ADMIN") TABS_ADMIN else TABS_BASE
+
     LaunchedEffect(Unit) {
         container.navigateToChatFlow.collect {
             tabNav.navigate(Tab.Chat.route) {
@@ -109,7 +118,7 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
     Scaffold(
         bottomBar = {
             NavigationBar {
-                TABS.forEach { tab ->
+                tabs.forEach { tab ->
                     val selected = currentRoute?.startsWith(tab.route) == true
                     NavigationBarItem(
                         selected = selected,
@@ -229,6 +238,7 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                 ReportsScreen(repo = container.reportRepository, container = container)
             }
             composable(Tab.Objectives.route) { ObjectivesScreen(container) }
+            composable(Tab.Admin.route) { AdminScreen(container.logRepository) }
             composable(Tab.Settings.route) {
                 SettingsScreen(
                     repo = container.settingsRepository,
