@@ -63,7 +63,7 @@ import org.osmdroid.views.overlay.Marker
 
 // CATEGORY is gone — replaced by RadialMenu; ENEMY_TYPE and NOTES are direct bottom sheets
 private enum class MenuStep { ENEMY_TYPE, NOTES }
-private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON, TAC_GRAPHICS }
+private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,6 +86,9 @@ fun MapScreen(
     // null = checking, true = online, false = offline
     var serverOnline by remember { mutableStateOf<Boolean?>(null) }
     var overlayMode by remember { mutableStateOf(OverlayMode.ALL) }
+    // Independent layer for tactical control graphics — gates lines, polygons
+    // and oriented-point graphics regardless of overlayMode.
+    var tgVisible    by remember { mutableStateOf(true) }
     var myPlatoonIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var isStreaming  by remember {
         mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
@@ -293,7 +296,7 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, fireMissions, meId, overlayMode, myPlatoonIds) {
+    LaunchedEffect(operators, enemies, fireMissions, meId, overlayMode, tgVisible, myPlatoonIds) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
@@ -307,22 +310,20 @@ fun MapScreen(
         }
 
         val visibleOps = when (overlayMode) {
-            OverlayMode.ALL          -> operators
-            OverlayMode.NONE         -> emptyList()
-            OverlayMode.ENEMIES      -> emptyList()
-            OverlayMode.TAC_GRAPHICS -> emptyList()
-            OverlayMode.OWN_PLATOON  -> operators.filter { it.id in myPlatoonIds || it.id == currentMeId }
+            OverlayMode.ALL         -> operators
+            OverlayMode.NONE        -> emptyList()
+            OverlayMode.ENEMIES     -> emptyList()
+            OverlayMode.OWN_PLATOON -> operators.filter { it.id in myPlatoonIds || it.id == currentMeId }
         }
-        // ENEMIES = legacy hostile/POI/objective markers only (no tactical graphics).
-        // TAC_GRAPHICS = ONLY the new tactical control graphics layer.
-        // ALL = everything tactical. OWN_PLATOON / NONE = nothing tactical.
+        // Two independent layers:
+        //   • legacy hostile/POI/objective markers ← gated by overlayMode
+        //   • tactical control graphics            ← gated by tgVisible
         val showLegacyHostiles = overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.ENEMIES
-        val showTacGraphics    = overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.TAC_GRAPHICS
         val visibleEnemies = if (showLegacyHostiles)
             enemies.filterNot { MilSymbolRenderer.isTacticalGraphic(it.type) ||
                                 MilSymbolRenderer.isTacticalLineOrPolygon(it.type) }
         else emptyList()
-        val visibleGraphics = if (showTacGraphics)
+        val visibleGraphics = if (tgVisible)
             enemies.filter { MilSymbolRenderer.isTacticalGraphic(it.type) ||
                              MilSymbolRenderer.isTacticalLineOrPolygon(it.type) }
         else emptyList()
@@ -479,11 +480,10 @@ fun MapScreen(
             Spacer(Modifier.weight(1f))
 
             listOf(
-                OverlayMode.ALL          to "All",
-                OverlayMode.NONE         to "None",
-                OverlayMode.ENEMIES      to "Enemy",
-                OverlayMode.OWN_PLATOON  to "Own Plt",
-                OverlayMode.TAC_GRAPHICS to "Tac Gfx",
+                OverlayMode.ALL         to "All",
+                OverlayMode.NONE        to "None",
+                OverlayMode.ENEMIES     to "Enemy",
+                OverlayMode.OWN_PLATOON to "Own Plt",
             ).forEach { (mode, label) ->
                 val active = overlayMode == mode
                 Box(
@@ -506,6 +506,27 @@ fun MapScreen(
                         color = if (active) Color(0xFF34D399) else Color(0xFFCBD5E1),
                     )
                 }
+            }
+            // Independent Tactical Graphics layer — orange when on, dim when off.
+            Box(
+                modifier = Modifier
+                    .clickable { tgVisible = !tgVisible }
+                    .background(
+                        if (tgVisible) Color(0xFF3F2A14) else Color(0xFF1A2233),
+                        RoundedCornerShape(3.dp),
+                    )
+                    .then(
+                        if (tgVisible) Modifier.border(0.5.dp, Color(0xFFF59E0B), RoundedCornerShape(3.dp))
+                        else           Modifier.border(0.5.dp, Color(0xFF2A3142), RoundedCornerShape(3.dp))
+                    )
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text  = "📐 Gfx",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                    color = if (tgVisible) Color(0xFFFBBF24) else Color(0xFFCBD5E1),
+                )
             }
 
             // 📡 Stream toggle — Material3 IconToggleButton so checked/unchecked
