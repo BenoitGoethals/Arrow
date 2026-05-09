@@ -92,6 +92,15 @@
     .map-fm-grid { font-size: 0.7rem; color: #fca5a5; font-family: monospace; }
     .map-fm-desc { font-size: 0.68rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
+    .sb-section > summary { list-style: none; cursor: pointer; user-select: none;
+                            display: flex; align-items: center; gap: 6px; }
+    .sb-section > summary::-webkit-details-marker { display: none; }
+    .sb-section > summary::before { content: "▸"; color: #6ee7b7; font-size: 0.7rem;
+                                    transition: transform .15s; display: inline-block; }
+    .sb-section[open] > summary::before { transform: rotate(90deg); }
+    .sb-section > summary h3 { margin: 0; }
+    .sb-count { font-size: 0.7rem; color: #94a3b8; background: #1f2937;
+                border-radius: 8px; padding: 1px 6px; margin-left: auto; }
 </style>
 {% endblock %}
 {% block content %}
@@ -104,8 +113,12 @@
         </div>
         <h3>Hierarchy</h3>
         <div id="tree" class="tree">Loading…</div>
-        <h3 style="margin-top:1rem">Enemies / Tactical objects</h3>
-        <div id="enemies"></div>
+        <details class="sb-section" style="margin-top:1rem">
+            <summary><h3 style="display:inline">Enemies / Tactical objects</h3>
+                <span id="enemies-count" class="sb-count">0</span>
+            </summary>
+            <div id="enemies"></div>
+        </details>
 
         <h3 style="margin-top:1rem">Fire Missions</h3>
         <div id="map-fire-missions"><small style="color:#475569">Loading…</small></div>
@@ -400,6 +413,8 @@
         state.markers.forEach((m, key) => {
             if (key.startsWith('to-')) { map.removeLayer(m); state.markers.delete(key); }
         });
+        const cnt = document.getElementById('enemies-count');
+        if (cnt) cnt.textContent = state.tacticalObjects.size;
         if (!enemyLayerVisible()) {
             // Update sidebar list but don't place map markers
             const list = document.getElementById('enemies');
