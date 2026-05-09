@@ -141,12 +141,58 @@
         renderQueue();
     };
 
+    function renderMortarNotes(notes) {
+        if (!notes) return '';
+        let plan;
+        try { plan = JSON.parse(notes); } catch (_) {
+            return `<div class="desc-box" style="border-color:#2563eb22"><strong>FDC Notes:</strong> ${esc(notes)}</div>`;
+        }
+        if (!plan.guns) {
+            return `<div class="desc-box" style="border-color:#2563eb22"><strong>FDC Notes:</strong> ${esc(notes)}</div>`;
+        }
+        const gunCards = plan.guns.map(g => {
+            const mgrs = toMgrs(g.latitude, g.longitude);
+            const sol  = g.solutions && g.solutions[0];
+            const solHtml = sol && !sol.error
+                ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.3rem 0.75rem;margin-top:0.45rem">
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">Charge</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.charge}</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">QE</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.qe_mils} mil</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">Defl</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.defl_mils} mil</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">Range</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.range_m.toFixed(0)} m</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">TOF</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.tof_s}s</span></div>
+                   </div>`
+                : (sol && sol.error
+                    ? `<div style="color:#ef4444;font-size:0.78rem;margin-top:0.35rem">${esc(sol.error)}</div>`
+                    : '');
+            return `<div style="background:#0d1117;border:1px solid #2a3142;border-radius:6px;padding:0.6rem 0.75rem;margin-bottom:0.5rem">
+                <div style="display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.35rem">
+                    <span style="font-weight:700;color:#e2e8f0;font-size:0.9rem">${esc(g.callsign || 'GUN-' + g.gun_idx)}</span>
+                    ${g.altitude ? `<span style="color:#64748b;font-size:0.72rem">${g.altitude.toFixed(0)} m MSL</span>` : ''}
+                </div>
+                <div style="font-family:monospace;font-size:1rem;letter-spacing:0.05em;color:#34d399">${esc(mgrs)}</div>
+                ${solHtml}
+            </div>`;
+        }).join('');
+        return `<div class="desc-box" style="border-color:#34d39922;padding:0.6rem 0.75rem">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:0.6rem">
+                Mortar Positions — ${esc(plan.weapon || 'L16 81MM')} · ${esc(plan.pattern)}
+            </div>
+            ${gunCards}
+        </div>`;
+    }
+
+    function isMortarPlan(notes) {
+        if (!notes) return false;
+        try { return !!JSON.parse(notes).guns; } catch (_) { return false; }
+    }
+
     function renderDetail(m) {
         const c       = STATUS_COLORS[m.status] || '#64748b';
         const lbl     = MISSION_LABELS[m.mission_type] || m.mission_type;
         const opMap   = Object.fromEntries(operators.map(o => [o.id, o]));
         const caller  = opMap[m.operator_id];
         const fdcOp   = m.fdc_operator_id ? opMap[m.fdc_operator_id] : null;
+        const mortar  = isMortarPlan(m.notes);
 
         const fdcOptions = operators
             .filter(o => o.role === 'ADMIN' || o.role === 'BATTLE_CAPTAIN' || o.role === 'OPERATOR')
@@ -167,7 +213,7 @@
         document.getElementById('fdc-main').innerHTML = `
         <div class="detail-header">
             <div>
-                <div class="detail-title">🎯 ${esc(lbl)}</div>
+                <div class="detail-title">${mortar ? '💣' : '🎯'} ${esc(lbl)}</div>
                 <div class="detail-sub">
                     Mission #${m.id} · Called by <strong>${caller ? esc(caller.callsign) : '#' + m.operator_id}</strong>
                     · ${(m.timestamp||'').slice(0,16).replace('T',' ')}
@@ -180,35 +226,35 @@
         <div class="info-grid">
             <div class="info-card" style="grid-column:span 2">
                 <div class="val" style="font-size:1.3rem;letter-spacing:0.05em">${toMgrs(m.latitude, m.longitude)}</div>
-                <div class="lbl">MGRS Grid</div>
+                <div class="lbl">MGRS Grid${mortar ? ' (impact centroid)' : ''}</div>
             </div>
             <div class="info-card"><div class="val">${m.altitude.toFixed(0)} m</div><div class="lbl">Altitude MSL</div></div>
-            <div class="info-card"><div class="val">${m.direction.toFixed(0)}°</div><div class="lbl">Direction (obs→tgt)</div></div>
             <div class="info-card"><div class="val">${esc(m.ammunition)}</div><div class="lbl">Ammunition</div></div>
             <div class="info-card"><div class="val">${m.quantity}</div><div class="lbl">Rounds</div></div>
         </div>
 
         ${m.description ? `<div class="desc-box"><strong>Target:</strong> ${esc(m.description)}</div>` : ''}
 
-        ${m.notes ? `<div class="desc-box" style="border-color:#2563eb22"><strong>FDC Notes:</strong> ${esc(m.notes)}</div>` : ''}
+        ${renderMortarNotes(m.notes)}
 
-        <!-- FDC action panel -->
+        ${mortar ? `
+        <div style="background:#0d1117;border:1px solid #2a3142;border-radius:6px;padding:0.6rem 0.9rem;font-size:0.78rem;color:#475569">
+            Status managed by Android FDC operator
+        </div>` : `
         <div class="fdc-actions">
             <h4>FDC Actions</h4>
             <div class="status-btns">${statusButtons}</div>
-
             <div class="fdc-row" style="margin-bottom:0.6rem">
                 <select id="fdc-assign" onchange="assignFdc(${m.id})">
                     <option value="">— Assign FDC operator —</option>
                     ${fdcOptions}
                 </select>
             </div>
-
             <div class="fdc-row">
                 <textarea id="fdc-notes" rows="2" placeholder="FDC notes / corrections…">${esc(m.notes)}</textarea>
                 <button onclick="saveNotes(${m.id})">Save notes</button>
             </div>
-        </div>`;
+        </div>`}`;
     }
 
     window.setStatus = async function(id, s) {
