@@ -97,15 +97,30 @@ class TacticalObject(Base):
     __tablename__ = "tactical_objects"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    type: Mapped[str] = mapped_column(String(40))  # ENEMY, POI, MARKER, ROUTE, ZONE
+    # ENEMY, POI, MARKER, ROUTE, ZONE, OBJECTIVE, plus tactical control graphics:
+    # ATK_AXIS, DEF_AREA, AMBUSH, BOUNDARY, FLET, FLOT, PHASE_LINE, OBJ_AREA
+    type: Mapped[str] = mapped_column(String(40))
     symbol_code: Mapped[str] = mapped_column(String(40), default="")  # MIL-STD-2525
     created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    # latitude/longitude is the anchor point; for line/polygon graphics it's the
+    # first vertex (used by simple list views and clustering). The full geometry
+    # — if any — lives in `geometry` as a JSON string.
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     notes: Mapped[str] = mapped_column(Text, default="")
     visibility: Mapped[str] = mapped_column(String(20), default="COMPANY")  # TEAM, SECTION, PLATOON, COMPANY
     photo_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("photos.id"), nullable=True)
+    # Heading in degrees clockwise from north (0..360) for oriented point symbols
+    # (attack axis, ambush V, defense U). 0 = symbol points north.
+    rotation: Mapped[float] = mapped_column(Float, default=0.0)
+    # GeoJSON-ish: {"type":"point|line|polygon","coords":[[lat,lon],...]}.
+    # Empty string = treat as point at (latitude, longitude).
+    geometry: Mapped[str] = mapped_column(Text, default="")
+    # NATO unit echelon: "" (none), "TM", "SEC", "PL", "COY", "BN", "BDE".
+    # Rendered as size designator (dots/bars) above point symbols, or as a
+    # text label on line/polygon graphics.
+    echelon: Mapped[str] = mapped_column(String(8), default="")
 
 
 class Alert(Base):

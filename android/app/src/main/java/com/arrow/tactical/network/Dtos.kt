@@ -51,6 +51,12 @@ data class TacticalObjectDto(
     val notes: String = "",
     val visibility: String = "COMPANY",
     @SerialName("photo_id") val photoId: Int? = null,
+    // Tactical control graphics: heading clockwise from north (0..360) for
+    // oriented point symbols; full geometry JSON for lines/polygons; NATO
+    // echelon designator (TM/SEC/PL/COY/BN/BDE) for size annotation.
+    val rotation: Double = 0.0,
+    val geometry: String = "",
+    val echelon: String = "",
 )
 
 @Serializable

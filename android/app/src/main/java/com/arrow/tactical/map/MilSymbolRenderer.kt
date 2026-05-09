@@ -255,6 +255,174 @@ object MilSymbolRenderer {
         return BitmapDrawable(res, bmp)
     }
 
+    // ── Tactical control graphics — point symbols (Phase 2 render-only) ─────
+    //
+    // Maps the web-side TG_SPEC palette: ATK_AXIS, COUNTERATTACK, DEF_AREA,
+    // AMBUSH, BLOCK, BYPASS, WITHDRAW. Each is drawn upright then rotated to
+    // the heading; the echelon designator (dots / bars) is drawn UPRIGHT on
+    // top of the icon — independent of rotation, MIL-STD-2525 style.
+
+    private data class TgSpec(val color: Int, val drawer: (Canvas, Float, Int) -> Unit)
+
+    /** Returns null when [type] is not a tactical graphic. */
+    fun tacticalGraphic(res: Resources, type: String, rotation: Double, echelon: String): Drawable? {
+        val spec = TG_SPECS[type] ?: return null
+        val dp = res.displayMetrics.density
+        val size = (52 * dp).toInt()
+        val bmp  = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val cx = size / 2f
+
+        // Save, rotate around centre, draw glyph, restore — keeps echelon upright.
+        canvas.save()
+        canvas.rotate(rotation.toFloat(), cx, cx)
+        spec.drawer(canvas, dp, spec.color)
+        canvas.restore()
+
+        if (echelon.isNotBlank()) drawEchelon(canvas, cx, dp, echelon, spec.color)
+        return BitmapDrawable(res, bmp)
+    }
+
+    private val TG_SPECS: Map<String, TgSpec> = mapOf(
+        "ATK_AXIS"      to TgSpec(Color.rgb(239,  68,  68)) { c, dp, col -> drawAttackArrow(c, dp, col, dashed = false) },
+        "COUNTERATTACK" to TgSpec(Color.rgb(249, 115,  22)) { c, dp, col -> drawAttackArrow(c, dp, col, dashed = true) },
+        "AMBUSH"        to TgSpec(Color.rgb(220,  38,  38)) { c, dp, col -> drawV(c, dp, col) },
+        "DEF_AREA"      to TgSpec(Color.rgb( 59, 130, 246)) { c, dp, col -> drawDefenseU(c, dp, col) },
+        "BLOCK"         to TgSpec(Color.rgb( 59, 130, 246)) { c, dp, col -> drawBlockBar(c, dp, col) },
+        "BYPASS"        to TgSpec(Color.rgb(  6, 182, 212)) { c, dp, col -> drawBypass(c, dp, col) },
+        "WITHDRAW"      to TgSpec(Color.rgb(167, 139, 250)) { c, dp, col -> drawWithdraw(c, dp, col) },
+    )
+
+    fun isTacticalGraphic(type: String): Boolean = type in TG_SPECS
+    fun isTacticalLineOrPolygon(type: String): Boolean = type in TG_LINES_AND_POLYS
+
+    /** Stroke / fill style for line and polygon tactical graphics. */
+    data class TgLineStyle(val color: Int, val widthDp: Float, val dashOnDp: Float, val dashOffDp: Float)
+    private val TG_LINE_STYLES: Map<String, TgLineStyle> = mapOf(
+        "BOUNDARY"   to TgLineStyle(Color.rgb(148, 163, 184), 3f, 8f, 4f),
+        "FLET"       to TgLineStyle(Color.rgb(239,  68,  68), 3f, 6f, 4f),
+        "FLOT"       to TgLineStyle(Color.rgb( 59, 130, 246), 3f, 0f, 0f),
+        "PHASE_LINE" to TgLineStyle(Color.rgb( 34, 197,  94), 2f, 0f, 0f),
+        "OBJ_AREA"   to TgLineStyle(Color.rgb( 22, 163,  74), 3f, 0f, 0f),
+    )
+    private val TG_LINES_AND_POLYS = TG_LINE_STYLES.keys
+    fun tacticalLineStyle(type: String): TgLineStyle? = TG_LINE_STYLES[type]
+    fun isTacticalPolygon(type: String): Boolean = type == "OBJ_AREA"
+
+    private fun drawAttackArrow(c: Canvas, dp: Float, col: Int, dashed: Boolean) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = col; style = Paint.Style.STROKE
+            strokeWidth = 4 * dp; strokeCap = Paint.Cap.ROUND
+            if (dashed) pathEffect = android.graphics.DashPathEffect(floatArrayOf(5 * dp, 3 * dp), 0f)
+        }
+        c.drawLine(26 * dp, 44 * dp, 26 * dp, 9 * dp, paint)
+        // Arrowhead — solid even when shaft is dashed
+        paint.pathEffect = null
+        paint.style = Paint.Style.FILL
+        val head = Path().apply {
+            moveTo(26 * dp, 3 * dp); lineTo(18 * dp, 14 * dp); lineTo(34 * dp, 14 * dp); close()
+        }
+        c.drawPath(head, paint)
+    }
+
+    private fun drawV(c: Canvas, dp: Float, col: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = col; style = Paint.Style.STROKE
+            strokeWidth = 4 * dp; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        }
+        val p = Path().apply {
+            moveTo( 9 * dp, 34 * dp); lineTo(26 * dp,  8 * dp); lineTo(43 * dp, 34 * dp)
+        }
+        c.drawPath(p, paint)
+    }
+
+    private fun drawDefenseU(c: Canvas, dp: Float, col: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = col; style = Paint.Style.STROKE
+            strokeWidth = 4 * dp; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        }
+        val p = Path().apply {
+            moveTo( 9 * dp, 12 * dp); lineTo( 9 * dp, 34 * dp)
+            lineTo(43 * dp, 34 * dp); lineTo(43 * dp, 12 * dp)
+        }
+        c.drawPath(p, paint)
+    }
+
+    private fun drawBlockBar(c: Canvas, dp: Float, col: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = col; style = Paint.Style.STROKE
+            strokeWidth = 4 * dp; strokeCap = Paint.Cap.ROUND
+        }
+        c.drawLine(26 * dp, 38 * dp, 26 * dp, 14 * dp, paint)
+        paint.strokeWidth = 5 * dp
+        c.drawLine(13 * dp, 14 * dp, 39 * dp, 14 * dp, paint)
+    }
+
+    private fun drawBypass(c: Canvas, dp: Float, col: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = col; style = Paint.Style.STROKE
+            strokeWidth = 4 * dp; strokeCap = Paint.Cap.ROUND
+        }
+        // Quarter-curve from bottom-left up to right
+        val p = Path().apply {
+            moveTo(17 * dp, 42 * dp)
+            quadTo(17 * dp, 16 * dp, 36 * dp, 16 * dp)
+        }
+        c.drawPath(p, paint)
+        paint.style = Paint.Style.FILL
+        val head = Path().apply {
+            moveTo(42 * dp, 16 * dp); lineTo(33 * dp, 11 * dp); lineTo(33 * dp, 21 * dp); close()
+        }
+        c.drawPath(head, paint)
+    }
+
+    private fun drawWithdraw(c: Canvas, dp: Float, col: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = col; style = Paint.Style.STROKE
+            strokeWidth = 4 * dp; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        }
+        c.drawLine(26 * dp, 9 * dp, 26 * dp, 38 * dp, paint)
+        // Curl at the head end
+        val curl = Path().apply {
+            moveTo(26 * dp, 9 * dp); quadTo(18 * dp, 9 * dp, 18 * dp, 16 * dp)
+        }
+        c.drawPath(curl, paint)
+        paint.style = Paint.Style.FILL
+        val head = Path().apply {
+            moveTo(26 * dp, 44 * dp); lineTo(18 * dp, 33 * dp); lineTo(34 * dp, 33 * dp); close()
+        }
+        c.drawPath(head, paint)
+    }
+
+    private val ECHELON_DOTS = mapOf("TM" to 2, "SEC" to 3)
+    private val ECHELON_BARS = mapOf("PL" to 1, "COY" to 2, "BN" to 3)
+
+    private fun drawEchelon(c: Canvas, cx: Float, dp: Float, echelon: String, col: Int) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = col; style = Paint.Style.FILL }
+        val edge  = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 1f * dp
+        }
+        ECHELON_DOTS[echelon]?.let { n ->
+            val r = 2.4f * dp; val gap = 5 * dp
+            val start = cx - ((n - 1) * gap) / 2f
+            for (i in 0 until n) {
+                val x = start + i * gap
+                c.drawCircle(x, 4 * dp, r, paint)
+                c.drawCircle(x, 4 * dp, r, edge)
+            }
+            return
+        }
+        ECHELON_BARS[echelon]?.let { n ->
+            val w = 2.5f * dp; val h = 7 * dp; val gap = 4 * dp
+            val start = cx - ((n - 1) * gap) / 2f
+            for (i in 0 until n) {
+                val x = start + i * gap
+                c.drawRect(x - w/2, 1.5f * dp, x + w/2, 1.5f * dp + h, paint)
+                c.drawRect(x - w/2, 1.5f * dp, x + w/2, 1.5f * dp + h, edge)
+            }
+        }
+    }
+
     // ── POI (yellow circle, neutral infrastructure) ──────────────────────────
 
     fun poi(res: Resources): Drawable {

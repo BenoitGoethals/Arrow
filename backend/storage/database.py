@@ -40,6 +40,12 @@ def _migrate(conn: object) -> None:
         # Report status lifecycle
         "ALTER TABLE reports ADD COLUMN status VARCHAR(20) DEFAULT 'RECEIVED'",
         "ALTER TABLE reports ADD COLUMN reviewer_note TEXT DEFAULT ''",
+        # Tactical control graphics — rotation for point symbols, full geometry
+        # for lines/polygons (FLET, FLOT, boundaries, AOs, etc.)
+        "ALTER TABLE tactical_objects ADD COLUMN rotation FLOAT DEFAULT 0",
+        "ALTER TABLE tactical_objects ADD COLUMN geometry TEXT DEFAULT ''",
+        # NATO echelon designator (TM/SEC/PL/COY/BN/BDE) for tactical graphics
+        "ALTER TABLE tactical_objects ADD COLUMN echelon VARCHAR(8) DEFAULT ''",
     ]
     for sql in migrations:
         try:

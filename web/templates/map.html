@@ -101,6 +101,41 @@
     .sb-section > summary h3 { margin: 0; }
     .sb-count { font-size: 0.7rem; color: #94a3b8; background: #1f2937;
                 border-radius: 8px; padding: 1px 6px; margin-left: auto; }
+
+    /* ── Tactical graphics palette ──────────────────────────────────── */
+    .tg-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin-top: 4px; }
+    .tg-btn  { background: #1a2233; color: #cbd5e1; border: 1px solid #2a3142;
+               border-radius: 4px; padding: 5px 6px; font: inherit; font-size: 0.72rem;
+               cursor: pointer; text-align: left; display: flex; gap: 5px; align-items: center; }
+    .tg-btn:hover  { border-color: #6ee7b7; color: #6ee7b7; }
+    .tg-btn.active { background: #1e3a2f; border-color: #6ee7b7; color: #6ee7b7; }
+    .tg-btn .tg-glyph { font-size: 0.95rem; line-height: 1; }
+    .tg-status { font-size: 0.7rem; color: #94a3b8; padding: 4px 0; min-height: 1em; }
+    .tg-cancel { background: #2a1010; color: #f87171; border-color: #7f1d1d; margin-top: 4px;
+                 width: 100%; }
+    .tg-rot-popup { position: absolute; top: 12px; right: 12px; z-index: 700;
+                    background: #161b25; border: 1px solid #2a3142; border-radius: 8px;
+                    padding: 10px 12px; font-size: 0.78rem; color: #cbd5e1;
+                    box-shadow: 0 6px 20px rgba(0,0,0,0.55); }
+    .tg-rot-popup .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .tg-rot-popup input[type=range] { flex: 1; }
+    .tg-rot-popup .actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .tg-rot-popup button { background: #1a2233; color: #cbd5e1; border: 1px solid #2a3142;
+                           border-radius: 4px; padding: 4px 10px; font: inherit; font-size: 0.78rem;
+                           cursor: pointer; }
+    .tg-rot-popup button.primary { background: #16a34a; border-color: #15803d; color: white;
+                                   font-weight: 600; }
+    .tg-rot-popup button:hover { filter: brightness(1.15); }
+    .tg-graphic-arrow { pointer-events: auto; }
+    .tg-ech-row { display: flex; gap: 4px; margin: 6px 0 4px; }
+    .tg-ech-chip { background: #1a2233; color: #94a3b8; border: 1px solid #2a3142;
+                   border-radius: 4px; padding: 3px 8px; font: inherit; font-size: 0.7rem;
+                   cursor: pointer; flex: 1; text-align: center; }
+    .tg-ech-chip:hover  { border-color: #6ee7b7; color: #cbd5e1; }
+    .tg-ech-chip.active { background: #1e3a2f; border-color: #6ee7b7; color: #6ee7b7;
+                          font-weight: 700; }
+    .tg-ech-label { color: #64748b; font-size: 0.66rem; text-transform: uppercase;
+                    letter-spacing: 0.1em; margin-bottom: 2px; }
 </style>
 {% endblock %}
 {% block content %}
@@ -125,6 +160,37 @@
 
         <h3 style="margin-top:1rem">Reports</h3>
         <div id="map-reports"><small style="color:#475569">Loading…</small></div>
+
+        <details class="sb-section" style="margin-top:1rem">
+            <summary><h3 style="display:inline">Tactical Graphics</h3>
+                <span id="tg-count" class="sb-count">0</span>
+            </summary>
+            <div class="tg-status" id="tg-status">Pick a graphic, then click on the map.</div>
+            <div class="tg-ech-label">Echelon</div>
+            <div class="tg-ech-row" id="tg-ech-row">
+                <button class="tg-ech-chip active" data-ech="">—</button>
+                <button class="tg-ech-chip" data-ech="TM">TM</button>
+                <button class="tg-ech-chip" data-ech="SEC">SEC</button>
+                <button class="tg-ech-chip" data-ech="PL">PL</button>
+                <button class="tg-ech-chip" data-ech="COY">COY</button>
+            </div>
+            <div class="tg-ech-label">Tactical task</div>
+            <div class="tg-grid">
+                <button class="tg-btn" data-tg="ATK_AXIS"><span class="tg-glyph">➤</span>Attack</button>
+                <button class="tg-btn" data-tg="COUNTERATTACK"><span class="tg-glyph">↺</span>Counterattack</button>
+                <button class="tg-btn" data-tg="DEF_AREA"><span class="tg-glyph">⛨</span>Defense</button>
+                <button class="tg-btn" data-tg="AMBUSH"><span class="tg-glyph">⋁</span>Ambush</button>
+                <button class="tg-btn" data-tg="BLOCK"><span class="tg-glyph">⊥</span>Block</button>
+                <button class="tg-btn" data-tg="BYPASS"><span class="tg-glyph">⤴</span>Bypass</button>
+                <button class="tg-btn" data-tg="WITHDRAW"><span class="tg-glyph">↩</span>Withdraw</button>
+                <button class="tg-btn" data-tg="OBJ_AREA"><span class="tg-glyph">▱</span>Objective area</button>
+                <button class="tg-btn" data-tg="BOUNDARY"><span class="tg-glyph">┼</span>Boundary</button>
+                <button class="tg-btn" data-tg="FLET"><span class="tg-glyph">▬</span>FLET</button>
+                <button class="tg-btn" data-tg="FLOT"><span class="tg-glyph">▬</span>FLOT</button>
+                <button class="tg-btn" data-tg="PHASE_LINE"><span class="tg-glyph">━</span>Phase line</button>
+            </div>
+            <button class="tg-btn tg-cancel" id="tg-cancel">✕ Cancel drawing</button>
+        </details>
     </aside>
     <div style="position:relative">
         <!-- Radial context menu overlay -->
@@ -352,10 +418,185 @@
         });
     }
 
+    // ── Tactical control graphics ────────────────────────────────────────
+    // type → { shape: 'point'|'line'|'polygon', stroke, fill, dash, glyph }
+    const TG_SPEC = {
+        ATK_AXIS:      { shape: 'point',   color: '#ef4444', label: 'Attack' },
+        COUNTERATTACK: { shape: 'point',   color: '#f97316', label: 'Counterattack' },
+        AMBUSH:        { shape: 'point',   color: '#dc2626', label: 'Ambush' },
+        DEF_AREA:      { shape: 'point',   color: '#3b82f6', label: 'Defense' },
+        BLOCK:         { shape: 'point',   color: '#3b82f6', label: 'Block' },
+        BYPASS:        { shape: 'point',   color: '#06b6d4', label: 'Bypass' },
+        WITHDRAW:      { shape: 'point',   color: '#a78bfa', label: 'Withdraw' },
+        BOUNDARY:      { shape: 'line',    color: '#94a3b8', dash: '8,4', weight: 3, label: 'Boundary' },
+        FLET:          { shape: 'line',    color: '#ef4444', dash: '6,4', weight: 3, label: 'FLET' },
+        FLOT:          { shape: 'line',    color: '#3b82f6', dash: null,  weight: 3, label: 'FLOT' },
+        PHASE_LINE:    { shape: 'line',    color: '#22c55e', dash: null,  weight: 2, label: 'Phase line' },
+        OBJ_AREA:      { shape: 'polygon', color: '#16a34a', fill: '#16a34a33', label: 'Objective area' },
+    };
+    const TG_TYPES = Object.keys(TG_SPEC);
+
+    function isTgType(type) { return TG_SPEC[type] != null; }
+
+    // NATO size designators rendered above the unit symbol. Each entry returns
+    // an SVG <g> string positioned to sit centred above (40, 4).
+    const ECHELON_DOTS = { TM: 2, SEC: 3 };
+    const ECHELON_BARS = { PL: 1, COY: 2, BN: 3 };
+    function echelonSvg(echelon, color = '#0d1117') {
+        if (!echelon) return '';
+        if (ECHELON_DOTS[echelon]) {
+            const n = ECHELON_DOTS[echelon];
+            const r = 2.6, gap = 7;
+            const start = 40 - ((n - 1) * gap) / 2;
+            let out = '';
+            for (let i = 0; i < n; i++) {
+                out += `<circle cx="${start + i * gap}" cy="-2" r="${r}"
+                    fill="${color}" stroke="white" stroke-width="0.8"/>`;
+            }
+            return out;
+        }
+        if (ECHELON_BARS[echelon]) {
+            const n = ECHELON_BARS[echelon];
+            const w = 2, h = 7, gap = 4;
+            const start = 40 - ((n - 1) * gap) / 2;
+            let out = '';
+            for (let i = 0; i < n; i++) {
+                out += `<rect x="${start + i * gap - w/2}" y="-6" width="${w}" height="${h}"
+                    fill="${color}" stroke="white" stroke-width="0.6"/>`;
+            }
+            return out;
+        }
+        return '';
+    }
+
+    /** Build a rotated SVG marker for an oriented point graphic. */
+    function tgPointIcon(obj) {
+        const spec = TG_SPEC[obj.type];
+        const rot  = (obj.rotation || 0) % 360;
+        const c    = spec.color;
+        // Each glyph is centred on (40,40) inside an 80×80 viewBox; rotate via
+        // a wrapping <g>. Add a thin black halo for contrast on bright tiles.
+        let glyph;
+        switch (obj.type) {
+            case 'ATK_AXIS':
+                glyph = `
+                    <line x1="40" y1="68" x2="40" y2="14" stroke="${c}"
+                          stroke-width="5" stroke-linecap="round"/>
+                    <polygon points="40,4 28,22 52,22" fill="${c}"/>`;
+                break;
+            case 'COUNTERATTACK':
+                // Curved/dashed arrow — the "counter-" element is the curl at base
+                glyph = `
+                    <path d="M 28 60 Q 18 50 28 40 L 40 40 L 40 14"
+                          stroke="${c}" stroke-width="5" fill="none"
+                          stroke-linecap="round" stroke-linejoin="round"
+                          stroke-dasharray="6,3"/>
+                    <polygon points="40,4 28,22 52,22" fill="${c}"/>`;
+                break;
+            case 'AMBUSH':
+                glyph = `<polyline points="14,52 40,12 66,52" fill="none"
+                          stroke="${c}" stroke-width="5"
+                          stroke-linecap="round" stroke-linejoin="round"/>`;
+                break;
+            case 'DEF_AREA':
+                // Open U facing the heading
+                glyph = `<polyline points="14,18 14,52 66,52 66,18" fill="none"
+                          stroke="${c}" stroke-width="5"
+                          stroke-linecap="round" stroke-linejoin="round"/>`;
+                break;
+            case 'BLOCK':
+                // Vertical line capped by a horizontal bar (T-shape facing up)
+                glyph = `
+                    <line x1="40" y1="60" x2="40" y2="22" stroke="${c}"
+                          stroke-width="5" stroke-linecap="round"/>
+                    <line x1="20" y1="22" x2="60" y2="22" stroke="${c}"
+                          stroke-width="6" stroke-linecap="round"/>`;
+                break;
+            case 'BYPASS':
+                // Curving arrow that goes around (right-bypass)
+                glyph = `
+                    <path d="M 26 64 Q 26 24 56 24" stroke="${c}"
+                          stroke-width="5" fill="none"
+                          stroke-linecap="round" stroke-linejoin="round"/>
+                    <polygon points="64,24 50,16 50,32" fill="${c}"/>`;
+                break;
+            case 'WITHDRAW':
+                // Arrow rearwards (down) with curl at the tip
+                glyph = `
+                    <line x1="40" y1="14" x2="40" y2="58" stroke="${c}"
+                          stroke-width="5" stroke-linecap="round"/>
+                    <polygon points="40,68 28,50 52,50" fill="${c}"/>
+                    <path d="M 40 14 Q 28 14 28 24" stroke="${c}"
+                          stroke-width="3" fill="none" stroke-linecap="round"/>`;
+                break;
+            default:
+                glyph = `<circle cx="40" cy="40" r="20" fill="${c}"/>`;
+        }
+        // Echelon size designator (dots/bars) at top of the icon — drawn
+        // OUTSIDE the rotation group so it stays upright.
+        const ech = echelonSvg(obj.echelon || '', c);
+        const html = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -16 88 88"
+                 width="48" height="52" class="tg-graphic-arrow">
+                <g transform="rotate(${rot} 40 40)" filter="drop-shadow(0 0 2px rgba(0,0,0,.7))">
+                    ${glyph}
+                </g>
+                ${ech}
+            </svg>`;
+        return L.divIcon({ html, className: 'tg-graphic-icon',
+                           iconSize: [48, 52], iconAnchor: [24, 32] });
+    }
+
+    function tgGeometry(obj) {
+        if (!obj.geometry) return null;
+        try { return JSON.parse(obj.geometry); } catch (_) { return null; }
+    }
+
+    function placeGraphic(obj) {
+        const key  = `to-${obj.id}`;
+        const spec = TG_SPEC[obj.type];
+        let layer;
+        if (spec.shape === 'point') {
+            layer = L.marker([obj.latitude, obj.longitude], { icon: tgPointIcon(obj) }).addTo(map);
+        } else {
+            const geom = tgGeometry(obj);
+            const coords = geom?.coords || [[obj.latitude, obj.longitude]];
+            const opts = { color: spec.color, weight: spec.weight || 3,
+                           dashArray: spec.dash, fillColor: spec.fill || spec.color,
+                           fillOpacity: spec.shape === 'polygon' ? 0.18 : 0 };
+            layer = (spec.shape === 'polygon')
+                ? L.polygon(coords, opts).addTo(map)
+                : L.polyline(coords, opts).addTo(map);
+            // Permanent echelon tag at the geometry's first vertex
+            if (obj.echelon) {
+                const tag = L.tooltip({ permanent: true, direction: 'right',
+                                        offset: [6, 0], className: 'tg-echelon-tag' })
+                    .setLatLng(coords[0])
+                    .setContent(`<b style="color:${spec.color}">${escHtml(obj.echelon)}</b>`);
+                layer.bindTooltip(tag);
+                layer.openTooltip();
+            }
+        }
+        const echTag = obj.echelon
+            ? `<span style="background:${spec.color};color:white;border-radius:3px;padding:0 5px;
+                            font-size:0.7rem;margin-left:6px">${escHtml(obj.echelon)}</span>`
+            : '';
+        layer.bindPopup(
+            `<b style="color:${spec.color}">${escHtml(spec.label)}</b>${echTag}` +
+            (obj.notes ? `<br/>${escHtml(obj.notes)}` : '') +
+            (spec.shape === 'point' ? `<br/><small>heading ${Math.round(obj.rotation||0)}°</small>` : '') +
+            ((role === 'ADMIN' || role === 'BATTLE_CAPTAIN')
+                ? `<br/><a href="#" onclick="window.__arrowDeleteEnemy(${obj.id});return false" style="color:#ef4444">Delete</a>`
+                : '')
+        );
+        state.markers.set(key, layer);
+    }
+
     function placeEnemy(obj) {
         const key = `to-${obj.id}`;
         const existing = state.markers.get(key);
         if (existing) { map.removeLayer(existing); state.markers.delete(key); }
+        if (isTgType(obj.type)) { placeGraphic(obj); return; }
         const isObjective = obj.type === 'OBJECTIVE';
         const icon = isObjective ? objectiveIcon() : enemyIcon(obj);
         const m = L.marker([obj.latitude, obj.longitude], { icon }).addTo(map);
@@ -414,7 +655,11 @@
             if (key.startsWith('to-')) { map.removeLayer(m); state.markers.delete(key); }
         });
         const cnt = document.getElementById('enemies-count');
-        if (cnt) cnt.textContent = state.tacticalObjects.size;
+        if (cnt) cnt.textContent = [...state.tacticalObjects.values()]
+            .filter(x => !isTgType(x.type)).length;
+        const tgCnt = document.getElementById('tg-count');
+        if (tgCnt) tgCnt.textContent = [...state.tacticalObjects.values()]
+            .filter(x => isTgType(x.type)).length;
         if (!enemyLayerVisible()) {
             // Update sidebar list but don't place map markers
             const list = document.getElementById('enemies');
@@ -563,11 +808,230 @@
     let _radialLat = 0, _radialLon = 0;
 
     map.on('dblclick', (e) => {
+        if (tgDraw.type) {
+            // Multi-vertex graphics finish on double-click
+            tgFinishDraw();
+            return;
+        }
         _radialLat = e.latlng.lat;
         _radialLon = e.latlng.lng;
         openRadial(e.originalEvent.clientX, e.originalEvent.clientY);
     });
     map.doubleClickZoom.disable();
+
+    // ── Tactical graphics drawing state machine ──────────────────────────
+    // Single-shape state: only one draw active at a time. `vertices` accumulates
+    // points for line/polygon shapes; `preview` is the live Leaflet layer that
+    // grows with the cursor between clicks. `echelon` is the currently-selected
+    // unit size designator (TM/SEC/PL/COY/"" for none).
+    const tgDraw = { type: null, vertices: [], preview: null, mouseLine: null, echelon: '' };
+
+    function tgSetStatus(msg) {
+        const el = document.getElementById('tg-status');
+        if (el) el.textContent = msg;
+    }
+
+    function tgSelect(type) {
+        tgCancelDraw();
+        if (!type) return;
+        tgDraw.type = type;
+        const spec = TG_SPEC[type];
+        document.querySelectorAll('.tg-btn[data-tg]').forEach(b =>
+            b.classList.toggle('active', b.dataset.tg === type));
+        if (spec.shape === 'point') {
+            tgSetStatus(`Click on the map to place ${spec.label}.`);
+        } else if (spec.shape === 'line') {
+            tgSetStatus(`Click vertices for ${spec.label}, double-click to finish.`);
+        } else {
+            tgSetStatus(`Click vertices for ${spec.label}, double-click to close polygon.`);
+        }
+        L.DomUtil.addClass(map.getContainer(), 'tg-drawing');
+    }
+
+    function tgCancelDraw() {
+        tgDraw.type = null;
+        tgDraw.vertices = [];
+        if (tgDraw.preview)   { map.removeLayer(tgDraw.preview);   tgDraw.preview = null; }
+        if (tgDraw.mouseLine) { map.removeLayer(tgDraw.mouseLine); tgDraw.mouseLine = null; }
+        document.querySelectorAll('.tg-btn[data-tg]').forEach(b => b.classList.remove('active'));
+        tgSetStatus('Pick a graphic, then click on the map.');
+        L.DomUtil.removeClass(map.getContainer(), 'tg-drawing');
+    }
+
+    async function tgFinishDraw() {
+        if (!tgDraw.type || tgDraw.vertices.length < 2) { tgCancelDraw(); return; }
+        const type  = tgDraw.type;
+        const spec  = TG_SPEC[type];
+        // De-duplicate the trailing vertex pair that double-click leaves behind
+        const verts = tgDraw.vertices.slice().filter((v, i, a) =>
+            i === 0 || v[0] !== a[i-1][0] || v[1] !== a[i-1][1]);
+        if (verts.length < 2) { tgCancelDraw(); return; }
+
+        // Reset the palette + status NOW so the user sees the action committed,
+        // but keep the preview on the map until the POST round-trips. We strip
+        // the rubber-band cursor line; the polyline/polygon stays visible.
+        if (tgDraw.mouseLine) { map.removeLayer(tgDraw.mouseLine); tgDraw.mouseLine = null; }
+        const previewLayer = tgDraw.preview;
+        tgDraw.preview = null;          // detach: cancel/save can't kill it
+        tgDraw.type = null;
+        tgDraw.vertices = [];
+        document.querySelectorAll('.tg-btn[data-tg]').forEach(b => b.classList.remove('active'));
+        L.DomUtil.removeClass(map.getContainer(), 'tg-drawing');
+        tgSetStatus('Saving…');
+
+        const ok = await tgPostObject({
+            type, latitude: verts[0][0], longitude: verts[0][1],
+            symbol_code: '', notes: '', rotation: 0,
+            geometry: JSON.stringify({ type: spec.shape, coords: verts }),
+            echelon: tgDraw.echelon || '',
+        });
+        // Either way, drop the preview now — placeGraphic has either taken over
+        // (success) or there's nothing to keep alive (failure).
+        if (previewLayer) map.removeLayer(previewLayer);
+        tgSetStatus(ok ? 'Saved. Pick a graphic, then click on the map.'
+                       : 'Save failed. Pick a graphic, then click on the map.');
+    }
+
+    async function tgPostObject(payload) {
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!r.ok) {
+                const txt = await r.text().catch(() => '');
+                console.warn('[tg] POST failed', r.status, txt);
+                alert(`Failed to save graphic (${r.status})${txt ? ': ' + txt : ''}`);
+                return false;
+            }
+            const o = await r.json();
+            console.log('[tg] saved', o);
+            state.tacticalObjects.set(o.id, o);
+            refreshEnemies();
+            return true;
+        } catch (err) {
+            console.error('[tg] POST error', err);
+            alert('Failed to save graphic: ' + (err.message || err));
+            return false;
+        }
+    }
+
+    // Click while a draw is active — consume the event before the radial menu sees it
+    map.on('click', (e) => {
+        if (!tgDraw.type) return;
+        const spec = TG_SPEC[tgDraw.type];
+        const ll   = [e.latlng.lat, e.latlng.lng];
+
+        if (spec.shape === 'point') {
+            // Show rotation popup, then save
+            tgPromptRotation(ll, tgDraw.type, tgDraw.echelon);
+            tgCancelDraw();
+            return;
+        }
+        // Line / polygon: accumulate vertex
+        tgDraw.vertices.push(ll);
+        if (tgDraw.preview) map.removeLayer(tgDraw.preview);
+        const opts = { color: spec.color, weight: spec.weight || 3,
+                       dashArray: spec.dash, fillColor: spec.fill || spec.color,
+                       fillOpacity: 0.15 };
+        tgDraw.preview = (spec.shape === 'polygon')
+            ? L.polygon(tgDraw.vertices, opts).addTo(map)
+            : L.polyline(tgDraw.vertices, opts).addTo(map);
+        tgSetStatus(`${spec.label}: ${tgDraw.vertices.length} vertex${tgDraw.vertices.length === 1 ? '' : 'es'}` +
+                    ` — double-click to finish.`);
+    });
+
+    // Live rubber-band line from last vertex → cursor for line/polygon
+    map.on('mousemove', (e) => {
+        if (!tgDraw.type) return;
+        const spec = TG_SPEC[tgDraw.type];
+        if (spec.shape === 'point' || tgDraw.vertices.length === 0) return;
+        if (tgDraw.mouseLine) map.removeLayer(tgDraw.mouseLine);
+        const last = tgDraw.vertices[tgDraw.vertices.length - 1];
+        tgDraw.mouseLine = L.polyline([last, [e.latlng.lat, e.latlng.lng]],
+            { color: spec.color, weight: 1, opacity: 0.6, dashArray: '4,3' }).addTo(map);
+    });
+
+    // Rotation picker for oriented point graphics
+    function tgPromptRotation(latlon, type, echelon) {
+        document.getElementById('tg-rot-popup')?.remove();
+        const spec = TG_SPEC[type];
+        const popup = document.createElement('div');
+        popup.id = 'tg-rot-popup';
+        popup.className = 'tg-rot-popup';
+        popup.innerHTML = `
+            <div style="font-weight:700;color:${spec.color};margin-bottom:6px">${spec.label}</div>
+            <div class="row">
+                <span>Heading</span>
+                <input id="tg-rot-range" type="range" min="0" max="359" value="0">
+                <span id="tg-rot-val" style="font-family:monospace;width:34px;text-align:right">0°</span>
+            </div>
+            <div class="row" style="margin-bottom:8px">
+                <span>Notes</span>
+                <input id="tg-rot-notes" type="text" placeholder="optional"
+                       style="flex:1;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:4px;padding:3px 6px;font:inherit;font-size:0.78rem">
+            </div>
+            <div class="actions">
+                <button onclick="document.getElementById('tg-rot-popup').remove()">Cancel</button>
+                <button class="primary" id="tg-rot-ok">Place</button>
+            </div>
+            <!-- Live preview -->
+            <svg id="tg-rot-preview" width="60" height="60" viewBox="0 0 80 80"
+                 style="display:block;margin:6px auto 0;background:#0d1117;border-radius:6px"></svg>`;
+        document.body.appendChild(popup);
+
+        const rotPreview = (rot) => {
+            const r = ((rot % 360) + 360) % 360;
+            const obj = { type, rotation: r, echelon };
+            const el = document.getElementById('tg-rot-preview');
+            el.innerHTML = '';  // clear
+            // Use the same icon factory by stripping its wrapper
+            const tmp = document.createElement('div');
+            tmp.innerHTML = tgPointIcon(obj).options.html;
+            const svg = tmp.querySelector('svg');
+            if (svg) {
+                el.innerHTML = svg.innerHTML;
+                el.setAttribute('viewBox', svg.getAttribute('viewBox'));
+            }
+        };
+        rotPreview(0);
+
+        document.getElementById('tg-rot-range').addEventListener('input', e => {
+            document.getElementById('tg-rot-val').textContent = e.target.value + '°';
+            rotPreview(parseInt(e.target.value, 10));
+        });
+        document.getElementById('tg-rot-ok').addEventListener('click', () => {
+            const rot   = parseInt(document.getElementById('tg-rot-range').value, 10) || 0;
+            const notes = document.getElementById('tg-rot-notes').value || '';
+            popup.remove();
+            tgPostObject({
+                type, latitude: latlon[0], longitude: latlon[1],
+                symbol_code: '', notes, rotation: rot, geometry: '',
+                echelon: echelon || '',
+            });
+        });
+    }
+
+    // Wire palette buttons
+    document.querySelectorAll('.tg-btn[data-tg]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const type = btn.dataset.tg;
+            if (tgDraw.type === type) tgCancelDraw();
+            else                       tgSelect(type);
+        });
+    });
+    document.getElementById('tg-cancel').addEventListener('click', tgCancelDraw);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') tgCancelDraw(); });
+
+    // Echelon chip selector — sticky across draws
+    document.querySelectorAll('.tg-ech-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            tgDraw.echelon = chip.dataset.ech;
+            document.querySelectorAll('.tg-ech-chip').forEach(c =>
+                c.classList.toggle('active', c === chip));
+        });
+    });
 
     function openRadial(cx, cy) {
         const bg   = document.getElementById('radial-bg');

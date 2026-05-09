@@ -98,6 +98,13 @@ class TacticalObjectIn(BaseModel):
     notes: str = ""
     visibility: str = "COMPANY"
     photo_id: int | None = None
+    # Heading clockwise from north for oriented point symbols (attack/ambush/defense).
+    rotation: float = 0.0
+    # JSON string: {"type":"point|line|polygon","coords":[[lat,lon],...]}.
+    # Empty = treat as point at (latitude, longitude).
+    geometry: str = ""
+    # NATO unit echelon: "" / "TM" / "SEC" / "PL" / "COY" / "BN" / "BDE"
+    echelon: str = ""
 
 
 class TacticalObjectOut(ORMModel):
@@ -111,6 +118,9 @@ class TacticalObjectOut(ORMModel):
     notes: str
     visibility: str
     photo_id: int | None
+    rotation: float = 0.0
+    geometry: str = ""
+    echelon: str = ""
 
 
 class PhotoOut(BaseModel):

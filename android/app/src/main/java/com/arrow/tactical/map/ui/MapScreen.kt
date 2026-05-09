@@ -63,7 +63,7 @@ import org.osmdroid.views.overlay.Marker
 
 // CATEGORY is gone — replaced by RadialMenu; ENEMY_TYPE and NOTES are direct bottom sheets
 private enum class MenuStep { ENEMY_TYPE, NOTES }
-private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
+private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON, TAC_GRAPHICS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -298,18 +298,34 @@ fun MapScreen(
         val res = map.resources
         val currentMeId = meId
 
-        map.overlays.removeAll { it is Marker }
+        // Wipe ALL transient overlays we own (markers + tactical graphic
+        // polylines/polygons) before rebuilding. The base map-events overlay
+        // sits on a different overlay slot and isn't a Marker/Polyline/Polygon.
+        map.overlays.removeAll {
+            it is Marker || it is org.osmdroid.views.overlay.Polyline ||
+            it is org.osmdroid.views.overlay.Polygon
+        }
 
         val visibleOps = when (overlayMode) {
-            OverlayMode.ALL        -> operators
-            OverlayMode.NONE       -> emptyList()
-            OverlayMode.ENEMIES    -> emptyList()
-            OverlayMode.OWN_PLATOON -> operators.filter { it.id in myPlatoonIds || it.id == currentMeId }
+            OverlayMode.ALL          -> operators
+            OverlayMode.NONE         -> emptyList()
+            OverlayMode.ENEMIES      -> emptyList()
+            OverlayMode.TAC_GRAPHICS -> emptyList()
+            OverlayMode.OWN_PLATOON  -> operators.filter { it.id in myPlatoonIds || it.id == currentMeId }
         }
-        val visibleEnemies = when (overlayMode) {
-            OverlayMode.ALL, OverlayMode.ENEMIES -> enemies
-            else -> emptyList()
-        }
+        // ENEMIES = legacy hostile/POI/objective markers only (no tactical graphics).
+        // TAC_GRAPHICS = ONLY the new tactical control graphics layer.
+        // ALL = everything tactical. OWN_PLATOON / NONE = nothing tactical.
+        val showLegacyHostiles = overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.ENEMIES
+        val showTacGraphics    = overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.TAC_GRAPHICS
+        val visibleEnemies = if (showLegacyHostiles)
+            enemies.filterNot { MilSymbolRenderer.isTacticalGraphic(it.type) ||
+                                MilSymbolRenderer.isTacticalLineOrPolygon(it.type) }
+        else emptyList()
+        val visibleGraphics = if (showTacGraphics)
+            enemies.filter { MilSymbolRenderer.isTacticalGraphic(it.type) ||
+                             MilSymbolRenderer.isTacticalLineOrPolygon(it.type) }
+        else emptyList()
 
         for (op in visibleOps) {
             if (op.latitude == null || op.longitude == null) continue
@@ -361,6 +377,11 @@ fun MapScreen(
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 map.overlays.add(this)
             }
+        }
+
+        // ── Tactical control graphics (Phase 2 render-only) ─────────────────
+        for (g in visibleGraphics) {
+            renderTacticalGraphic(map, res, g)
         }
 
         // Fire missions — always visible except in NONE mode
@@ -458,10 +479,11 @@ fun MapScreen(
             Spacer(Modifier.weight(1f))
 
             listOf(
-                OverlayMode.ALL         to "All",
-                OverlayMode.NONE        to "None",
-                OverlayMode.ENEMIES     to "Enemy",
-                OverlayMode.OWN_PLATOON to "Own Plt",
+                OverlayMode.ALL          to "All",
+                OverlayMode.NONE         to "None",
+                OverlayMode.ENEMIES      to "Enemy",
+                OverlayMode.OWN_PLATOON  to "Own Plt",
+                OverlayMode.TAC_GRAPHICS to "Tac Gfx",
             ).forEach { (mode, label) ->
                 val active = overlayMode == mode
                 Box(
@@ -737,6 +759,72 @@ private fun ObjectiveDetailDialog(
             }
         },
     )
+}
+
+/** Add a tactical control graphic (point / line / polygon) to the OSMdroid map. */
+private fun renderTacticalGraphic(
+    map: org.osmdroid.views.MapView,
+    res: android.content.res.Resources,
+    g: TacticalObjectDto,
+) {
+    if (com.arrow.tactical.map.MilSymbolRenderer.isTacticalGraphic(g.type)) {
+        // Oriented point graphic
+        val drawable = com.arrow.tactical.map.MilSymbolRenderer
+            .tacticalGraphic(res, g.type, g.rotation, g.echelon) ?: return
+        Marker(map).apply {
+            position = GeoPoint(g.latitude, g.longitude)
+            title    = "${g.type.replace('_', ' ')}${if (g.echelon.isNotBlank()) " · ${g.echelon}" else ""}"
+            snippet  = g.notes.ifBlank { "heading ${g.rotation.toInt()}°" }
+            icon     = drawable
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            map.overlays.add(this)
+        }
+        return
+    }
+    val style = com.arrow.tactical.map.MilSymbolRenderer.tacticalLineStyle(g.type) ?: return
+    val coords = parseGeometryCoords(g.geometry) ?: listOf(GeoPoint(g.latitude, g.longitude))
+    if (coords.size < 2) return
+    val dp = res.displayMetrics.density
+    if (com.arrow.tactical.map.MilSymbolRenderer.isTacticalPolygon(g.type)) {
+        val poly = org.osmdroid.views.overlay.Polygon(map).apply {
+            points = coords
+            fillPaint.color = (style.color and 0x00FFFFFF) or 0x33000000
+            outlinePaint.color = style.color
+            outlinePaint.strokeWidth = style.widthDp * dp
+            title    = "${g.type.replace('_', ' ')}${if (g.echelon.isNotBlank()) " · ${g.echelon}" else ""}"
+            snippet  = g.notes
+        }
+        map.overlays.add(poly)
+    } else {
+        val line = org.osmdroid.views.overlay.Polyline(map).apply {
+            setPoints(coords)
+            outlinePaint.color = style.color
+            outlinePaint.strokeWidth = style.widthDp * dp
+            if (style.dashOnDp > 0) {
+                outlinePaint.pathEffect = android.graphics.DashPathEffect(
+                    floatArrayOf(style.dashOnDp * dp, style.dashOffDp * dp), 0f)
+            }
+            title    = "${g.type.replace('_', ' ')}${if (g.echelon.isNotBlank()) " · ${g.echelon}" else ""}"
+            snippet  = g.notes
+        }
+        map.overlays.add(line)
+    }
+}
+
+/** Parse the JSON-encoded geometry into a list of OSMdroid GeoPoints (or null). */
+private fun parseGeometryCoords(geometry: String): List<GeoPoint>? {
+    if (geometry.isBlank()) return null
+    return runCatching {
+        val root = kotlinx.serialization.json.Json.parseToJsonElement(geometry).jsonObject
+        val arr  = root["coords"]?.jsonArray ?: return null
+        arr.map { pair ->
+            val ll = pair.jsonArray
+            GeoPoint(
+                ll[0].jsonPrimitive.content.toDouble(),
+                ll[1].jsonPrimitive.content.toDouble(),
+            )
+        }
+    }.getOrNull()
 }
 
 /** Walk the /hierarchy JSON and return all operator IDs in the same platoon as [myId]. */
