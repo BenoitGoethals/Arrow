@@ -220,3 +220,24 @@ class MapSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     object_count: Mapped[int] = mapped_column(Integer, default=0)
     payload: Mapped[str] = mapped_column(Text)   # JSON list of TacticalObjectOut dicts
+
+
+class StreamRecording(Base):
+    """Persisted record of an Android-produced video stream.
+
+    Frames are stored on disk as a single concatenated file:
+        [u32_be timestamp_ms_offset][u32_be jpeg_size][jpeg_bytes]  …
+
+    Always replayable as motion-JPEG via /streams/recordings/{id}/playback.
+    """
+    __tablename__ = "stream_recordings"
+
+    id:          Mapped[int]      = mapped_column(primary_key=True)
+    stream_id:   Mapped[str]      = mapped_column(String(120), index=True)
+    callsign:    Mapped[str]      = mapped_column(String(40))
+    operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    started_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    ended_at:    Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    frame_count: Mapped[int]      = mapped_column(Integer, default=0)
+    byte_size:   Mapped[int]      = mapped_column(Integer, default=0)
+    file_path:   Mapped[str]      = mapped_column(String(255))
