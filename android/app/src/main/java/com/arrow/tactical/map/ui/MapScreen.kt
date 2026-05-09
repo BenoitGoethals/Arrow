@@ -147,6 +147,15 @@ fun MapScreen(
         serverUrl = container.settingsRepository.currentServerUrl()
     }
 
+    // Keep the toggle in sync if the service self-terminates (network drop, etc.)
+    LaunchedEffect(Unit) {
+        while (true) {
+            val live = com.arrow.tactical.stream.CameraStreamService.isStreaming.get()
+            if (live != isStreaming) isStreaming = live
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+
     // Resolve own-platoon membership from hierarchy whenever meId becomes available
     LaunchedEffect(meId) {
         val id = meId ?: return@LaunchedEffect
@@ -477,17 +486,16 @@ fun MapScreen(
                 }
             }
 
-            // 📡 Stream toggle
-            IconButton(
-                onClick = {
+            // 📡 Stream toggle — Material3 IconToggleButton so checked/unchecked
+            // state is visually distinct (red filled background while live).
+            FilledIconToggleButton(
+                checked = isStreaming,
+                onCheckedChange = { wantOn ->
                     android.util.Log.i("StreamButton",
-                        "click: isStreaming=$isStreaming serviceFlag=" +
+                        "toggle wantOn=$wantOn serviceFlag=" +
                         "${com.arrow.tactical.stream.CameraStreamService.isStreaming.get()}")
-                    // Always trust the live service flag over the local UI state — a
-                    // foreground service killed externally would leave UI stuck "on".
-                    val live = com.arrow.tactical.stream.CameraStreamService.isStreaming.get()
-                    if (live) {
-                        // Stop: send STOP action intent so the service cleans up gracefully
+                    if (!wantOn) {
+                        // Going OFF: stop the service
                         context.startService(
                             android.content.Intent(context,
                                 com.arrow.tactical.stream.CameraStreamService::class.java)
@@ -495,23 +503,27 @@ fun MapScreen(
                         )
                         isStreaming = false
                     } else {
-                        // Sync local state in case the user just exited from the map and back
+                        // Going ON: re-sync against the live service flag, then start
                         isStreaming = false
                         val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
                             context, android.Manifest.permission.CAMERA
                         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-
                         if (hasPerm) scope.launch { startStream() }
                         else         cameraPermLauncher.launch(android.Manifest.permission.CAMERA)
                     }
                 },
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(32.dp),
+                colors = IconButtonDefaults.filledIconToggleButtonColors(
+                    containerColor        = Color(0xFF1A2233),
+                    contentColor          = Color(0xFFCBD5E1),
+                    checkedContainerColor = Color(0xFFEF4444),
+                    checkedContentColor   = Color.White,
+                ),
             ) {
                 Icon(
                     if (isStreaming) Icons.Filled.VideocamOff else Icons.Filled.Videocam,
                     contentDescription = if (isStreaming) "Stop stream" else "Start stream",
                     modifier = Modifier.size(18.dp),
-                    tint = if (isStreaming) Color(0xFFEF4444) else Color(0xFFCBD5E1),
                 )
             }
 
