@@ -255,6 +255,9 @@
 
     const map = L.map('map').setView([50.85, 4.35], 8);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    // Used by loadEnemies() to suppress the one-shot auto-fit once the user
+    // has actively panned/zoomed somewhere of their own choosing.
+    map.on('dragend zoomend', () => { state.userMovedMap = true; });
 
     // State
     const state = {
@@ -1901,10 +1904,30 @@
 
     async function loadEnemies() {
         const r = await api('/tactical-objects');
-        if (!r.ok) return;
+        if (!r.ok) {
+            console.warn('[arrow] /tactical-objects fetch failed', r.status);
+            return;
+        }
         const list = await r.json();
+        const tgCount     = list.filter(o => isTgType(o.type)).length;
+        const legacyCount = list.length - tgCount;
+        console.log(`[arrow] loaded ${list.length} tactical objects ` +
+                    `(${legacyCount} hostile/POI/obj, ${tgCount} graphics)`);
         state.tacticalObjects = new Map(list.map(o => [o.id, o]));
         refreshEnemies();
+        // Auto-fit ONCE per session if the user hasn't moved the map yet — the
+        // default Brussels-area view often hides the simulator's data.
+        if (!state.userMovedMap && (tgCount > 0 || legacyCount > 0)) {
+            const pts = [];
+            state.tacticalObjects.forEach(o => {
+                pts.push([o.latitude, o.longitude]);
+                try {
+                    const g = JSON.parse(o.geometry || '{}');
+                    if (Array.isArray(g.coords)) g.coords.forEach(p => pts.push(p));
+                } catch (_) {}
+            });
+            if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.25));
+        }
     }
 
     function connectWS() {
