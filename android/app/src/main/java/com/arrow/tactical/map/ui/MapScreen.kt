@@ -65,9 +65,10 @@ private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
-    container:   AppContainer,
-    onCallFire:  (lat: Double, lon: Double) -> Unit = { _, _ -> },
-    onReport:    (lat: Double, lon: Double) -> Unit = { _, _ -> },
+    container:    AppContainer,
+    onCallFire:   (lat: Double, lon: Double) -> Unit = { _, _ -> },
+    onReport:     (lat: Double, lon: Double) -> Unit = { _, _ -> },
+    onOpenMortar: (lat: Double, lon: Double) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -512,6 +513,11 @@ fun MapScreen(
                     val lat = point.latitude; val lon = point.longitude
                     pendingPoint = null; pendingScreenPos = null
                     onReport(lat, lon)
+                },
+                RadialItem("💣", "Mortar\nFDC", Color(0xFFD97706)) {
+                    val lat = point.latitude; val lon = point.longitude
+                    pendingPoint = null; pendingScreenPos = null
+                    onOpenMortar(lat, lon)
                 },
                 RadialItem("📍", "POI",     Color(0xFFD97706)) {
                     selectedType = EnemyType.POI

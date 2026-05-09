@@ -92,6 +92,7 @@
 <main>
     {% block content %}{% endblock %}
 </main>
+
 <div id="arrow-toast-container"></div>
 <script>
     window.ARROW_BACKEND_URL = "{{ backend_url }}";
@@ -499,7 +500,7 @@
             try {
                 const e = JSON.parse(ev.data);
                 if (e.channel === 'chat')         showToast(e);
-                if (e.channel === 'fire-mission') { showFireMissionAlert(e); triggerAudioAlert('fire'); }
+                if (e.channel === 'fire-mission') { showFireMissionAlert(e); if ((e.data||{}).weapon !== 'L16_81MM') triggerAudioAlert('fire'); }
                 if (e.channel === 'alert')        { handleTacAlert(e); }
                 if (e.channel === 'stream')       handleStreamEvent(e);
             } catch (_) {}

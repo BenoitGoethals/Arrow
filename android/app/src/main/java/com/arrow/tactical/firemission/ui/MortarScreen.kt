@@ -10,14 +10,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arrow.tactical.di.AppContainer
+import com.google.android.gms.location.LocationServices
 import com.arrow.tactical.network.GunIn
 import com.arrow.tactical.network.LatLon
 import com.arrow.tactical.network.MgrsConverter
@@ -51,6 +54,7 @@ fun MortarScreen(
     onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var gunCount by remember { mutableStateOf(2) }   // 1..4
     var guns by remember { mutableStateOf(List(4) { GunInput(callsign = "M${it + 1}") }) }
     var pattern  by remember { mutableStateOf("POINT") }
@@ -167,26 +171,62 @@ fun MortarScreen(
                         label = { Text("Callsign") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
-                        value = g.mgrs,
-                        onValueChange = { v ->
-                            val up = v.uppercase()
-                            val parsed = runCatching { MgrsConverter.decode(up) }.getOrNull()
-                            guns = guns.toMutableList().also {
-                                it[i] = it[i].copy(
-                                    mgrs = up,
-                                    lat = parsed?.first ?: it[i].lat,
-                                    lon = parsed?.second ?: it[i].lon,
-                                    mgrsErr = false,
-                                )
-                            }
-                        },
-                        label = { Text("Position MGRS") },
-                        placeholder = { Text("e.g. 31U FT 12345 67890") },
-                        isError = g.mgrsErr,
-                        modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = g.mgrs,
+                            onValueChange = { v ->
+                                val up = v.uppercase()
+                                val parsed = runCatching { MgrsConverter.decode(up) }.getOrNull()
+                                guns = guns.toMutableList().also {
+                                    it[i] = it[i].copy(
+                                        mgrs = up,
+                                        lat = parsed?.first ?: it[i].lat,
+                                        lon = parsed?.second ?: it[i].lon,
+                                        mgrsErr = false,
+                                    )
+                                }
+                            },
+                            label = { Text("Position MGRS") },
+                            placeholder = { Text("e.g. 31U FT 12345 67890") },
+                            isError = g.mgrsErr,
+                            modifier = Modifier.weight(1f), singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                        )
+                        val gunIndex = i
+                        IconButton(
+                            onClick = {
+                                try {
+                                    LocationServices.getFusedLocationProviderClient(context)
+                                        .lastLocation
+                                        .addOnSuccessListener { loc ->
+                                            if (loc != null) {
+                                                val mg = runCatching {
+                                                    MgrsConverter.encode(loc.latitude, loc.longitude)
+                                                }.getOrDefault("")
+                                                guns = guns.toMutableList().also {
+                                                    it[gunIndex] = it[gunIndex].copy(
+                                                        mgrs = mg,
+                                                        lat  = loc.latitude,
+                                                        lon  = loc.longitude,
+                                                        alt  = "%.0f".format(loc.altitude),
+                                                        mgrsErr = false,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                } catch (_: SecurityException) {}
+                            },
+                        ) {
+                            Icon(
+                                Icons.Filled.MyLocation,
+                                contentDescription = "Own position",
+                                tint = Color(0xFF34D399),
+                            )
+                        }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         OutlinedTextField(
                             value = g.alt,
@@ -384,17 +424,60 @@ fun MortarScreen(
                             val mgrs = runCatching {
                                 MgrsConverter.encode(s.impact.latitude, s.impact.longitude)
                             }.getOrDefault("%.4f, %.4f".format(s.impact.latitude, s.impact.longitude))
-                            if (s.error != null) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
                                 Text(
-                                    "  rd ${idx + 1}: ⚠ ${s.error}",
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                                    "Round ${idx + 1}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFD97706),
                                 )
-                            } else {
-                                Text(
-                                    "  rd ${idx + 1}: Ch ${s.charge}  QE ${s.qeMils}m  Defl ${s.deflMils}m  TOF ${s.tofS}s  R ${s.rangeM.toInt()}m  → $mgrs",
-                                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                                )
+                                if (s.error != null) {
+                                    Text(
+                                        "⚠ ${s.error}",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                                    )
+                                } else {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Column {
+                                            Text("Ch", style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${s.charge}", fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                                        }
+                                        Column {
+                                            Text("QE", style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${s.qeMils} mil", fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                                        }
+                                        Column {
+                                            Text("Defl", style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${s.deflMils} mil", fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                                        }
+                                        Column {
+                                            Text("TOF", style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${s.tofS}s", fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                                        }
+                                        Column {
+                                            Text("Range", style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("${s.rangeM.toInt()} m", fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                                        }
+                                    }
+                                    Text(
+                                        "→ $mgrs",
+                                        fontFamily = FontFamily.Monospace, fontSize = 13.sp,
+                                        color = Color(0xFF34D399),
+                                    )
+                                }
                             }
                         }
                     }

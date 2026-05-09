@@ -89,31 +89,6 @@ async def submit_mission(
     return fm
 
 
-@router.patch("/{fm_id}", response_model=FireMissionOut)
-async def update_mission(
-    fm_id:   int,
-    payload: FireMissionUpdate,
-    db:      Session  = Depends(get_db),
-    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
-) -> FireMission:
-    """Acknowledge, assign to FDC, change status, or add notes. Requires BATTLE_CAPTAIN or ADMIN."""
-    fm = db.get(FireMission, fm_id)
-    if not fm:
-        raise HTTPException(status.HTTP_404_NOT_FOUND)
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(fm, field, value)
-    db.commit()
-    db.refresh(fm)
-
-    out = FireMissionOut.model_validate(fm).model_dump(mode="json")
-    await broadcaster.broadcast({
-        "channel": "fire-mission",
-        "event":   "updated",
-        "data":    {**out, "updated_by": current.callsign},
-    })
-    return fm
-
-
 # ── L16 81 mm mortar plan: solve + submit ───────────────────────────────────
 
 def _validate_mortar_plan(plan: MortarPlanIn) -> tuple[str, str]:
@@ -219,6 +194,31 @@ async def submit_mortar(
             "impacts":  impacts,
             "guns":     result["guns"],
         },
+    })
+    return fm
+
+
+@router.patch("/{fm_id}", response_model=FireMissionOut)
+async def update_mission(
+    fm_id:   int,
+    payload: FireMissionUpdate,
+    db:      Session  = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> FireMission:
+    """Acknowledge, assign to FDC, change status, or add notes. Requires BATTLE_CAPTAIN or ADMIN."""
+    fm = db.get(FireMission, fm_id)
+    if not fm:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(fm, field, value)
+    db.commit()
+    db.refresh(fm)
+
+    out = FireMissionOut.model_validate(fm).model_dump(mode="json")
+    await broadcaster.broadcast({
+        "channel": "fire-mission",
+        "event":   "updated",
+        "data":    {**out, "updated_by": current.callsign},
     })
     return fm
 

@@ -3,6 +3,7 @@ package com.arrow.tactical.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Adjust
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Map
@@ -46,10 +47,11 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
     data object Alerts : Tab("tab/alerts", "Alerts", Icons.Filled.Warning)
     data object Chat : Tab("tab/chat", "Chat", Icons.Filled.Email)
     data object Reports : Tab("tab/reports", "Reports", Icons.Filled.Flag)
+    data object Mortar : Tab("tab/mortar", "Mortar FDC", Icons.Filled.Adjust)
     data object Settings : Tab("tab/settings", "Settings", Icons.Filled.Settings)
 }
 
-private val TABS = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Settings)
+private val TABS = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Mortar, Tab.Settings)
 
 object Routes {
     const val LOGIN = "login"
@@ -134,7 +136,8 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                         if (lat.isNaN()) tabNav.navigate("fire-mission")
                         else tabNav.navigate("fire-mission?lat=$lat&lon=$lon")
                     },
-                    onReport   = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
+                    onReport     = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
+                    onOpenMortar = { lat, lon -> tabNav.navigate("mortar?lat=$lat&lon=$lon") },
                 )
             }
             composable(
@@ -201,6 +204,9 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                 )
             }
             composable(Tab.Alerts.route) { AlertsScreen(container.alertRepository) }
+            composable(Tab.Mortar.route) {
+                MortarScreen(container = container, onBack = { tabNav.popBackStack() })
+            }
             composable(Tab.Chat.route) { MessagingScreen(container) }
             composable(
                 "${Tab.Reports.route}?lat={lat}&lon={lon}",
