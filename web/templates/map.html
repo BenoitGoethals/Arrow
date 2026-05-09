@@ -234,6 +234,8 @@
                 <button class="overlay-btn" data-overlay="enemies">⚠ Enemy</button>
                 <button class="overlay-btn" data-overlay="platoon">🪖 Own Plt</button>
                 <button class="overlay-btn active" id="cbrn-toggle">☢ CBRN</button>
+                <button class="overlay-btn active" id="tg-toggle" title="Tactical control graphics">📐 Tac Gfx</button>
+                <button class="overlay-btn" id="tg-fit" title="Fit map to tactical graphics">🎯 Fit</button>
             </div>
         </div>
         <div id="map"></div>
@@ -263,6 +265,7 @@
         cbrnReports: new Map(),     // id -> parsed CBRN payload
         cbrnLayers:  new Map(),     // id -> [marker, zone1, zone2]
         cbrnVisible: true,
+        tgVisible: true,            // independent layer for tactical control graphics
         markers: new Map(),
         fmMarkers: new Map(),       // fm id -> Leaflet marker
         fmImpactLayers: new Map(),  // fm id -> Leaflet LayerGroup of impact splashes
@@ -379,7 +382,12 @@
     }
 
     function enemyLayerVisible() {
+        // Hostiles / POI / Objective markers — gated by overlay mode.
         return state.overlayMode === 'all' || state.overlayMode === 'enemies';
+    }
+    function tgLayerVisible() {
+        // Tactical control graphics — INDEPENDENT toggle, default on.
+        return state.tgVisible !== false;
     }
 
     function placeOperator(op) {
@@ -660,20 +668,9 @@
         const tgCnt = document.getElementById('tg-count');
         if (tgCnt) tgCnt.textContent = [...state.tacticalObjects.values()]
             .filter(x => isTgType(x.type)).length;
-        if (!enemyLayerVisible()) {
-            // Update sidebar list but don't place map markers
-            const list = document.getElementById('enemies');
-            const items = [...state.tacticalObjects.values()].sort((a, b) => a.id - b.id);
-            list.innerHTML = items.length === 0 ? '<small style="color:#94a3b8">none</small>' :
-                items.map(o => `<div class="op" onclick="__arrowFocus(${o.latitude},${o.longitude})">
-                    <span class="dot offline" style="background:#ef4444"></span>
-                    <span>${o.type}</span>
-                    <span style="color:#94a3b8;font-size:0.75rem;margin-left:auto">#${o.id}</span>
-                </div>`).join('');
-            return;
-        }
-        state.tacticalObjects.forEach(placeEnemy);
 
+        // Sidebar list always reflects everything in state, even when both
+        // map layers are hidden — clicking an item still pans/zooms there.
         const list = document.getElementById('enemies');
         const items = [...state.tacticalObjects.values()].sort((a, b) => a.id - b.id);
         list.innerHTML = items.length === 0 ? '<small style="color:#94a3b8">none</small>' :
@@ -682,6 +679,16 @@
                 <span>${o.type}</span>
                 <span style="color:#94a3b8;font-size:0.75rem;margin-left:auto">#${o.id}</span>
             </div>`).join('');
+
+        // Two independent layers:
+        //   • hostiles/POI/objective  ← gated by overlay mode (enemyLayerVisible)
+        //   • tactical control graphics ← gated by the standalone Tac Gfx toggle
+        const showLegacy = enemyLayerVisible();
+        const showTg     = tgLayerVisible();
+        state.tacticalObjects.forEach(obj => {
+            const isTg = isTgType(obj.type);
+            if (isTg ? showTg : showLegacy) placeEnemy(obj);
+        });
     }
 
     window.__arrowFocus = (lat, lon) => map.setView([lat, lon], 14);
@@ -1686,6 +1693,31 @@
         document.getElementById('cbrn-toggle').classList.toggle('active', state.cbrnVisible);
         if (state.cbrnVisible) refreshAllCbrn();
         else state.cbrnLayers.forEach((_, id) => clearCbrnLayer(id));
+    });
+
+    // Independent Tactical Graphics layer toggle — sits on top of overlay mode.
+    document.getElementById('tg-toggle').addEventListener('click', () => {
+        state.tgVisible = !state.tgVisible;
+        document.getElementById('tg-toggle').classList.toggle('active', state.tgVisible);
+        refreshEnemies();
+    });
+
+    // Fit the map to the bounding box of all tactical graphics in state.
+    document.getElementById('tg-fit').addEventListener('click', () => {
+        const pts = [];
+        state.tacticalObjects.forEach(o => {
+            if (!isTgType(o.type)) return;
+            pts.push([o.latitude, o.longitude]);
+            try {
+                const g = JSON.parse(o.geometry || '{}');
+                if (Array.isArray(g.coords)) g.coords.forEach(p => pts.push(p));
+            } catch (_) {}
+        });
+        if (pts.length === 0) {
+            alert('No tactical graphics to fit. Run the simulator first:\n  uv run arrow-battlefield');
+            return;
+        }
+        map.fitBounds(L.latLngBounds(pts).pad(0.2));
     });
 
     async function loadMapReports() {
