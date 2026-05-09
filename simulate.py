@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import math
 import random
@@ -929,6 +930,332 @@ async def run_cas_requests(client: httpx.AsyncClient,
                      op.callsign, target_desc[:26], grid, aircraft, ordnance, count)
 
 
+# ── Operation Dendermonde — tactical control graphics ───────────────────────
+#
+# One-shot setup that overlays the moving simulation with the doctrinal
+# graphics for a Coy attack: company OBJ, FLOT/FLET, phase lines, boundaries,
+# a hierarchy of attack axes (PL → SEC → TM), reserve in defence with a
+# pre-planned counter-attack, and the usual obstacle / withdraw graphics.
+#
+# Coordinates align with the ROUTES dictionary above so the graphics tell
+# the same story as the moving operators.
+
+# Centre of OBJ EAGLE — the company objective enveloping the three platoon
+# objectives (Bogaerdpark / Scheldebrug / NE industrial).
+_OP_CENTER = (51.0355, 4.1015)
+
+# Spans of the play area, derived from ROUTES above.
+_LD_LAT     = 51.0188   # line of departure (staging line, south)
+_AP_LAT     = 51.0335   # assault position (just south of objectives)
+_FLET_LAT   = 51.0382   # estimated forward line of enemy troops
+_WEST_LON   = 4.0870
+_CENTRE_LON = 4.1015
+_EAST_LON   = 4.1140
+_BOUND_W    = 4.0945    # boundary west:  between BRAVO and ALPHA
+_BOUND_E    = 4.1080    # boundary east:  between ALPHA and CHARLIE
+
+
+def _pl_axis(plt: str) -> tuple[float, float, float]:
+    """Return (lat, lon, heading-deg) for the given platoon's attack-axis
+    centred between LD and Assault Position. Heading is roughly toward the
+    platoon objective from that point."""
+    if plt == "BRAVO":
+        return (51.0265, 4.0930, 10)         # north-north-east
+    if plt == "CHARLIE":
+        return (51.0265, 4.1140, 350)        # almost due north
+    return (51.0265, 4.1010, 0)              # ALPHA — due north
+
+
+def _operation_graphics() -> list[dict]:
+    """Return the full list of TacticalObjectIn payloads for OPERATION DENDERMONDE."""
+    out: list[dict] = []
+
+    # ── COY objective area (envelops all three platoon objectives) ──────
+    poly_obj = [
+        (51.0345, 4.0980), (51.0395, 4.0985),
+        (51.0395, 4.1115), (51.0345, 4.1115),
+    ]
+    out.append({
+        "type": "OBJ_AREA",
+        "latitude":  poly_obj[0][0], "longitude": poly_obj[0][1],
+        "echelon": "COY",
+        "notes":   "OBJ EAGLE — Delta Coy company objective",
+        "geometry": json.dumps({"type": "polygon",
+                                "coords": [list(p) for p in poly_obj]}),
+    })
+
+    # ── FLOT — own forward line, aligned with the LD ──
+    flot = [(_LD_LAT, _WEST_LON - 0.005), (_LD_LAT, _CENTRE_LON),
+            (_LD_LAT, _EAST_LON + 0.005)]
+    out.append({
+        "type": "FLOT", "echelon": "COY",
+        "latitude": flot[0][0], "longitude": flot[0][1],
+        "notes":  "FLOT — DELTA Coy",
+        "geometry": json.dumps({"type": "line",
+                                "coords": [list(p) for p in flot]}),
+    })
+
+    # ── FLET — estimated enemy forward line ──
+    flet = [(_FLET_LAT, _WEST_LON - 0.005),
+            (_FLET_LAT - 0.001, _CENTRE_LON),
+            (_FLET_LAT, _EAST_LON + 0.005)]
+    out.append({
+        "type": "FLET",
+        "latitude": flet[0][0], "longitude": flet[0][1],
+        "notes":  "Estimated FLET — coy(+) defending OBJ",
+        "geometry": json.dumps({"type": "line",
+                                "coords": [list(p) for p in flet]}),
+    })
+
+    # ── Phase lines: ALPHA (LD) and BRAVO (Assault Position) ──
+    pl_alpha = [(_LD_LAT, _WEST_LON - 0.005), (_LD_LAT, _EAST_LON + 0.005)]
+    pl_bravo = [(_AP_LAT, _WEST_LON - 0.005), (_AP_LAT, _EAST_LON + 0.005)]
+    out.append({
+        "type": "PHASE_LINE",
+        "latitude": pl_alpha[0][0], "longitude": pl_alpha[0][1],
+        "notes":  "PL ALPHA — Line of Departure (H-hour)",
+        "geometry": json.dumps({"type": "line",
+                                "coords": [list(p) for p in pl_alpha]}),
+    })
+    out.append({
+        "type": "PHASE_LINE",
+        "latitude": pl_bravo[0][0], "longitude": pl_bravo[0][1],
+        "notes":  "PL BRAVO — Assault Position",
+        "geometry": json.dumps({"type": "line",
+                                "coords": [list(p) for p in pl_bravo]}),
+    })
+
+    # ── Boundaries between platoons ──
+    for lon, label in ((_BOUND_W, "BRAVO // ALPHA"),
+                       (_BOUND_E, "ALPHA // CHARLIE")):
+        out.append({
+            "type": "BOUNDARY", "echelon": "PL",
+            "latitude": _LD_LAT, "longitude": lon,
+            "notes":  f"Inter-platoon boundary  {label}",
+            "geometry": json.dumps({"type": "line",
+                                    "coords": [[_LD_LAT, lon], [_FLET_LAT, lon]]}),
+        })
+
+    # ── Attack axes — PL → SEC → TM ──
+    for plt in ("ALPHA", "BRAVO", "CHARLIE"):
+        plat, plon, head = _pl_axis(plt)
+        out.append({
+            "type": "ATK_AXIS", "echelon": "PL", "rotation": head,
+            "latitude": plat, "longitude": plon,
+            "notes": f"{plt} PL — attack axis",
+        })
+        # Two sections — small lateral spread, slightly forward
+        for sec_num, dlon in ((1, -0.0015), (2, +0.0015)):
+            out.append({
+                "type": "ATK_AXIS", "echelon": "SEC",
+                "rotation": head,
+                "latitude":  plat + 0.0015,
+                "longitude": plon + dlon,
+                "notes": f"{plt}-{sec_num} SEC",
+            })
+        # Lead TM of the lead section
+        out.append({
+            "type": "ATK_AXIS", "echelon": "TM",
+            "rotation": head,
+            "latitude":  plat + 0.0030,
+            "longitude": plon - 0.0010,
+            "notes": f"{plt}-1-1 TM lead",
+        })
+
+    # ── Reserve PL in defence at LD, CATK on order ──
+    out.append({
+        "type": "DEF_AREA", "echelon": "PL", "rotation": 0,
+        "latitude": _LD_LAT - 0.001, "longitude": _CENTRE_LON,
+        "notes":  "Reserve PL — hasty defence at LD",
+    })
+    out.append({
+        "type": "COUNTERATTACK", "echelon": "PL", "rotation": 45,
+        "latitude": _LD_LAT + 0.0010, "longitude": _CENTRE_LON - 0.0030,
+        "notes":  "ON-ORDER CATK — reserve into west flank",
+    })
+
+    # ── Suspected enemy ambush + bypass + block + withdraw ──
+    out.append({
+        "type": "AMBUSH", "echelon": "SEC", "rotation": 200,
+        "latitude": 51.0310, "longitude": 4.1010,
+        "notes":  "EN AMBUSH — suspected RPG team at chokepoint",
+    })
+    out.append({
+        "type": "BYPASS", "echelon": "PL", "rotation": 90,
+        "latitude": 51.0315, "longitude": 4.1040,
+        "notes":  "Bypass east of suspected ambush — ALPHA alt route",
+    })
+    out.append({
+        "type": "BLOCK", "echelon": "COY", "rotation": 90,
+        "latitude": _OP_CENTER[0], "longitude": _EAST_LON + 0.0030,
+        "notes":  "Block east — interdict EN reinforcement axis",
+    })
+    out.append({
+        "type": "WITHDRAW", "echelon": "COY", "rotation": 180,
+        "latitude": _OP_CENTER[0], "longitude": _CENTRE_LON,
+        "notes":  "Withdraw route — south through PL ALPHA, RV at FLOT centre",
+    })
+
+    return out
+
+
+# Enemy contacts pre-planted on/around OBJ — gives the moving sim something
+# to advance against from the very first frame.
+_OP_ENEMY_PLANT: list[dict] = [
+    dict(type="INFANTRY",  sidc="SHGPUCI-----",
+         lat=51.0370, lon=4.0995, notes="EN platoon — defending Scheldebrug"),
+    dict(type="INFANTRY",  sidc="SHGPUCI-----",
+         lat=51.0372, lon=4.1015, notes="EN platoon — Bogaerdpark north edge"),
+    dict(type="INFANTRY",  sidc="SHGPUCI-----",
+         lat=51.0375, lon=4.1075, notes="EN section — NE industrial"),
+    dict(type="ARMOR",     sidc="SHGPUCA-----",
+         lat=51.0388, lon=4.1015, notes="EN T-72 in hull-down position"),
+    dict(type="ARTILLERY", sidc="SHGPUCF-----",
+         lat=51.0410, lon=4.1010, notes="EN 120 mm mortar baseplate, est."),
+    dict(type="AIR_DEFENSE", sidc="SHGPUCD-----",
+         lat=51.0395, lon=4.1100, notes="EN MANPADS / ZU-23 covering NE"),
+    dict(type="SNIPER",    sidc="SHGPUCIS----",
+         lat=51.0365, lon=4.1035, notes="EN sniper team — church tower"),
+    dict(type="VEHICLE",   sidc="SHGPEV------",
+         lat=51.0380, lon=4.0985, notes="Technical w/ HMG — west bank"),
+    dict(type="UNKNOWN",   sidc="SUGPU-------",
+         lat=51.0405, lon=4.0980, notes="Unknown contact — recce reports"),
+    dict(type="POI",       sidc="SNGPI-------",
+         lat=51.0260, lon=4.1015, notes="POI — fuel station, RV for resupply"),
+]
+
+
+async def plant_operation(client: httpx.AsyncClient, admin_op: SimOp) -> None:
+    """One-shot: plant Operation Dendermonde graphics + enemy laydown."""
+    if not admin_op.token:
+        log.warning("Cannot plant operation graphics — admin not logged in")
+        return
+
+    gfx = _operation_graphics()
+    log.info("── Planting Operation Dendermonde — %d tactical graphics + "
+             "%d enemy contacts ─────", len(gfx), len(_OP_ENEMY_PLANT))
+
+    n_ok = 0
+    for item in gfx:
+        r = await api(client, "POST", "/tactical-objects",
+                      token=admin_op.token, json=item)
+        if r:
+            n_ok += 1
+            tag = item.get("echelon") or "—"
+            log.info("  📐 %-13s  %-4s  %s",
+                     item["type"], tag, (item.get("notes") or "").split("\n", 1)[0][:64])
+
+    for e in _OP_ENEMY_PLANT:
+        notes = f"{e['notes']}  MGRS: {mgrs(e['lat'], e['lon'])}"
+        r = await api(client, "POST", "/tactical-objects",
+                      token=admin_op.token,
+                      json={"type": e["type"], "symbol_code": e["sidc"],
+                            "latitude": round(e["lat"], 6),
+                            "longitude": round(e["lon"], 6),
+                            "notes": notes, "visibility": "COMPANY"})
+        if r:
+            n_ok += 1
+            log.info("  ⚠️  %-12s  %s", e["type"], e["notes"][:64])
+
+    log.info("── Operation laydown: %d / %d objects planted ─────────",
+             n_ok, len(gfx) + len(_OP_ENEMY_PLANT))
+
+
+# ── Netherlands CBRN attacks ─────────────────────────────────────────────────
+#
+# Wider-conflict backdrop: a separate CBRN feed centred on Dutch population
+# centres, distinct from the worldwide jitter generator. Tighter cadence and
+# heavier agent mix — these are the events the Coy will actually plan around.
+
+_NL_ANCHORS: list[tuple[str, float, float]] = [
+    ("Amsterdam",   52.370, 4.895),
+    ("Rotterdam",   51.924, 4.477),
+    ("Den Haag",    52.080, 4.310),
+    ("Utrecht",     52.090, 5.121),
+    ("Eindhoven",   51.441, 5.469),
+    ("Tilburg",     51.560, 5.090),
+    ("Groningen",   53.219, 6.567),
+    ("Maastricht",  50.851, 5.687),
+    ("Breda",       51.586, 4.776),
+    ("Arnhem",      51.985, 5.910),
+    ("Nijmegen",    51.812, 5.837),
+    ("Den Helder",  52.960, 4.760),
+    ("Vlissingen",  51.444, 3.573),
+    ("Schiphol",    52.309, 4.764),
+    ("Borssele",    51.432, 3.717),   # nuclear plant
+]
+
+_NL_AGENT_CATALOGUE = [
+    ("C", "CBRN_4", "SARIN (GB)",       "Nerve agent release in city centre — mass casualty event"),
+    ("C", "CBRN_4", "VX",               "Persistent nerve agent — port area contamination"),
+    ("C", "CBRN_4", "CHLORINE",         "Industrial chlorine release — petrochemical complex"),
+    ("C", "CBRN_4", "MUSTARD (HD)",     "Mustard gas — vesicant casualties reported"),
+    ("B", "CBRN_4", "ANTHRAX",          "Suspected anthrax aerosol — public transport hub"),
+    ("B", "CBRN_4", "BOTULINUM",        "Botulinum toxin — water supply suspected"),
+    ("R", "CBRN_3", "DIRTY BOMB",       "Radiological dispersal device detonated"),
+    ("R", "CBRN_3", "REACTOR LEAK",     "Nuclear reactor coolant leak — civilian site"),
+    ("N", "CBRN_2", "TACTICAL NUCLEAR", "Sub-kilotonne nuclear detonation"),
+]
+
+
+async def run_cbrn_netherlands(client: httpx.AsyncClient,
+                               admin_op: SimOp,
+                               speed_mult: float) -> None:
+    """Higher-cadence CBRN incidents in NL cities — wider conflict backdrop."""
+    real_interval = (CBRN_S * 0.6) / speed_mult     # ~60 % of worldwide rate
+    await asyncio.sleep(real_interval * 0.2)
+    count = 0
+
+    while True:
+        await asyncio.sleep(real_interval)
+        if not admin_op.token:
+            continue
+
+        name, lat, lon = random.choice(_NL_ANCHORS)
+        # Tighter offset than worldwide (city-scale, not regional)
+        dlat = random.uniform(-0.045, 0.045)        # ≈ 5 km N/S
+        dlon = random.uniform(-0.045, 0.045) / max(0.2, math.cos(math.radians(lat)))
+        elat, elon = lat + dlat, lon + dlon
+
+        agent_cat, msg_type, agent_label, notes = random.choice(_NL_AGENT_CATALOGUE)
+        wind_dir   = random.randint(0, 359)
+        wind_speed = random.randint(8, 35)
+
+        zone_inner = {
+            "C": random.randint(800, 2000),
+            "B": random.randint(1500, 3500),
+            "R": random.randint(1200, 3000),
+            "N": random.randint(3000, 7000),
+        }[agent_cat]
+        zone_downwind = zone_inner * random.randint(4, 9)
+
+        payload = {
+            "msg_type": msg_type,
+            "agent_category": agent_cat,
+            "agent": agent_label,
+            "latitude":  round(elat, 5),
+            "longitude": round(elon, 5),
+            "wind_direction":  wind_dir,
+            "wind_speed":      wind_speed,
+            "zone_inner_m":    zone_inner,
+            "zone_downwind_m": zone_downwind,
+            "zone_downwind_angle_deg": 30,
+            "dtg":     "",
+            "serial":  f"NL{count:04d}",
+            "near":    name,
+            "notes":   notes,
+            "lines":   {},
+        }
+        count += 1
+
+        r = await api(client, "POST", "/reports", token=admin_op.token,
+                      json={"type": msg_type, "payload": payload})
+        if r:
+            log.info("🇳🇱☣️  CBRN %s  %-18s  near %-12s  %.4f,%.4f  wind %d°@%dkm/h  (#%d)",
+                     msg_type, agent_label, name, elat, elon,
+                     wind_dir, wind_speed, count)
+
+
 # ── Reset helper ──────────────────────────────────────────────────────────────
 
 async def reset_sim(client: httpx.AsyncClient, all_ops: list[SimOp]) -> None:
@@ -972,6 +1299,10 @@ async def main() -> None:
         await bootstrap(client, all_ops, sections)
         await login_all(client, all_ops)
 
+        # Plant the doctrinal operation graphics + enemy laydown — once.
+        admin_op = next(o for o in all_ops if o.role == "ADMIN")
+        await plant_operation(client, admin_op)
+
         # Gather all coroutines
         coros = []
 
@@ -986,9 +1317,9 @@ async def main() -> None:
         # Enemy / report marker
         coros.append(run_enemy_marker(client, sections, speed_mult))
 
-        # Worldwide CBRN incidents + random CAS requests
-        admin_op = next(o for o in all_ops if o.role == "ADMIN")
+        # Worldwide CBRN incidents + random CAS requests + NL-focused CBRN
         coros.append(run_cbrn_worldwide(client, admin_op, speed_mult))
+        coros.append(run_cbrn_netherlands(client, admin_op, speed_mult))
         coros.append(run_cas_requests(client, sections, admin_op, speed_mult))
 
         log.info("=== Simulation running — Ctrl-C to stop ===")

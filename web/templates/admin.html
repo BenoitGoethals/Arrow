@@ -102,6 +102,7 @@ main { padding: 0; }
     <h4>System</h4>
     <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
     <button class="nav-btn" onclick="show('alerts',this)"><span class="ico">🚨</span> Alerts</button>
+    <button class="nav-btn" onclick="show('snapshots',this)"><span class="ico">🗺</span> Map snapshots</button>
   </nav>
 
   <!-- ── Main area ───────────────────────────────────────────────────── -->
@@ -240,6 +241,7 @@ main { padding: 0; }
             case 'hierarchy': main.innerHTML = ''; renderHierarchy(main); break;
             case 'config':    main.innerHTML = ''; renderConfig(main); break;
             case 'alerts':    main.innerHTML = ''; renderAlerts(main); break;
+            case 'snapshots': main.innerHTML = ''; renderSnapshots(main); break;
         }
     }
 
@@ -535,6 +537,161 @@ main { padding: 0; }
             </tbody>
         </table>`;
     }
+
+    // ── Map snapshots — reset / history / restore ─────────────────────────
+    async function renderSnapshots(el) {
+        const [snapsR, toR, msgR, repR, alR, fmR] = await Promise.all([
+            api('/admin/map/snapshots'),
+            api('/tactical-objects'),
+            api('/messages'),
+            api('/reports'),
+            api('/alerts'),
+            api('/fire-missions'),
+        ]);
+        const snaps = snapsR.ok ? await snapsR.json() : [];
+        const live  = {
+            tactical_objects: toR.ok  ? (await toR.json()).length  : 0,
+            messages:         msgR.ok ? (await msgR.json()).length : 0,
+            reports:          repR.ok ? (await repR.json()).length : 0,
+            alerts:           alR.ok  ? (await alR.json()).length  : 0,
+            fire_missions:    fmR.ok  ? (await fmR.json()).length  : 0,
+        };
+        const liveTotal = Object.values(live).reduce((a, b) => a + b, 0);
+
+        const livePill = (n, lbl) =>
+            `<span style="background:#1a2233;border:1px solid #2a3142;border-radius:4px;
+                          padding:1px 7px;font-size:0.72rem;color:${n>0?'#34d399':'#475569'}">
+                <strong>${n}</strong> ${lbl}
+             </span>`;
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Map snapshots</h2>
+            <button class="btn btn-danger" onclick="snapReset()">
+                ⚠ Reset map (snapshot &amp; clear all)
+            </button>
+        </div>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
+            <span style="color:#94a3b8;font-size:0.78rem;margin-right:0.3rem">Live state:</span>
+            ${livePill(live.tactical_objects, 'tactical')}
+            ${livePill(live.messages,         'msgs')}
+            ${livePill(live.reports,          'reports')}
+            ${livePill(live.alerts,           'alerts')}
+            ${livePill(live.fire_missions,    'fire missions')}
+            <span style="color:#64748b;font-size:0.78rem;margin-left:auto">
+                ${liveTotal} record${liveTotal===1?'':'s'} total
+            </span>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            Reset captures every record above into a snapshot then clears them — operators,
+            hierarchy, photos and audit logs stay untouched. Restore is additive: it
+            re-creates the snapshotted records (with fresh IDs) on top of whatever's there.
+            Operator references that no longer exist (deleted users) are reassigned to you.
+        </p>
+        <table class="adm-table">
+            <thead><tr>
+                <th>#</th><th>Name</th><th>Created</th><th>Total</th><th>Breakdown</th><th></th>
+            </tr></thead>
+            <tbody id="snap-rows">
+            ${snaps.length === 0
+                ? '<tr><td colspan="6" style="color:#475569">No snapshots yet — press the red button above to take one.</td></tr>'
+                : snaps.map(s => `
+                    <tr id="snap-row-${s.id}">
+                        <td>#${s.id}</td>
+                        <td><strong>${esc(s.name)}</strong></td>
+                        <td style="color:#64748b;font-size:0.78rem">
+                            ${(s.created_at || '').replace('T',' ').slice(0,16)}
+                        </td>
+                        <td>${s.object_count}</td>
+                        <td><span style="color:#475569;font-size:0.75rem"
+                                  id="snap-bd-${s.id}">…</span></td>
+                        <td style="text-align:right;white-space:nowrap">
+                            <button class="btn btn-primary btn-sm" onclick="snapRestore(${s.id})">
+                                ↺ Restore
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="snapDelete(${s.id})">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>`).join('')
+            }
+            </tbody>
+        </table>`;
+
+        // Lazy-load each snapshot's per-category breakdown
+        snaps.forEach(s => loadSnapBreakdown(s.id));
+    }
+
+    async function loadSnapBreakdown(id) {
+        const r = await api(`/admin/map/snapshots/${id}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        const c = d.counts || {};
+        const parts = [];
+        if (c.tactical_objects) parts.push(`${c.tactical_objects} tac`);
+        if (c.messages)         parts.push(`${c.messages} msg`);
+        if (c.reports)          parts.push(`${c.reports} rpt`);
+        if (c.alerts)           parts.push(`${c.alerts} alt`);
+        if (c.fire_missions)    parts.push(`${c.fire_missions} FM`);
+        const el = document.getElementById(`snap-bd-${id}`);
+        if (el) el.textContent = parts.length ? parts.join(' · ') : '— empty —';
+    }
+
+    window.snapReset = async function() {
+        if (!confirm("Reset the map?\n\n" +
+                     "Every tactical object, message, report, alert and fire mission " +
+                     "will be deleted from the live system. A snapshot is saved first " +
+                     "so you can restore later. Operators, hierarchy and audit logs " +
+                     "are untouched.")) return;
+        const name = prompt("Optional snapshot name:", "");
+        const r = await api('/admin/map/reset', {
+            method: 'POST',
+            body:    JSON.stringify({ name: name || '' }),
+        });
+        if (r.ok) {
+            const out = await r.json();
+            const c   = out.counts || {};
+            const parts = [];
+            if (c.tactical_objects) parts.push(`${c.tactical_objects} tactical`);
+            if (c.messages)         parts.push(`${c.messages} messages`);
+            if (c.reports)          parts.push(`${c.reports} reports`);
+            if (c.alerts)           parts.push(`${c.alerts} alerts`);
+            if (c.fire_missions)    parts.push(`${c.fire_missions} fire missions`);
+            alert(`Map reset. Snapshot #${out.id} saved with ${out.object_count} record(s)` +
+                  (parts.length ? `:\n  ${parts.join('\n  ')}` : '.'));
+            renderSnapshots(document.getElementById('adm-main'));
+        } else {
+            alert(`Reset failed (${r.status}).`);
+        }
+    };
+
+    window.snapRestore = async function(id) {
+        if (!confirm(`Restore snapshot #${id}?\n\n` +
+                     "Every snapshotted record is recreated with a fresh ID. " +
+                     "Restore is additive — existing live records are NOT removed. " +
+                     "Run a Reset first for a clean restore.")) return;
+        const r = await api(`/admin/map/snapshots/${id}/restore`, { method: 'POST' });
+        if (r.ok) {
+            const out = await r.json();
+            const c   = out.counts || {};
+            const parts = Object.entries(c).filter(([_, n]) => n).map(([k, n]) =>
+                `${n} ${k.replace('_', ' ')}`);
+            alert(`Restored ${out.restored} record(s)` +
+                  (parts.length ? `:\n  ${parts.join('\n  ')}` : '.'));
+        } else {
+            alert(`Restore failed (${r.status}).`);
+        }
+    };
+
+    window.snapDelete = async function(id) {
+        if (!confirm(`Delete snapshot #${id}? The data is gone for good — you can't restore from it after.`)) return;
+        const r = await api(`/admin/map/snapshots/${id}`, { method: 'DELETE' });
+        if (r.status === 204) {
+            renderSnapshots(document.getElementById('adm-main'));
+        } else {
+            alert(`Delete failed (${r.status}).`);
+        }
+    };
 
     // ── Helpers ────────────────────────────────────────────────────────────
     function populateTeamSelect(selectId, selected) {
