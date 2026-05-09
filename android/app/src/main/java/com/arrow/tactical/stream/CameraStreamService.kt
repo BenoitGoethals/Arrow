@@ -86,8 +86,15 @@ class CameraStreamService : Service() {
     // ── Connect WebSocket, then open camera ───────────────────────────────────
 
     private fun connect(streamId: String, serverUrl: String, token: String) {
+        // Production deployments put Caddy in front and only proxy `/api/*` to the
+        // FastAPI backend. Dev points at the backend directly on an explicit port.
+        // Detect: if the URL has no explicit port (`:NNNN`) and doesn't already
+        // contain `/api`, assume Caddy-proxied prod and prepend `/api`.
+        val hasPort   = Regex(":[0-9]+(/|$)").containsMatchIn(serverUrl)
+        val hasApi    = serverUrl.contains("/api")
+        val apiPrefix = if (hasPort || hasApi) "" else "/api"
         val wsUrl = serverUrl.replace(Regex("^http"), "ws") +
-                    "/streams/$streamId/produce?token=${token}"
+                    "$apiPrefix/streams/$streamId/produce?token=${token}"
         Log.i(TAG, "Connecting to $wsUrl")
 
         val client = OkHttpClient.Builder()
