@@ -231,9 +231,40 @@
         });
     });
 
-    function operatorIcon(op) {
-        // SIDC: friendly ground unit, infantry-ish. Online vs offline -> color via hostile flag NO,
-        // we just dim the icon when offline.
+    function operatorIcon(op, isMe = false) {
+        if (isMe) {
+            const cs = (op.callsign || '').replace(/[<>&"]/g, c =>
+                ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+            const role = op.role === 'BATTLE_CAPTAIN' ? 'BC' :
+                         op.role === 'ADMIN' ? 'ADM' : null;
+            const rolePill = role
+                ? `<span style="background:#1e40af;color:#bfdbfe;font-size:8px;font-weight:700;
+                                padding:0 3px;border-radius:2px;letter-spacing:.04em">${role}</span>`
+                : '';
+            const html = `
+                <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="34" viewBox="0 0 28 34">
+                        <polygon points="14,1 27,30 14,21 1,30"
+                                 fill="#2563eb" stroke="#fff" stroke-width="2"
+                                 stroke-linejoin="round" opacity="${op.online ? 1 : 0.45}"/>
+                        <circle cx="14" cy="19" r="3"
+                                fill="#1e40af" opacity="${op.online ? 1 : 0.45}"/>
+                    </svg>
+                    <div style="display:flex;gap:2px;align-items:center">
+                        <span style="background:rgba(13,17,23,.85);color:#93c5fd;font-size:9px;
+                                     font-weight:700;padding:1px 4px;border-radius:3px;
+                                     white-space:nowrap;font-family:monospace;letter-spacing:.04em">${cs}</span>
+                        ${rolePill}
+                    </div>
+                </div>`;
+            return L.divIcon({
+                className: 'own-pos-icon',
+                html,
+                iconSize:   [60, 56],
+                iconAnchor: [30, 24],   // anchor at arrow body centre, not tip
+            });
+        }
+        // Other operators — NATO mil-symbol
         const sidc = op.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
         const sym = new ms.Symbol(sidc, { size: 28, uniqueDesignation: op.callsign });
         return L.divIcon({
@@ -270,18 +301,28 @@
     }
 
     function placeOperator(op) {
-        const key = `op-${op.id}`;
+        const key    = `op-${op.id}`;
+        const isMe   = state.me != null && op.id === state.me.id;
         const existing = state.markers.get(key);
         if (!markerVisible(op)) {
             if (existing) { map.removeLayer(existing); state.markers.delete(key); }
             return;
         }
+        const icon = operatorIcon(op, isMe);
+        const popup = isMe
+            ? `<b>📍 ${op.callsign}</b> <em style="color:#64748b">(you)</em><br/>
+               ${op.rank} · ${op.role}<br/>
+               ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`
+            : `<b>${op.callsign}</b><br/>${op.rank} · ${op.role}<br/>
+               ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`;
         if (existing) {
             existing.setLatLng([op.latitude, op.longitude]);
-            existing.setIcon(operatorIcon(op));
+            existing.setIcon(icon);
         } else {
-            const m = L.marker([op.latitude, op.longitude], { icon: operatorIcon(op) }).addTo(map);
-            m.bindPopup(`<b>${op.callsign}</b><br/>${op.rank} · ${op.role}<br/>${op.online ? '<span style="color:green">● online</span>' : '<span>offline</span>'}`);
+            const m = L.marker([op.latitude, op.longitude], { icon }).addTo(map);
+            m.bindPopup(popup);
+            // Ensure own marker stays on top
+            if (isMe) m.setZIndexOffset(1000);
             state.markers.set(key, m);
         }
     }

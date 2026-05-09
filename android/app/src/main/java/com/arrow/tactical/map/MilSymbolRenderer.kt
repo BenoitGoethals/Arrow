@@ -21,9 +21,67 @@ import com.arrow.tactical.tactical.EnemyType
  */
 object MilSymbolRenderer {
 
-    // ── Friendly (blue rectangle) ────────────────────────────────────────────
+    // ── Own position (blue dot + callsign label) ────────────────────────────
+
+    fun ownPosition(res: Resources, op: OperatorDto): Drawable {
+        val dp    = res.displayMetrics.density
+        val r     = 18 * dp          // circle radius
+        val pad   = 4 * dp
+        val textH = 13 * dp          // space reserved below circle for label
+        val w     = ((r + pad) * 2).toInt()
+        val h     = (r * 2 + pad * 2 + textH).toInt()
+        val bmp   = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val cx = w / 2f
+        val cy = pad + r             // circle centre
+
+        // Outer glow ring (semi-transparent blue)
+        paint.color = Color.argb(60, 37, 99, 235)
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx, cy, r + 4 * dp, paint)
+
+        // Main blue dot
+        paint.color = Color.rgb(37, 99, 235)   // #2563EB
+        canvas.drawCircle(cx, cy, r, paint)
+
+        // White border
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3 * dp
+        canvas.drawCircle(cx, cy, r, paint)
+
+        // Inner dark-blue centre dot for depth
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(30, 64, 175)   // #1E40AF
+        canvas.drawCircle(cx, cy, 5 * dp, paint)
+
+        // Callsign label below circle — dark pill background
+        val label = op.callsign.take(8)
+        paint.textSize = 9 * dp
+        paint.textAlign = Paint.Align.CENTER
+        val textW = paint.measureText(label)
+        val pillL = cx - textW / 2 - 4 * dp
+        val pillR = cx + textW / 2 + 4 * dp
+        val pillT = cy + r + 3 * dp
+        val pillB = pillT + 11 * dp
+        paint.color = Color.argb(200, 13, 17, 23)
+        canvas.drawRoundRect(RectF(pillL, pillT, pillR, pillB), 4 * dp, 4 * dp, paint)
+
+        // Label text
+        paint.color = Color.rgb(147, 197, 253)  // #93C5FD light blue
+        paint.isFakeBoldText = true
+        canvas.drawText(label, cx, pillB - 3 * dp, paint)
+
+        return BitmapDrawable(res, bmp)
+    }
+
+    // ── Friendly (NATO blue rectangle) ───────────────────────────────────────
 
     fun friendly(res: Resources, op: OperatorDto, isMe: Boolean = false): Drawable {
+        if (isMe) return ownPosition(res, op)
+
         val dp = res.displayMetrics.density
         val w = (56 * dp).toInt()
         val h = (30 * dp).toInt()
@@ -33,27 +91,16 @@ object MilSymbolRenderer {
         val online = op.online
         val alpha = if (online) 255 else 110
 
-        // Fill: brighter cyan for self, standard NATO blue for others
-        val inset = if (isMe) 2 * dp else 3 * dp
+        val inset = 3 * dp
         val frame = RectF(inset, inset, w - inset, h - inset)
-        paint.color = if (isMe) Color.argb(alpha, 0, 220, 160)   // bright teal = self
-                      else      Color.argb(alpha, 128, 224, 255)  // NATO light blue = others
+        paint.color = Color.argb(alpha, 128, 224, 255)  // NATO light blue
         paint.style = Paint.Style.FILL
         canvas.drawRoundRect(frame, 4 * dp, 4 * dp, paint)
 
-        // Stroke: thicker + brighter for self
-        paint.color = if (isMe) Color.argb(alpha, 0, 120, 80)
-                      else      Color.argb(alpha, 0, 70, 180)
+        paint.color = Color.argb(alpha, 0, 70, 180)
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = if (isMe) 3 * dp else 2.5f * dp
+        paint.strokeWidth = 2.5f * dp
         canvas.drawRoundRect(frame, 4 * dp, 4 * dp, paint)
-
-        // Small dot in top-left corner to mark own unit
-        if (isMe) {
-            paint.style = Paint.Style.FILL
-            paint.color = Color.argb(alpha, 255, 255, 0)  // yellow self-indicator
-            canvas.drawCircle(inset + 4 * dp, inset + 4 * dp, 3 * dp, paint)
-        }
 
         // Role indicator line at top for BC/ADMIN
         if (op.role == "BATTLE_CAPTAIN" || op.role == "ADMIN") {
@@ -69,7 +116,7 @@ object MilSymbolRenderer {
         paint.color = Color.argb(alpha, 0, 0, 0)
         paint.textSize = 8 * dp
         paint.textAlign = Paint.Align.CENTER
-        paint.isFakeBoldText = isMe || op.role != "OPERATOR"
+        paint.isFakeBoldText = op.role != "OPERATOR"
         canvas.drawText(op.callsign.take(9), w / 2f, h / 2f + 3 * dp, paint)
 
         return BitmapDrawable(res, bmp)
