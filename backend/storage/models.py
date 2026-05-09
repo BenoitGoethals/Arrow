@@ -204,3 +204,19 @@ class AuditLog(Base):
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     detail: Mapped[str] = mapped_column(Text, default="")
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
+class MapSnapshot(Base):
+    """Frozen JSON snapshot of every TacticalObject at the moment of capture.
+
+    Used by `POST /admin/map/reset` so admins can wipe the live map and
+    later restore any past state with `POST /admin/map/snapshots/{id}/restore`.
+    """
+    __tablename__ = "map_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    object_count: Mapped[int] = mapped_column(Integer, default=0)
+    payload: Mapped[str] = mapped_column(Text)   # JSON list of TacticalObjectOut dicts

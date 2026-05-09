@@ -46,6 +46,15 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE tactical_objects ADD COLUMN geometry TEXT DEFAULT ''",
         # NATO echelon designator (TM/SEC/PL/COY/BN/BDE) for tactical graphics
         "ALTER TABLE tactical_objects ADD COLUMN echelon VARCHAR(8) DEFAULT ''",
+        # Map reset/restore snapshots — JSON-frozen list of tactical objects
+        "CREATE TABLE IF NOT EXISTS map_snapshots ("
+        "  id INTEGER PRIMARY KEY,"
+        "  name VARCHAR(120) DEFAULT '',"
+        "  created_by INTEGER REFERENCES operators(id),"
+        "  created_at DATETIME,"
+        "  object_count INTEGER DEFAULT 0,"
+        "  payload TEXT NOT NULL"
+        ")",
     ]
     for sql in migrations:
         try:
