@@ -91,12 +91,34 @@ fun MapScreen(
         mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
     }
 
-    // Suspend function to launch the stream service, called after permission grant
+    // Suspend function to launch the stream service, called after permission grant.
+    // Each early-return path emits a logcat E line + a Toast so the failure mode is
+    // never silent (visible in the Admin log viewer too).
     val startStream: suspend () -> Unit = start@{
-        val token  = container.tokenStore.current()                    ?: return@start
+        val tag    = "StreamStart"
+        val token  = container.tokenStore.current()
+        if (token.isNullOrBlank()) {
+            android.util.Log.e(tag, "abort: no token — user must re-login")
+            android.widget.Toast.makeText(context, "Stream aborted: not logged in",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return@start
+        }
         val server = container.settingsRepository.currentServerUrl()
-        val me     = container.authRepository.me().getOrNull()         ?: return@start
-        val sid    = "stream-${me.callsign}-${System.currentTimeMillis() / 1000}"
+        if (server.isBlank()) {
+            android.util.Log.e(tag, "abort: no server URL configured")
+            android.widget.Toast.makeText(context, "Stream aborted: server URL not set",
+                android.widget.Toast.LENGTH_SHORT).show()
+            return@start
+        }
+        val meRes = container.authRepository.me()
+        val me = meRes.getOrElse { err ->
+            android.util.Log.e(tag, "abort: /auth/me failed: ${err.message}", err)
+            android.widget.Toast.makeText(context, "Stream aborted: ${err.message ?: "auth check failed"}",
+                android.widget.Toast.LENGTH_LONG).show()
+            return@start
+        }
+        val sid = "stream-${me.callsign}-${System.currentTimeMillis() / 1000}"
+        android.util.Log.i(tag, "starting stream id=$sid server=$server")
         val intent = android.content.Intent(
             context, com.arrow.tactical.stream.CameraStreamService::class.java
         ).apply {
@@ -104,8 +126,14 @@ fun MapScreen(
             putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_SERVER_URL, server)
             putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_TOKEN,      token)
         }
-        androidx.core.content.ContextCompat.startForegroundService(context, intent)
-        isStreaming = true
+        try {
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+            isStreaming = true
+        } catch (e: Exception) {
+            android.util.Log.e(tag, "startForegroundService failed: ${e.message}", e)
+            android.widget.Toast.makeText(context, "Stream service refused: ${e.message}",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     // Camera permission launcher — requests permission then starts stream
@@ -452,7 +480,13 @@ fun MapScreen(
             // 📡 Stream toggle
             IconButton(
                 onClick = {
-                    if (isStreaming) {
+                    android.util.Log.i("StreamButton",
+                        "click: isStreaming=$isStreaming serviceFlag=" +
+                        "${com.arrow.tactical.stream.CameraStreamService.isStreaming.get()}")
+                    // Always trust the live service flag over the local UI state — a
+                    // foreground service killed externally would leave UI stuck "on".
+                    val live = com.arrow.tactical.stream.CameraStreamService.isStreaming.get()
+                    if (live) {
                         // Stop: send STOP action intent so the service cleans up gracefully
                         context.startService(
                             android.content.Intent(context,
@@ -461,6 +495,8 @@ fun MapScreen(
                         )
                         isStreaming = false
                     } else {
+                        // Sync local state in case the user just exited from the map and back
+                        isStreaming = false
                         val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
                             context, android.Manifest.permission.CAMERA
                         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
