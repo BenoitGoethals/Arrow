@@ -37,7 +37,9 @@ fun LoginScreen(
     var callsign by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var registering by remember { mutableStateOf(false) }
-    var role by remember { mutableStateOf("OPERATOR") }
+    // Self-registration is always OPERATOR server-side; ADMIN/BATTLE_CAPTAIN
+    // accounts are issued by an existing admin. Admins can still sign in here.
+    val role = "OPERATOR"
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var serverShown by remember { mutableStateOf(false) }
@@ -79,12 +81,12 @@ fun LoginScreen(
 
         if (registering) {
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = role,
-                onValueChange = { role = it.uppercase() },
-                label = { Text("Role (OPERATOR / BATTLE_CAPTAIN / ADMIN)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+            Text(
+                "Self-registration creates an OPERATOR account. ADMIN and " +
+                "BATTLE_CAPTAIN accounts must be issued by an existing admin — " +
+                "those users sign in here normally.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
