@@ -275,10 +275,13 @@ fun MapScreen(
             val isMe = op.id == currentMeId
             Marker(map).apply {
                 position = GeoPoint(op.latitude, op.longitude)
-                title    = if (isMe) "You — ${op.callsign}" else "${op.callsign}  ·  ${op.rank}"
-                snippet  = "${op.role} · ${op.status}"
+                title    = if (isMe) "📍 You — ${op.callsign}" else "${op.callsign}  ·  ${op.rank}"
+                snippet  = "${op.role}${if (op.online) " · online" else " · offline"}"
                 icon     = MilSymbolRenderer.friendly(res, op, isMe)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                // Own-position bitmap has extra label below the circle —
+                // anchor at circle centre (vertically 18dp+4dp from top / total height).
+                if (isMe) setAnchor(Marker.ANCHOR_CENTER, 0.37f)
+                else      setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 map.overlays.add(this)
             }
         }
