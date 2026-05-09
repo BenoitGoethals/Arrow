@@ -320,7 +320,23 @@
 
     function handleStreamEvent(evt) {
         const d = evt.data || {};
+        console.log('[arrow] stream event', evt);
         if (evt.event === 'started') {
+            // Audio chime so the operator notices even if not looking at screen.
+            try {
+                const ctx  = audioCtx();
+                const now  = ctx.currentTime;
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.start(now); osc.stop(now + 0.45);
+            } catch (_) {}
+
             const toast = document.createElement('div');
             toast.className = 'arrow-toast';
             toast.style.borderLeftColor = '#7c3aed';
