@@ -29,6 +29,7 @@ from sqlalchemy.pool import StaticPool
 def client() -> Iterator[TestClient]:
     """TestClient backed by a fresh in-memory SQLite DB per test."""
     from backend.main import create_app
+    import backend.storage.database as _dbmod
     from backend.storage.database import Base, get_db
 
     engine = create_engine(
@@ -58,9 +59,18 @@ def client() -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
 
+    # Some background paths (notably the stream-recording writer in
+    # `backend/streams/router.py`) call `SessionLocal()` directly because
+    # they're in a long-running WS handler — `Depends(get_db)` would force
+    # a single session for the whole connection. Rebind the module-level
+    # SessionLocal/engine so those direct calls also hit the test DB.
+    saved_engine, saved_session = _dbmod.engine, _dbmod.SessionLocal
+    _dbmod.engine, _dbmod.SessionLocal = engine, TestSession
+
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
 
+    _dbmod.engine, _dbmod.SessionLocal = saved_engine, saved_session
     engine.dispose()
 
 

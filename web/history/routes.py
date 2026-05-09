@@ -6,3 +6,8 @@ bp = Blueprint("history", __name__, url_prefix="/history")
 @bp.route("/")
 def index() -> str:
     return render_template("history.html")
+
+
+@bp.route("/photos")
+def photos() -> str:
+    return render_template("photos.html")

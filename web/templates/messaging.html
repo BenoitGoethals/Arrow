@@ -168,7 +168,12 @@
                 : '';
             return `<div class="row ${mine ? 'mine' : 'other'}">
                 <div class="bubble ${cls}">
-                    <div class="from">${nameFor(m.sender_id)} · ${m.message_type}${m.group_id ? ' / ' + m.group_id : ''}</div>
+                    <div class="from">${nameFor(m.sender_id)} · ${m.message_type}${m.group_id ? ' / ' + m.group_id : ''}
+                        <button class="msg-fwd" onclick="msgForward(${m.id})"
+                                title="Forward this message"
+                                style="background:none;border:0;color:#94a3b8;cursor:pointer;
+                                       font-size:0.78rem;padding:0 2px;margin-left:6px">↪</button>
+                    </div>
                     ${m.content ? escapeHtml(m.content) : ''}
                     ${photoHtml}
                 </div>
@@ -279,6 +284,106 @@
         // Clean URL without reload so refreshing doesn't keep re-applying it
         history.replaceState(null, '', location.pathname);
     }
+
+    // ── Forward a message to another recipient ───────────────────────────
+    window.msgForward = function(msgId) {
+        const m = state.messages.find(x => x.id === msgId);
+        if (!m) return;
+
+        // Build a recipient picker over the same options the composer has.
+        document.getElementById('msg-fwd-modal')?.remove();
+        const opts = state.operators
+            .filter(o => o.id !== state.me?.id)
+            .sort((a, b) => a.callsign.localeCompare(b.callsign))
+            .map(o => `<option value="direct:${o.id}">→ ${escapeHtml(o.callsign)}  (${escapeHtml(o.role)})</option>`)
+            .join('');
+        const modal = document.createElement('div');
+        modal.id = 'msg-fwd-modal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);' +
+                              'z-index:9000;display:flex;align-items:center;justify-content:center';
+        modal.innerHTML = `
+        <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;
+                    width:480px;max-width:95vw;padding:1.2rem">
+            <div style="font-weight:700;color:#34d399;margin-bottom:0.4rem">↪ Forward message</div>
+            <div style="background:#0d1117;border:1px solid #2a3142;border-radius:6px;
+                        padding:0.5rem 0.7rem;margin-bottom:0.85rem;font-size:0.84rem;color:#cbd5e1">
+                <div style="color:#64748b;font-size:0.72rem">From ${escapeHtml(state.operators.find(o=>o.id===m.sender_id)?.callsign || '#'+m.sender_id)}</div>
+                ${m.content ? escapeHtml(m.content) : '<i style="color:#475569">(photo only)</i>'}
+                ${m.photo_id ? '<div style="color:#94a3b8;font-size:0.72rem;margin-top:3px">📷 with photo</div>' : ''}
+            </div>
+            <label style="font-size:0.78rem;color:#94a3b8">Forward to</label>
+            <select id="fwd-to" style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;
+                                       border-radius:6px;padding:0.4rem 0.6rem;font:inherit;font-size:0.85rem;
+                                       margin-bottom:0.6rem">
+                <option value="">— select recipient —</option>
+                <option value="broadcast">📢 Broadcast (everyone)</option>
+                <option value="group:BATTLE_CAPTAINS">⭐ BATTLE_CAPTAINS</option>
+                <option disabled>──────────</option>
+                ${opts}
+            </select>
+            <label style="font-size:0.78rem;color:#94a3b8">Add a note (optional)</label>
+            <textarea id="fwd-note" placeholder="Forwarded via Arrow"
+                style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;
+                       border-radius:6px;padding:0.4rem 0.6rem;font:inherit;font-size:0.85rem;
+                       resize:vertical;min-height:48px;box-sizing:border-box"></textarea>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.85rem">
+                <button onclick="document.getElementById('msg-fwd-modal').remove()"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;
+                               border-radius:6px;padding:0.4rem 1rem;font:inherit;cursor:pointer">Cancel</button>
+                <button id="fwd-go" onclick="msgForwardSubmit(${msgId})"
+                        style="background:#34d399;color:#0d1117;border:0;border-radius:6px;
+                               padding:0.4rem 1.2rem;font:inherit;font-weight:600;cursor:pointer">↪ Forward</button>
+            </div>
+            <div id="fwd-err" style="color:#ef4444;font-size:0.8rem;margin-top:0.4rem"></div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    };
+
+    window.msgForwardSubmit = async function(msgId) {
+        const m  = state.messages.find(x => x.id === msgId);
+        const to = document.getElementById('fwd-to').value;
+        const note = document.getElementById('fwd-note').value.trim();
+        const err  = document.getElementById('fwd-err');
+        err.textContent = '';
+        if (!to) { err.textContent = 'Select a recipient first.'; return; }
+
+        // Compose a forwarded body — preserve the original sender + content
+        const origFrom = state.operators.find(o => o.id === m.sender_id)?.callsign || `#${m.sender_id}`;
+        const headLine = `↪ Forwarded from ${origFrom}`;
+        const body = [
+            note,
+            note ? '— — —' : '',
+            headLine,
+            m.content || '',
+        ].filter(Boolean).join('\n');
+
+        const payload = { content: body, photo_id: m.photo_id ?? null };
+        if (to === 'broadcast') {
+            payload.message_type = 'BROADCAST';
+        } else if (to.startsWith('group:')) {
+            payload.message_type = 'GROUP';
+            payload.group_id     = to.slice(6);
+        } else if (to.startsWith('direct:')) {
+            payload.message_type = 'DIRECT';
+            payload.receiver_id  = parseInt(to.slice(7), 10);
+        } else {
+            err.textContent = 'Invalid recipient.';
+            return;
+        }
+
+        const r = await fetch(window.ARROW_BACKEND_URL + '/messages', {
+            method:  'POST',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload),
+        });
+        if (r.ok) {
+            document.getElementById('msg-fwd-modal').remove();
+            refresh();
+        } else {
+            err.textContent = `Failed (${r.status}): ${(await r.text()).slice(0, 80)}`;
+        }
+    };
 
     // WebSocket: pick up new messages as they arrive.
     function connectWS() {

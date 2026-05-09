@@ -61,6 +61,43 @@ def _decrypt(data: bytes) -> bytes:
     return aesgcm.decrypt(nonce, ct, None)
 
 
+@router.get("")
+def list_photos(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    """Index of every uploaded photo with metadata.
+
+    Includes the originating message / report / tactical-object reference so
+    the History → Photos browser can deep-link back into context.
+    """
+    from backend.storage.models import Message, Report, TacticalObject
+    rows = db.query(Photo).order_by(Photo.timestamp.desc()).all()
+    photos: list[dict] = []
+    for p in rows:
+        msg_id   = db.query(Message.id).filter(Message.photo_id == p.id).first()
+        to_id    = db.query(TacticalObject.id).filter(TacticalObject.photo_id == p.id).first()
+        # Reports stash photo_id inside their JSON payload — index by id substring
+        rep_id = None
+        like   = f'%"photo_id": {p.id}%'
+        rep_row = db.query(Report.id).filter(Report.payload.like(like)).first()
+        if rep_row:
+            rep_id = rep_row[0]
+        photos.append({
+            "id":            p.id,
+            "filename":      p.filename,
+            "original_name": p.original_name,
+            "mime_type":     p.mime_type,
+            "uploaded_by":   p.uploaded_by,
+            "timestamp":     p.timestamp.isoformat() if p.timestamp else None,
+            "url":           f"/photos/{p.id}",
+            "message_id":    msg_id[0] if msg_id else None,
+            "tactical_object_id": to_id[0] if to_id else None,
+            "report_id":     rep_id,
+        })
+    return photos
+
+
 @router.post("", response_model=PhotoOut, status_code=status.HTTP_201_CREATED)
 async def upload_photo(
     file: UploadFile = File(...),

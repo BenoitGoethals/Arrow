@@ -55,6 +55,18 @@ def _migrate(conn: object) -> None:
         "  object_count INTEGER DEFAULT 0,"
         "  payload TEXT NOT NULL"
         ")",
+        # Auto-saved video stream recordings
+        "CREATE TABLE IF NOT EXISTS stream_recordings ("
+        "  id INTEGER PRIMARY KEY,"
+        "  stream_id VARCHAR(120) NOT NULL,"
+        "  callsign VARCHAR(40) NOT NULL DEFAULT '',"
+        "  operator_id INTEGER REFERENCES operators(id),"
+        "  started_at DATETIME NOT NULL,"
+        "  ended_at DATETIME,"
+        "  frame_count INTEGER DEFAULT 0,"
+        "  byte_size INTEGER DEFAULT 0,"
+        "  file_path VARCHAR(255) NOT NULL"
+        ")",
     ]
     for sql in migrations:
         try:

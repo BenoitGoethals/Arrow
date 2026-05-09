@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block title %}Recordings — Arrow{% endblock %}
+
+{% block head %}
+<style>
+.rec-shell  { padding: 1.25rem; max-width: 1200px; margin: 0 auto; }
+.rec-head   { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1rem; }
+.rec-head h1 { margin: 0; color: #a78bfa; font-size: 1.15rem; }
+.rec-head small { color: #64748b; }
+.rec-grid   { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.85rem; }
+.rec-card   {
+    background: #161b25; border: 1px solid #2a3142; border-radius: 8px;
+    overflow: hidden; transition: border-color .15s;
+}
+.rec-card:hover { border-color: #7c3aed; }
+.rec-thumb {
+    width: 100%; height: 160px; background: #000;
+    object-fit: cover; display: block; cursor: pointer;
+}
+.rec-thumb-empty {
+    width: 100%; height: 160px; background: #0d1117; color: #475569;
+    display: flex; align-items: center; justify-content: center; font-size: 2rem;
+}
+.rec-body  { padding: 0.75rem; }
+.rec-call  { font-weight: 700; color: #a78bfa; font-size: 0.95rem; }
+.rec-meta  { color: #64748b; font-size: 0.72rem; margin-top: 2px; font-family: monospace; }
+.rec-stats { color: #94a3b8; font-size: 0.78rem; margin-top: 0.4rem; }
+.rec-actions { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+.rec-btn   {
+    background: #1f2937; color: #cbd5e1; border: 1px solid #2a3142;
+    border-radius: 4px; padding: 0.3rem 0.6rem; font: inherit; font-size: 0.78rem;
+    cursor: pointer; flex: 1; text-decoration: none; text-align: center;
+}
+.rec-btn:hover { border-color: #7c3aed; color: #a78bfa; }
+.rec-btn.danger { color: #ef4444; }
+.rec-btn.danger:hover { border-color: #ef4444; }
+.rec-empty { color: #475569; padding: 3rem; text-align: center; }
+
+/* Player modal */
+.rec-player-bg {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.85); z-index: 9000;
+    align-items: center; justify-content: center;
+}
+.rec-player-bg.open { display: flex; }
+.rec-player {
+    background: #0d1117; border: 1px solid #2a3142; border-radius: 10px;
+    padding: 0.85rem; width: 90vw; max-width: 900px;
+}
+.rec-player-bar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; }
+.rec-player-bar .title { color: #a78bfa; font-weight: 700; flex: 1; }
+.rec-player-bar button {
+    background: #1f2937; color: #cbd5e1; border: 1px solid #2a3142;
+    border-radius: 4px; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.82rem; cursor: pointer;
+}
+.rec-player img {
+    width: 100%; max-height: 70vh; background: #000; display: block; border-radius: 6px;
+}
+
+.live-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: #22c55e; box-shadow: 0 0 6px #22c55e;
+    animation: ldot 1s infinite; margin-left: 6px;
+}
+@keyframes ldot { 0%,100%{opacity:1} 50%{opacity:.3} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rec-shell">
+    <div class="rec-head">
+        <h1>📡 Stream recordings</h1>
+        <small id="rec-count">—</small>
+    </div>
+    <div id="rec-list" class="rec-grid">
+        <div class="rec-empty">Loading…</div>
+    </div>
+</div>
+
+<div class="rec-player-bg" id="rec-player-bg" onclick="if(event.target===this)recPlayerClose()">
+    <div class="rec-player">
+        <div class="rec-player-bar">
+            <span class="title" id="rec-player-title">—</span>
+            <button onclick="recPlayerClose()">✕ Close</button>
+        </div>
+        <img id="rec-player-img" alt="Playback"/>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const role  = localStorage.getItem('arrow_role') || 'OPERATOR';
+    const canDelete = role === 'ADMIN' || role === 'BATTLE_CAPTAIN';
+    const headers = { Authorization: 'Bearer ' + token };
+    const api = (p) => fetch(window.ARROW_BACKEND_URL + p, { headers });
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+            ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function fmtBytes(n) {
+        if (!n) return '0 B';
+        const u = ['B','KB','MB','GB'];
+        let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+        return `${n.toFixed(n < 10 ? 1 : 0)} ${u[i]}`;
+    }
+    function fmtDur(ms) {
+        if (!ms) return '—';
+        const s = Math.round(ms / 1000);
+        if (s < 60) return s + 's';
+        const m = Math.floor(s / 60), rem = s % 60;
+        return `${m}m ${rem}s`;
+    }
+    function fmtTs(iso) {
+        if (!iso) return '—';
+        return new Date(iso).toLocaleString();
+    }
+
+    async function load() {
+        const r = await api('/streams/recordings');
+        const list = r.ok ? await r.json() : [];
+        document.getElementById('rec-count').textContent =
+            `${list.length} recording${list.length === 1 ? '' : 's'}`;
+        const grid = document.getElementById('rec-list');
+        if (list.length === 0) {
+            grid.innerHTML = '<div class="rec-empty">No recordings yet — start a stream from any Android operator.</div>';
+            return;
+        }
+        grid.innerHTML = list.map(r => {
+            const live = r.live;
+            const thumb = (r.frame_count > 0)
+                ? `<img class="rec-thumb" data-photo data-rec="${r.id}" alt="thumbnail" onclick="recPlay(${r.id}, '${esc(r.callsign)}')">`
+                : `<div class="rec-thumb-empty">📡</div>`;
+            return `
+            <div class="rec-card">
+                ${thumb}
+                <div class="rec-body">
+                    <div class="rec-call">📡 ${esc(r.callsign)}${live ? '<span class="live-dot"></span>' : ''}</div>
+                    <div class="rec-meta">${esc(fmtTs(r.started_at))}</div>
+                    <div class="rec-stats">
+                        ${r.frame_count} frames · ${fmtDur(r.duration_ms)} · ${fmtBytes(r.byte_size)}
+                        ${live ? '· <span style="color:#22c55e">LIVE</span>' : ''}
+                    </div>
+                    <div class="rec-actions">
+                        <button class="rec-btn" onclick="recPlay(${r.id}, '${esc(r.callsign)}')">▶ Play</button>
+                        <a class="rec-btn" href="${window.ARROW_BACKEND_URL}/streams/recordings/${r.id}/download?_t=${token}"
+                           download onclick="recDownload(event, ${r.id})">⬇ Save</a>
+                        ${canDelete ? `<button class="rec-btn danger" onclick="recDelete(${r.id})">✕</button>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+
+        // Auth-load thumbnails (the endpoint requires Bearer)
+        grid.querySelectorAll('img[data-rec]').forEach(async (img) => {
+            const id = img.dataset.rec;
+            try {
+                const tr = await api(`/streams/recordings/${id}/thumbnail`);
+                if (!tr.ok) return;
+                const blob = await tr.blob();
+                img.src = URL.createObjectURL(blob);
+            } catch (_) {}
+        });
+    }
+
+    window.recPlay = async function(id, callsign) {
+        const bg = document.getElementById('rec-player-bg');
+        document.getElementById('rec-player-title').textContent = `📡 ${callsign} — recording #${id}`;
+        bg.classList.add('open');
+        // Auth-fetch the multipart MJPEG, expose as a blob URL inside <img>.
+        // multipart/x-mixed-replace cannot be set via XHR — but we can just
+        // set <img src> to an authed URL using a query-param token form.
+        // The recording-playback endpoint requires Bearer auth, so we
+        // instead fetch as a stream and feed frame-by-frame via a tiny
+        // reader. Simplest: use one-frame-at-a-time fetch in JS.
+        recPlaybackStart(id);
+    };
+
+    let _recAbort = null;
+    async function recPlaybackStart(id) {
+        if (_recAbort) _recAbort.abort();
+        _recAbort = new AbortController();
+        const img = document.getElementById('rec-player-img');
+        img.src = '';
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + `/streams/recordings/${id}/playback`, {
+                headers, signal: _recAbort.signal,
+            });
+            if (!r.ok || !r.body) {
+                img.alt = 'Playback failed';
+                return;
+            }
+            const reader = r.body.getReader();
+            // Parse multipart/x-mixed-replace stream
+            let buf = new Uint8Array(0);
+            const td = new TextDecoder();
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                const merged = new Uint8Array(buf.length + value.length);
+                merged.set(buf); merged.set(value, buf.length);
+                buf = merged;
+                while (true) {
+                    const head = findHeaderEnd(buf);
+                    if (head < 0) break;
+                    const headerText = td.decode(buf.slice(0, head));
+                    const m = /Content-Length:\s*(\d+)/i.exec(headerText);
+                    if (!m) { buf = buf.slice(head + 4); continue; }
+                    const size = parseInt(m[1], 10);
+                    const start = head + 4;
+                    if (buf.length < start + size) break;
+                    const jpeg = buf.slice(start, start + size);
+                    buf = buf.slice(start + size);
+                    // Trim trailing CRLF if present
+                    while (buf.length && (buf[0] === 0x0d || buf[0] === 0x0a)) buf = buf.slice(1);
+                    const blob = new Blob([jpeg], { type: 'image/jpeg' });
+                    const prev = img.src;
+                    img.src = URL.createObjectURL(blob);
+                    if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+                }
+            }
+        } catch (e) {
+            if (e.name !== 'AbortError') console.warn('playback', e);
+        }
+    }
+
+    function findHeaderEnd(buf) {
+        // \r\n\r\n marks the end of the multipart sub-headers
+        for (let i = 0; i + 3 < buf.length; i++) {
+            if (buf[i]===0x0d && buf[i+1]===0x0a && buf[i+2]===0x0d && buf[i+3]===0x0a)
+                return i;
+        }
+        return -1;
+    }
+
+    window.recPlayerClose = function() {
+        if (_recAbort) { _recAbort.abort(); _recAbort = null; }
+        document.getElementById('rec-player-bg').classList.remove('open');
+    };
+
+    window.recDownload = async function(ev, id) {
+        // Plain anchor download won't carry the Authorization header — we
+        // need to fetch with auth, then trigger a blob download.
+        ev.preventDefault();
+        const r = await api(`/streams/recordings/${id}/download`);
+        if (!r.ok) { alert('Download failed: ' + r.status); return; }
+        const blob = await r.blob();
+        const cd = r.headers.get('Content-Disposition') || '';
+        const m  = /filename="([^"]+)"/.exec(cd);
+        const a  = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = m ? m[1] : `arrow-recording-${id}.arrowmjpeg`;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    };
+
+    window.recDelete = async function(id) {
+        if (!confirm('Delete this recording? The video file will be removed permanently.')) return;
+        const r = await fetch(window.ARROW_BACKEND_URL + `/streams/recordings/${id}`, {
+            method: 'DELETE', headers,
+        });
+        if (r.status === 204) load();
+        else alert('Delete failed: ' + r.status);
+    };
+
+    load();
+    // Auto-refresh every 5 s so live recordings update
+    setInterval(load, 5000);
+})();
+</script>
+{% endblock %}
