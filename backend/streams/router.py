@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
-from backend.auth.jwt_auth import _cfg as _auth_cfg, get_current_operator  # re-use JWT config
+from backend.auth import jwt_auth as _jwt_auth  # re-use JWT config (read at call-time)
+from backend.auth.jwt_auth import get_current_operator
 from backend.storage.models import Operator
 from backend.websocket.manager import broadcaster
 
@@ -60,11 +61,18 @@ def list_streams() -> list[dict]:
 # ── Auth helper ───────────────────────────────────────────────────────────────
 
 def _verify_token(token: str) -> dict | None:
-    """Return JWT payload or None."""
+    """Return JWT payload or None.
+
+    Reads `_jwt_auth._cfg` at call-time — the FastAPI lifespan rebinds it after
+    resolving the real (auto-generated or env-provided) JWT secret, and a stale
+    captured reference would silently keep verifying against the default.
+    """
     from jose import JWTError, jwt
+    cfg = _jwt_auth._cfg
     try:
-        return jwt.decode(token, _auth_cfg.secret, algorithms=[_auth_cfg.algorithm])
-    except JWTError:
+        return jwt.decode(token, cfg.secret, algorithms=[cfg.algorithm])
+    except JWTError as exc:
+        log.debug("stream token rejected (%s)", exc)
         return None
 
 
