@@ -1,6 +1,7 @@
 package com.arrow.tactical
 
 import android.app.Application
+import com.arrow.tactical.admin.LogRepository
 import com.arrow.tactical.di.AppContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,7 @@ class ArrowApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        LogRepository.installCrashHandler()
         Configuration.getInstance().userAgentValue = packageName
         container = AppContainer(this)
         appScope.launch {
