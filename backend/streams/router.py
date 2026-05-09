@@ -20,7 +20,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 from backend.auth.jwt_auth import _cfg as _auth_cfg, get_current_operator  # re-use JWT config
 from backend.storage.models import Operator
@@ -78,7 +78,7 @@ def get_streams(_: Operator = Depends(get_current_operator)) -> list[dict]:
 # ── WebSocket: Android producer ───────────────────────────────────────────────
 
 @router.websocket("/{stream_id}/produce")
-async def produce(websocket: WebSocket, stream_id: str, token: str = ""):
+async def produce(websocket: WebSocket, stream_id: str, token: str = Query(...)):
     payload = _verify_token(token)
     if not payload:
         await websocket.close(code=4401, reason="Unauthorized")
@@ -145,7 +145,7 @@ async def produce(websocket: WebSocket, stream_id: str, token: str = ""):
 # ── WebSocket: web consumer ───────────────────────────────────────────────────
 
 @router.websocket("/{stream_id}/consume")
-async def consume(websocket: WebSocket, stream_id: str, token: str = ""):
+async def consume(websocket: WebSocket, stream_id: str, token: str = Query(...)):
     payload = _verify_token(token)
     if not payload:
         await websocket.close(code=4401, reason="Unauthorized")

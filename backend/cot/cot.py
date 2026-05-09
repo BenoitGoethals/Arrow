@@ -172,17 +172,23 @@ def parse_cot(xml: bytes | str) -> CotEvent:
     elif uid_el is not None:
         callsign = uid_el.get("Droid", "")
 
+    # Some CoT producers (notably ATAK builds in European locales) emit "51,2345"
+    # instead of "51.2345". Normalise comma → dot before float() to keep parsing
+    # locale-independent.
+    def _f(s: str | None, default: str = "0") -> float:
+        return float((s or default).replace(",", "."))
+
     return CotEvent(
         uid      = root.get("uid", ""),
         cot_type = root.get("type", "a-u-G"),
-        lat      = float(point.get("lat", "0")) if point is not None else 0.0,
-        lon      = float(point.get("lon", "0")) if point is not None else 0.0,
-        hae      = float(point.get("hae", "0")) if point is not None else 0.0,
-        ce       = float(point.get("ce",  "9999999")) if point is not None else 9999999.0,
-        le       = float(point.get("le",  "9999999")) if point is not None else 9999999.0,
+        lat      = _f(point.get("lat")) if point is not None else 0.0,
+        lon      = _f(point.get("lon")) if point is not None else 0.0,
+        hae      = _f(point.get("hae")) if point is not None else 0.0,
+        ce       = _f(point.get("ce"),  "9999999") if point is not None else 9999999.0,
+        le       = _f(point.get("le"),  "9999999") if point is not None else 9999999.0,
         callsign = callsign,
-        speed    = float(track.get("speed",  "0")) if track is not None else 0.0,
-        course   = float(track.get("course", "0")) if track is not None else 0.0,
+        speed    = _f(track.get("speed"))  if track is not None else 0.0,
+        course   = _f(track.get("course")) if track is not None else 0.0,
         team     = group.get("name",  "") if group is not None else "",
         role     = group.get("role",  "") if group is not None else "",
         platform = takv.get("platform", "ARROW") if takv is not None else "ARROW",
