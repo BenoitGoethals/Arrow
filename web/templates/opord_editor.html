@@ -451,44 +451,125 @@ function milIcon(sidc, opts = {}) {
   } catch (e) { console.warn('milsymbol failed', sidc, e); return null; }
 }
 
+// ── Tactical control graphics — mirrors web/templates/map.html ─────────────
+const TG_SPEC = {
+  ATK_AXIS:      { shape: 'point',   color: '#ef4444', label: 'Attack' },
+  COUNTERATTACK: { shape: 'point',   color: '#f97316', label: 'Counterattack' },
+  AMBUSH:        { shape: 'point',   color: '#dc2626', label: 'Ambush' },
+  DEF_AREA:      { shape: 'point',   color: '#3b82f6', label: 'Defense' },
+  BLOCK:         { shape: 'point',   color: '#3b82f6', label: 'Block' },
+  BYPASS:        { shape: 'point',   color: '#06b6d4', label: 'Bypass' },
+  WITHDRAW:      { shape: 'point',   color: '#a78bfa', label: 'Withdraw' },
+  BOUNDARY:      { shape: 'line',    color: '#94a3b8', dash: '8,4', weight: 3, label: 'Boundary' },
+  FLET:          { shape: 'line',    color: '#ef4444', dash: '6,4', weight: 3, label: 'FLET' },
+  FLOT:          { shape: 'line',    color: '#3b82f6', dash: null,  weight: 3, label: 'FLOT' },
+  PHASE_LINE:    { shape: 'line',    color: '#22c55e', dash: null,  weight: 2, label: 'Phase line' },
+  OBJ_AREA:      { shape: 'polygon', color: '#16a34a', fill: '#16a34a33', label: 'Objective area' },
+};
+const isTgType = t => TG_SPEC[t] != null;
+
+function tgPointIcon(o) {
+  const spec = TG_SPEC[o.type];
+  const rot  = (o.rotation || 0) % 360;
+  const c    = spec.color;
+  let glyph;
+  switch (o.type) {
+    case 'ATK_AXIS':
+      glyph = `<line x1="40" y1="68" x2="40" y2="14" stroke="${c}" stroke-width="5" stroke-linecap="round"/>
+               <polygon points="40,4 28,22 52,22" fill="${c}"/>`; break;
+    case 'COUNTERATTACK':
+      glyph = `<path d="M 28 60 Q 18 50 28 40 L 40 40 L 40 14" stroke="${c}" stroke-width="5" fill="none"
+                  stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6,3"/>
+               <polygon points="40,4 28,22 52,22" fill="${c}"/>`; break;
+    case 'AMBUSH':
+      glyph = `<polyline points="14,52 40,12 66,52" fill="none" stroke="${c}" stroke-width="5"
+                  stroke-linecap="round" stroke-linejoin="round"/>`; break;
+    case 'DEF_AREA':
+      glyph = `<polyline points="14,18 14,52 66,52 66,18" fill="none" stroke="${c}" stroke-width="5"
+                  stroke-linecap="round" stroke-linejoin="round"/>`; break;
+    case 'BLOCK':
+      glyph = `<line x1="40" y1="60" x2="40" y2="22" stroke="${c}" stroke-width="5" stroke-linecap="round"/>
+               <line x1="20" y1="22" x2="60" y2="22" stroke="${c}" stroke-width="6" stroke-linecap="round"/>`; break;
+    case 'BYPASS':
+      glyph = `<path d="M 26 64 Q 26 24 56 24" stroke="${c}" stroke-width="5" fill="none"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+               <polygon points="64,24 50,16 50,32" fill="${c}"/>`; break;
+    case 'WITHDRAW':
+      glyph = `<line x1="40" y1="14" x2="40" y2="58" stroke="${c}" stroke-width="5" stroke-linecap="round"/>
+               <polygon points="40,68 28,50 52,50" fill="${c}"/>
+               <path d="M 40 14 Q 28 14 28 24" stroke="${c}" stroke-width="3" fill="none" stroke-linecap="round"/>`; break;
+    default:
+      glyph = `<circle cx="40" cy="40" r="20" fill="${c}"/>`;
+  }
+  const html = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -16 88 88" width="48" height="52">
+                  <g transform="rotate(${rot} 40 40)" filter="drop-shadow(0 0 2px rgba(0,0,0,.7))">${glyph}</g>
+                </svg>`;
+  return L.divIcon({ html, className: 'tg-graphic-icon',
+                     iconSize: [48, 52], iconAnchor: [24, 32] });
+}
+
+function objectiveIcon() {
+  return L.divIcon({ className: 'objective-icon', html: '🚩',
+                     iconSize: [28, 28], iconAnchor: [6, 26] });
+}
+
 async function loadOverlays() {
   if (!snapMap) return;
   if (snapOverlayLayer) { snapMap.removeLayer(snapOverlayLayer); }
   snapOverlayLayer = L.layerGroup().addTo(snapMap);
 
-  // Tactical objects (includes OBJECTIVE — objectives are TacticalObject rows)
+  // Tactical objects: TGs use main-map glyphs; OBJECTIVE uses 🚩; others use milsymbol.
   try {
     const r = await api('/tactical-objects');
     if (r.ok) {
       const objs = await r.json();
       objs.forEach(o => {
-        const color = TYPE_COLORS[o.type] || '#94a3b8';
-        let geom = null;
-        if (o.geometry) { try { geom = JSON.parse(o.geometry); } catch (_) {} }
-        if (geom && Array.isArray(geom.coords) && geom.coords.length >= 2) {
-          const pts = geom.coords.map(c => [c[0], c[1]]);
-          if ((geom.type || '').toLowerCase() === 'polygon') {
-            L.polygon(pts, { color, fillColor: color, fillOpacity: 0.25, weight: 2 })
-              .bindTooltip(`${o.type}${o.symbol_code ? ' · '+o.symbol_code : ''}`)
+        // Tactical control graphics: branch on shape (point / line / polygon)
+        if (isTgType(o.type)) {
+          const spec = TG_SPEC[o.type];
+          if (spec.shape === 'point') {
+            L.marker([o.latitude, o.longitude], { icon: tgPointIcon(o) })
+              .bindTooltip(`${spec.label}${o.notes ? ' — '+o.notes : ''}`)
               .addTo(snapOverlayLayer);
           } else {
-            L.polyline(pts, { color, weight: 3 })
-              .bindTooltip(`${o.type}${o.symbol_code ? ' · '+o.symbol_code : ''}`)
-              .addTo(snapOverlayLayer);
+            let coords = null;
+            if (o.geometry) {
+              try {
+                const g = JSON.parse(o.geometry);
+                if (Array.isArray(g.coords) && g.coords.length >= 2) coords = g.coords;
+              } catch (_) {}
+            }
+            if (!coords) coords = [[o.latitude, o.longitude]];
+            const opts = {
+              color: spec.color, weight: spec.weight || 3,
+              dashArray: spec.dash || null,
+              fillColor: spec.fill || spec.color,
+              fillOpacity: spec.shape === 'polygon' ? 0.18 : 0,
+            };
+            const layer = (spec.shape === 'polygon' ? L.polygon : L.polyline)(coords, opts);
+            layer.bindTooltip(`${spec.label}${o.notes ? ' — '+o.notes : ''}`)
+                 .addTo(snapOverlayLayer);
           }
+          return;
         }
-        // Anchor marker — proper MIL-STD-2525 symbol if milsymbol is available.
+        // Objectives: friendly objective marker (🚩)
+        if (o.type === 'OBJECTIVE') {
+          const title = (String(o.notes || '').split('\n')[0]) || 'Objective';
+          L.marker([o.latitude, o.longitude], { icon: objectiveIcon() })
+            .bindTooltip(`🚩 ${title}`).addTo(snapOverlayLayer);
+          return;
+        }
+        // ENEMY / POI / MARKER / unknown: MIL-STD-2525 via milsymbol
         const sidc = (o.symbol_code && o.symbol_code.length >= 10)
           ? o.symbol_code
           : (DEFAULT_SIDC[o.type] || DEFAULT_SIDC.MARKER);
-        const tooltip = `${o.type === 'OBJECTIVE' ? '🚩 OBJECTIVE' : o.type}` +
-                        `${o.symbol_code ? ' · '+o.symbol_code : ''}` +
-                        `${o.notes ? ' — '+o.notes : ''}`;
-        const icon = milIcon(sidc, { uniqueDesignation: o.notes ? o.notes.slice(0, 12) : '' });
+        const tooltip = `${o.type}${o.symbol_code ? ' · '+o.symbol_code : ''}${o.notes ? ' — '+o.notes : ''}`;
+        const icon = milIcon(sidc);
         if (icon) {
           L.marker([o.latitude, o.longitude], { icon })
             .bindTooltip(tooltip).addTo(snapOverlayLayer);
         } else {
+          const color = TYPE_COLORS[o.type] || '#94a3b8';
           L.circleMarker([o.latitude, o.longitude], {
             radius: 6, color: '#0f172a', weight: 1.5, fillColor: color, fillOpacity: 0.95,
           }).bindTooltip(tooltip).addTo(snapOverlayLayer);
