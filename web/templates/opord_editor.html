@@ -407,6 +407,80 @@ async function renderRecipients() {
 
 // ── Snapshot capture modal ────────────────────────────────────────────────
 let snapMap = null;
+// Color palette mirrors the backend overlay renderer in tiles.py
+const TYPE_COLORS = {
+  ENEMY: '#dc2626', POI: '#3b82f6', MARKER: '#94a3b8',
+  OBJECTIVE: '#22c55e', ROUTE: '#3b82f6', ZONE: '#fb923c',
+  ATK_AXIS: '#dc2626', DEF_AREA: '#22c55e', AMBUSH: '#ef4444',
+  BOUNDARY: '#94a3b8', FLET: '#22c55e', FLOT: '#dc2626',
+  PHASE_LINE: '#facc15', OBJ_AREA: '#22c55e',
+};
+let snapOverlayLayer = null;
+
+async function loadOverlays() {
+  if (!snapMap) return;
+  if (snapOverlayLayer) { snapMap.removeLayer(snapOverlayLayer); }
+  snapOverlayLayer = L.layerGroup().addTo(snapMap);
+
+  // Tactical objects
+  try {
+    const r = await api('/tactical-objects');
+    if (r.ok) {
+      const objs = await r.json();
+      objs.forEach(o => {
+        const color = TYPE_COLORS[o.type] || '#94a3b8';
+        let geom = null;
+        if (o.geometry) { try { geom = JSON.parse(o.geometry); } catch (_) {} }
+        if (geom && Array.isArray(geom.coords) && geom.coords.length >= 2) {
+          const pts = geom.coords.map(c => [c[0], c[1]]);
+          if ((geom.type || '').toLowerCase() === 'polygon') {
+            L.polygon(pts, { color, fillColor: color, fillOpacity: 0.25, weight: 2 })
+              .bindTooltip(`${o.type}${o.symbol_code ? ' · '+o.symbol_code : ''}`)
+              .addTo(snapOverlayLayer);
+          } else {
+            L.polyline(pts, { color, weight: 3 })
+              .bindTooltip(`${o.type}${o.symbol_code ? ' · '+o.symbol_code : ''}`)
+              .addTo(snapOverlayLayer);
+          }
+        }
+        L.circleMarker([o.latitude, o.longitude], {
+          radius: 6, color: '#0f172a', weight: 1.5, fillColor: color, fillOpacity: 0.95,
+        }).bindTooltip(`${o.type}${o.symbol_code ? ' · '+o.symbol_code : ''}${o.notes ? ' — '+o.notes : ''}`)
+          .addTo(snapOverlayLayer);
+      });
+    }
+  } catch (_) {}
+
+  // Operators (online + has position)
+  try {
+    const r = await api('/operators');
+    if (r.ok) {
+      const ops = await r.json();
+      ops.forEach(o => {
+        if (o.latitude == null || o.longitude == null) return;
+        if (!o.online) return;
+        L.circleMarker([o.latitude, o.longitude], {
+          radius: 5, color: '#065f46', weight: 1.5, fillColor: '#10b981', fillOpacity: 1,
+        }).bindTooltip(o.callsign).addTo(snapOverlayLayer);
+      });
+    }
+  } catch (_) {}
+
+  // Active alerts
+  try {
+    const r = await api('/alerts');
+    if (r.ok) {
+      const alerts = await r.json();
+      alerts.filter(a => a.status === 'ACTIVE' && a.latitude != null && a.longitude != null)
+            .forEach(a => {
+        L.circleMarker([a.latitude, a.longitude], {
+          radius: 8, color: '#b45309', weight: 2, fillColor: '#facc15', fillOpacity: 0.9,
+        }).bindTooltip(`🚨 ${a.type}`).addTo(snapOverlayLayer);
+      });
+    }
+  } catch (_) {}
+}
+
 document.getElementById('btn-snap').addEventListener('click', () => {
   document.getElementById('snap-modal').classList.add('open');
   setTimeout(() => {
@@ -416,6 +490,7 @@ document.getElementById('btn-snap').addEventListener('click', () => {
         maxZoom: 19, subdomains: ['a','b','c'], attribution: '© OpenStreetMap',
       }).addTo(snapMap);
     } else { snapMap.invalidateSize(); }
+    loadOverlays();
   }, 50);
 });
 function closeSnapModal() { document.getElementById('snap-modal').classList.remove('open'); }
