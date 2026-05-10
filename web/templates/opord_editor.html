@@ -652,45 +652,58 @@ document.getElementById('btn-snap').addEventListener('click', async () => {
 });
 function closeSnapModal() { document.getElementById('snap-modal').classList.remove('open'); }
 window.closeSnapModal = closeSnapModal;
+function loadSvgImage(svgString) {
+  return new Promise(res => {
+    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const img  = new Image();
+    let done = false;
+    const finish = (ok) => { if (done) return; done = true; URL.revokeObjectURL(url); res(ok ? img : null); };
+    img.onload  = () => finish(true);
+    img.onerror = () => finish(false);
+    setTimeout(() => finish(false), 1500);   // hard per-image timeout
+    img.src = url;
+  });
+}
+
 function captureClientSide() {
   return new Promise((resolve, reject) => {
     if (typeof leafletImage !== 'function') return reject(new Error('leaflet-image not loaded'));
-    leafletImage(snapMap, (err, canvas) => {
-      if (err) return reject(err);
-      // Overlay milsymbol/glyph icons + emoji on top — leaflet-image renders
-      // tiles + native polylines/polygons but doesn't include divIcons.
+    let settled = false;
+    const fail = (e) => { if (!settled) { settled = true; reject(e); } };
+    const ok   = (v) => { if (!settled) { settled = true; resolve(v); } };
+    setTimeout(() => fail(new Error('client capture timed out (12 s)')), 12000);
+
+    leafletImage(snapMap, async (err, canvas) => {
+      if (err) return fail(err);
       const ctx = canvas.getContext('2d');
-      const mapSize = snapMap.getSize();
-      const overlayHtml = snapMap.getContainer().querySelectorAll('.leaflet-marker-pane > *');
-      const promises = [];
-      overlayHtml.forEach(el => {
+      const mapRect = snapMap.getContainer().getBoundingClientRect();
+      // Walk the marker pane and rasterize each icon onto the canvas.
+      const els = Array.from(snapMap.getContainer().querySelectorAll('.leaflet-marker-pane > *'));
+      for (const el of els) {
         const rect = el.getBoundingClientRect();
-        const mapRect = snapMap.getContainer().getBoundingClientRect();
         const x = rect.left - mapRect.left;
-        const y = rect.top - mapRect.top;
-        const w = rect.width || el.offsetWidth || 24;
-        const h = rect.height || el.offsetHeight || 24;
-        // Serialize the icon's HTML into an SVG <foreignObject> for rasterization
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
-                       <foreignObject width="100%" height="100%">
-                         <div xmlns="http://www.w3.org/1999/xhtml" style="font:14px sans-serif;line-height:1">
-                           ${el.innerHTML}
-                         </div>
-                       </foreignObject>
-                     </svg>`;
-        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-        const url  = URL.createObjectURL(blob);
-        promises.push(new Promise(res => {
-          const img = new Image();
-          img.onload = () => { ctx.drawImage(img, x, y, w, h); URL.revokeObjectURL(url); res(); };
-          img.onerror = () => { URL.revokeObjectURL(url); res(); };
-          img.src = url;
-        }));
-      });
-      Promise.all(promises).then(() => {
-        try { resolve(canvas.toDataURL('image/png')); }
-        catch (e) { reject(e); }
-      });
+        const y = rect.top  - mapRect.top;
+        const w = Math.max(1, rect.width  || el.offsetWidth);
+        const h = Math.max(1, rect.height || el.offsetHeight);
+        // Direct SVG icons (milsymbol / TG glyphs) — innerHTML is already <svg>...
+        const innerSvg = el.querySelector('svg');
+        if (innerSvg) {
+          const clone = innerSvg.cloneNode(true);
+          clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+          if (!clone.getAttribute('width'))  clone.setAttribute('width',  w);
+          if (!clone.getAttribute('height')) clone.setAttribute('height', h);
+          const ser = new XMLSerializer().serializeToString(clone);
+          const img = await loadSvgImage(ser);
+          if (img) ctx.drawImage(img, x, y, w, h);
+        } else {
+          // Emoji/text divIcon — render text directly to canvas
+          const txt = (el.textContent || '').trim();
+          if (txt) { ctx.font = '20px sans-serif'; ctx.textBaseline = 'top'; ctx.fillText(txt, x, y); }
+        }
+      }
+      try { ok(canvas.toDataURL('image/png')); }
+      catch (e) { fail(e); }
     });
   });
 }
