@@ -26,6 +26,8 @@
   .btn { padding:.4rem .9rem; border-radius:5px; font:inherit; font-size:.82rem; font-weight:600; cursor:pointer; border:1px solid transparent; }
   .btn-primary { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
   .btn-primary:hover { background:#2563eb; }
+  .btn[disabled] { opacity:.45; cursor:not-allowed; }
+  .btn[disabled]:hover { filter:none; }
   .btn-ghost { background:none; color:#94a3b8; border-color:#2a3142; }
   .btn-ghost:hover { color:#e2e8f0; border-color:#475569; }
   .btn-ok { background:#065f46; color:#d1fae5; border-color:#065f46; }
@@ -186,7 +188,7 @@
   <div class="pane" data-pane="snaps">
     <h2>🗺 Map snapshots</h2>
     <p class="info">Capture an area of the map. The server stitches OSM tiles into a PNG and embeds it in the OPORD &amp; PDF.</p>
-    <button class="btn btn-primary" id="btn-snap" disabled>+ Capture map area</button>
+    <button class="btn btn-primary" id="btn-snap">+ Capture map area</button>
     <div class="snap-grid" id="snap-grid"></div>
   </div>
 
@@ -223,6 +225,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/milsymbol/milsymbol.js') }}"></script>
 <script>
 const OPORD_ID = "{{ opord_id }}" || null;
 const tok = localStorage.getItem('arrow_token');
@@ -353,7 +356,8 @@ async function save() {
 }
 
 function enableActions() {
-  ['btn-pdf','btn-send','btn-publish','btn-snap'].forEach(id => document.getElementById(id).disabled = !state.id);
+  // Snapshot button stays clickable — it auto-saves the OPORD on first use.
+  ['btn-pdf','btn-send','btn-publish'].forEach(id => document.getElementById(id).disabled = !state.id);
 }
 
 document.getElementById('btn-save').addEventListener('click', save);
@@ -415,14 +419,44 @@ const TYPE_COLORS = {
   BOUNDARY: '#94a3b8', FLET: '#22c55e', FLOT: '#dc2626',
   PHASE_LINE: '#facc15', OBJ_AREA: '#22c55e',
 };
+// Default MIL-STD-2525C SIDCs when an object has no explicit symbol_code.
+const DEFAULT_SIDC = {
+  ENEMY:     'SHGPU-------',   // Hostile ground unit
+  POI:       'SNGPI-------',   // Neutral installation
+  MARKER:    'SUGPU-------',   // Unknown ground unit
+  OBJECTIVE: 'GFGPGAO---X',    // Friendly objective area
+  ROUTE:     'GFGPALC---X',    // Friendly axis (corridor)
+  ZONE:      'GFGPGAG---X',    // Friendly general area
+  ATK_AXIS:  'GFGPOLAA--X',    // Friendly axis of advance
+  DEF_AREA:  'GFGPSAB---X',    // Friendly battle position
+  AMBUSH:    'GFGPSLA---X',    // Ambush
+  BOUNDARY:  'GFGPLB----X',    // Boundary line
+  FLET:      'GFGPLF----X',    // FLET
+  FLOT:      'GHGPLF----X',    // FLOT (hostile)
+  PHASE_LINE:'GFGPGLP---X',    // Phase line
+  OBJ_AREA:  'GFGPGAO---X',    // Objective area
+};
 let snapOverlayLayer = null;
+
+function milIcon(sidc, opts = {}) {
+  if (typeof ms === 'undefined') return null;
+  try {
+    const sym = new ms.Symbol(sidc, Object.assign({ size: 28 }, opts));
+    return L.divIcon({
+      className: 'opord-mil-icon',
+      html: sym.asSVG(),
+      iconSize:   [sym.getSize().width,   sym.getSize().height],
+      iconAnchor: [sym.getAnchor().x,     sym.getAnchor().y],
+    });
+  } catch (e) { console.warn('milsymbol failed', sidc, e); return null; }
+}
 
 async function loadOverlays() {
   if (!snapMap) return;
   if (snapOverlayLayer) { snapMap.removeLayer(snapOverlayLayer); }
   snapOverlayLayer = L.layerGroup().addTo(snapMap);
 
-  // Tactical objects
+  // Tactical objects (includes OBJECTIVE — objectives are TacticalObject rows)
   try {
     const r = await api('/tactical-objects');
     if (r.ok) {
@@ -443,15 +477,27 @@ async function loadOverlays() {
               .addTo(snapOverlayLayer);
           }
         }
-        L.circleMarker([o.latitude, o.longitude], {
-          radius: 6, color: '#0f172a', weight: 1.5, fillColor: color, fillOpacity: 0.95,
-        }).bindTooltip(`${o.type}${o.symbol_code ? ' · '+o.symbol_code : ''}${o.notes ? ' — '+o.notes : ''}`)
-          .addTo(snapOverlayLayer);
+        // Anchor marker — proper MIL-STD-2525 symbol if milsymbol is available.
+        const sidc = (o.symbol_code && o.symbol_code.length >= 10)
+          ? o.symbol_code
+          : (DEFAULT_SIDC[o.type] || DEFAULT_SIDC.MARKER);
+        const tooltip = `${o.type === 'OBJECTIVE' ? '🚩 OBJECTIVE' : o.type}` +
+                        `${o.symbol_code ? ' · '+o.symbol_code : ''}` +
+                        `${o.notes ? ' — '+o.notes : ''}`;
+        const icon = milIcon(sidc, { uniqueDesignation: o.notes ? o.notes.slice(0, 12) : '' });
+        if (icon) {
+          L.marker([o.latitude, o.longitude], { icon })
+            .bindTooltip(tooltip).addTo(snapOverlayLayer);
+        } else {
+          L.circleMarker([o.latitude, o.longitude], {
+            radius: 6, color: '#0f172a', weight: 1.5, fillColor: color, fillOpacity: 0.95,
+          }).bindTooltip(tooltip).addTo(snapOverlayLayer);
+        }
       });
     }
   } catch (_) {}
 
-  // Operators (online + has position)
+  // Operators (online + has position) — friendly inf company symbol
   try {
     const r = await api('/operators');
     if (r.ok) {
@@ -459,9 +505,16 @@ async function loadOverlays() {
       ops.forEach(o => {
         if (o.latitude == null || o.longitude == null) return;
         if (!o.online) return;
-        L.circleMarker([o.latitude, o.longitude], {
-          radius: 5, color: '#065f46', weight: 1.5, fillColor: '#10b981', fillOpacity: 1,
-        }).bindTooltip(o.callsign).addTo(snapOverlayLayer);
+        const sidc = o.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
+        const icon = milIcon(sidc, { size: 24, uniqueDesignation: o.callsign });
+        if (icon) {
+          L.marker([o.latitude, o.longitude], { icon })
+            .bindTooltip(`${o.callsign} (${o.role})`).addTo(snapOverlayLayer);
+        } else {
+          L.circleMarker([o.latitude, o.longitude], {
+            radius: 5, color: '#065f46', weight: 1.5, fillColor: '#10b981', fillOpacity: 1,
+          }).bindTooltip(o.callsign).addTo(snapOverlayLayer);
+        }
       });
     }
   } catch (_) {}
@@ -481,12 +534,22 @@ async function loadOverlays() {
   } catch (_) {}
 }
 
-document.getElementById('btn-snap').addEventListener('click', () => {
+document.getElementById('btn-snap').addEventListener('click', async () => {
   if (typeof L === 'undefined') {
     alert('Leaflet failed to load — check that /static/vendor/leaflet/leaflet.js is reachable. Open DevTools → Network for details.');
     return;
   }
-  if (!state.id) { alert('Save the OPORD first, then capture snapshots.'); return; }
+  if (typeof ms === 'undefined') {
+    console.warn('milsymbol not loaded — symbols will fall back to circles. Check /static/vendor/milsymbol/milsymbol.js');
+  }
+  // Auto-save if the OPORD has never been saved (new drafts have no ID yet).
+  if (!state.id) {
+    const btn = document.getElementById('btn-snap');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await save();
+    btn.disabled = false; btn.textContent = '+ Capture map area';
+    if (!state.id) return;   // save failed; alert already shown
+  }
   document.getElementById('snap-modal').classList.add('open');
   setTimeout(() => {
     try {
