@@ -195,7 +195,7 @@ def render_snapshot(
     if not o:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     try:
-        png = render_snapshot_png(payload.bbox, payload.zoom)
+        png = render_snapshot_png(payload.bbox, payload.zoom, db=db)
     except Exception as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Tile render failed: {exc}")
 
