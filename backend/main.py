@@ -28,6 +28,7 @@ from backend.config.xml_config import load_config
 from backend.limiter import limiter
 from backend.map.router import router as map_router
 from backend.messaging.router import router as messaging_router
+from backend.opord.router import router as opord_router
 from backend.reports.router import router as reports_router
 from backend.storage.database import init_db
 from backend.storage.seed import seed as seed_db
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(battles_router)
     app.include_router(map_router)
     app.include_router(reports_router)
+    app.include_router(opord_router)
     app.include_router(fire_missions_router)
     app.include_router(history_router)
     app.include_router(streams_router)

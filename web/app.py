@@ -35,6 +35,7 @@ def create_app() -> Flask:
     from web.tactical_map.routes import bp as map_bp
     from web.history.routes import bp as history_bp
     from web.objectives.routes import bp as objectives_bp
+    from web.opord.routes import bp as opord_bp
 
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(map_bp)
@@ -44,6 +45,7 @@ def create_app() -> Flask:
     app.register_blueprint(reports_bp)
     app.register_blueprint(history_bp)
     app.register_blueprint(objectives_bp)
+    app.register_blueprint(opord_bp)
     app.register_blueprint(admin_bp)
 
     @app.after_request

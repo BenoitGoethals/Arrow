@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}OPORDs — Arrow{% endblock %}
+{% block head %}
+<style>
+  .opord-shell { padding: 1.5rem 2rem; }
+  .opord-shell h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+  .opord-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  .opord-table th { text-align: left; color: #64748b; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.45rem 0.6rem; border-bottom: 1px solid #2a3142; }
+  .opord-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #1e2736; }
+  .opord-table tr:hover td { background: #1a1f29; }
+  .opord-table a { color: #93c5fd; text-decoration: none; }
+  .badge { display:inline-block; font-size:.68rem; font-weight:700; padding:1px 6px; border-radius:3px; }
+  .badge.draft { background:#1e2736; color:#94a3b8; }
+  .badge.published { background:#064e3b; color:#34d399; }
+  .btn-new { background:#1d4ed8; color:#fff; border:0; padding:.45rem 1rem; border-radius:6px; font:inherit; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; }
+  .btn-new:hover { background:#2563eb; }
+  .toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="opord-shell">
+  <div class="toolbar">
+    <h2>📋 Operation Orders</h2>
+    <a class="btn-new" href="{{ url_for('opord.new') }}">+ New OPORD</a>
+  </div>
+  <table class="opord-table">
+    <thead><tr><th>#</th><th>Title</th><th>OPORD #</th><th>DTG</th><th>Status</th><th>Updated</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6" style="color:#64748b">Loading…</td></tr></tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(async function () {
+  const tok = localStorage.getItem('arrow_token');
+  if (!tok) { location.href = '/login'; return; }
+  const r = await fetch(window.ARROW_BACKEND_URL + '/opord', { headers: { Authorization: 'Bearer ' + tok } });
+  if (r.status === 401) { localStorage.removeItem('arrow_token'); location.href = '/login'; return; }
+  if (!r.ok) {
+    const detail = await r.text().catch(() => '');
+    document.getElementById('rows').innerHTML =
+      `<tr><td colspan=6 style=color:#ef4444>Failed to load OPORDs (HTTP ${r.status}) — ${detail.slice(0,200)}</td></tr>`;
+    return;
+  }
+  const data = await r.json();
+  const tb = document.getElementById('rows');
+  if (!data.length) { tb.innerHTML = '<tr><td colspan=6 style=color:#64748b>No OPORDs yet — create one.</td></tr>'; return; }
+  function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  tb.innerHTML = data.map(o => `
+    <tr>
+      <td>${o.id}</td>
+      <td><a href="/opord/${o.id}">${esc(o.title)}</a></td>
+      <td>${esc(o.opord_number)}</td>
+      <td style="font-family:monospace">${esc(o.dtg)}</td>
+      <td><span class="badge ${o.status === 'PUBLISHED' ? 'published' : 'draft'}">${o.status}</span></td>
+      <td style="color:#64748b">${new Date(o.updated_at).toLocaleString()}</td>
+    </tr>`).join('');
+})();
+</script>
+{% endblock %}
+

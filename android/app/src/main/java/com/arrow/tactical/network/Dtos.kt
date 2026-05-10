@@ -211,6 +211,42 @@ data class MortarPlanResult(
 )
 
 
+// ── OPORD ────────────────────────────────────────────────────────────────────
+
+@Serializable
+data class OpordSnapshotDto(
+    val id: Int,
+    val label: String = "",
+    val bbox: List<Double> = emptyList(),
+    val center: List<Double> = emptyList(),
+    val zoom: Double = 0.0,
+    @SerialName("photo_id") val photoId: Int,
+    val annotations: String = "",
+)
+
+@Serializable
+data class OpordDto(
+    val id: Int,
+    val title: String,
+    @SerialName("opord_number") val opordNumber: String = "",
+    val dtg: String = "",
+    @SerialName("time_zone") val timeZone: String = "ZULU",
+    val classification: String = "UNCLASSIFIED",
+    val references: String = "",
+    @SerialName("task_organization") val taskOrganization: String = "",
+    val situation: JsonObject = JsonObject(emptyMap()),
+    val mission: String = "",
+    val execution: JsonObject = JsonObject(emptyMap()),
+    val sustainment: JsonObject = JsonObject(emptyMap()),
+    @SerialName("command_signal") val commandSignal: JsonObject = JsonObject(emptyMap()),
+    @SerialName("map_snapshots") val mapSnapshots: List<OpordSnapshotDto> = emptyList(),
+    val status: String = "DRAFT",
+    @SerialName("author_id") val authorId: Int = 0,
+    @SerialName("recipient_ids") val recipientIds: List<Int> = emptyList(),
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
 @Serializable
 data class RegisterIn(
     val callsign: String,

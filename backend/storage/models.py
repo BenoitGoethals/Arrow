@@ -222,6 +222,41 @@ class MapSnapshot(Base):
     payload: Mapped[str] = mapped_column(Text)   # JSON list of TacticalObjectOut dicts
 
 
+class Opord(Base):
+    """Operation Order — five-paragraph NATO/US OPORD with map snapshots.
+
+    Each paragraph block is stored as a JSON string so the doctrinal
+    sub-fields (OAKOC, CDS, DRAW-D, ASCOPE, CCIR, PACE, supply classes,
+    succession, etc.) can evolve without schema migrations. ``map_snapshots``
+    holds a list of {id, label, bbox, center, zoom, photo_id, annotations}
+    where ``photo_id`` references the existing ``photos`` table for the PNG.
+    """
+    __tablename__ = "opords"
+
+    id:                Mapped[int]      = mapped_column(primary_key=True)
+    title:             Mapped[str]      = mapped_column(String(200))
+    opord_number:      Mapped[str]      = mapped_column(String(40), default="")
+    dtg:               Mapped[str]      = mapped_column(String(40), default="")
+    time_zone:         Mapped[str]      = mapped_column(String(8), default="ZULU")
+    classification:    Mapped[str]      = mapped_column(String(40), default="UNCLASSIFIED")
+    references:        Mapped[str]      = mapped_column(Text, default="")
+    task_organization: Mapped[str]      = mapped_column(Text, default="")
+
+    situation:      Mapped[str]         = mapped_column(Text, default="{}")     # JSON
+    mission:        Mapped[str]         = mapped_column(Text, default="")
+    execution:      Mapped[str]         = mapped_column(Text, default="{}")     # JSON
+    sustainment:    Mapped[str]         = mapped_column(Text, default="{}")     # JSON
+    command_signal: Mapped[str]         = mapped_column(Text, default="{}")     # JSON
+    map_snapshots:  Mapped[str]         = mapped_column(Text, default="[]")     # JSON list
+
+    status:        Mapped[str]          = mapped_column(String(20), default="DRAFT")  # DRAFT | PUBLISHED
+    author_id:     Mapped[int]          = mapped_column(ForeignKey("operators.id"))
+    battle_id:     Mapped[int | None]   = mapped_column(ForeignKey("battles.id"), nullable=True)
+    recipient_ids: Mapped[str]          = mapped_column(Text, default="[]")  # JSON list of operator ids
+    created_at:    Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at:    Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class StreamRecording(Base):
     """Persisted record of an Android-produced video stream.
 
