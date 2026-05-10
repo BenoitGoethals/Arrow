@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}OPORD Editor — Arrow{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}" />
 <style>
   .ed-shell { display:grid; grid-template-columns: 220px 1fr; gap:0; height: calc(100vh - 60px); }
   .tabs { background:#161b25; border-right:1px solid #2a3142; padding:.75rem; overflow-y:auto; }
@@ -222,7 +222,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script>
 const OPORD_ID = "{{ opord_id }}" || null;
 const tok = localStorage.getItem('arrow_token');
@@ -482,15 +482,25 @@ async function loadOverlays() {
 }
 
 document.getElementById('btn-snap').addEventListener('click', () => {
+  if (typeof L === 'undefined') {
+    alert('Leaflet failed to load — check that /static/vendor/leaflet/leaflet.js is reachable. Open DevTools → Network for details.');
+    return;
+  }
+  if (!state.id) { alert('Save the OPORD first, then capture snapshots.'); return; }
   document.getElementById('snap-modal').classList.add('open');
   setTimeout(() => {
-    if (!snapMap) {
-      snapMap = L.map('snap-map').setView([50.85, 4.35], 13);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, subdomains: ['a','b','c'], attribution: '© OpenStreetMap',
-      }).addTo(snapMap);
-    } else { snapMap.invalidateSize(); }
-    loadOverlays();
+    try {
+      if (!snapMap) {
+        snapMap = L.map('snap-map').setView([50.85, 4.35], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19, subdomains: ['a','b','c'], attribution: '© OpenStreetMap',
+        }).addTo(snapMap);
+      } else { snapMap.invalidateSize(); }
+      loadOverlays();
+    } catch (e) {
+      console.error('snapshot map init failed', e);
+      alert('Snapshot map failed to open: ' + e.message);
+    }
   }, 50);
 });
 function closeSnapModal() { document.getElementById('snap-modal').classList.remove('open'); }
