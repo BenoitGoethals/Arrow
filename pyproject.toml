@@ -22,6 +22,7 @@ dependencies = [
     "pyotp>=2.9",
     "python-json-logger>=3.2",
     "cryptography>=43",
+    "reportlab>=4.2",
 ]
 
 [project.optional-dependencies]

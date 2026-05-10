@@ -1,0 +1,453 @@
+{% extends "base.html" %}
+{% block title %}OPORD Editor — Arrow{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  .ed-shell { display:grid; grid-template-columns: 220px 1fr; gap:0; height: calc(100vh - 60px); }
+  .tabs { background:#161b25; border-right:1px solid #2a3142; padding:.75rem; overflow-y:auto; }
+  .tab-btn { display:block; width:100%; text-align:left; background:none; border:0; color:#94a3b8; padding:.5rem .7rem; border-radius:5px; font:inherit; font-size:.85rem; cursor:pointer; }
+  .tab-btn:hover { background:#1f2937; }
+  .tab-btn.active { background:#1e2736; color:#e2e8f0; font-weight:600; }
+  .pane { overflow-y:auto; padding:1.25rem 2rem; }
+  .pane h2 { font-size:1rem; margin:0 0 1rem; color:#e2e8f0; }
+  .pane h3 { font-size:.78rem; margin:1.2rem 0 .4rem; color:#64748b; text-transform:uppercase; letter-spacing:.08em; }
+  .field { display:block; margin-bottom:.7rem; }
+  .field label { display:block; font-size:.72rem; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; margin-bottom:.2rem; }
+  .field input, .field textarea, .field select {
+    width:100%; background:#0e1217; color:#e2e8f0; border:1px solid #2a3142;
+    border-radius:5px; padding:.45rem .55rem; font:inherit; font-size:.88rem; outline:none;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color:#34d399; }
+  .field textarea { resize:vertical; min-height:60px; font-family:inherit; }
+  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.6rem; }
+  .topbar { display:flex; gap:.5rem; align-items:center; padding:.6rem 1rem; background:#161b25; border-bottom:1px solid #2a3142; }
+  .topbar h1 { font-size:.95rem; margin:0; flex:1; color:#e2e8f0; }
+  .btn { padding:.4rem .9rem; border-radius:5px; font:inherit; font-size:.82rem; font-weight:600; cursor:pointer; border:1px solid transparent; }
+  .btn-primary { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
+  .btn-primary:hover { background:#2563eb; }
+  .btn-ghost { background:none; color:#94a3b8; border-color:#2a3142; }
+  .btn-ghost:hover { color:#e2e8f0; border-color:#475569; }
+  .btn-ok { background:#065f46; color:#d1fae5; border-color:#065f46; }
+  .btn-warn { background:#9a3412; color:#fed7aa; border-color:#9a3412; }
+  .pane { display:none; }
+  .pane.active { display:block; }
+  .status-pill { font-size:.7rem; padding:2px 7px; border-radius:3px; font-weight:700; }
+  .status-pill.draft { background:#1e2736; color:#94a3b8; }
+  .status-pill.published { background:#064e3b; color:#34d399; }
+  .snap-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:.6rem; margin-top:.5rem; }
+  .snap-card { background:#0e1217; border:1px solid #2a3142; border-radius:6px; padding:.5rem; font-size:.78rem; }
+  .snap-card img { width:100%; height:140px; object-fit:cover; border-radius:4px; background:#000; }
+  .snap-card .lbl { color:#e2e8f0; font-weight:600; margin-top:.3rem; }
+  .snap-card .meta { color:#64748b; font-family:monospace; font-size:.7rem; }
+  .snap-card .del { float:right; color:#ef4444; cursor:pointer; background:none; border:0; font:inherit; }
+  /* Modal for snapshot capture */
+  .modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:9999; }
+  .modal-bg.open { display:flex; align-items:center; justify-content:center; }
+  .modal { background:#161b25; border:1px solid #2a3142; border-radius:8px; width:min(90vw, 900px); max-height:90vh; display:flex; flex-direction:column; }
+  .modal header { padding:.75rem 1rem; border-bottom:1px solid #2a3142; display:flex; align-items:center; gap:.5rem; }
+  .modal header h3 { margin:0; font-size:.95rem; flex:1; }
+  .modal .body { padding:.75rem 1rem; overflow:auto; }
+  #snap-map { height:480px; border-radius:6px; border:1px solid #2a3142; }
+  .modal footer { padding:.6rem 1rem; border-top:1px solid #2a3142; display:flex; gap:.5rem; justify-content:flex-end; }
+  .recipients { max-height:240px; overflow-y:auto; border:1px solid #2a3142; border-radius:5px; padding:.4rem; background:#0e1217; }
+  .recipients label { display:flex; align-items:center; gap:.4rem; font-size:.82rem; padding:.2rem 0; cursor:pointer; }
+  .info { color:#64748b; font-size:.78rem; margin-bottom:.5rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1>📋 <span id="opord-title-display">New OPORD</span> <span id="opord-status" class="status-pill draft">DRAFT</span></h1>
+  <button class="btn btn-ghost" onclick="location.href='/opord/'">← Back</button>
+  <button class="btn btn-ghost" id="btn-pdf" disabled>Export PDF</button>
+  <button class="btn btn-warn"  id="btn-send" disabled>Send →</button>
+  <button class="btn btn-ok"    id="btn-publish" disabled>Publish</button>
+  <button class="btn btn-primary" id="btn-save">Save</button>
+</div>
+
+<div class="ed-shell">
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="meta">📑 Header</button>
+    <button class="tab-btn" data-tab="situation">1. Situation</button>
+    <button class="tab-btn" data-tab="mission">2. Mission</button>
+    <button class="tab-btn" data-tab="execution">3. Execution</button>
+    <button class="tab-btn" data-tab="sustainment">4. Sustainment</button>
+    <button class="tab-btn" data-tab="cs">5. Command &amp; Signal</button>
+    <button class="tab-btn" data-tab="snaps">🗺 Map snapshots</button>
+    <button class="tab-btn" data-tab="distrib">📤 Distribution</button>
+  </div>
+
+  <!-- Header -->
+  <div class="pane active" data-pane="meta">
+    <h2>Header</h2>
+    <div class="field"><label>Title</label><input id="f-title"></div>
+    <div class="row3">
+      <div class="field"><label>OPORD #</label><input id="f-opord_number"></div>
+      <div class="field"><label>DTG</label><input id="f-dtg" placeholder="101800ZMAY26"></div>
+      <div class="field"><label>Time zone</label><input id="f-time_zone" value="ZULU"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Classification</label>
+        <select id="f-classification">
+          <option>UNCLASSIFIED</option><option>RESTRICTED</option><option>CONFIDENTIAL</option><option>SECRET</option>
+        </select>
+      </div>
+      <div class="field"><label>Battle (optional)</label><input id="f-battle_id" type="number" placeholder="Battle ID"></div>
+    </div>
+    <div class="field"><label>References</label><textarea id="f-references" placeholder="Maps, higher OPORDs, SOPs"></textarea></div>
+    <div class="field"><label>Task organization</label><textarea id="f-task_organization" placeholder="Assigned/attached units, OPCON/TACON, effective times"></textarea></div>
+  </div>
+
+  <!-- Situation -->
+  <div class="pane" data-pane="situation">
+    <h2>1. Situation</h2>
+    <h3>Area of operations</h3>
+    <div class="field"><label>Terrain (OAKOC)</label><textarea id="s-terrain"></textarea></div>
+    <div class="field"><label>Weather &amp; light data</label><textarea id="s-weather" placeholder="BMNT/EENT, illum, wind, precip"></textarea></div>
+    <h3>Enemy forces</h3>
+    <div class="field"><label>Composition · Disposition · Strength</label><textarea id="s-enemy_cds"></textarea></div>
+    <div class="field"><label>Most likely COA (EMLCOA)</label><textarea id="s-enemy_mlcoa"></textarea></div>
+    <div class="field"><label>Most dangerous COA (EMDCOA)</label><textarea id="s-enemy_mdcoa"></textarea></div>
+    <h3>Friendly forces</h3>
+    <div class="field"><label>Higher mission &amp; intent (2 levels up)</label><textarea id="s-higher"></textarea></div>
+    <div class="field"><label>Adjacent units (left / right / front / rear)</label><textarea id="s-adjacent"></textarea></div>
+    <h3>Civil considerations (ASCOPE)</h3>
+    <div class="field"><textarea id="s-civil" placeholder="Areas, Structures, Capabilities, Organizations, People, Events"></textarea></div>
+    <div class="field"><label>Attachments / detachments</label><textarea id="s-attachments"></textarea></div>
+    <div class="field"><label>Assumptions</label><textarea id="s-assumptions"></textarea></div>
+  </div>
+
+  <!-- Mission -->
+  <div class="pane" data-pane="mission">
+    <h2>2. Mission</h2>
+    <p class="info">Single sentence — Who, What (task), When, Where, Why (purpose).</p>
+    <div class="field"><textarea id="f-mission" rows="4"></textarea></div>
+  </div>
+
+  <!-- Execution -->
+  <div class="pane" data-pane="execution">
+    <h2>3. Execution</h2>
+    <h3>Commander's intent</h3>
+    <div class="field"><label>Purpose</label><textarea id="e-intent_purpose"></textarea></div>
+    <div class="field"><label>Key tasks</label><textarea id="e-intent_key_tasks"></textarea></div>
+    <div class="field"><label>End state</label><textarea id="e-intent_end_state"></textarea></div>
+    <h3>Concept of operations</h3>
+    <div class="field"><label>Scheme of maneuver</label><textarea id="e-conops_maneuver"></textarea></div>
+    <div class="field"><label>Scheme of fires</label><textarea id="e-conops_fires"></textarea></div>
+    <div class="field"><label>Main effort</label><input id="e-conops_main_effort"></div>
+    <div class="field"><label>Phasing</label><textarea id="e-conops_phasing"></textarea></div>
+    <h3>Tasks to subordinate units</h3>
+    <div class="field"><textarea id="e-tasks" rows="6" placeholder="Unit — task + purpose"></textarea></div>
+    <h3>Coordinating instructions</h3>
+    <div class="field"><label>Timings / order of movement</label><textarea id="e-coord_timings"></textarea></div>
+    <div class="field"><label>CCIR (PIR + FFIR)</label><textarea id="e-coord_ccir"></textarea></div>
+    <div class="field"><label>ROE / RUF</label><textarea id="e-coord_roe"></textarea></div>
+    <div class="field"><label>Risk &amp; control measures</label><textarea id="e-coord_risk"></textarea></div>
+    <div class="field"><label>Fire support coord measures (FSCM)</label><textarea id="e-coord_fscm"></textarea></div>
+  </div>
+
+  <!-- Sustainment -->
+  <div class="pane" data-pane="sustainment">
+    <h2>4. Sustainment</h2>
+    <h3>Logistics</h3>
+    <div class="field"><label>Supply (Class I/III/V/VIII…)</label><textarea id="su-supply"></textarea></div>
+    <div class="field"><label>Transportation</label><textarea id="su-transport"></textarea></div>
+    <div class="field"><label>Maintenance / recovery</label><textarea id="su-maintenance"></textarea></div>
+    <h3>Personnel</h3>
+    <div class="field"><label>Strength &amp; replacements</label><textarea id="su-personnel"></textarea></div>
+    <div class="field"><label>EPW handling (5 S's &amp; T)</label><textarea id="su-epw"></textarea></div>
+    <h3>Health service support</h3>
+    <div class="field"><label>CASEVAC plan</label><textarea id="su-casevac"></textarea></div>
+    <div class="field"><label>MEDEVAC (Role 1 → 4)</label><textarea id="su-medevac"></textarea></div>
+  </div>
+
+  <!-- Command & signal -->
+  <div class="pane" data-pane="cs">
+    <h2>5. Command and Signal</h2>
+    <h3>Command</h3>
+    <div class="field"><label>Commander location / CP</label><textarea id="cs-command"></textarea></div>
+    <div class="field"><label>Succession of command</label><textarea id="cs-succession"></textarea></div>
+    <h3>Control</h3>
+    <div class="field"><label>Reports / battle rhythm</label><textarea id="cs-control"></textarea></div>
+    <h3>Signal</h3>
+    <div class="row2">
+      <div class="field"><label>P — Primary</label><input id="cs-pace_p"></div>
+      <div class="field"><label>A — Alternate</label><input id="cs-pace_a"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>C — Contingency</label><input id="cs-pace_c"></div>
+      <div class="field"><label>E — Emergency</label><input id="cs-pace_e"></div>
+    </div>
+    <div class="field"><label>Callsigns &amp; frequencies</label><textarea id="cs-callsigns"></textarea></div>
+    <div class="field"><label>Challenge / password</label><input id="cs-password"></div>
+  </div>
+
+  <!-- Map snapshots -->
+  <div class="pane" data-pane="snaps">
+    <h2>🗺 Map snapshots</h2>
+    <p class="info">Capture an area of the map. The server stitches OSM tiles into a PNG and embeds it in the OPORD &amp; PDF.</p>
+    <button class="btn btn-primary" id="btn-snap" disabled>+ Capture map area</button>
+    <div class="snap-grid" id="snap-grid"></div>
+  </div>
+
+  <!-- Distribution -->
+  <div class="pane" data-pane="distrib">
+    <h2>📤 Distribution</h2>
+    <p class="info">Select operators to receive the OPORD. They will be notified live and can read it on Android.</p>
+    <div class="field"><label>Recipients</label>
+      <div class="recipients" id="recipients"></div>
+    </div>
+    <p class="info">Currently sent to: <span id="recipients-current" style="color:#34d399"></span></p>
+  </div>
+</div>
+
+<!-- Capture modal -->
+<div class="modal-bg" id="snap-modal">
+  <div class="modal">
+    <header>
+      <h3>Capture map area</h3>
+      <button class="btn btn-ghost" onclick="closeSnapModal()">✕</button>
+    </header>
+    <div class="body">
+      <p class="info">Pan/zoom to the area, then click <b>Capture current view</b>.</p>
+      <div class="field"><label>Label</label><input id="snap-label" placeholder="e.g. Objective BRAVO"></div>
+      <div id="snap-map"></div>
+      <div class="field" style="margin-top:.5rem"><label>Annotations</label><textarea id="snap-annotations" placeholder="Notes for this snapshot"></textarea></div>
+    </div>
+    <footer>
+      <button class="btn btn-ghost" onclick="closeSnapModal()">Cancel</button>
+      <button class="btn btn-primary" id="snap-go">Capture current view</button>
+    </footer>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const OPORD_ID = "{{ opord_id }}" || null;
+const tok = localStorage.getItem('arrow_token');
+if (!tok) { location.href = '/login'; }
+const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p, {
+  ...opts, headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+});
+
+let state = {
+  id: OPORD_ID ? parseInt(OPORD_ID) : null,
+  status: 'DRAFT',
+  recipient_ids: [],
+  map_snapshots: [],
+};
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tab-btn').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  document.querySelector(`.pane[data-pane="${b.dataset.tab}"]`).classList.add('active');
+}));
+
+const v = id => document.getElementById(id).value;
+const setV = (id, val) => { const el = document.getElementById(id); if (el) el.value = val == null ? '' : val; };
+
+function collect() {
+  return {
+    title: v('f-title') || 'Untitled OPORD',
+    opord_number: v('f-opord_number'),
+    dtg: v('f-dtg'),
+    time_zone: v('f-time_zone'),
+    classification: v('f-classification'),
+    references: v('f-references'),
+    task_organization: v('f-task_organization'),
+    situation: {
+      terrain: v('s-terrain'),
+      weather: v('s-weather'),
+      enemy_cds: v('s-enemy_cds'),
+      enemy_mlcoa: v('s-enemy_mlcoa'),
+      enemy_mdcoa: v('s-enemy_mdcoa'),
+      higher: v('s-higher'),
+      adjacent: v('s-adjacent'),
+      civil: v('s-civil'),
+      attachments: v('s-attachments'),
+      assumptions: v('s-assumptions'),
+    },
+    mission: v('f-mission'),
+    execution: {
+      intent_purpose: v('e-intent_purpose'),
+      intent_key_tasks: v('e-intent_key_tasks'),
+      intent_end_state: v('e-intent_end_state'),
+      conops_maneuver: v('e-conops_maneuver'),
+      conops_fires: v('e-conops_fires'),
+      conops_main_effort: v('e-conops_main_effort'),
+      conops_phasing: v('e-conops_phasing'),
+      tasks: v('e-tasks'),
+      coord_timings: v('e-coord_timings'),
+      coord_ccir: v('e-coord_ccir'),
+      coord_roe: v('e-coord_roe'),
+      coord_risk: v('e-coord_risk'),
+      coord_fscm: v('e-coord_fscm'),
+    },
+    sustainment: {
+      supply: v('su-supply'),
+      transport: v('su-transport'),
+      maintenance: v('su-maintenance'),
+      personnel: v('su-personnel'),
+      epw: v('su-epw'),
+      casevac: v('su-casevac'),
+      medevac: v('su-medevac'),
+    },
+    command_signal: {
+      command: v('cs-command'),
+      succession: v('cs-succession'),
+      control: v('cs-control'),
+      pace_primary: v('cs-pace_p'),
+      pace_alternate: v('cs-pace_a'),
+      pace_contingency: v('cs-pace_c'),
+      pace_emergency: v('cs-pace_e'),
+      callsigns: v('cs-callsigns'),
+      password: v('cs-password'),
+    },
+    battle_id: parseInt(v('f-battle_id')) || null,
+  };
+}
+
+function fill(o) {
+  setV('f-title', o.title); setV('f-opord_number', o.opord_number); setV('f-dtg', o.dtg);
+  setV('f-time_zone', o.time_zone); setV('f-classification', o.classification);
+  setV('f-references', o.references); setV('f-task_organization', o.task_organization);
+  setV('f-battle_id', o.battle_id);
+  const s = o.situation || {};
+  Object.keys(s).forEach(k => setV(`s-${k}`, s[k]));
+  setV('f-mission', o.mission);
+  const e = o.execution || {};
+  Object.keys(e).forEach(k => setV(`e-${k}`, e[k]));
+  const su = o.sustainment || {};
+  Object.keys(su).forEach(k => setV(`su-${k}`, su[k]));
+  const cs = o.command_signal || {};
+  setV('cs-command', cs.command); setV('cs-succession', cs.succession); setV('cs-control', cs.control);
+  setV('cs-pace_p', cs.pace_primary); setV('cs-pace_a', cs.pace_alternate);
+  setV('cs-pace_c', cs.pace_contingency); setV('cs-pace_e', cs.pace_emergency);
+  setV('cs-callsigns', cs.callsigns); setV('cs-password', cs.password);
+  document.getElementById('opord-title-display').textContent = o.title || 'Untitled OPORD';
+  state.status = o.status; state.recipient_ids = o.recipient_ids || [];
+  state.map_snapshots = o.map_snapshots || [];
+  const pill = document.getElementById('opord-status');
+  pill.textContent = o.status;
+  pill.className = 'status-pill ' + (o.status === 'PUBLISHED' ? 'published' : 'draft');
+  renderSnaps();
+  renderRecipients();
+}
+
+async function save() {
+  const body = collect();
+  const url = state.id ? `/opord/${state.id}` : '/opord';
+  const method = state.id ? 'PUT' : 'POST';
+  const r = await api(url, { method, body: JSON.stringify(body) });
+  if (r.status === 401) { localStorage.removeItem('arrow_token'); location.href = '/login'; return; }
+  if (r.status === 403) { alert('Save failed: your role lacks permission (need ADMIN or BATTLE_CAPTAIN).'); return; }
+  if (!r.ok) { const t = await r.text().catch(()=>'' ); alert('Save failed: HTTP ' + r.status + '\n' + t.slice(0,400)); return; }
+  const data = await r.json();
+  state.id = data.id;
+  if (!OPORD_ID) history.replaceState(null, '', `/opord/${data.id}`);
+  fill(data);
+  enableActions();
+}
+
+function enableActions() {
+  ['btn-pdf','btn-send','btn-publish','btn-snap'].forEach(id => document.getElementById(id).disabled = !state.id);
+}
+
+document.getElementById('btn-save').addEventListener('click', save);
+document.getElementById('btn-publish').addEventListener('click', async () => {
+  await save();
+  const r = await api(`/opord/${state.id}/publish`, { method: 'POST' });
+  if (r.ok) fill(await r.json());
+});
+document.getElementById('btn-pdf').addEventListener('click', () => {
+  // PDF endpoint requires Authorization header → fetch as blob then open
+  api(`/opord/${state.id}/pdf`).then(r => r.ok ? r.blob() : Promise.reject(r.status))
+    .then(b => window.open(URL.createObjectURL(b), '_blank'))
+    .catch(e => alert('PDF failed: HTTP ' + e + ' — if 401, your session has expired. Sign out and back in.'));
+});
+document.getElementById('btn-send').addEventListener('click', async () => {
+  if (!state.id) return;
+  const checked = [...document.querySelectorAll('#recipients input:checked')].map(c => parseInt(c.value));
+  if (!checked.length) { alert('Pick at least one operator.'); return; }
+  const r = await api(`/opord/${state.id}/send`, { method: 'POST', body: JSON.stringify({ operator_ids: checked }) });
+  if (r.ok) { alert('OPORD sent to ' + checked.length + ' operator(s).'); fill(await r.json()); }
+});
+
+function renderSnaps() {
+  const grid = document.getElementById('snap-grid');
+  grid.innerHTML = state.map_snapshots.map(s => `
+    <div class="snap-card">
+      <button class="del" data-id="${s.id}" title="Delete">✕</button>
+      <img data-photo-id="${s.photo_id}" alt="${s.label || 'snapshot'}">
+      <div class="lbl">${(s.label || 'Snapshot ' + s.id).replace(/[<>]/g,'')}</div>
+      <div class="meta">z${s.zoom} · ${s.center && s.center.length === 2 ? s.center[0].toFixed(4) + ', ' + s.center[1].toFixed(4) : ''}</div>
+    </div>`).join('') || '<p class="info">No snapshots yet.</p>';
+  grid.querySelectorAll('.del').forEach(b => b.addEventListener('click', async () => {
+    const r = await api(`/opord/${state.id}/snapshots/${b.dataset.id}`, { method: 'DELETE' });
+    if (r.ok) fill(await r.json());
+  }));
+  if (window.arrowApplyPhotos) window.arrowApplyPhotos(grid);
+}
+
+async function renderRecipients() {
+  const box = document.getElementById('recipients');
+  const r = await api('/operators');
+  if (!r.ok) { box.innerHTML = '<span class=info>Failed to load operators</span>'; return; }
+  const ops = await r.json();
+  const sent = new Set(state.recipient_ids);
+  box.innerHTML = ops.map(o =>
+    `<label><input type="checkbox" value="${o.id}" ${sent.has(o.id) ? 'checked' : ''}> ${o.callsign} <span style="color:#64748b">(${o.role})</span></label>`
+  ).join('');
+  document.getElementById('recipients-current').textContent =
+    state.recipient_ids.length ? state.recipient_ids.join(', ') : 'nobody yet';
+}
+
+// ── Snapshot capture modal ────────────────────────────────────────────────
+let snapMap = null;
+document.getElementById('btn-snap').addEventListener('click', () => {
+  document.getElementById('snap-modal').classList.add('open');
+  setTimeout(() => {
+    if (!snapMap) {
+      snapMap = L.map('snap-map').setView([50.85, 4.35], 13);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(snapMap);
+    } else { snapMap.invalidateSize(); }
+  }, 50);
+});
+function closeSnapModal() { document.getElementById('snap-modal').classList.remove('open'); }
+window.closeSnapModal = closeSnapModal;
+document.getElementById('snap-go').addEventListener('click', async () => {
+  if (!snapMap || !state.id) return;
+  const b = snapMap.getBounds();
+  const z = Math.round(snapMap.getZoom());
+  const body = {
+    label: document.getElementById('snap-label').value || 'Snapshot',
+    bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()],
+    zoom: z,
+    annotations: document.getElementById('snap-annotations').value,
+  };
+  const btn = document.getElementById('snap-go');
+  btn.disabled = true; btn.textContent = 'Stitching tiles…';
+  try {
+    const r = await api(`/opord/${state.id}/snapshots/render`, { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(r.status);
+    fill(await r.json());
+    closeSnapModal();
+  } catch (e) { alert('Snapshot failed: ' + e); }
+  finally { btn.disabled = false; btn.textContent = 'Capture current view'; }
+});
+
+// ── Initial load ──────────────────────────────────────────────────────────
+(async function init() {
+  if (state.id) {
+    const r = await api(`/opord/${state.id}`);
+    if (r.ok) fill(await r.json());
+  } else {
+    renderRecipients();
+  }
+  enableActions();
+})();
+</script>
+{% endblock %}
