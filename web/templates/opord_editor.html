@@ -412,7 +412,9 @@ document.getElementById('btn-snap').addEventListener('click', () => {
   setTimeout(() => {
     if (!snapMap) {
       snapMap = L.map('snap-map').setView([50.85, 4.35], 13);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(snapMap);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, subdomains: ['a','b','c'], attribution: '© OpenStreetMap',
+      }).addTo(snapMap);
     } else { snapMap.invalidateSize(); }
   }, 50);
 });
