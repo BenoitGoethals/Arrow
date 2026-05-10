@@ -225,6 +225,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet-image.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/milsymbol/milsymbol.js') }}"></script>
 <script>
 const OPORD_ID = "{{ opord_id }}" || null;
@@ -635,9 +636,11 @@ document.getElementById('btn-snap').addEventListener('click', async () => {
   setTimeout(() => {
     try {
       if (!snapMap) {
-        snapMap = L.map('snap-map').setView([50.85, 4.35], 13);
+        snapMap = L.map('snap-map', { preferCanvas: true }).setView([50.85, 4.35], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19, subdomains: ['a','b','c'], attribution: '© OpenStreetMap',
+          maxZoom: 19, subdomains: ['a','b','c'],
+          attribution: '© OpenStreetMap',
+          crossOrigin: 'anonymous',   // required so leaflet-image can rasterise tiles
         }).addTo(snapMap);
       } else { snapMap.invalidateSize(); }
       loadOverlays();
@@ -649,24 +652,84 @@ document.getElementById('btn-snap').addEventListener('click', async () => {
 });
 function closeSnapModal() { document.getElementById('snap-modal').classList.remove('open'); }
 window.closeSnapModal = closeSnapModal;
+function captureClientSide() {
+  return new Promise((resolve, reject) => {
+    if (typeof leafletImage !== 'function') return reject(new Error('leaflet-image not loaded'));
+    leafletImage(snapMap, (err, canvas) => {
+      if (err) return reject(err);
+      // Overlay milsymbol/glyph icons + emoji on top — leaflet-image renders
+      // tiles + native polylines/polygons but doesn't include divIcons.
+      const ctx = canvas.getContext('2d');
+      const mapSize = snapMap.getSize();
+      const overlayHtml = snapMap.getContainer().querySelectorAll('.leaflet-marker-pane > *');
+      const promises = [];
+      overlayHtml.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        const mapRect = snapMap.getContainer().getBoundingClientRect();
+        const x = rect.left - mapRect.left;
+        const y = rect.top - mapRect.top;
+        const w = rect.width || el.offsetWidth || 24;
+        const h = rect.height || el.offsetHeight || 24;
+        // Serialize the icon's HTML into an SVG <foreignObject> for rasterization
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+                       <foreignObject width="100%" height="100%">
+                         <div xmlns="http://www.w3.org/1999/xhtml" style="font:14px sans-serif;line-height:1">
+                           ${el.innerHTML}
+                         </div>
+                       </foreignObject>
+                     </svg>`;
+        const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        const url  = URL.createObjectURL(blob);
+        promises.push(new Promise(res => {
+          const img = new Image();
+          img.onload = () => { ctx.drawImage(img, x, y, w, h); URL.revokeObjectURL(url); res(); };
+          img.onerror = () => { URL.revokeObjectURL(url); res(); };
+          img.src = url;
+        }));
+      });
+      Promise.all(promises).then(() => {
+        try { resolve(canvas.toDataURL('image/png')); }
+        catch (e) { reject(e); }
+      });
+    });
+  });
+}
+
 document.getElementById('snap-go').addEventListener('click', async () => {
   if (!snapMap || !state.id) return;
   const b = snapMap.getBounds();
   const z = Math.round(snapMap.getZoom());
-  const body = {
-    label: document.getElementById('snap-label').value || 'Snapshot',
-    bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()],
-    zoom: z,
-    annotations: document.getElementById('snap-annotations').value,
-  };
   const btn = document.getElementById('snap-go');
-  btn.disabled = true; btn.textContent = 'Stitching tiles…';
+  btn.disabled = true; btn.textContent = 'Capturing…';
   try {
-    const r = await api(`/opord/${state.id}/snapshots/render`, { method: 'POST', body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(r.status);
+    let body;
+    let endpoint = `/opord/${state.id}/snapshots`;
+    try {
+      const dataUrl = await captureClientSide();          // includes proper symbols
+      body = {
+        label: document.getElementById('snap-label').value || 'Snapshot',
+        bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()],
+        center: [(b.getSouth()+b.getNorth())/2, (b.getWest()+b.getEast())/2],
+        zoom: z,
+        image_b64: dataUrl,
+        annotations: document.getElementById('snap-annotations').value,
+      };
+    } catch (e) {
+      // CORS-tainted or leaflet-image failed → fall back to server-side render
+      console.warn('client-side capture failed, falling back to server render', e);
+      endpoint = `/opord/${state.id}/snapshots/render`;
+      body = {
+        label: document.getElementById('snap-label').value || 'Snapshot',
+        bbox: [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()],
+        zoom: z,
+        annotations: document.getElementById('snap-annotations').value,
+      };
+    }
+    const r = await api(endpoint, { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     fill(await r.json());
     closeSnapModal();
-  } catch (e) { alert('Snapshot failed: ' + e); }
+  } catch (e) { alert('Snapshot failed: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'Capture current view'; }
 });
 
