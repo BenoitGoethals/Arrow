@@ -14,7 +14,7 @@ import math
 import os
 from pathlib import Path
 
-import httpx
+import urllib.request
 from PIL import Image
 
 TILE_URL = os.environ.get("ARROW_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
@@ -39,10 +39,13 @@ def _fetch_tile(z: int, x: int, y: int) -> bytes:
     if cache.exists():
         return cache.read_bytes()
     url = TILE_URL.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
-    r = httpx.get(url, headers={"User-Agent": TILE_USER_AGENT}, timeout=15.0)
-    r.raise_for_status()
-    cache.write_bytes(r.content)
-    return r.content
+    req = urllib.request.Request(url, headers={"User-Agent": TILE_USER_AGENT})
+    with urllib.request.urlopen(req, timeout=15.0) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"tile {z}/{x}/{y} HTTP {resp.status}")
+        data = resp.read()
+    cache.write_bytes(data)
+    return data
 
 
 def render_snapshot_png(bbox: list[float], zoom: int) -> bytes:
