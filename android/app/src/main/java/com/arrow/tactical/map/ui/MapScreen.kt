@@ -72,6 +72,7 @@ fun MapScreen(
     onCallFire:   (lat: Double, lon: Double) -> Unit = { _, _ -> },
     onReport:     (lat: Double, lon: Double) -> Unit = { _, _ -> },
     onOpenMortar: (lat: Double, lon: Double) -> Unit = { _, _ -> },
+    onOpenDrawer: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -459,6 +460,7 @@ fun MapScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopStart)
+                .offset(y = 92.dp)               // clear the SitaWare chrome above
                 .background(Color(0xE50D1117))   // 90 % opaque dark
                 .padding(horizontal = 8.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -467,8 +469,8 @@ fun MapScreen(
             Canvas(Modifier.size(9.dp)) { drawCircle(dotColor) }
 
             Text(
-                text  = if (serverOnline == false) "ARROW — OFFLINE"
-                        else "ARROW  ·  $online / ${operators.size} online",
+                text  = if (serverOnline == false) "OFFLINE"
+                        else "$online / ${operators.size} online",
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight    = FontWeight.Bold,
                     letterSpacing = 0.5.sp,
@@ -586,6 +588,62 @@ fun MapScreen(
                      modifier = Modifier.size(18.dp), tint = Color(0xFFCBD5E1))
             }
         }
+
+        // ── SitaWare-Edge style chrome overlay ────────────────────────────
+        val me = meId?.let { id -> operators.find { it.id == id } }
+        val mgrs = if (me?.latitude != null && me.longitude != null)
+            com.arrow.tactical.network.MgrsConverter.encode(me.latitude, me.longitude, 5)
+        else "—"
+        val alertsList = remember { mutableStateOf<List<com.arrow.tactical.network.AlertDto>>(emptyList()) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                container.alertRepository.list().onSuccess { alertsList.value = it }
+                delay(15_000)
+            }
+        }
+        val activeAlerts = alertsList.value.count { it.status == "ACTIVE" }
+        val notif = NotificationCounts(
+            critical = activeAlerts,
+            warning  = enemies.count { it.type in setOf("ENEMY","ATK_AXIS","AMBUSH","FLET") && (it.affiliation == "ENEMY" || it.type == "ENEMY") }.coerceAtMost(99),
+            info     = fireMissions.count { it.status == "PENDING" || it.status == "IN_PROGRESS" },
+            routine  = (operators.size - operators.count { it.online }).coerceAtLeast(0),
+        )
+        Column(modifier = Modifier.fillMaxWidth().align(Alignment.TopStart)) {
+            SitawareTopBar(
+                brand   = "ARROW",
+                mgrs    = mgrs,
+                online  = serverOnline == true,
+                alertCount = activeAlerts,
+                chatCount  = 0,
+                onMenu       = onOpenDrawer,
+                onReportLayer= { onReport(me?.latitude ?: Double.NaN, me?.longitude ?: Double.NaN) },
+                onAlerts     = { /* TODO: open alerts tab */ },
+                onChat       = { container.signalNavigateToChat() },
+                onStatus     = { /* TODO: status panel */ },
+                onOverflow   = { /* TODO: overflow menu */ },
+            )
+            SitawareNotificationBanner(
+                counts    = notif,
+                onDismiss = { alertsList.value = emptyList() },
+            )
+        }
+
+        // Right-side FAB column (locate / zoom in / zoom out), vertically centred.
+        SitawareSideFabs(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 10.dp),
+            onLocate = {
+                val opMe = meId?.let { id -> operators.find { it.id == id } }
+                if (opMe?.latitude != null && opMe.longitude != null) {
+                    mapRef.value?.controller?.animateTo(
+                        GeoPoint(opMe.latitude, opMe.longitude), 16.0, null
+                    )
+                }
+            },
+            onZoomIn  = { mapRef.value?.controller?.zoomIn() },
+            onZoomOut = { mapRef.value?.controller?.zoomOut() },
+        )
 
         // ── Call for Fire button — icon-only, compact ────────────────────
         SmallFloatingActionButton(
