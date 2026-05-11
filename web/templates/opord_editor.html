@@ -453,19 +453,22 @@ function milIcon(sidc, opts = {}) {
 }
 
 // ── Tactical control graphics — mirrors web/templates/map.html ─────────────
+// NATO colour convention: friendly tactical graphics in BLUE, enemy in RED.
+const TG_FRIENDLY = '#3b82f6';
+const TG_ENEMY    = '#dc2626';
 const TG_SPEC = {
-  ATK_AXIS:      { shape: 'point',   color: '#ef4444', label: 'Attack' },
-  COUNTERATTACK: { shape: 'point',   color: '#f97316', label: 'Counterattack' },
-  AMBUSH:        { shape: 'point',   color: '#dc2626', label: 'Ambush' },
-  DEF_AREA:      { shape: 'point',   color: '#3b82f6', label: 'Defense' },
-  BLOCK:         { shape: 'point',   color: '#3b82f6', label: 'Block' },
-  BYPASS:        { shape: 'point',   color: '#06b6d4', label: 'Bypass' },
-  WITHDRAW:      { shape: 'point',   color: '#a78bfa', label: 'Withdraw' },
-  BOUNDARY:      { shape: 'line',    color: '#94a3b8', dash: '8,4', weight: 3, label: 'Boundary' },
-  FLET:          { shape: 'line',    color: '#ef4444', dash: '6,4', weight: 3, label: 'FLET' },
-  FLOT:          { shape: 'line',    color: '#3b82f6', dash: null,  weight: 3, label: 'FLOT' },
-  PHASE_LINE:    { shape: 'line',    color: '#22c55e', dash: null,  weight: 2, label: 'Phase line' },
-  OBJ_AREA:      { shape: 'polygon', color: '#16a34a', fill: '#16a34a33', label: 'Objective area' },
+  ATK_AXIS:      { shape: 'point',   color: TG_FRIENDLY, label: 'Attack' },
+  COUNTERATTACK: { shape: 'point',   color: TG_FRIENDLY, label: 'Counterattack' },
+  AMBUSH:        { shape: 'point',   color: TG_ENEMY,    label: 'Ambush' },
+  DEF_AREA:      { shape: 'point',   color: TG_FRIENDLY, label: 'Defense' },
+  BLOCK:         { shape: 'point',   color: TG_FRIENDLY, label: 'Block' },
+  BYPASS:        { shape: 'point',   color: TG_FRIENDLY, label: 'Bypass' },
+  WITHDRAW:      { shape: 'point',   color: TG_FRIENDLY, label: 'Withdraw' },
+  BOUNDARY:      { shape: 'line',    color: TG_FRIENDLY, dash: '8,4', weight: 3, label: 'Boundary' },
+  FLET:          { shape: 'line',    color: TG_ENEMY,    dash: '6,4', weight: 3, label: 'FLET' },
+  FLOT:          { shape: 'line',    color: TG_FRIENDLY, dash: null,  weight: 3, label: 'FLOT' },
+  PHASE_LINE:    { shape: 'line',    color: TG_FRIENDLY, dash: null,  weight: 2, label: 'Phase line' },
+  OBJ_AREA:      { shape: 'polygon', color: TG_FRIENDLY, fill: '#3b82f633', label: 'Objective area' },
 };
 const isTgType = t => TG_SPEC[t] != null;
 
