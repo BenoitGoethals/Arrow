@@ -1,32 +1,30 @@
 #!/usr/bin/env python3
 """
-Arrow Battlefield Designer — Operation EAGLE
-=============================================
+Arrow Battlefield Designer — Operation IRON ARDENNES
+====================================================
 
-Plants a coherent company-attack scenario into the tactical-graphics layer:
-DELTA Company attacks enemy strongpoint OBJ EAGLE near Dendermonde, Belgium,
-with 1 PL and 2 PL forward, 3 PL in reserve.
+Plants FOUR company-level attack plans against four real villages in the
+Belgian Ardennes:
 
-Every graphic kind in the palette gets exercised so the web map and the
-Android render layer can be verified end-to-end:
+  · A CO  attacks  OBJ HAWK   at Bastogne
+  · B CO  attacks  OBJ EAGLE  at Houffalize
+  · C CO  attacks  OBJ FALCON at La Roche-en-Ardenne
+  · D CO  attacks  OBJ KITE   at Vielsalm
 
-  - Objective area (polygon, COY)
-  - FLOT, FLET, Phase lines, Boundary (lines)
-  - Attack axes at PL and SEC echelons
-  - Defense (reserve), Counterattack
-  - Ambush (known enemy), Block, Bypass, Withdraw
+Each plan exercises every tactical graphic in the palette and adds realistic
+enemy units (BMP, T-72, ATGM, mortar, sniper, MANPADS) and friendly POIs
+(CP, BAS, LZ, AMMO/POL points), tagged with NATO echelon and FRIENDLY /
+ENEMY affiliation so the renderer can colour them correctly.
 
-Run with the backend up and a known ADMIN account:
-
+Run:
   uv run python simulate_battlefield.py
-  uv run python simulate_battlefield.py --backend http://prod.host:6200/api
-  uv run python simulate_battlefield.py --reset    # wipe existing TG objects
+  uv run python simulate_battlefield.py --backend http://192.168.0.240:6001
+  uv run python simulate_battlefield.py --reset      # wipe existing TGs first
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import math
 import sys
@@ -35,38 +33,47 @@ from dataclasses import dataclass
 import httpx
 
 # ── Tactical graphic types the backend understands ───────────────────────────
-
-POINT_TYPES = {"ATK_AXIS", "COUNTERATTACK", "AMBUSH", "DEF_AREA",
-               "BLOCK", "BYPASS", "WITHDRAW"}
-LINE_TYPES  = {"BOUNDARY", "FLET", "FLOT", "PHASE_LINE"}
-POLY_TYPES  = {"OBJ_AREA"}
-TG_TYPES    = POINT_TYPES | LINE_TYPES | POLY_TYPES
+POINT_TG_TYPES = {"ATK_AXIS", "COUNTERATTACK", "AMBUSH", "DEF_AREA",
+                  "BLOCK", "BYPASS", "WITHDRAW"}
+LINE_TG_TYPES  = {"BOUNDARY", "FLET", "FLOT", "PHASE_LINE"}
+POLY_TG_TYPES  = {"OBJ_AREA"}
+ALL_TG_TYPES   = POINT_TG_TYPES | LINE_TG_TYPES | POLY_TG_TYPES
+NON_TG_TYPES   = {"ENEMY", "POI", "MARKER", "OBJECTIVE", "ROUTE", "ZONE"}
 
 
 # ── Geo helpers ──────────────────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class LatLon:
     lat: float
     lon: float
 
     def offset_m(self, north_m: float, east_m: float) -> "LatLon":
-        # At 51°N, 1° lat ≈ 111 320 m, 1° lon ≈ 69 700 m.
-        # Plenty accurate for a few-km battlefield sketch.
         d_lat = north_m / 111_320.0
         d_lon = east_m  / (111_320.0 * math.cos(math.radians(self.lat)))
         return LatLon(self.lat + d_lat, self.lon + d_lon)
+
+    def bearing_m(self, bearing_deg: float, distance_m: float) -> "LatLon":
+        rad = math.radians(bearing_deg)
+        return self.offset_m(
+            north_m=distance_m * math.cos(rad),
+            east_m =distance_m * math.sin(rad),
+        )
 
     def as_pair(self) -> list[float]:
         return [self.lat, self.lon]
 
 
-# Centre of the operation — OBJ EAGLE, just south-east of Dendermonde
-OBJ_CENTER = LatLon(51.0260, 4.1010)
+# ── Four Ardennes objectives, real coordinates ──────────────────────────────
+PLANS = [
+    # (CO,       OBJ name,  village,            centre,                       axis bearing °)
+    ("A CO",    "HAWK",    "Bastogne",          LatLon(50.0028, 5.7178), 270.0),  # attack from E → W
+    ("B CO",    "EAGLE",   "Houffalize",        LatLon(50.1300, 5.7910), 210.0),  # from NE → SW
+    ("C CO",    "FALCON",  "La Roche-en-Ardenne", LatLon(50.1817, 5.5783), 90.0),  # from W → E
+    ("D CO",    "KITE",    "Vielsalm",          LatLon(50.2811, 5.9128), 180.0),  # from N → S
+]
 
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
-
 def login(client: httpx.Client, callsign: str, password: str) -> str:
     r = client.post("/auth/login", data={"username": callsign, "password": password})
     if r.status_code != 200:
@@ -79,8 +86,7 @@ def login(client: httpx.Client, callsign: str, password: str) -> str:
 
 def post_object(client: httpx.Client, token: str, obj: dict) -> int:
     r = client.post(
-        "/tactical-objects",
-        json=obj,
+        "/tactical-objects", json=obj,
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 201:
@@ -90,231 +96,199 @@ def post_object(client: httpx.Client, token: str, obj: dict) -> int:
 
 
 def reset_tactical_graphics(client: httpx.Client, token: str) -> int:
-    """Delete every existing TG_* object so the sketch starts clean."""
     h = {"Authorization": f"Bearer {token}"}
     listed = client.get("/tactical-objects", headers=h).json()
     n = 0
     for o in listed:
-        if o.get("type") in TG_TYPES:
+        if o.get("type") in (ALL_TG_TYPES | NON_TG_TYPES):
             r = client.delete(f"/tactical-objects/{o['id']}", headers=h)
             if r.status_code == 204:
                 n += 1
     return n
 
 
-# ── Battlefield definition ───────────────────────────────────────────────────
+# ── Plan builder ─────────────────────────────────────────────────────────────
+def build_company_plan(coy: str, obj_name: str, village: str,
+                       centre: LatLon, axis_bearing: float) -> list[dict]:
+    """Return the full set of TacticalObjectIn payloads for one company plan.
 
-def build_operation() -> list[dict]:
-    """Return the full list of TacticalObjectIn payloads for Operation EAGLE."""
-    c = OBJ_CENTER
+    Axis convention: ``axis_bearing`` is the bearing (clockwise from N) FROM
+    which the friendly attack comes — i.e. the arrow points opposite to this.
+    Phase lines are perpendicular to the axis at successive depths.
+    """
     items: list[dict] = []
 
-    # ── OBJ EAGLE — enemy strongpoint, polygon, company-sized objective ──
-    obj_polygon = [
-        c.offset_m( 250, -200), c.offset_m( 250,  200),
-        c.offset_m(-250,  250), c.offset_m(-250, -200),
+    # Heading of the attack arrow (away from AA, into OBJ)
+    atk_heading = (axis_bearing + 180.0) % 360.0
+    perp_left   = (atk_heading - 90.0) % 360.0
+    perp_right  = (atk_heading + 90.0) % 360.0
+
+    # Anchors for symmetric flanks (left/right relative to the attack heading)
+    LEFT_M  = 700
+    RIGHT_M = 700
+    DEPTH_FORWARD = 2_500    # distance from OBJ toward AA along the axis
+    DEPTH_FLET    = 600      # FLET sits forward of OBJ centre by this much
+
+    aa            = centre.bearing_m(axis_bearing, DEPTH_FORWARD)
+    aa_left       = aa.bearing_m(perp_left,  LEFT_M)
+    aa_right      = aa.bearing_m(perp_right, RIGHT_M)
+    pl_atk_left   = aa.bearing_m(atk_heading, 600).bearing_m(perp_left,  LEFT_M)
+    pl_atk_right  = aa.bearing_m(atk_heading, 600).bearing_m(perp_right, RIGHT_M)
+    pl_obj_left   = centre.bearing_m(axis_bearing, 600).bearing_m(perp_left,  LEFT_M)
+    pl_obj_right  = centre.bearing_m(axis_bearing, 600).bearing_m(perp_right, RIGHT_M)
+    pl_exp_left   = centre.bearing_m(atk_heading, 800).bearing_m(perp_left,  LEFT_M)
+    pl_exp_right  = centre.bearing_m(atk_heading, 800).bearing_m(perp_right, RIGHT_M)
+    flet_left     = centre.bearing_m(axis_bearing, DEPTH_FLET).bearing_m(perp_left,  LEFT_M)
+    flet_right    = centre.bearing_m(axis_bearing, DEPTH_FLET).bearing_m(perp_right, RIGHT_M)
+    flot_left     = aa.bearing_m(perp_left,  LEFT_M  + 300)
+    flot_right    = aa.bearing_m(perp_right, RIGHT_M + 300)
+    bndy_a        = aa
+    bndy_b        = centre.bearing_m(atk_heading, 400)
+
+    def tg(type_: str, lat: float, lon: float, *,
+           affiliation: str = "FRIENDLY", echelon: str = "",
+           notes: str = "", rotation: float = 0.0,
+           geometry: str = "") -> dict:
+        return {
+            "type": type_, "latitude": lat, "longitude": lon,
+            "affiliation": affiliation, "echelon": echelon,
+            "notes": notes, "rotation": rotation, "geometry": geometry,
+            "symbol_code": "", "visibility": "COMPANY",
+        }
+
+    def line(type_: str, pts: list[LatLon]) -> dict:
+        return tg(type_, pts[0].lat, pts[0].lon,
+                  geometry=f'{{"type":"line","coords":{[p.as_pair() for p in pts]}}}'
+                          .replace("'", '"'))
+
+    def poly(type_: str, pts: list[LatLon], **kw) -> dict:
+        d = tg(type_, pts[0].lat, pts[0].lon,
+               geometry=f'{{"type":"polygon","coords":{[p.as_pair() for p in pts]}}}'
+                       .replace("'", '"'), **kw)
+        return d
+
+    # ── 1. Friendly OBJ — polygon around the village ─────────────────────
+    obj_poly = [
+        centre.offset_m( 350, -300), centre.offset_m( 350,  300),
+        centre.offset_m(-250,  350), centre.offset_m(-250, -350),
     ]
-    items.append({
-        "type": "OBJ_AREA",
-        "latitude":  obj_polygon[0].lat, "longitude": obj_polygon[0].lon,
-        "echelon": "COY",
-        "notes":   "OBJ EAGLE — enemy company strongpoint",
-        "geometry": json.dumps({
-            "type": "polygon",
-            "coords": [p.as_pair() for p in obj_polygon],
-        }),
-    })
+    items.append(poly("OBJ_AREA", obj_poly, echelon="COY",
+                      notes=f"OBJ {obj_name} — {coy} objective ({village})"))
 
-    # ── FLET — Forward Line of Enemy Troops, ~600 m east of OBJ ──
-    flet_line = [
-        c.offset_m( 1500, 600), c.offset_m( 800, 700), c.offset_m(0, 700),
-        c.offset_m(-800, 700), c.offset_m(-1500, 600),
+    # ── 2. Friendly axes of advance — main + supporting ─────────────────
+    items.append(tg("ATK_AXIS",
+                    *aa_left.bearing_m(atk_heading, 500).as_pair(),
+                    echelon="PL", rotation=atk_heading,
+                    notes=f"{coy} main effort — 1 PL axis to OBJ {obj_name}"))
+    items.append(tg("ATK_AXIS",
+                    *aa_right.bearing_m(atk_heading, 500).as_pair(),
+                    echelon="PL", rotation=atk_heading,
+                    notes=f"{coy} supporting effort — 2 PL axis to OBJ {obj_name}"))
+
+    # ── 3. Friendly defensive / supporting graphics ─────────────────────
+    items.append(tg("DEF_AREA",
+                    *centre.bearing_m(atk_heading, 1_200).as_pair(),
+                    echelon="PL", rotation=axis_bearing,
+                    notes=f"{coy} 3 PL reserve / consolidation BP"))
+    items.append(tg("COUNTERATTACK",
+                    *centre.bearing_m(atk_heading, 1_400).bearing_m(perp_right, 400).as_pair(),
+                    echelon="PL", rotation=axis_bearing,
+                    notes=f"{coy} 3 PL CT-ATK BPT — east flank"))
+    items.append(tg("BLOCK",
+                    *centre.bearing_m(perp_left, 1_100).as_pair(),
+                    echelon="SEC", rotation=perp_right,
+                    notes=f"{coy} block enemy reinforcement from W"))
+    items.append(tg("BYPASS",
+                    *centre.bearing_m(perp_right, 700).as_pair(),
+                    echelon="PL", rotation=atk_heading,
+                    notes=f"{coy} bypass route — right flank"))
+    items.append(tg("WITHDRAW",
+                    *aa.bearing_m(atk_heading, 200).as_pair(),
+                    echelon="PL", rotation=axis_bearing,
+                    notes=f"{coy} withdrawal route via AA"))
+
+    # ── 4. Enemy graphics — defending the village ───────────────────────
+    items.append(tg("DEF_AREA",
+                    *centre.offset_m(50, 0).as_pair(),
+                    affiliation="ENEMY", echelon="COY", rotation=axis_bearing,
+                    notes=f"Enemy mech inf coy defends {village}"))
+    items.append(tg("AMBUSH",
+                    *centre.bearing_m(axis_bearing, 1_200).bearing_m(perp_left, 300).as_pair(),
+                    affiliation="ENEMY", echelon="SEC", rotation=atk_heading,
+                    notes="Suspected enemy ambush on approach"))
+
+    # ── 5. Line graphics (lines need geometry coords list) ───────────────
+    items.append(line("FLOT", [flot_left, flot_right]))
+    items[-1]["echelon"] = "COY"
+    items[-1]["notes"]   = f"FLOT — {coy} line of own troops"
+
+    items.append(line("FLET", [flet_left, flet_right]))
+    items[-1]["affiliation"] = "ENEMY"
+    items[-1]["echelon"]     = "COY"
+    items[-1]["notes"]       = f"FLET — enemy forward line at {village}"
+
+    items.append(line("PHASE_LINE", [pl_atk_left, pl_atk_right]))
+    items[-1]["notes"] = f"PL ATTACK — {coy} LD"
+    items.append(line("PHASE_LINE", [pl_obj_left, pl_obj_right]))
+    items[-1]["notes"] = f"PL {obj_name} — limit of advance"
+    items.append(line("PHASE_LINE", [pl_exp_left, pl_exp_right]))
+    items[-1]["notes"] = f"PL EXPLOIT — beyond {village}"
+
+    items.append(line("BOUNDARY", [bndy_a, bndy_b]))
+    items[-1]["echelon"] = "PL"
+    items[-1]["notes"]   = f"{coy} 1/2 PL boundary"
+
+    # ── 6. Enemy units (ENEMY type, MIL-STD-2525C SIDC) ──────────────────
+    enemy_units = [
+        ("Enemy mech inf platoon",  "SHGPUCIZ----", centre.offset_m( 100,  -50)),
+        ("Enemy T-72 platoon",      "SHGPUCAA----", centre.offset_m( 200,  150)),
+        ("Enemy AT/ATGM team",      "SHGPUCAA---F", centre.offset_m( -80,  120)),
+        ("Enemy 120 mm mortar",     "SHGPUCFHE---", centre.offset_m( 350,  -50)),
+        ("Enemy sniper team",       "SHGPUCFS----", centre.offset_m(-150,  -50)),
+        ("Enemy MANPADS",           "SHGPUCDS----", centre.offset_m( 300,  300)),
+        ("Enemy technical w/ DShK", "SHGPEVAT----", centre.offset_m(  50, -250)),
     ]
-    items.append({
-        "type": "FLET",
-        "latitude":  flet_line[0].lat, "longitude": flet_line[0].lon,
-        "notes":   "Estimated FLET — coy +",
-        "geometry": json.dumps({"type": "line",
-                                "coords": [p.as_pair() for p in flet_line]}),
-    })
+    for desc, sidc, ll in enemy_units:
+        items.append({
+            "type": "ENEMY", "symbol_code": sidc,
+            "latitude": ll.lat, "longitude": ll.lon,
+            "affiliation": "ENEMY",
+            "notes": f"{desc} — IVO {village}",
+            "echelon": "", "rotation": 0.0, "geometry": "",
+            "visibility": "COMPANY",
+        })
 
-    # ── FLOT — Forward Line of Own Troops, ~1500 m west of OBJ ──
-    flot_line = [
-        c.offset_m( 1500, -1500), c.offset_m( 600, -1450),
-        c.offset_m(-600, -1450), c.offset_m(-1500, -1500),
+    # ── 7. Friendly POIs (CCP, BAS, LZ, fuel, ammo) ──────────────────────
+    poi_units = [
+        ("CCP",             "SFGPIME-----", aa.bearing_m(axis_bearing, 200)),
+        ("BAS / role 1",    "SFGPIMS-----", aa.bearing_m(axis_bearing, 350)),
+        ("LZ ALPHA",        "SFGPIBA-----", aa.bearing_m(perp_right, 500)),
+        ("AMMO point",      "SFGPIRP-----", aa.bearing_m(perp_left, 400)),
+        ("POL point",       "SFGPIRP-----", aa.bearing_m(axis_bearing, 450).bearing_m(perp_right, 200)),
+        ("HQ / TOC",        "SFGPUH------", aa.bearing_m(axis_bearing, 250).bearing_m(perp_left, 150)),
     ]
-    items.append({
-        "type": "FLOT",
-        "latitude":  flot_line[0].lat, "longitude": flot_line[0].lon,
-        "echelon": "COY",
-        "notes":   "FLOT — DELTA Coy",
-        "geometry": json.dumps({"type": "line",
-                                "coords": [p.as_pair() for p in flot_line]}),
-    })
-
-    # ── Phase Line ALPHA = Line of Departure (LD), along the FLOT ──
-    pl_alpha = [c.offset_m( 1400, -1400), c.offset_m(-1400, -1400)]
-    items.append({
-        "type": "PHASE_LINE",
-        "latitude":  pl_alpha[0].lat, "longitude": pl_alpha[0].lon,
-        "notes":   "PL ALPHA — Line of Departure (H-hour)",
-        "geometry": json.dumps({"type": "line",
-                                "coords": [p.as_pair() for p in pl_alpha]}),
-    })
-
-    # ── Phase Line BRAVO = Assault Position, ~400 m west of OBJ ──
-    pl_bravo = [c.offset_m( 1200, -500), c.offset_m(-1200, -500)]
-    items.append({
-        "type": "PHASE_LINE",
-        "latitude":  pl_bravo[0].lat, "longitude": pl_bravo[0].lon,
-        "notes":   "PL BRAVO — Assault Position",
-        "geometry": json.dumps({"type": "line",
-                                "coords": [p.as_pair() for p in pl_bravo]}),
-    })
-
-    # ── Boundary between 1 PL (north) and 2 PL (south), east-west ──
-    boundary = [c.offset_m(0, -1400), c.offset_m(0, 800)]
-    items.append({
-        "type": "BOUNDARY",
-        "latitude":  boundary[0].lat, "longitude": boundary[0].lon,
-        "echelon": "PL",
-        "notes":   "Inter-platoon boundary  1 PL // 2 PL",
-        "geometry": json.dumps({"type": "line",
-                                "coords": [p.as_pair() for p in boundary]}),
-    })
-
-    # ── 1 PL — main effort, attack from north-west ──
-    p_1pl = c.offset_m(700, -700)
-    items.append({
-        "type": "ATK_AXIS",
-        "latitude": p_1pl.lat, "longitude": p_1pl.lon,
-        "rotation": 135,                              # facing south-east
-        "echelon": "PL",
-        "notes":   "1 PL — main effort, AXIS HAWK",
-    })
-    # 1 PL — two sections forward
-    items.append({
-        "type": "ATK_AXIS",
-        "latitude": c.offset_m(900, -500).lat,
-        "longitude": c.offset_m(900, -500).lon,
-        "rotation": 135, "echelon": "SEC",
-        "notes": "1-1 SEC",
-    })
-    items.append({
-        "type": "ATK_AXIS",
-        "latitude": c.offset_m(500, -900).lat,
-        "longitude": c.offset_m(500, -900).lon,
-        "rotation": 120, "echelon": "SEC",
-        "notes": "1-2 SEC",
-    })
-    # Team-level pinpoint move within 1-1 SEC
-    items.append({
-        "type": "ATK_AXIS",
-        "latitude": c.offset_m(950, -350).lat,
-        "longitude": c.offset_m(950, -350).lon,
-        "rotation": 140, "echelon": "TM",
-        "notes": "1-1-A TM lead",
-    })
-
-    # ── 2 PL — supporting effort, attack from south-west ──
-    p_2pl = c.offset_m(-700, -700)
-    items.append({
-        "type": "ATK_AXIS",
-        "latitude": p_2pl.lat, "longitude": p_2pl.lon,
-        "rotation": 45,                               # facing north-east
-        "echelon": "PL",
-        "notes":   "2 PL — supporting effort, AXIS FALCON",
-    })
-    items.append({
-        "type": "ATK_AXIS",
-        "latitude": c.offset_m(-500, -900).lat,
-        "longitude": c.offset_m(-500, -900).lon,
-        "rotation": 60, "echelon": "SEC",
-        "notes": "2-1 SEC",
-    })
-    items.append({
-        "type": "ATK_AXIS",
-        "latitude": c.offset_m(-900, -500).lat,
-        "longitude": c.offset_m(-900, -500).lon,
-        "rotation": 30, "echelon": "SEC",
-        "notes": "2-2 SEC",
-    })
-
-    # ── 3 PL — reserve in hasty defense at LD ──
-    items.append({
-        "type": "DEF_AREA",
-        "latitude": c.offset_m(0, -1300).lat,
-        "longitude": c.offset_m(0, -1300).lon,
-        "rotation": 90,           # opening east, toward the enemy
-        "echelon": "PL",
-        "notes": "3 PL — reserve, hasty defense at LD",
-    })
-
-    # ── Counterattack — pre-planned, from reserve into south flank ──
-    items.append({
-        "type": "COUNTERATTACK",
-        "latitude": c.offset_m(-300, -1100).lat,
-        "longitude": c.offset_m(-300, -1100).lon,
-        "rotation": 60,
-        "echelon": "PL",
-        "notes": "ON-ORDER CATK — 3 PL into south flank if 2 PL stalls",
-    })
-
-    # ── Known enemy ambush position — north chokepoint ──
-    items.append({
-        "type": "AMBUSH",
-        "latitude": c.offset_m(1100, -100).lat,
-        "longitude": c.offset_m(1100, -100).lon,
-        "rotation": 225,          # opens south-west, covering our axis
-        "echelon": "SEC",
-        "notes": "EN AMBUSH — section, RPG + MG, confirmed by recce",
-    })
-
-    # ── Bypass corridor around the ambush ──
-    items.append({
-        "type": "BYPASS",
-        "latitude": c.offset_m(1300, -300).lat,
-        "longitude": c.offset_m(1300, -300).lon,
-        "rotation": 90,
-        "echelon": "PL",
-        "notes": "Bypass north of ambush — 1 PL alt route",
-    })
-
-    # ── Block — prevent enemy reinforcement from the east ──
-    items.append({
-        "type": "BLOCK",
-        "latitude": c.offset_m(0, 1100).lat,
-        "longitude": c.offset_m(0, 1100).lon,
-        "rotation": 90,           # block facing east
-        "echelon": "COY",
-        "notes": "Block east — interdict EN reinforcement axis",
-    })
-
-    # ── Withdraw route — back through LD if attack culminates ──
-    items.append({
-        "type": "WITHDRAW",
-        "latitude": c.offset_m(0, -200).lat,
-        "longitude": c.offset_m(0, -200).lon,
-        "rotation": 270,          # arrow points west (rear)
-        "echelon": "COY",
-        "notes": "Withdraw route — through PL ALPHA, RV at FLOT centre",
-    })
+    for desc, sidc, ll in poi_units:
+        items.append({
+            "type": "POI", "symbol_code": sidc,
+            "latitude": ll.lat, "longitude": ll.lon,
+            "affiliation": "FRIENDLY",
+            "notes": f"{coy} {desc}",
+            "echelon": "", "rotation": 0.0, "geometry": "",
+            "visibility": "COMPANY",
+        })
 
     return items
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Arrow battlefield designer")
+    parser = argparse.ArgumentParser(description="Arrow battlefield — Operation IRON ARDENNES")
     parser.add_argument("--backend",  default="http://localhost:6001",
-                        help="Backend base URL (e.g. http://host:6200/api in prod)")
-    parser.add_argument("--admin",    default="benoit",
-                        help="ADMIN callsign (default: benoit)")
-    parser.add_argument("--password", default="ranger14",
-                        help="ADMIN password (default: ranger14)")
+                        help="Backend base URL (e.g. http://192.168.0.240:6001)")
+    parser.add_argument("--admin",    default="benoit", help="ADMIN callsign")
+    parser.add_argument("--password", default="ranger14", help="ADMIN password")
     parser.add_argument("--reset",    action="store_true",
-                        help="Delete every existing tactical-graphic before planting")
+                        help="Delete every existing tactical-graphic/enemy/POI before planting")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -330,25 +304,28 @@ def main() -> None:
 
         if args.reset:
             n = reset_tactical_graphics(client, token)
-            log.info("Reset: removed %d existing tactical graphics.", n)
+            log.info("Reset: removed %d existing tactical / enemy / POI objects.", n)
 
-        items = build_operation()
-        log.info("Planting Operation EAGLE — %d tactical graphics around %.4f, %.4f",
-                 len(items), OBJ_CENTER.lat, OBJ_CENTER.lon)
+        total_ok, total_all = 0, 0
+        for coy, obj_name, village, centre, bearing in PLANS:
+            items = build_company_plan(coy, obj_name, village, centre, bearing)
+            total_all += len(items)
+            log.info("── %s · OBJ %s · %s (%.4f, %.4f) — %d objects",
+                     coy, obj_name, village, centre.lat, centre.lon, len(items))
+            for item in items:
+                obj_id = post_object(client, token, item)
+                if obj_id > 0:
+                    total_ok += 1
+                    aff   = item.get("affiliation", "FRIENDLY")
+                    ech   = item.get("echelon") or "—"
+                    label = (item.get("notes") or item["type"]).split("\n", 1)[0][:60]
+                    log.info("   + #%-4d %-13s %-8s %-4s  %s",
+                             obj_id, item["type"], aff, ech, label)
 
-        ok = 0
-        for item in items:
-            obj_id = post_object(client, token, item)
-            if obj_id > 0:
-                ok += 1
-                tag = item.get("echelon") or "—"
-                label = (item.get("notes") or item["type"]).split("\n", 1)[0][:60]
-                log.info("  + #%-4d  %-13s  %-4s  %s", obj_id, item["type"], tag, label)
-
-    log.info("Done. %d / %d graphics planted.", ok, len(items))
-    log.info("Open the web Tactical Map — pan to %.4f, %.4f and toggle the "
-             "Tactical Graphics panel to see the operation.",
-             OBJ_CENTER.lat, OBJ_CENTER.lon)
+    log.info("Done. %d / %d objects planted across %d company plans.",
+             total_ok, total_all, len(PLANS))
+    log.info("Centre of mass: Belgian Ardennes (~50.15 N, 5.75 E). Open the "
+             "Tactical Map and pan to one of the four objectives.")
 
 
 if __name__ == "__main__":
