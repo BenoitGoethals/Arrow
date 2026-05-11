@@ -98,6 +98,7 @@
 </main>
 
 <div id="arrow-toast-container"></div>
+<div id="arrow-chat-toast-container"></div>
 <script>
     window.ARROW_BACKEND_URL = "{{ backend_url }}";
     window.ARROW_WS_URL = "{{ ws_url }}";
@@ -194,8 +195,8 @@
             n.onclick = () => { window.location.href = href; n.close(); };
         }
 
-        // Only personal chats (DIRECT / GROUP) get the inline reply field.
-        // BROADCAST and any system-style messages render as plain notifications.
+        // Personal chats (DIRECT / GROUP) → separate left-side box with reply,
+        // 10-minute auto-dismiss. BROADCAST / system → right-side box, 5 s.
         const replyable = (msgType === 'DIRECT' || msgType === 'GROUP');
 
         const toast = document.createElement('div');
@@ -215,8 +216,8 @@
                 <button class="arrow-toast-send">Send</button>
             </div>` : ''}`;
 
-        const container = document.getElementById('arrow-toast-container');
-        container.appendChild(toast);
+        const containerId = replyable ? 'arrow-chat-toast-container' : 'arrow-toast-container';
+        document.getElementById(containerId).appendChild(toast);
 
         toast.querySelector('.arrow-toast-close').addEventListener('click', () => toast.remove());
 
@@ -242,7 +243,8 @@
             input.addEventListener('keydown', e => { if (e.key === 'Enter') sendReply(); });
         }
 
-        autoDismissToast(toast);
+        // 10 min for replyable chats, 5 s for system broadcasts.
+        autoDismissToast(toast, replyable ? 10 * 60 * 1000 : 5000);
     }
 
     // ── Floating stream window ─────────────────────────────────────────────────
