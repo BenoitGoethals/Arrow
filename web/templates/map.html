@@ -110,6 +110,21 @@
     .tg-btn:hover  { border-color: #6ee7b7; color: #6ee7b7; }
     .tg-btn.active { background: #1e3a2f; border-color: #6ee7b7; color: #6ee7b7; }
     .tg-btn .tg-glyph { font-size: 0.95rem; line-height: 1; }
+    /* NATO colour convention: friendly TG buttons blue, enemy TG buttons red. */
+    .tg-btn.tg-friendly { border-left: 3px solid #3b82f6; }
+    .tg-btn.tg-friendly .tg-glyph,
+    .tg-btn.tg-friendly  { color: #93c5fd; }
+    .tg-btn.tg-friendly:hover { border-color: #60a5fa; color: #bfdbfe; }
+    .tg-btn.tg-friendly.active { background: #1e293b; border-color: #60a5fa; color: #bfdbfe; }
+    .tg-btn.tg-enemy    { border-left: 3px solid #dc2626; }
+    .tg-btn.tg-enemy .tg-glyph,
+    .tg-btn.tg-enemy    { color: #fca5a5; }
+    .tg-btn.tg-enemy:hover { border-color: #ef4444; color: #fecaca; }
+    .tg-btn.tg-enemy.active { background: #2a1010; border-color: #ef4444; color: #fecaca; }
+    .tg-section-label { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
+                        margin: 8px 0 2px; font-weight: 700; }
+    .tg-section-label.friendly { color: #93c5fd; }
+    .tg-section-label.enemy    { color: #fca5a5; }
     .tg-status { font-size: 0.7rem; color: #94a3b8; padding: 4px 0; min-height: 1em; }
     .tg-cancel { background: #2a1010; color: #f87171; border-color: #7f1d1d; margin-top: 4px;
                  width: 100%; }
@@ -174,20 +189,23 @@
                 <button class="tg-ech-chip" data-ech="PL">PL</button>
                 <button class="tg-ech-chip" data-ech="COY">COY</button>
             </div>
-            <div class="tg-ech-label">Tactical task</div>
+            <div class="tg-section-label friendly">▌Friendly graphics</div>
             <div class="tg-grid">
-                <button class="tg-btn" data-tg="ATK_AXIS"><span class="tg-glyph">➤</span>Attack</button>
-                <button class="tg-btn" data-tg="COUNTERATTACK"><span class="tg-glyph">↺</span>Counterattack</button>
-                <button class="tg-btn" data-tg="DEF_AREA"><span class="tg-glyph">⛨</span>Defense</button>
-                <button class="tg-btn" data-tg="AMBUSH"><span class="tg-glyph">⋁</span>Ambush</button>
-                <button class="tg-btn" data-tg="BLOCK"><span class="tg-glyph">⊥</span>Block</button>
-                <button class="tg-btn" data-tg="BYPASS"><span class="tg-glyph">⤴</span>Bypass</button>
-                <button class="tg-btn" data-tg="WITHDRAW"><span class="tg-glyph">↩</span>Withdraw</button>
-                <button class="tg-btn" data-tg="OBJ_AREA"><span class="tg-glyph">▱</span>Objective area</button>
-                <button class="tg-btn" data-tg="BOUNDARY"><span class="tg-glyph">┼</span>Boundary</button>
-                <button class="tg-btn" data-tg="FLET"><span class="tg-glyph">▬</span>FLET</button>
-                <button class="tg-btn" data-tg="FLOT"><span class="tg-glyph">▬</span>FLOT</button>
-                <button class="tg-btn" data-tg="PHASE_LINE"><span class="tg-glyph">━</span>Phase line</button>
+                <button class="tg-btn tg-friendly" data-tg="ATK_AXIS"><span class="tg-glyph">➤</span>Attack</button>
+                <button class="tg-btn tg-friendly" data-tg="COUNTERATTACK"><span class="tg-glyph">↺</span>Counterattack</button>
+                <button class="tg-btn tg-friendly" data-tg="DEF_AREA"><span class="tg-glyph">⛨</span>Defense</button>
+                <button class="tg-btn tg-friendly" data-tg="BLOCK"><span class="tg-glyph">⊥</span>Block</button>
+                <button class="tg-btn tg-friendly" data-tg="BYPASS"><span class="tg-glyph">⤴</span>Bypass</button>
+                <button class="tg-btn tg-friendly" data-tg="WITHDRAW"><span class="tg-glyph">↩</span>Withdraw</button>
+                <button class="tg-btn tg-friendly" data-tg="OBJ_AREA"><span class="tg-glyph">▱</span>Objective area</button>
+                <button class="tg-btn tg-friendly" data-tg="BOUNDARY"><span class="tg-glyph">┼</span>Boundary</button>
+                <button class="tg-btn tg-friendly" data-tg="FLOT"><span class="tg-glyph">▬</span>FLOT</button>
+                <button class="tg-btn tg-friendly" data-tg="PHASE_LINE"><span class="tg-glyph">━</span>Phase line</button>
+            </div>
+            <div class="tg-section-label enemy">▌Enemy graphics</div>
+            <div class="tg-grid">
+                <button class="tg-btn tg-enemy" data-tg="AMBUSH"><span class="tg-glyph">⋁</span>Ambush</button>
+                <button class="tg-btn tg-enemy" data-tg="FLET"><span class="tg-glyph">▬</span>FLET</button>
             </div>
             <button class="tg-btn tg-cancel" id="tg-cancel">✕ Cancel drawing</button>
         </details>
