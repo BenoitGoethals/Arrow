@@ -240,3 +240,23 @@ class FireMissionOut(ORMModel):
     fdc_operator_id: int | None
     timestamp:       datetime
     notes:           str
+
+
+class CotTrackOut(ORMModel):
+    id:        int
+    cot_uid:   str
+    cot_type:  str
+    callsign:  str
+    latitude:  float
+    longitude: float
+    hae:       float
+    speed:     float
+    course:    float
+    team:      str
+    last_seen: datetime
+
+    @computed_field
+    @property
+    def sidc(self) -> str:
+        from backend.cot.cot import cot_type_to_sidc  # noqa: PLC0415
+        return cot_type_to_sidc(self.cot_type)

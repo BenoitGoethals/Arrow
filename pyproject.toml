@@ -23,6 +23,7 @@ dependencies = [
     "python-json-logger>=3.2",
     "cryptography>=43",
     "reportlab>=4.2",
+    "wxpython==4.2.4",  # pre-built wheel: https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-24.04/
 ]
 
 [project.optional-dependencies]
@@ -37,13 +38,14 @@ arrow-backend = "backend.main:run"
 arrow-web = "web.app:run"
 arrow-seed = "backend.storage.seed:main"
 arrow-battlefield = "simulate_battlefield:main"
+arrow-cot-sim = "tools.cot_simulator:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["backend", "web"]
+packages = ["backend", "web", "tools"]
 include = ["run.py", "simulate_battlefield.py"]
 
 [tool.pytest.ini_options]
