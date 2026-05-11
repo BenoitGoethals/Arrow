@@ -232,56 +232,60 @@ def _build_sections() -> tuple[list[SimOp], list[SimSection]]:
 # Three platoon axes through real Dendermonde terrain.
 # phase_infil_start: waypoint index where speed drops to infiltration pace.
 
+## Operation IRON ARDENNES — three platoons attack three of the four villages
+## (the 4th, Vielsalm, gets static graphics + OPFOR only).
+## Each waypoint pair = (lat, lon); element transits from AA to OBJ centre.
+
 ROUTES: dict[str, dict] = {
+    # ALPHA platoon → A CO axis on OBJ HAWK at Bastogne (attack E → W)
     "ALPHA": {
         "phase_infil_start": 2,
         "waypoints": [
-            (51.0185, 4.0975),   # 0  Staging south (Baasrode industrial)
-            (51.0220, 4.0990),   # 1  South approach, N449
-            (51.0260, 4.1005),   # 2  Entering city, Gentsestraat  ← infil
-            (51.0285, 4.1010),   # 3  Grote Markt
-            (51.0315, 4.1030),   # 4  North centre (Zwijveke)
-            (51.0352, 4.1055),   # 5  Objective: Bogaerdpark north
-            (51.0328, 4.1020),   # 6  Consolidation / pull-back
-            (51.0185, 4.0975),   # 7  Loop: return to staging
+            (50.0028, 5.7450),   # 0  AA east of Bastogne
+            (50.0030, 5.7350),   # 1  LD, on the N4
+            (50.0029, 5.7275),   # 2  PL ATTACK  ← infil pace
+            (50.0028, 5.7220),   # 3  PL OBJ
+            (50.0028, 5.7178),   # 4  OBJ HAWK centre (Bastogne square)
+            (50.0033, 5.7165),   # 5  Consolidation N
+            (50.0028, 5.7450),   # 6  Loop back to AA
         ],
     },
+    # BRAVO platoon → B CO axis on OBJ EAGLE at Houffalize (NE → SW)
     "BRAVO": {
         "phase_infil_start": 2,
         "waypoints": [
-            (51.0185, 4.0875),   # 0  Staging southwest (Grembergen)
-            (51.0215, 4.0898),   # 1  West approach
-            (51.0255, 4.0928),   # 2  Scheldt riverside  ← infil
-            (51.0290, 4.0942),   # 3  Riverside west bank
-            (51.0328, 4.0960),   # 4  North riverside
-            (51.0362, 4.0990),   # 5  Objective: north bridge (Scheldebrug)
-            (51.0340, 4.0952),   # 6  Consolidation west
-            (51.0185, 4.0875),   # 7  Loop
+            (50.1450, 5.8050),   # 0  AA NE of Houffalize
+            (50.1390, 5.7990),   # 1  LD
+            (50.1340, 5.7945),   # 2  PL ATTACK  ← infil
+            (50.1315, 5.7925),   # 3  PL OBJ
+            (50.1300, 5.7910),   # 4  OBJ EAGLE centre (Houffalize bridge)
+            (50.1310, 5.7895),   # 5  Consolidation
+            (50.1450, 5.8050),   # 6  Loop
         ],
     },
+    # CHARLIE platoon → C CO axis on OBJ FALCON at La Roche-en-Ardenne (W → E)
     "CHARLIE": {
         "phase_infil_start": 2,
         "waypoints": [
-            (51.0185, 4.1135),   # 0  Staging southeast (Lebbeke)
-            (51.0222, 4.1155),   # 1  East approach
-            (51.0260, 4.1162),   # 2  Industrial east  ← infil
-            (51.0288, 4.1140),   # 3  East of city centre
-            (51.0322, 4.1112),   # 4  Northeast
-            (51.0358, 4.1088),   # 5  Objective northeast
-            (51.0332, 4.1055),   # 6  Consolidation east
-            (51.0185, 4.1135),   # 7  Loop
+            (50.1817, 5.5500),   # 0  AA west of La Roche
+            (50.1817, 5.5620),   # 1  LD
+            (50.1817, 5.5710),   # 2  PL ATTACK  ← infil
+            (50.1817, 5.5760),   # 3  PL OBJ
+            (50.1817, 5.5783),   # 4  OBJ FALCON centre (La Roche castle)
+            (50.1822, 5.5798),   # 5  Consolidation
+            (50.1817, 5.5500),   # 6  Loop
         ],
     },
 }
 
-# Route for command element (follows centre axis loosely)
+# Route for command element — circulates between the three active objectives.
 CMD_WAYPOINTS: list[tuple[float, float]] = [
-    (51.0195, 4.0980),
-    (51.0250, 4.0995),
-    (51.0300, 4.1010),
-    (51.0340, 4.1030),
-    (51.0300, 4.1010),
-    (51.0195, 4.0980),
+    (50.0028, 5.7300),   # near Bastogne axis
+    (50.1300, 5.7910),   # Houffalize OBJ
+    (50.1817, 5.5783),   # La Roche OBJ
+    (50.2811, 5.9128),   # Vielsalm (overwatch, no friendly platoon)
+    (50.1300, 5.7910),
+    (50.0028, 5.7300),
 ]
 
 # ── Enemy / report catalogue ─────────────────────────────────────────────────
@@ -1126,39 +1130,259 @@ _OP_ENEMY_PLANT: list[dict] = [
 
 
 async def plant_operation(client: httpx.AsyncClient, admin_op: SimOp) -> None:
-    """One-shot: plant Operation Dendermonde graphics + enemy laydown."""
+    """One-shot: plant Operation IRON ARDENNES — four company plans, all
+    tactical graphics, OPFOR defenders at each village, friendly POIs."""
     if not admin_op.token:
         log.warning("Cannot plant operation graphics — admin not logged in")
         return
 
-    gfx = _operation_graphics()
-    log.info("── Planting Operation Dendermonde — %d tactical graphics + "
-             "%d enemy contacts ─────", len(gfx), len(_OP_ENEMY_PLANT))
+    # Import the canonical builder used by simulate_battlefield.py so the
+    # graphics and enemy laydown stay in sync between the two simulators.
+    from simulate_battlefield import PLANS as ARDENNES_PLANS, build_company_plan
+
+    all_items: list[dict] = []
+    for coy, obj_name, village, centre, bearing in ARDENNES_PLANS:
+        all_items.extend(build_company_plan(coy, obj_name, village, centre, bearing))
+
+    log.info("── Planting Operation IRON ARDENNES — %d objects across %d "
+             "company plans ─────", len(all_items), len(ARDENNES_PLANS))
 
     n_ok = 0
-    for item in gfx:
+    for item in all_items:
         r = await api(client, "POST", "/tactical-objects",
                       token=admin_op.token, json=item)
         if r:
             n_ok += 1
+            aff = item.get("affiliation", "FRIENDLY")
             tag = item.get("echelon") or "—"
-            log.info("  📐 %-13s  %-4s  %s",
-                     item["type"], tag, (item.get("notes") or "").split("\n", 1)[0][:64])
-
-    for e in _OP_ENEMY_PLANT:
-        notes = f"{e['notes']}  MGRS: {mgrs(e['lat'], e['lon'])}"
-        r = await api(client, "POST", "/tactical-objects",
-                      token=admin_op.token,
-                      json={"type": e["type"], "symbol_code": e["sidc"],
-                            "latitude": round(e["lat"], 6),
-                            "longitude": round(e["lon"], 6),
-                            "notes": notes, "visibility": "COMPANY"})
-        if r:
-            n_ok += 1
-            log.info("  ⚠️  %-12s  %s", e["type"], e["notes"][:64])
+            icon = "⚠️ " if aff == "ENEMY" else "📐"
+            label = (item.get("notes") or item["type"]).split("\n", 1)[0][:60]
+            log.info("  %s %-13s %-8s %-4s  %s",
+                     icon, item["type"], aff, tag, label)
 
     log.info("── Operation laydown: %d / %d objects planted ─────────",
-             n_ok, len(gfx) + len(_OP_ENEMY_PLANT))
+             n_ok, len(all_items))
+
+
+# ── OPFOR — moving enemy units defending each Ardennes village ──────────────
+#
+# Spawns N enemy tactical-object markers per village at startup and jitters
+# their position every OPFOR_S real seconds so the friendly map shows live
+# threat movement around each OBJ.
+
+OPFOR_S = 25.0                          # real seconds between OPFOR moves
+OPFOR_RADIUS_M = 350.0                  # jitter radius around village centre
+OPFOR_PER_VILLAGE = 6                   # number of OPFOR units per OBJ
+
+_OPFOR_TYPES = [
+    ("INFANTRY",    "SHGPUCIZ----", "Mech inf section"),
+    ("ARMOR",       "SHGPUCAA----", "T-72 element"),
+    ("AT/ATGM",     "SHGPUCAA---F", "ATGM team"),
+    ("ARTILLERY",   "SHGPUCFHE---", "120 mm mortar"),
+    ("AIR_DEFENSE", "SHGPUCDS----", "MANPADS team"),
+    ("VEHICLE",     "SHGPEVAT----", "Technical w/ HMG"),
+]
+
+
+async def plant_opords(client: httpx.AsyncClient, admin_op: SimOp) -> None:
+    """One OPORD per company plan, fully filled doctrinally and PUBLISHED.
+
+    Idempotent: existing OPORDs with the same OPORD number are skipped.
+    """
+    if not admin_op.token:
+        return
+    from simulate_battlefield import PLANS as ARDENNES_PLANS
+
+    # Fetch any pre-existing OPORDs so we don't double-plant on rerun.
+    existing = await api(client, "GET", "/opord", token=admin_op.token) or []
+    seen = {o.get("opord_number") for o in existing if isinstance(o, dict)}
+
+    n_created = 0
+    for idx, (coy, obj_name, village, centre, bearing) in enumerate(ARDENNES_PLANS, start=1):
+        opord_no = f"OPORD 26-{100 + idx:03d}"
+        if opord_no in seen:
+            log.info("OPORD %s — already present, skipping.", opord_no)
+            continue
+        bearing_from = int(bearing) % 360
+        atk_heading  = (bearing_from + 180) % 360
+        body = {
+            "title": f"{coy} Attack to Seize OBJ {obj_name}",
+            "opord_number":   opord_no,
+            "dtg":            f"11{500 + idx * 30:04d}ZMAY26",
+            "time_zone":      "ZULU",
+            "classification": "UNCLASSIFIED//FOUO",
+            "references": (
+                f"a. Map Series M745, Sheet covering {village}, 1:50,000\n"
+                "b. BDE OPORD 26-04 (Operation IRON ARDENNES)\n"
+                "c. Co/Tm Offensive SOP"
+            ),
+            "task_organization": (
+                f"1 PL (ME) — 3 rifle squads, 1 WPN sqd (2x M240B)\n"
+                "2 PL (SE) — 3 rifle squads\n"
+                "3 PL (RES) — 3 rifle squads\n"
+                "ATT: ENG TM, FO TM, MED TM, AT SEC (2x Javelin)"
+            ),
+            "situation": {
+                "terrain": (
+                    f"OAKOC. Ardennes — wooded ridges, restricted MSRs through {village}. "
+                    "Key terrain: village centre and approaches from N4/N89."
+                ),
+                "weather": (
+                    "BMNT 0518 / Sunrise 0552 / Sunset 1928 / EENT 1954. Temp 6–14°C, "
+                    "scattered showers, vis >5 km. Fog risk in low ground before BMNT."
+                ),
+                "enemy_cds":  f"Reinforced mech inf coy IVO {village}; T-72 plt, ATGM, mortar baseplate, MANPADS.",
+                "enemy_mlcoa": (
+                    f"Defend {village} from prepared positions; mortar fires onto AAs; "
+                    f"CT effort from {atk_heading}° at H+30."
+                ),
+                "enemy_mdcoa": "Pre-emptive spoiling attack with armour pair; FASCAM on Route GREEN.",
+                "higher": (
+                    f"{coy} attacks to seize OBJ {obj_name} NLT H+45 IOT enable BN passage of lines."
+                ),
+                "adjacent": "Left/right: adjacent companies on neighbouring axes; BN reserve at AA OSCAR.",
+                "civil": f"ASCOPE — {village} ~1000 civilians; coordinate via CIMIC. NFA on church/mosque.",
+                "attachments": "ENG TM, FO TM, MED TM, AT SEC — effective H-12.",
+                "assumptions": "EN composition unchanged at H-Hour; CAS pair on 30-min strip alert.",
+            },
+            "mission": (
+                f"{coy} attacks at H-Hour to seize OBJ {obj_name} (vic {village}) IOT enable "
+                "BN continuation of attack along the Ardennes axis."
+            ),
+            "execution": {
+                "intent_purpose":    f"Defeat EN at {village} so BN can pass N.",
+                "intent_key_tasks":  "Isolate OBJ · Suppress EN AT · Seize OBJ · BPT defend.",
+                "intent_end_state":  f"OBJ {obj_name} secured; EN destroyed/captured; civilians unharmed.",
+                "conops_maneuver":   (
+                    f"Envelopment from bearing {atk_heading}°. PHASE I PREP, II ASSAULT, III "
+                    "CONSOLIDATION. 1 PL ME, 2 PL SE, 3 PL RES."
+                ),
+                "conops_fires":      "Priority: ME. FPF on TRP-1. CAS on call (THUNDER 21). Smoke at H-2 min.",
+                "conops_main_effort": "1 PL assault.",
+                "conops_phasing":    "PREP → ASSAULT → CONSOLIDATION (LACE).",
+                "tasks": (
+                    "1 PL (ME): O/O assault OBJ — destroy EN, gain foothold.\n"
+                    "2 PL (SE): SBF on dominant terrain; suppress EN AT.\n"
+                    "3 PL (RES): BPT reinforce ME / block N approach / counter-CT.\n"
+                    "ENG TM: breach obstacle belt fwd of OBJ.\n"
+                    "FO TM: with 1 PL HQ — execute fires plan."
+                ),
+                "coord_timings":  "H-12 rehearsals; H-3 SP; H-2 SBF set; H-Hour assault; H+45 consolidation.",
+                "coord_ccir":     "PIR: EN reinforce axis & timing. FFIR: ME <70%, CIV cas event.",
+                "coord_roe":      "ROE Annex E. PID required. NFA on church/mosque/school.",
+                "coord_risk":     "HIGH (fratricide on flanks). Controls: PL BLUE LOA; VS-17 orange-up; rehearse recognition.",
+                "coord_fscm":     "FSCL PL BLUE; RFL 100m N of OBJ; CFL on order.",
+            },
+            "sustainment": {
+                "supply":      "I 2xMRE/24h; III topped at AA; V basic+50%; VIII medic resupplied H-6.",
+                "transport":   "Organic veh; 1x M113 dedicated CASEVAC.",
+                "maintenance": "UMCP at AA; recovery TARGET-1 in trail.",
+                "personnel":   "Strength reports H-1 and H+1.",
+                "epw":         "5 S's & T; tag EPW-1; hold at CCP until BN MP.",
+                "casevac":     "CCP at AA; 9-Line on CMD net; PRI ground via M113.",
+                "medevac":     "ROLE 1 BAS at AA; ROLE 2 BN MED CO; DUSTOFF 36 30-min alert.",
+            },
+            "command_signal": {
+                "command":      f"CDR with ME during PHASE II. XO at TAC CP at AA.",
+                "succession":   "CDR → XO → 1 PL LDR → 2 PL LDR → 3 PL LDR.",
+                "control":      "SITREP every 30 min; immediate report on contact.",
+                "pace_primary":    "VHF SINCGARS — CMD 38.250 / FH-M",
+                "pace_alternate":  "HF 4.825",
+                "pace_contingency":"SATCOM TACSAT CH 102",
+                "pace_emergency":  "Pyro: green star = consolidate; red = withdraw.",
+                "callsigns":   f"BLACK 6 (CDR), RED (1 PL ME), WHITE (2 PL SE), BLUE (3 PL RES), GUNNER 6 (FO).",
+                "password":    "Challenge: THUNDER / Reply: STORM / Running: HAMMER",
+            },
+        }
+        r = await api(client, "POST", "/opord", token=admin_op.token, json=body)
+        if not (r and isinstance(r, dict) and "id" in r):
+            log.warning("OPORD plant failed for %s", opord_no)
+            continue
+        opord_id = r["id"]
+        # Attach a server-rendered map snapshot covering the AO.
+        bbox = [centre.lat - 0.025, centre.lon - 0.035,
+                centre.lat + 0.025, centre.lon + 0.035]
+        await api(client, "POST", f"/opord/{opord_id}/snapshots/render",
+                  token=admin_op.token,
+                  json={"label": f"OBJ {obj_name} AO",
+                        "bbox": bbox, "zoom": 13,
+                        "annotations": f"{coy} attack axis on {village}."})
+        # Publish so it appears on the OPORDs page as PUBLISHED.
+        await api(client, "POST", f"/opord/{opord_id}/publish", token=admin_op.token)
+        log.info("📋 OPORD #%-3d %s — %s · OBJ %s · %s",
+                 opord_id, opord_no, coy, obj_name, village)
+        n_created += 1
+
+    log.info("── OPORDs planted: %d new (%d total).", n_created, n_created + len(seen))
+
+
+async def spawn_opfor(client: httpx.AsyncClient, admin_op: SimOp) -> list[dict]:
+    """Create OPFOR units at each village; return their server records."""
+    from simulate_battlefield import PLANS as ARDENNES_PLANS
+    if not admin_op.token:
+        return []
+
+    spawned: list[dict] = []
+    for _coy, _obj, village, centre, _bearing in ARDENNES_PLANS:
+        for i in range(OPFOR_PER_VILLAGE):
+            kind, sidc, name = _OPFOR_TYPES[i % len(_OPFOR_TYPES)]
+            ang = random.uniform(0, 2 * math.pi)
+            r   = random.uniform(50, OPFOR_RADIUS_M)
+            d_n = r * math.cos(ang); d_e = r * math.sin(ang)
+            lat, lon = jitter(centre.lat, centre.lon, d_n, d_e)
+            payload = {
+                "type": "ENEMY", "symbol_code": sidc,
+                "latitude": round(lat, 6), "longitude": round(lon, 6),
+                "affiliation": "ENEMY", "echelon": "SEC",
+                "notes": f"OPFOR {name} defending {village}",
+                "visibility": "COMPANY", "rotation": 0.0, "geometry": "",
+            }
+            r2 = await api(client, "POST", "/tactical-objects",
+                           token=admin_op.token, json=payload)
+            if r2 and isinstance(r2, dict) and "id" in r2:
+                spawned.append({"id": r2["id"], "centre": centre,
+                                "lat": lat, "lon": lon, "village": village,
+                                "kind": kind, "name": name, "sidc": sidc})
+    log.info("OPFOR: spawned %d units across %d villages.",
+             len(spawned), len(ARDENNES_PLANS))
+    return spawned
+
+
+async def run_opfor_movement(client: httpx.AsyncClient, admin_op: SimOp,
+                             units: list[dict], speed_mult: float) -> None:
+    """Re-post each OPFOR unit with a jittered position every OPFOR_S seconds.
+
+    We delete + re-create the object (the API has no PATCH endpoint for
+    tactical objects); the new id replaces the old one in our state list.
+    """
+    real_interval = OPFOR_S / speed_mult
+    await asyncio.sleep(real_interval * 0.4)
+    while True:
+        for u in units:
+            ang = random.uniform(0, 2 * math.pi)
+            step_m = random.uniform(20, 80)
+            d_n = step_m * math.cos(ang); d_e = step_m * math.sin(ang)
+            new_lat, new_lon = jitter(u["lat"], u["lon"], d_n, d_e)
+            # Constrain to within OPFOR_RADIUS_M of the village centre.
+            if dist_m(u["centre"].lat, u["centre"].lon, new_lat, new_lon) > OPFOR_RADIUS_M:
+                continue
+            # Delete the old marker; re-create at the new spot.
+            await api(client, "DELETE", f"/tactical-objects/{u['id']}",
+                      token=admin_op.token)
+            payload = {
+                "type": "ENEMY", "symbol_code": u["sidc"],
+                "latitude": round(new_lat, 6), "longitude": round(new_lon, 6),
+                "affiliation": "ENEMY", "echelon": "SEC",
+                "notes": f"OPFOR {u['name']} defending {u['village']}",
+                "visibility": "COMPANY", "rotation": 0.0, "geometry": "",
+            }
+            r = await api(client, "POST", "/tactical-objects",
+                          token=admin_op.token, json=payload)
+            if r and isinstance(r, dict) and "id" in r:
+                u["id"]  = r["id"]
+                u["lat"] = new_lat
+                u["lon"] = new_lon
+        await asyncio.sleep(real_interval)
 
 
 # ── Netherlands CBRN attacks ─────────────────────────────────────────────────
@@ -1303,8 +1527,16 @@ async def main() -> None:
         admin_op = next(o for o in all_ops if o.role == "ADMIN")
         await plant_operation(client, admin_op)
 
+        # Plant one full OPORD per company plan (idempotent).
+        await plant_opords(client, admin_op)
+
+        # Spawn OPFOR defenders at each Ardennes village and let them shuffle.
+        opfor_units = await spawn_opfor(client, admin_op)
+
         # Gather all coroutines
         coros = []
+        if opfor_units:
+            coros.append(run_opfor_movement(client, admin_op, opfor_units, speed_mult))
 
         # Section movement — section 2 of each platoon staggers by SECTION_STAGGER_S
         for sec in sections:
