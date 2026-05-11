@@ -105,6 +105,10 @@ class TacticalObjectIn(BaseModel):
     geometry: str = ""
     # NATO unit echelon: "" / "TM" / "SEC" / "PL" / "COY" / "BN" / "BDE"
     echelon: str = ""
+    # NATO affiliation — drives the colour of tactical control graphics so
+    # every TG type (attack, ambush, defense, etc.) can be drawn as either
+    # FRIENDLY (blue) or ENEMY (red) or UNKNOWN (yellow). Defaults to FRIENDLY.
+    affiliation: str = "FRIENDLY"
 
 
 class TacticalObjectOut(ORMModel):
@@ -121,6 +125,7 @@ class TacticalObjectOut(ORMModel):
     rotation: float = 0.0
     geometry: str = ""
     echelon: str = ""
+    affiliation: str = "FRIENDLY"
 
 
 class PhotoOut(BaseModel):

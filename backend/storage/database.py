@@ -46,6 +46,9 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE tactical_objects ADD COLUMN geometry TEXT DEFAULT ''",
         # NATO echelon designator (TM/SEC/PL/COY/BN/BDE) for tactical graphics
         "ALTER TABLE tactical_objects ADD COLUMN echelon VARCHAR(8) DEFAULT ''",
+        # NATO affiliation (FRIENDLY/ENEMY/UNKNOWN) so every TG type can be
+        # drawn as either side; color follows affiliation, not type.
+        "ALTER TABLE tactical_objects ADD COLUMN affiliation VARCHAR(12) DEFAULT 'FRIENDLY'",
         # Map reset/restore snapshots — JSON-frozen list of tactical objects
         "CREATE TABLE IF NOT EXISTS map_snapshots ("
         "  id INTEGER PRIMARY KEY,"

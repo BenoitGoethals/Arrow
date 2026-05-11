@@ -57,6 +57,8 @@ data class TacticalObjectDto(
     val rotation: Double = 0.0,
     val geometry: String = "",
     val echelon: String = "",
+    // NATO affiliation drives the TG colour (FRIENDLY/ENEMY/UNKNOWN).
+    val affiliation: String = "FRIENDLY",
 )
 
 @Serializable
@@ -68,6 +70,7 @@ data class TacticalObjectIn(
     val notes: String = "",
     val visibility: String = "COMPANY",
     @SerialName("photo_id") val photoId: Int? = null,
+    val affiliation: String = "FRIENDLY",
 )
 
 @Serializable

@@ -191,21 +191,33 @@
             </div>
             <div class="tg-section-label friendly">▌Friendly graphics</div>
             <div class="tg-grid">
-                <button class="tg-btn tg-friendly" data-tg="ATK_AXIS"><span class="tg-glyph">➤</span>Attack</button>
-                <button class="tg-btn tg-friendly" data-tg="COUNTERATTACK"><span class="tg-glyph">↺</span>Counterattack</button>
-                <button class="tg-btn tg-friendly" data-tg="DEF_AREA"><span class="tg-glyph">⛨</span>Defense</button>
-                <button class="tg-btn tg-friendly" data-tg="BLOCK"><span class="tg-glyph">⊥</span>Block</button>
-                <button class="tg-btn tg-friendly" data-tg="BYPASS"><span class="tg-glyph">⤴</span>Bypass</button>
-                <button class="tg-btn tg-friendly" data-tg="WITHDRAW"><span class="tg-glyph">↩</span>Withdraw</button>
-                <button class="tg-btn tg-friendly" data-tg="OBJ_AREA"><span class="tg-glyph">▱</span>Objective area</button>
-                <button class="tg-btn tg-friendly" data-tg="BOUNDARY"><span class="tg-glyph">┼</span>Boundary</button>
-                <button class="tg-btn tg-friendly" data-tg="FLOT"><span class="tg-glyph">▬</span>FLOT</button>
-                <button class="tg-btn tg-friendly" data-tg="PHASE_LINE"><span class="tg-glyph">━</span>Phase line</button>
+                <button class="tg-btn tg-friendly" data-tg="ATK_AXIS"      data-aff="FRIENDLY"><span class="tg-glyph">➤</span>Attack</button>
+                <button class="tg-btn tg-friendly" data-tg="COUNTERATTACK" data-aff="FRIENDLY"><span class="tg-glyph">↺</span>Counterattack</button>
+                <button class="tg-btn tg-friendly" data-tg="DEF_AREA"      data-aff="FRIENDLY"><span class="tg-glyph">⛨</span>Defense</button>
+                <button class="tg-btn tg-friendly" data-tg="AMBUSH"        data-aff="FRIENDLY"><span class="tg-glyph">⋁</span>Ambush</button>
+                <button class="tg-btn tg-friendly" data-tg="BLOCK"         data-aff="FRIENDLY"><span class="tg-glyph">⊥</span>Block</button>
+                <button class="tg-btn tg-friendly" data-tg="BYPASS"        data-aff="FRIENDLY"><span class="tg-glyph">⤴</span>Bypass</button>
+                <button class="tg-btn tg-friendly" data-tg="WITHDRAW"      data-aff="FRIENDLY"><span class="tg-glyph">↩</span>Withdraw</button>
+                <button class="tg-btn tg-friendly" data-tg="OBJ_AREA"      data-aff="FRIENDLY"><span class="tg-glyph">▱</span>Objective area</button>
+                <button class="tg-btn tg-friendly" data-tg="BOUNDARY"      data-aff="FRIENDLY"><span class="tg-glyph">┼</span>Boundary</button>
+                <button class="tg-btn tg-friendly" data-tg="FLOT"          data-aff="FRIENDLY"><span class="tg-glyph">▬</span>FLOT</button>
+                <button class="tg-btn tg-friendly" data-tg="FLET"          data-aff="FRIENDLY"><span class="tg-glyph">▬</span>FLET</button>
+                <button class="tg-btn tg-friendly" data-tg="PHASE_LINE"    data-aff="FRIENDLY"><span class="tg-glyph">━</span>Phase line</button>
             </div>
             <div class="tg-section-label enemy">▌Enemy graphics</div>
             <div class="tg-grid">
-                <button class="tg-btn tg-enemy" data-tg="AMBUSH"><span class="tg-glyph">⋁</span>Ambush</button>
-                <button class="tg-btn tg-enemy" data-tg="FLET"><span class="tg-glyph">▬</span>FLET</button>
+                <button class="tg-btn tg-enemy" data-tg="ATK_AXIS"      data-aff="ENEMY"><span class="tg-glyph">➤</span>Attack</button>
+                <button class="tg-btn tg-enemy" data-tg="COUNTERATTACK" data-aff="ENEMY"><span class="tg-glyph">↺</span>Counterattack</button>
+                <button class="tg-btn tg-enemy" data-tg="DEF_AREA"      data-aff="ENEMY"><span class="tg-glyph">⛨</span>Defense</button>
+                <button class="tg-btn tg-enemy" data-tg="AMBUSH"        data-aff="ENEMY"><span class="tg-glyph">⋁</span>Ambush</button>
+                <button class="tg-btn tg-enemy" data-tg="BLOCK"         data-aff="ENEMY"><span class="tg-glyph">⊥</span>Block</button>
+                <button class="tg-btn tg-enemy" data-tg="BYPASS"        data-aff="ENEMY"><span class="tg-glyph">⤴</span>Bypass</button>
+                <button class="tg-btn tg-enemy" data-tg="WITHDRAW"      data-aff="ENEMY"><span class="tg-glyph">↩</span>Withdraw</button>
+                <button class="tg-btn tg-enemy" data-tg="OBJ_AREA"      data-aff="ENEMY"><span class="tg-glyph">▱</span>Objective area</button>
+                <button class="tg-btn tg-enemy" data-tg="BOUNDARY"      data-aff="ENEMY"><span class="tg-glyph">┼</span>Boundary</button>
+                <button class="tg-btn tg-enemy" data-tg="FLOT"          data-aff="ENEMY"><span class="tg-glyph">▬</span>FLOT</button>
+                <button class="tg-btn tg-enemy" data-tg="FLET"          data-aff="ENEMY"><span class="tg-glyph">▬</span>FLET</button>
+                <button class="tg-btn tg-enemy" data-tg="PHASE_LINE"    data-aff="ENEMY"><span class="tg-glyph">━</span>Phase line</button>
             </div>
             <button class="tg-btn tg-cancel" id="tg-cancel">✕ Cancel drawing</button>
         </details>
@@ -448,20 +460,35 @@
     }
 
     // ── Tactical control graphics ────────────────────────────────────────
-    // type → { shape: 'point'|'line'|'polygon', stroke, fill, dash, glyph }
+    // Each type carries its SHAPE and LABEL only — the COLOUR is derived
+    // from the per-object `affiliation` field (FRIENDLY/ENEMY/UNKNOWN) via
+    // tgColor(), so every TG can be drawn as either side.
+    const TG_FRIENDLY = '#3b82f6';   // blue
+    const TG_ENEMY    = '#dc2626';   // red
+    const TG_UNKNOWN  = '#facc15';   // yellow
+    function tgColor(aff) {
+        if (aff === 'ENEMY')   return TG_ENEMY;
+        if (aff === 'UNKNOWN') return TG_UNKNOWN;
+        return TG_FRIENDLY;
+    }
+    function tgFill(aff) {
+        if (aff === 'ENEMY')   return '#dc262633';
+        if (aff === 'UNKNOWN') return '#facc1533';
+        return '#3b82f633';
+    }
     const TG_SPEC = {
-        ATK_AXIS:      { shape: 'point',   color: '#ef4444', label: 'Attack' },
-        COUNTERATTACK: { shape: 'point',   color: '#f97316', label: 'Counterattack' },
-        AMBUSH:        { shape: 'point',   color: '#dc2626', label: 'Ambush' },
-        DEF_AREA:      { shape: 'point',   color: '#3b82f6', label: 'Defense' },
-        BLOCK:         { shape: 'point',   color: '#3b82f6', label: 'Block' },
-        BYPASS:        { shape: 'point',   color: '#06b6d4', label: 'Bypass' },
-        WITHDRAW:      { shape: 'point',   color: '#a78bfa', label: 'Withdraw' },
-        BOUNDARY:      { shape: 'line',    color: '#94a3b8', dash: '8,4', weight: 3, label: 'Boundary' },
-        FLET:          { shape: 'line',    color: '#ef4444', dash: '6,4', weight: 3, label: 'FLET' },
-        FLOT:          { shape: 'line',    color: '#3b82f6', dash: null,  weight: 3, label: 'FLOT' },
-        PHASE_LINE:    { shape: 'line',    color: '#22c55e', dash: null,  weight: 2, label: 'Phase line' },
-        OBJ_AREA:      { shape: 'polygon', color: '#16a34a', fill: '#16a34a33', label: 'Objective area' },
+        ATK_AXIS:      { shape: 'point',   label: 'Attack' },
+        COUNTERATTACK: { shape: 'point',   label: 'Counterattack' },
+        AMBUSH:        { shape: 'point',   label: 'Ambush' },
+        DEF_AREA:      { shape: 'point',   label: 'Defense' },
+        BLOCK:         { shape: 'point',   label: 'Block' },
+        BYPASS:        { shape: 'point',   label: 'Bypass' },
+        WITHDRAW:      { shape: 'point',   label: 'Withdraw' },
+        BOUNDARY:      { shape: 'line',    dash: '8,4', weight: 3, label: 'Boundary' },
+        FLET:          { shape: 'line',    dash: '6,4', weight: 3, label: 'FLET' },
+        FLOT:          { shape: 'line',    dash: null,  weight: 3, label: 'FLOT' },
+        PHASE_LINE:    { shape: 'line',    dash: null,  weight: 2, label: 'Phase line' },
+        OBJ_AREA:      { shape: 'polygon', label: 'Objective area' },
     };
     const TG_TYPES = Object.keys(TG_SPEC);
 
@@ -502,7 +529,7 @@
     function tgPointIcon(obj) {
         const spec = TG_SPEC[obj.type];
         const rot  = (obj.rotation || 0) % 360;
-        const c    = spec.color;
+        const c    = tgColor(obj.affiliation);
         // Each glyph is centred on (40,40) inside an 80×80 viewBox; rotate via
         // a wrapping <g>. Add a thin black halo for contrast on bright tiles.
         let glyph;
@@ -584,14 +611,16 @@
     function placeGraphic(obj) {
         const key  = `to-${obj.id}`;
         const spec = TG_SPEC[obj.type];
+        const c    = tgColor(obj.affiliation);
+        const fill = tgFill(obj.affiliation);
         let layer;
         if (spec.shape === 'point') {
             layer = L.marker([obj.latitude, obj.longitude], { icon: tgPointIcon(obj) }).addTo(map);
         } else {
             const geom = tgGeometry(obj);
             const coords = geom?.coords || [[obj.latitude, obj.longitude]];
-            const opts = { color: spec.color, weight: spec.weight || 3,
-                           dashArray: spec.dash, fillColor: spec.fill || spec.color,
+            const opts = { color: c, weight: spec.weight || 3,
+                           dashArray: spec.dash, fillColor: fill,
                            fillOpacity: spec.shape === 'polygon' ? 0.18 : 0 };
             layer = (spec.shape === 'polygon')
                 ? L.polygon(coords, opts).addTo(map)
@@ -601,17 +630,17 @@
                 const tag = L.tooltip({ permanent: true, direction: 'right',
                                         offset: [6, 0], className: 'tg-echelon-tag' })
                     .setLatLng(coords[0])
-                    .setContent(`<b style="color:${spec.color}">${escHtml(obj.echelon)}</b>`);
+                    .setContent(`<b style="color:${c}">${escHtml(obj.echelon)}</b>`);
                 layer.bindTooltip(tag);
                 layer.openTooltip();
             }
         }
         const echTag = obj.echelon
-            ? `<span style="background:${spec.color};color:white;border-radius:3px;padding:0 5px;
+            ? `<span style="background:${c};color:white;border-radius:3px;padding:0 5px;
                             font-size:0.7rem;margin-left:6px">${escHtml(obj.echelon)}</span>`
             : '';
         layer.bindPopup(
-            `<b style="color:${spec.color}">${escHtml(spec.label)}</b>${echTag}` +
+            `<b style="color:${c}">${escHtml(spec.label)} <em style="color:#94a3b8;font-style:normal;font-size:.85em">${obj.affiliation||'FRIENDLY'}</em></b>${echTag}` +
             (obj.notes ? `<br/>${escHtml(obj.notes)}` : '') +
             (spec.shape === 'point' ? `<br/><small>heading ${Math.round(obj.rotation||0)}°</small>` : '') +
             ((role === 'ADMIN' || role === 'BATTLE_CAPTAIN')
@@ -852,26 +881,31 @@
     // points for line/polygon shapes; `preview` is the live Leaflet layer that
     // grows with the cursor between clicks. `echelon` is the currently-selected
     // unit size designator (TM/SEC/PL/COY/"" for none).
-    const tgDraw = { type: null, vertices: [], preview: null, mouseLine: null, echelon: '' };
+    const tgDraw = { type: null, affiliation: 'FRIENDLY',
+                     vertices: [], preview: null, mouseLine: null, echelon: '' };
 
     function tgSetStatus(msg) {
         const el = document.getElementById('tg-status');
         if (el) el.textContent = msg;
     }
 
-    function tgSelect(type) {
+    function tgSelect(type, aff) {
         tgCancelDraw();
         if (!type) return;
         tgDraw.type = type;
+        tgDraw.affiliation = aff || 'FRIENDLY';
         const spec = TG_SPEC[type];
         document.querySelectorAll('.tg-btn[data-tg]').forEach(b =>
-            b.classList.toggle('active', b.dataset.tg === type));
+            b.classList.toggle('active',
+                b.dataset.tg === type && b.dataset.aff === tgDraw.affiliation));
+        const sideTag = tgDraw.affiliation === 'ENEMY' ? '🔴 enemy ' :
+                        (tgDraw.affiliation === 'UNKNOWN' ? '🟡 unknown ' : '🔵 friendly ');
         if (spec.shape === 'point') {
-            tgSetStatus(`Click on the map to place ${spec.label}.`);
+            tgSetStatus(`Click on the map to place ${sideTag}${spec.label}.`);
         } else if (spec.shape === 'line') {
-            tgSetStatus(`Click vertices for ${spec.label}, double-click to finish.`);
+            tgSetStatus(`Click vertices for ${sideTag}${spec.label}, double-click to finish.`);
         } else {
-            tgSetStatus(`Click vertices for ${spec.label}, double-click to close polygon.`);
+            tgSetStatus(`Click vertices for ${sideTag}${spec.label}, double-click to close polygon.`);
         }
         L.DomUtil.addClass(map.getContainer(), 'tg-drawing');
     }
@@ -912,6 +946,7 @@
             symbol_code: '', notes: '', rotation: 0,
             geometry: JSON.stringify({ type: spec.shape, coords: verts }),
             echelon: tgDraw.echelon || '',
+            affiliation: tgDraw.affiliation || 'FRIENDLY',
         });
         // Either way, drop the preview now — placeGraphic has either taken over
         // (success) or there's nothing to keep alive (failure).
@@ -950,18 +985,19 @@
         if (!tgDraw.type) return;
         const spec = TG_SPEC[tgDraw.type];
         const ll   = [e.latlng.lat, e.latlng.lng];
+        const c    = tgColor(tgDraw.affiliation);
 
         if (spec.shape === 'point') {
             // Show rotation popup, then save
-            tgPromptRotation(ll, tgDraw.type, tgDraw.echelon);
+            tgPromptRotation(ll, tgDraw.type, tgDraw.echelon, tgDraw.affiliation);
             tgCancelDraw();
             return;
         }
         // Line / polygon: accumulate vertex
         tgDraw.vertices.push(ll);
         if (tgDraw.preview) map.removeLayer(tgDraw.preview);
-        const opts = { color: spec.color, weight: spec.weight || 3,
-                       dashArray: spec.dash, fillColor: spec.fill || spec.color,
+        const opts = { color: c, weight: spec.weight || 3,
+                       dashArray: spec.dash, fillColor: tgFill(tgDraw.affiliation),
                        fillOpacity: 0.15 };
         tgDraw.preview = (spec.shape === 'polygon')
             ? L.polygon(tgDraw.vertices, opts).addTo(map)
@@ -978,18 +1014,20 @@
         if (tgDraw.mouseLine) map.removeLayer(tgDraw.mouseLine);
         const last = tgDraw.vertices[tgDraw.vertices.length - 1];
         tgDraw.mouseLine = L.polyline([last, [e.latlng.lat, e.latlng.lng]],
-            { color: spec.color, weight: 1, opacity: 0.6, dashArray: '4,3' }).addTo(map);
+            { color: tgColor(tgDraw.affiliation), weight: 1, opacity: 0.6, dashArray: '4,3' }).addTo(map);
     });
 
     // Rotation picker for oriented point graphics
-    function tgPromptRotation(latlon, type, echelon) {
+    function tgPromptRotation(latlon, type, echelon, affiliation) {
         document.getElementById('tg-rot-popup')?.remove();
         const spec = TG_SPEC[type];
+        const aff  = affiliation || 'FRIENDLY';
+        const c    = tgColor(aff);
         const popup = document.createElement('div');
         popup.id = 'tg-rot-popup';
         popup.className = 'tg-rot-popup';
         popup.innerHTML = `
-            <div style="font-weight:700;color:${spec.color};margin-bottom:6px">${spec.label}</div>
+            <div style="font-weight:700;color:${c};margin-bottom:6px">${spec.label} <em style="font-style:normal;color:#94a3b8;font-size:.85em">${aff}</em></div>
             <div class="row">
                 <span>Heading</span>
                 <input id="tg-rot-range" type="range" min="0" max="359" value="0">
@@ -1011,7 +1049,7 @@
 
         const rotPreview = (rot) => {
             const r = ((rot % 360) + 360) % 360;
-            const obj = { type, rotation: r, echelon };
+            const obj = { type, rotation: r, echelon, affiliation: aff };
             const el = document.getElementById('tg-rot-preview');
             el.innerHTML = '';  // clear
             // Use the same icon factory by stripping its wrapper
@@ -1037,16 +1075,18 @@
                 type, latitude: latlon[0], longitude: latlon[1],
                 symbol_code: '', notes, rotation: rot, geometry: '',
                 echelon: echelon || '',
+                affiliation: aff,
             });
         });
     }
 
-    // Wire palette buttons
+    // Wire palette buttons (each carries data-tg + data-aff)
     document.querySelectorAll('.tg-btn[data-tg]').forEach(btn => {
         btn.addEventListener('click', () => {
             const type = btn.dataset.tg;
-            if (tgDraw.type === type) tgCancelDraw();
-            else                       tgSelect(type);
+            const aff  = btn.dataset.aff || 'FRIENDLY';
+            if (tgDraw.type === type && tgDraw.affiliation === aff) tgCancelDraw();
+            else tgSelect(type, aff);
         });
     });
     document.getElementById('tg-cancel').addEventListener('click', tgCancelDraw);

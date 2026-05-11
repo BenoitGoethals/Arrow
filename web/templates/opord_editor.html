@@ -453,29 +453,30 @@ function milIcon(sidc, opts = {}) {
 }
 
 // ── Tactical control graphics — mirrors web/templates/map.html ─────────────
-// NATO colour convention: friendly tactical graphics in BLUE, enemy in RED.
-const TG_FRIENDLY = '#3b82f6';
-const TG_ENEMY    = '#dc2626';
+// Colour comes from each object's `affiliation` field, NOT the type.
+const TG_FRIENDLY = '#3b82f6', TG_ENEMY = '#dc2626', TG_UNKNOWN = '#facc15';
+const tgColor = aff => aff === 'ENEMY' ? TG_ENEMY : aff === 'UNKNOWN' ? TG_UNKNOWN : TG_FRIENDLY;
+const tgFill  = aff => aff === 'ENEMY' ? '#dc262633' : aff === 'UNKNOWN' ? '#facc1533' : '#3b82f633';
 const TG_SPEC = {
-  ATK_AXIS:      { shape: 'point',   color: TG_FRIENDLY, label: 'Attack' },
-  COUNTERATTACK: { shape: 'point',   color: TG_FRIENDLY, label: 'Counterattack' },
-  AMBUSH:        { shape: 'point',   color: TG_ENEMY,    label: 'Ambush' },
-  DEF_AREA:      { shape: 'point',   color: TG_FRIENDLY, label: 'Defense' },
-  BLOCK:         { shape: 'point',   color: TG_FRIENDLY, label: 'Block' },
-  BYPASS:        { shape: 'point',   color: TG_FRIENDLY, label: 'Bypass' },
-  WITHDRAW:      { shape: 'point',   color: TG_FRIENDLY, label: 'Withdraw' },
-  BOUNDARY:      { shape: 'line',    color: TG_FRIENDLY, dash: '8,4', weight: 3, label: 'Boundary' },
-  FLET:          { shape: 'line',    color: TG_ENEMY,    dash: '6,4', weight: 3, label: 'FLET' },
-  FLOT:          { shape: 'line',    color: TG_FRIENDLY, dash: null,  weight: 3, label: 'FLOT' },
-  PHASE_LINE:    { shape: 'line',    color: TG_FRIENDLY, dash: null,  weight: 2, label: 'Phase line' },
-  OBJ_AREA:      { shape: 'polygon', color: TG_FRIENDLY, fill: '#3b82f633', label: 'Objective area' },
+  ATK_AXIS:      { shape: 'point',   label: 'Attack' },
+  COUNTERATTACK: { shape: 'point',   label: 'Counterattack' },
+  AMBUSH:        { shape: 'point',   label: 'Ambush' },
+  DEF_AREA:      { shape: 'point',   label: 'Defense' },
+  BLOCK:         { shape: 'point',   label: 'Block' },
+  BYPASS:        { shape: 'point',   label: 'Bypass' },
+  WITHDRAW:      { shape: 'point',   label: 'Withdraw' },
+  BOUNDARY:      { shape: 'line',    dash: '8,4', weight: 3, label: 'Boundary' },
+  FLET:          { shape: 'line',    dash: '6,4', weight: 3, label: 'FLET' },
+  FLOT:          { shape: 'line',    dash: null,  weight: 3, label: 'FLOT' },
+  PHASE_LINE:    { shape: 'line',    dash: null,  weight: 2, label: 'Phase line' },
+  OBJ_AREA:      { shape: 'polygon', label: 'Objective area' },
 };
 const isTgType = t => TG_SPEC[t] != null;
 
 function tgPointIcon(o) {
   const spec = TG_SPEC[o.type];
   const rot  = (o.rotation || 0) % 360;
-  const c    = spec.color;
+  const c    = tgColor(o.affiliation);
   let glyph;
   switch (o.type) {
     case 'ATK_AXIS':
@@ -531,9 +532,10 @@ async function loadOverlays() {
         // Tactical control graphics: branch on shape (point / line / polygon)
         if (isTgType(o.type)) {
           const spec = TG_SPEC[o.type];
+          const c    = tgColor(o.affiliation);
           if (spec.shape === 'point') {
             L.marker([o.latitude, o.longitude], { icon: tgPointIcon(o) })
-              .bindTooltip(`${spec.label}${o.notes ? ' — '+o.notes : ''}`)
+              .bindTooltip(`${spec.label} (${o.affiliation || 'FRIENDLY'})${o.notes ? ' — '+o.notes : ''}`)
               .addTo(snapOverlayLayer);
           } else {
             let coords = null;
@@ -545,13 +547,13 @@ async function loadOverlays() {
             }
             if (!coords) coords = [[o.latitude, o.longitude]];
             const opts = {
-              color: spec.color, weight: spec.weight || 3,
+              color: c, weight: spec.weight || 3,
               dashArray: spec.dash || null,
-              fillColor: spec.fill || spec.color,
+              fillColor: tgFill(o.affiliation),
               fillOpacity: spec.shape === 'polygon' ? 0.18 : 0,
             };
             const layer = (spec.shape === 'polygon' ? L.polygon : L.polyline)(coords, opts);
-            layer.bindTooltip(`${spec.label}${o.notes ? ' — '+o.notes : ''}`)
+            layer.bindTooltip(`${spec.label} (${o.affiliation || 'FRIENDLY'})${o.notes ? ' — '+o.notes : ''}`)
                  .addTo(snapOverlayLayer);
           }
           return;
