@@ -788,13 +788,15 @@ private fun renderTacticalGraphic(
     res: android.content.res.Resources,
     g: TacticalObjectDto,
 ) {
+    val titleSuffix = " · ${g.affiliation}" +
+        (if (g.echelon.isNotBlank()) " · ${g.echelon}" else "")
     if (com.arrow.tactical.map.MilSymbolRenderer.isTacticalGraphic(g.type)) {
         // Oriented point graphic
         val drawable = com.arrow.tactical.map.MilSymbolRenderer
-            .tacticalGraphic(res, g.type, g.rotation, g.echelon) ?: return
+            .tacticalGraphic(res, g.type, g.rotation, g.echelon, g.affiliation) ?: return
         Marker(map).apply {
             position = GeoPoint(g.latitude, g.longitude)
-            title    = "${g.type.replace('_', ' ')}${if (g.echelon.isNotBlank()) " · ${g.echelon}" else ""}"
+            title    = "${g.type.replace('_', ' ')}$titleSuffix"
             snippet  = g.notes.ifBlank { "heading ${g.rotation.toInt()}°" }
             icon     = drawable
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
@@ -802,7 +804,8 @@ private fun renderTacticalGraphic(
         }
         return
     }
-    val style = com.arrow.tactical.map.MilSymbolRenderer.tacticalLineStyle(g.type) ?: return
+    val style = com.arrow.tactical.map.MilSymbolRenderer
+        .tacticalLineStyle(g.type, g.affiliation) ?: return
     val coords = parseGeometryCoords(g.geometry) ?: listOf(GeoPoint(g.latitude, g.longitude))
     if (coords.size < 2) return
     val dp = res.displayMetrics.density
@@ -812,7 +815,7 @@ private fun renderTacticalGraphic(
             fillPaint.color = (style.color and 0x00FFFFFF) or 0x33000000
             outlinePaint.color = style.color
             outlinePaint.strokeWidth = style.widthDp * dp
-            title    = "${g.type.replace('_', ' ')}${if (g.echelon.isNotBlank()) " · ${g.echelon}" else ""}"
+            title    = "${g.type.replace('_', ' ')}$titleSuffix"
             snippet  = g.notes
         }
         map.overlays.add(poly)
@@ -825,7 +828,7 @@ private fun renderTacticalGraphic(
                 outlinePaint.pathEffect = android.graphics.DashPathEffect(
                     floatArrayOf(style.dashOnDp * dp, style.dashOffDp * dp), 0f)
             }
-            title    = "${g.type.replace('_', ' ')}${if (g.echelon.isNotBlank()) " · ${g.echelon}" else ""}"
+            title    = "${g.type.replace('_', ' ')}$titleSuffix"
             snippet  = g.notes
         }
         map.overlays.add(line)

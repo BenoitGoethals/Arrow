@@ -262,11 +262,25 @@ object MilSymbolRenderer {
     // the heading; the echelon designator (dots / bars) is drawn UPRIGHT on
     // top of the icon — independent of rotation, MIL-STD-2525 style.
 
-    private data class TgSpec(val color: Int, val drawer: (Canvas, Float, Int) -> Unit)
+    private data class TgSpec(val drawer: (Canvas, Float, Int) -> Unit)
+
+    // NATO affiliation → colour. Drives every TG; type only controls the shape.
+    private val TG_FRIENDLY = Color.rgb( 59, 130, 246)
+    private val TG_ENEMY    = Color.rgb(220,  38,  38)
+    private val TG_UNKNOWN  = Color.rgb(250, 204,  21)
+    fun affiliationColor(affiliation: String?): Int = when (affiliation) {
+        "ENEMY"   -> TG_ENEMY
+        "UNKNOWN" -> TG_UNKNOWN
+        else      -> TG_FRIENDLY
+    }
 
     /** Returns null when [type] is not a tactical graphic. */
-    fun tacticalGraphic(res: Resources, type: String, rotation: Double, echelon: String): Drawable? {
+    fun tacticalGraphic(
+        res: Resources, type: String, rotation: Double,
+        echelon: String, affiliation: String = "FRIENDLY",
+    ): Drawable? {
         val spec = TG_SPECS[type] ?: return null
+        val color = affiliationColor(affiliation)
         val dp = res.displayMetrics.density
         val size = (52 * dp).toInt()
         val bmp  = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -276,24 +290,21 @@ object MilSymbolRenderer {
         // Save, rotate around centre, draw glyph, restore — keeps echelon upright.
         canvas.save()
         canvas.rotate(rotation.toFloat(), cx, cx)
-        spec.drawer(canvas, dp, spec.color)
+        spec.drawer(canvas, dp, color)
         canvas.restore()
 
-        if (echelon.isNotBlank()) drawEchelon(canvas, cx, dp, echelon, spec.color)
+        if (echelon.isNotBlank()) drawEchelon(canvas, cx, dp, echelon, color)
         return BitmapDrawable(res, bmp)
     }
 
-    // NATO colour convention: friendly tactical graphics in BLUE, enemy in RED.
-    private val TG_FRIENDLY = Color.rgb( 59, 130, 246)
-    private val TG_ENEMY    = Color.rgb(220,  38,  38)
     private val TG_SPECS: Map<String, TgSpec> = mapOf(
-        "ATK_AXIS"      to TgSpec(TG_FRIENDLY) { c, dp, col -> drawAttackArrow(c, dp, col, dashed = false) },
-        "COUNTERATTACK" to TgSpec(TG_FRIENDLY) { c, dp, col -> drawAttackArrow(c, dp, col, dashed = true) },
-        "AMBUSH"        to TgSpec(TG_ENEMY)    { c, dp, col -> drawV(c, dp, col) },
-        "DEF_AREA"      to TgSpec(TG_FRIENDLY) { c, dp, col -> drawDefenseU(c, dp, col) },
-        "BLOCK"         to TgSpec(TG_FRIENDLY) { c, dp, col -> drawBlockBar(c, dp, col) },
-        "BYPASS"        to TgSpec(TG_FRIENDLY) { c, dp, col -> drawBypass(c, dp, col) },
-        "WITHDRAW"      to TgSpec(TG_FRIENDLY) { c, dp, col -> drawWithdraw(c, dp, col) },
+        "ATK_AXIS"      to TgSpec { c, dp, col -> drawAttackArrow(c, dp, col, dashed = false) },
+        "COUNTERATTACK" to TgSpec { c, dp, col -> drawAttackArrow(c, dp, col, dashed = true) },
+        "AMBUSH"        to TgSpec { c, dp, col -> drawV(c, dp, col) },
+        "DEF_AREA"      to TgSpec { c, dp, col -> drawDefenseU(c, dp, col) },
+        "BLOCK"         to TgSpec { c, dp, col -> drawBlockBar(c, dp, col) },
+        "BYPASS"        to TgSpec { c, dp, col -> drawBypass(c, dp, col) },
+        "WITHDRAW"      to TgSpec { c, dp, col -> drawWithdraw(c, dp, col) },
     )
 
     fun isTacticalGraphic(type: String): Boolean = type in TG_SPECS
@@ -301,15 +312,20 @@ object MilSymbolRenderer {
 
     /** Stroke / fill style for line and polygon tactical graphics. */
     data class TgLineStyle(val color: Int, val widthDp: Float, val dashOnDp: Float, val dashOffDp: Float)
-    private val TG_LINE_STYLES: Map<String, TgLineStyle> = mapOf(
-        "BOUNDARY"   to TgLineStyle(TG_FRIENDLY, 3f, 8f, 4f),
-        "FLET"       to TgLineStyle(TG_ENEMY,    3f, 6f, 4f),
-        "FLOT"       to TgLineStyle(TG_FRIENDLY, 3f, 0f, 0f),
-        "PHASE_LINE" to TgLineStyle(TG_FRIENDLY, 2f, 0f, 0f),
-        "OBJ_AREA"   to TgLineStyle(TG_FRIENDLY, 3f, 0f, 0f),
+    // Width + dash come from the TYPE; colour comes from the AFFILIATION.
+    private data class TgLineShape(val widthDp: Float, val dashOnDp: Float, val dashOffDp: Float)
+    private val TG_LINE_SHAPES: Map<String, TgLineShape> = mapOf(
+        "BOUNDARY"   to TgLineShape(3f, 8f, 4f),
+        "FLET"       to TgLineShape(3f, 6f, 4f),
+        "FLOT"       to TgLineShape(3f, 0f, 0f),
+        "PHASE_LINE" to TgLineShape(2f, 0f, 0f),
+        "OBJ_AREA"   to TgLineShape(3f, 0f, 0f),
     )
-    private val TG_LINES_AND_POLYS = TG_LINE_STYLES.keys
-    fun tacticalLineStyle(type: String): TgLineStyle? = TG_LINE_STYLES[type]
+    private val TG_LINES_AND_POLYS = TG_LINE_SHAPES.keys
+    fun tacticalLineStyle(type: String, affiliation: String = "FRIENDLY"): TgLineStyle? =
+        TG_LINE_SHAPES[type]?.let {
+            TgLineStyle(affiliationColor(affiliation), it.widthDp, it.dashOnDp, it.dashOffDp)
+        }
     fun isTacticalPolygon(type: String): Boolean = type == "OBJ_AREA"
 
     private fun drawAttackArrow(c: Canvas, dp: Float, col: Int, dashed: Boolean) {

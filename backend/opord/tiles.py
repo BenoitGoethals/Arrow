@@ -33,7 +33,8 @@ TILE_SIZE = 256
 MAX_TILES = 144  # safety cap (12x12)
 
 # ── Symbology ─────────────────────────────────────────────────────────────────
-# (fill, outline) RGB tuples. Mirrors the web tactical map roughly.
+# (fill, outline) for non-TG markers. Tactical control graphics get their
+# colour from the per-object `affiliation` via _affiliation_style().
 TYPE_STYLES: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     "ENEMY":      ((220, 38, 38),  (127, 29, 29)),    # red
     "POI":        ((59, 130, 246), (30, 64, 175)),    # blue
@@ -41,16 +42,16 @@ TYPE_STYLES: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     "OBJECTIVE":  ((34, 197, 94),  (22, 101, 52)),    # green
     "ROUTE":      ((59, 130, 246), (30, 64, 175)),    # blue
     "ZONE":       ((251, 146, 60), (124, 45, 18)),    # orange
-    "ATK_AXIS":   ((220, 38, 38),  (127, 29, 29)),
-    "DEF_AREA":   ((34, 197, 94),  (22, 101, 52)),
-    "AMBUSH":     ((239, 68, 68),  (127, 29, 29)),
-    "BOUNDARY":   ((148, 163, 184),(71, 85, 105)),
-    "FLET":       ((34, 197, 94),  (22, 101, 52)),
-    "FLOT":       ((220, 38, 38),  (127, 29, 29)),
-    "PHASE_LINE": ((250, 204, 21), (113, 63, 18)),
-    "OBJ_AREA":   ((34, 197, 94),  (22, 101, 52)),
 }
 DEFAULT_STYLE = ((148, 163, 184), (71, 85, 105))
+
+# Tactical control graphic types — coloured by affiliation, not type.
+TG_TYPES = {"ATK_AXIS","COUNTERATTACK","AMBUSH","DEF_AREA","BLOCK","BYPASS",
+            "WITHDRAW","BOUNDARY","FLET","FLOT","PHASE_LINE","OBJ_AREA"}
+def _affiliation_style(aff: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    if aff == "ENEMY":   return ((220, 38, 38),  (127, 29, 29))    # red
+    if aff == "UNKNOWN": return ((250, 204, 21), (113, 63, 18))    # yellow
+    return ((59, 130, 246), (30, 64, 175))                          # blue
 OPERATOR_FILL = (16, 185, 129)        # green online dot
 OPERATOR_OUTLINE = (6, 95, 70)
 ALERT_FILL = (250, 204, 21)           # amber pulse
@@ -202,7 +203,10 @@ def _draw_overlays(canvas: Image.Image, db: Session, bbox: list[float],
           .all()
     )
     for to in objects:
-        fill, outline = TYPE_STYLES.get(to.type or "", DEFAULT_STYLE)
+        if (to.type or "") in TG_TYPES:
+            fill, outline = _affiliation_style(getattr(to, "affiliation", "FRIENDLY") or "FRIENDLY")
+        else:
+            fill, outline = TYPE_STYLES.get(to.type or "", DEFAULT_STYLE)
         kind, coords = _parse_geometry(to.geometry or "")
         if kind in ("line", "polygon") and len(coords) >= 2:
             pts = [_project(la, lo, z, x0, y0) for la, lo in coords]

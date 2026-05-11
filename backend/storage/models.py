@@ -121,6 +121,9 @@ class TacticalObject(Base):
     # Rendered as size designator (dots/bars) above point symbols, or as a
     # text label on line/polygon graphics.
     echelon: Mapped[str] = mapped_column(String(8), default="")
+    # NATO affiliation for tactical control graphics colour rule.
+    # FRIENDLY (blue), ENEMY (red), UNKNOWN (yellow). Default FRIENDLY.
+    affiliation: Mapped[str] = mapped_column(String(12), default="FRIENDLY")
 
 
 class Alert(Base):
