@@ -99,6 +99,7 @@ fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
     val tabNav = rememberNavController()
@@ -108,6 +109,13 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
 
     val role by container.tokenStore.roleFlow.collectAsState(initial = null)
     val tabs = if (role == "ADMIN") TABS_ADMIN else TABS_BASE
+
+    // SitaWare-style: bottom nav bar is hidden on the Map tab; the hamburger
+    // in the top-bar opens a side drawer with the same tabs instead.
+    val onMapTab = currentRoute?.startsWith(Tab.Map.route) == true
+    val drawerState = androidx.compose.material3.rememberDrawerState(
+        initialValue = androidx.compose.material3.DrawerValue.Closed,
+    )
 
     LaunchedEffect(Unit) {
         container.navigateToChatFlow.collect {
@@ -119,23 +127,52 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
+    fun goTab(route: String) {
+        tabNav.navigate(route) {
+            popUpTo(tabNav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    androidx.compose.material3.ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            androidx.compose.material3.ModalDrawerSheet {
+                Text(
+                    "ARROW",
+                    modifier = androidx.compose.ui.Modifier.padding(16.dp),
+                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                )
+                androidx.compose.material3.HorizontalDivider()
                 tabs.forEach { tab ->
-                    val selected = currentRoute?.startsWith(tab.route) == true
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            tabNav.navigate(tab.route) {
-                                popUpTo(tabNav.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                    androidx.compose.material3.NavigationDrawerItem(
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) },
+                        selected = currentRoute?.startsWith(tab.route) == true,
+                        onClick = {
+                            goTab(tab.route)
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = androidx.compose.ui.Modifier.padding(horizontal = 12.dp),
                     )
+                }
+            }
+        },
+    ) {
+    Scaffold(
+        bottomBar = {
+            if (!onMapTab) {
+                NavigationBar {
+                    tabs.forEach { tab ->
+                        val selected = currentRoute?.startsWith(tab.route) == true
+                        NavigationBarItem(
+                            selected = selected,
+                            onClick = { goTab(tab.route) },
+                            icon = { Icon(tab.icon, contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                        )
+                    }
                 }
             }
         },
@@ -154,6 +191,7 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                     },
                     onReport     = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
                     onOpenMortar = { lat, lon -> tabNav.navigate("mortar?lat=$lat&lon=$lon") },
+                    onOpenDrawer = { scope.launch { drawerState.open() } },
                 )
             }
             composable(
@@ -264,4 +302,5 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             }
         }
     }
+    }   // ModalNavigationDrawer
 }
