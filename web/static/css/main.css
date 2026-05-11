@@ -29,11 +29,13 @@ code { background: #1a1f29; padding: 0.1rem 0.4rem; border-radius: 4px; }
     display: flex; flex-direction: column; gap: 0.5rem;
     z-index: 9999; width: 320px; pointer-events: none;
 }
-/* Left column — DIRECT / GROUP chat with inline reply. Auto-dismiss in 10 min. */
+/* Chat toasts (DIRECT / GROUP) — same right-side column, stacked above the
+   system column. Blue accent so they're distinguishable. Auto-dismiss 10 min. */
 #arrow-chat-toast-container {
-    position: fixed; bottom: 1.5rem; left: 1.5rem;
+    position: fixed; top: 4rem; right: 1.5rem;
     display: flex; flex-direction: column; gap: 0.5rem;
-    z-index: 9999; width: 340px; pointer-events: none;
+    z-index: 9999; width: 320px; pointer-events: none;
+    max-height: calc(100vh - 6rem); overflow-y: auto;
 }
 #arrow-chat-toast-container .arrow-toast { border-left-color: #38bdf8; }
 #arrow-chat-toast-container .arrow-toast-from a { color: #38bdf8; }
