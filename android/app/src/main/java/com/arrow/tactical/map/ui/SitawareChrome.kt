@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -72,6 +74,8 @@ data class NotificationCounts(
     val total: Int get() = info + routine + warning + critical
 }
 
+data class OverlayChip(val key: String, val label: String, val selected: Boolean = false, val accent: Color = Color(0xFF34D399))
+
 @Composable
 fun SitawareTopBar(
     brand: String = "ARROW",
@@ -85,6 +89,13 @@ fun SitawareTopBar(
     online: Boolean = true,
     onStatus: () -> Unit = {},
     onOverflow: () -> Unit = {},
+    overlayChips: List<OverlayChip> = emptyList(),
+    onOverlayChip: (String) -> Unit = {},
+    gfxOn: Boolean = false,
+    onToggleGfx: () -> Unit = {},
+    isStreaming: Boolean = false,
+    onToggleStream: () -> Unit = {},
+    onLocateMe: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val c = SitawareChromeColors
@@ -109,25 +120,52 @@ fun SitawareTopBar(
             modifier = Modifier.padding(horizontal = 2.dp),
         )
 
-        // Report Layer pill
-        Surface(
-            color = c.ReportPillBg,
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier
-                .clip(RoundedCornerShape(20.dp))
-                .clickable { onReportLayer() }
-                .padding(horizontal = 0.dp),
-        ) {
-            Row(
-                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // Overlay-mode chips inline — All / None / Enemy / Own Plt
+        overlayChips.forEach { chip ->
+            Box(
+                Modifier
+                    .clickable { onOverlayChip(chip.key) }
+                    .background(
+                        if (chip.selected) chip.accent.copy(alpha = 0.18f) else Color(0xFF12233A),
+                        RoundedCornerShape(4.dp),
+                    )
+                    .border(0.5.dp,
+                            if (chip.selected) chip.accent else Color(0xFF2A3142),
+                            RoundedCornerShape(4.dp))
+                    .padding(horizontal = 7.dp, vertical = 3.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.CloudQueue, contentDescription = null,
-                     tint = c.ReportPillFg, modifier = Modifier.size(16.dp))
-                Text("Report Layer", color = c.ReportPillFg, fontSize = 12.sp,
-                     fontWeight = FontWeight.SemiBold)
+                Text(chip.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                     color = if (chip.selected) chip.accent else Color(0xFFCBD5E1))
             }
+        }
+        // Gfx toggle
+        Box(
+            Modifier
+                .clickable { onToggleGfx() }
+                .background(if (gfxOn) Color(0x33F59E0B) else Color(0xFF12233A),
+                            RoundedCornerShape(4.dp))
+                .border(0.5.dp, if (gfxOn) Color(0xFFF59E0B) else Color(0xFF2A3142),
+                        RoundedCornerShape(4.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Gfx", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                 color = if (gfxOn) Color(0xFFFBBF24) else Color(0xFFCBD5E1))
+        }
+        // Stream toggle
+        IconButton(onClick = onToggleStream, modifier = Modifier.size(32.dp)) {
+            Icon(
+                if (isStreaming) Icons.Filled.VideocamOff else Icons.Filled.Videocam,
+                contentDescription = "Stream",
+                tint = if (isStreaming) Color(0xFFEF4444) else c.IconTint,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        // Locate me
+        IconButton(onClick = onLocateMe, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Filled.MyLocation, contentDescription = "Locate me",
+                 tint = c.IconTint, modifier = Modifier.size(20.dp))
         }
 
         Spacer(Modifier.weight(1f))
