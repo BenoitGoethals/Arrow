@@ -22,12 +22,12 @@ from .messages  import (
 from .registry  import registry
 from .strategies import AutoSend, BurstSend, OnceSend
 from .theme     import (
-    C_ACCENT, C_BG, C_CARD, C_DIM, C_ERR, C_FG, C_OK, C_PANEL, C_WARN, C_XML,
-    CAT_COLOUR, WS_STATUS_COLOUR, bold, mono, ts,
+    C_ACCENT, C_BG, C_CARD, C_DIM, C_ERR, C_FG, C_INFO, C_OK, C_PANEL, C_WARN,
+    C_XML, CAT_COLOUR, WS_STATUS_COLOUR, apply_default_font, bold, mono, ts,
 )
 from .widgets   import (
     LOG_STYLE_MAP, ST_CHANNEL, ST_DATA, ST_ERR, ST_OK, ST_SYS, ST_TS, ST_XML,
-    log_append, make_log,
+    log_append, make_btn, make_log,
 )
 
 
@@ -57,6 +57,8 @@ class SimFrame(wx.Frame):
 
         self.SetBackgroundColour(C_BG)
         self._build_ui()
+        apply_default_font(self)             # bump every child font for legibility
+        self.Layout()
         self._setup_handlers()
 
         self._timer = wx.Timer(self)
@@ -113,13 +115,8 @@ class SimFrame(wx.Frame):
             return w
 
         def btn(text: str, handler: Callable,
-                bg: wx.Colour = C_ACCENT) -> wx.Button:
-            b = wx.Button(bar, label=text, size=(-1, 26))
-            b.SetFont(bold(9))
-            b.SetBackgroundColour(bg)
-            b.SetForegroundColour(wx.WHITE)
-            b.Bind(wx.EVT_BUTTON, handler)
-            return b
+                bg: wx.Colour = C_ACCENT):
+            return make_btn(bar, text, handler, bg=bg)
 
         h.Add(lbl("▶ ARROW CoT SIMULATOR", C_ACCENT, b=True), 0,
               wx.ALIGN_CENTER_VERTICAL | wx.LEFT | wx.RIGHT, 8)
@@ -138,7 +135,7 @@ class SimFrame(wx.Frame):
         self._pw_ctrl = entry("ranger14", 90, password=True)
         h.Add(self._pw_ctrl,     0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
 
-        h.Add(btn("LOGIN", self._on_login, wx.Colour(51, 85, 136)),
+        h.Add(btn("LOGIN", self._on_login, C_INFO),
               0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 8)
         h.Add(wx.StaticLine(bar, style=wx.LI_VERTICAL), 0,
               wx.EXPAND | wx.TOP | wx.BOTTOM | wx.LEFT | wx.RIGHT, 6)
@@ -233,13 +230,8 @@ class SimFrame(wx.Frame):
         v.Add(wx.StaticLine(panel), 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 2)
 
         def btn(label: str, handler: Callable,
-                bg: wx.Colour = C_ACCENT) -> wx.Button:
-            b = wx.Button(panel, label=label, size=(-1, 26))
-            b.SetFont(bold(9))
-            b.SetBackgroundColour(bg)
-            b.SetForegroundColour(wx.WHITE)
-            b.Bind(wx.EVT_BUTTON, handler)
-            return b
+                bg: wx.Colour = C_ACCENT):
+            return make_btn(panel, label, handler, bg=bg)
 
         # Once / Burst row
         row1 = wx.BoxSizer(wx.HORIZONTAL)
@@ -440,7 +432,17 @@ class SimFrame(wx.Frame):
     # ── Library helpers ───────────────────────────────────────────────────────
 
     def _refresh_library(self) -> None:
-        cat = self._cat_choice.GetString(self._cat_choice.GetSelection())
+        # wxChoice.GetSelection() returns wx.NOT_FOUND (-1) when nothing is
+        # selected yet — passing that to GetString trips a hard C++ assertion
+        # on macOS. Default to the first item if no selection has been made.
+        sel = self._cat_choice.GetSelection()
+        if sel == wx.NOT_FOUND:
+            if self._cat_choice.GetCount() > 0:
+                self._cat_choice.SetSelection(0)
+                sel = 0
+            else:
+                cat = ""
+        cat = self._cat_choice.GetString(sel) if sel != wx.NOT_FOUND else ""
         self._visible = registry.entries_for(cat)
         lc = self._lib_list
         lc.DeleteAllItems()

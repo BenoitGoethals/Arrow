@@ -23,13 +23,18 @@ dependencies = [
     "python-json-logger>=3.2",
     "cryptography>=43",
     "reportlab>=4.2",
-    "wxpython==4.2.4",  # pre-built wheel: https://extras.wxpython.org/wxPython4/extras/linux/gtk3/ubuntu-24.04/
+    "wxpython>=4.2.4",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+]
+# CoT simulator GUI (tools/cot_simulator.py). wxPython only ships a pre-built
+# wheel for Ubuntu 24.04 cp314 linux_x86_64; install on Linux only.
+cot-sim = [
+    "wxpython==4.2.4; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.scripts]

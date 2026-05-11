@@ -4,10 +4,40 @@ from __future__ import annotations
 
 import wx
 import wx.stc as stc
+import wx.lib.buttons as wxbtn
+from typing import Callable
 
 from .theme import (
-    C_PANEL, C_ACCENT, C_TS, C_OK, C_ERR, C_WARN, C_XML, C_WS, C_DIM, mono,
+    C_PANEL, C_ACCENT, C_TS, C_OK, C_ERR, C_WARN, C_XML, C_WS, C_DIM,
+    bold, mono,
 )
+
+
+# ── Cross-platform high-contrast button ──────────────────────────────────────
+def make_btn(
+    parent: wx.Window,
+    label: str,
+    handler: Callable[[wx.CommandEvent], None],
+    *,
+    bg: wx.Colour = C_ACCENT,
+    fg: wx.Colour = wx.WHITE,
+    size: tuple[int, int] = (-1, 30),
+) -> wxbtn.GenButton:
+    """High-contrast owner-drawn button that respects fg/bg on every OS.
+
+    Native ``wx.Button.SetBackgroundColour`` is ignored on macOS (Aqua keeps
+    the system tint), so white text ends up unreadable on a light button.
+    ``GenButton`` is owner-drawn so the colours we set are the colours
+    rendered everywhere.
+    """
+    b = wxbtn.GenButton(parent, label=label, size=size, style=wx.BORDER_NONE)
+    b.SetUseFocusIndicator(True)
+    b.SetFont(bold(11))
+    b.SetBackgroundColour(bg)
+    b.SetForegroundColour(fg)
+    b.SetBezelWidth(1)
+    b.Bind(wx.EVT_BUTTON, handler)
+    return b
 
 # ── Style slot indices ────────────────────────────────────────────────────────
 
