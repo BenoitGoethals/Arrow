@@ -160,6 +160,21 @@
         return '/messaging/?open=direct:' + senderId;
     }
 
+    // Auto-dismiss a toast after `ms` (default 5 s). Pauses the countdown while
+    // the user is hovering or focused inside an input — so they can finish typing.
+    function autoDismissToast(toast, ms = 5000) {
+        let timer = null;
+        const start = () => { clearTimeout(timer); timer = setTimeout(() => toast.remove(), ms); };
+        const stop  = () => { clearTimeout(timer); timer = null; };
+        toast.addEventListener('mouseenter', stop);
+        toast.addEventListener('mouseleave', start);
+        toast.querySelectorAll('input, textarea').forEach(el => {
+            el.addEventListener('focus', stop);
+            el.addEventListener('blur',  start);
+        });
+        start();
+    }
+
     function showToast(evt) {
         const data = evt.data || {};
         if (meId && data.sender_id === meId) return;
@@ -179,6 +194,10 @@
             n.onclick = () => { window.location.href = href; n.close(); };
         }
 
+        // Only personal chats (DIRECT / GROUP) get the inline reply field.
+        // BROADCAST and any system-style messages render as plain notifications.
+        const replyable = (msgType === 'DIRECT' || msgType === 'GROUP');
+
         const toast = document.createElement('div');
         toast.className = 'arrow-toast';
         toast.innerHTML = `
@@ -190,39 +209,40 @@
                 <button class="arrow-toast-close" title="Dismiss">✕</button>
             </div>
             <div class="arrow-toast-body">${esc(content)}</div>
+            ${replyable ? `
             <div class="arrow-toast-reply">
                 <input class="arrow-toast-input" type="text" placeholder="Reply…" autocomplete="off" />
                 <button class="arrow-toast-send">Send</button>
-            </div>`;
+            </div>` : ''}`;
 
         const container = document.getElementById('arrow-toast-container');
         container.appendChild(toast);
 
         toast.querySelector('.arrow-toast-close').addEventListener('click', () => toast.remove());
 
-        const input = toast.querySelector('.arrow-toast-input');
-        const send  = toast.querySelector('.arrow-toast-send');
-
-        async function sendReply() {
-            const text = input.value.trim();
-            if (!text) return;
-            send.disabled = true;
-            const body = msgType === 'BROADCAST'
-                ? { content: text, message_type: 'BROADCAST' }
-                : msgType === 'GROUP'
-                ? { content: text, message_type: 'GROUP', group_id: groupId }
-                : { content: text, message_type: 'DIRECT', receiver_id: senderId };
-            const res = await api('/messages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) { toast.remove(); }
-            else { send.disabled = false; }
+        if (replyable) {
+            const input = toast.querySelector('.arrow-toast-input');
+            const send  = toast.querySelector('.arrow-toast-send');
+            async function sendReply() {
+                const text = input.value.trim();
+                if (!text) return;
+                send.disabled = true;
+                const body = msgType === 'GROUP'
+                    ? { content: text, message_type: 'GROUP', group_id: groupId }
+                    : { content: text, message_type: 'DIRECT', receiver_id: senderId };
+                const res = await api('/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (res.ok) { toast.remove(); }
+                else { send.disabled = false; }
+            }
+            send.addEventListener('click', sendReply);
+            input.addEventListener('keydown', e => { if (e.key === 'Enter') sendReply(); });
         }
 
-        send.addEventListener('click', sendReply);
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') sendReply(); });
+        autoDismissToast(toast);
     }
 
     // ── Floating stream window ─────────────────────────────────────────────────
@@ -366,6 +386,7 @@
                     </button>
                 </div>`;
             document.getElementById('arrow-toast-container').appendChild(toast);
+            autoDismissToast(toast);
 
             if (Notification.permission === 'granted') {
                 const n = new Notification(`📡 LIVE — ${d.callsign}`,
@@ -408,6 +429,7 @@
             </div>`;
 
         document.getElementById('arrow-toast-container').appendChild(toast);
+        autoDismissToast(toast);
 
         // Browser notification
         if (Notification.permission === 'granted') {
@@ -516,6 +538,7 @@
             </div>
             <div class="arrow-toast-body" style="color:#fca5a5">${esc(voice)}</div>`;
         document.getElementById('arrow-toast-container').appendChild(toast);
+        autoDismissToast(toast);
 
         if (Notification.permission === 'granted') {
             new Notification('🚨 ' + type, { body: voice, tag: 'arrow-alert' });
