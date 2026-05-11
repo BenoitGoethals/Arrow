@@ -449,14 +449,17 @@ fun MapScreen(
             update = { /* markers managed by LaunchedEffect above */ },
         )
 
-        // ── Status + overlay bar — Compose layer (always above the map) ───
+        // ── Old status + overlay bar — kept for stream toggle, locate-me and
+        // overlay-mode chips, but rendered as a compact strip below the
+        // SitaWare chrome. Set `showLegacyControls = false` to hide entirely.
+        val showLegacyControls = false   // merged into the SitaWare top bar
         val online = operators.count { it.online }
         val dotColor = when (serverOnline) {
             true  -> Color(0xFF22C55E)
             false -> MaterialTheme.colorScheme.error
             null  -> Color(0xFFFBBF24)
         }
-        Row(
+        if (showLegacyControls) Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopStart)
@@ -608,6 +611,20 @@ fun MapScreen(
             info     = fireMissions.count { it.status == "PENDING" || it.status == "IN_PROGRESS" },
             routine  = (operators.size - operators.count { it.online }).coerceAtLeast(0),
         )
+        // Banner visibility — simple boolean. Re-appears whenever notif.total
+        // changes; clicking the ✓ in the banner hides it immediately; a
+        // LaunchedEffect auto-hides it after 5 s.
+        var bannerVisible by remember { mutableStateOf(notif.total > 0) }
+        LaunchedEffect(notif.total) {
+            if (notif.total > 0) {
+                bannerVisible = true
+                delay(5_000)
+                bannerVisible = false
+            } else {
+                bannerVisible = false
+            }
+        }
+        val showBanner = bannerVisible && notif.total > 0
         Column(modifier = Modifier.fillMaxWidth().align(Alignment.TopStart)) {
             SitawareTopBar(
                 brand   = "ARROW",
@@ -621,29 +638,58 @@ fun MapScreen(
                 onChat       = { container.signalNavigateToChat() },
                 onStatus     = { /* TODO: status panel */ },
                 onOverflow   = { /* TODO: overflow menu */ },
+                overlayChips = listOf(
+                    OverlayChip("ALL",         "All",     overlayMode == OverlayMode.ALL),
+                    OverlayChip("NONE",        "None",    overlayMode == OverlayMode.NONE),
+                    OverlayChip("ENEMIES",     "Enemy",   overlayMode == OverlayMode.ENEMIES),
+                    OverlayChip("OWN_PLATOON", "Own Plt", overlayMode == OverlayMode.OWN_PLATOON),
+                ),
+                onOverlayChip = { key ->
+                    overlayMode = when (key) {
+                        "ALL"         -> OverlayMode.ALL
+                        "NONE"        -> OverlayMode.NONE
+                        "ENEMIES"     -> OverlayMode.ENEMIES
+                        "OWN_PLATOON" -> OverlayMode.OWN_PLATOON
+                        else          -> overlayMode
+                    }
+                },
+                gfxOn           = tgVisible,
+                onToggleGfx     = { tgVisible = !tgVisible },
+                isStreaming     = isStreaming,
+                onToggleStream  = {
+                    val wantOn = !isStreaming
+                    if (!wantOn) {
+                        context.startService(
+                            android.content.Intent(context,
+                                com.arrow.tactical.stream.CameraStreamService::class.java)
+                                .setAction(com.arrow.tactical.stream.CameraStreamService.ACTION_STOP)
+                        )
+                        isStreaming = false
+                    } else {
+                        isStreaming = false
+                        val hasPerm = androidx.core.content.ContextCompat.checkSelfPermission(
+                            context, android.Manifest.permission.CAMERA
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        if (hasPerm) scope.launch { startStream() }
+                        else         cameraPermLauncher.launch(android.Manifest.permission.CAMERA)
+                    }
+                },
+                onLocateMe = {
+                    val opMe = meId?.let { id -> operators.find { it.id == id } }
+                    if (opMe?.latitude != null && opMe.longitude != null) {
+                        mapRef.value?.controller?.animateTo(
+                            GeoPoint(opMe.latitude, opMe.longitude), 16.0, null
+                        )
+                    }
+                },
             )
-            SitawareNotificationBanner(
-                counts    = notif,
-                onDismiss = { alertsList.value = emptyList() },
-            )
+            if (showBanner) {
+                SitawareNotificationBanner(
+                    counts    = notif,
+                    onDismiss = { bannerVisible = false },
+                )
+            }
         }
-
-        // Right-side FAB column (locate / zoom in / zoom out), vertically centred.
-        SitawareSideFabs(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 10.dp),
-            onLocate = {
-                val opMe = meId?.let { id -> operators.find { it.id == id } }
-                if (opMe?.latitude != null && opMe.longitude != null) {
-                    mapRef.value?.controller?.animateTo(
-                        GeoPoint(opMe.latitude, opMe.longitude), 16.0, null
-                    )
-                }
-            },
-            onZoomIn  = { mapRef.value?.controller?.zoomIn() },
-            onZoomOut = { mapRef.value?.controller?.zoomOut() },
-        )
 
         // ── Call for Fire button — icon-only, compact ────────────────────
         SmallFloatingActionButton(

@@ -1,6 +1,15 @@
 package com.arrow.tactical.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
@@ -24,7 +33,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -111,9 +123,8 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
     val role by container.tokenStore.roleFlow.collectAsState(initial = null)
     val tabs = if (role == "ADMIN") TABS_ADMIN else TABS_BASE
 
-    // SitaWare-style: bottom nav bar is hidden on the Map tab; the hamburger
-    // in the top-bar opens a side drawer with the same tabs instead.
-    val onMapTab = currentRoute?.startsWith(Tab.Map.route) == true
+    // Drawer is opened only from the SitaWare hamburger button; bottom nav
+    // bar stays visible on every tab including the map.
     val drawerState = androidx.compose.material3.rememberDrawerState(
         initialValue = androidx.compose.material3.DrawerValue.Closed,
     )
@@ -138,6 +149,7 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
 
     androidx.compose.material3.ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = drawerState.isOpen,   // no swipe-to-open from map
         drawerContent = {
             androidx.compose.material3.ModalDrawerSheet {
                 Text(
@@ -161,18 +173,39 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             }
         },
     ) {
+    var bottomBarExpanded by remember { mutableStateOf(true) }
     Scaffold(
         bottomBar = {
-            if (!onMapTab) {
-                NavigationBar {
-                    tabs.forEach { tab ->
-                        val selected = currentRoute?.startsWith(tab.route) == true
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = { goTab(tab.route) },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
-                        )
+            Column {
+                // Collapse handle — always visible; tap to toggle the full bar.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .clickable { bottomBarExpanded = !bottomBarExpanded }
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        if (bottomBarExpanded) Icons.Filled.KeyboardArrowDown
+                        else                   Icons.Filled.KeyboardArrowUp,
+                        contentDescription = if (bottomBarExpanded) "Collapse menu" else "Expand menu",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (bottomBarExpanded) {
+                    NavigationBar {
+                        tabs.forEach { tab ->
+                            val selected = currentRoute?.startsWith(tab.route) == true
+                            NavigationBarItem(
+                                selected = selected,
+                                onClick = { goTab(tab.route) },
+                                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                label = { Text(tab.label) },
+                            )
+                        }
                     }
                 }
             }
