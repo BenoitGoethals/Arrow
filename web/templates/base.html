@@ -243,8 +243,8 @@
             input.addEventListener('keydown', e => { if (e.key === 'Enter') sendReply(); });
         }
 
-        // 10 min for replyable chats, 5 s for system broadcasts.
-        autoDismissToast(toast, replyable ? 10 * 60 * 1000 : 5000);
+        // 10 min for replyable chats, 30 s for system broadcasts.
+        autoDismissToast(toast, replyable ? 10 * 60 * 1000 : 30 * 1000);
     }
 
     // ── Floating stream window ─────────────────────────────────────────────────
@@ -388,7 +388,7 @@
                     </button>
                 </div>`;
             document.getElementById('arrow-toast-container').appendChild(toast);
-            autoDismissToast(toast);
+            autoDismissToast(toast, 30 * 1000);
 
             if (Notification.permission === 'granted') {
                 const n = new Notification(`📡 LIVE — ${d.callsign}`,
@@ -431,7 +431,7 @@
             </div>`;
 
         document.getElementById('arrow-toast-container').appendChild(toast);
-        autoDismissToast(toast);
+        autoDismissToast(toast, 30 * 1000);
 
         // Browser notification
         if (Notification.permission === 'granted') {
@@ -540,7 +540,7 @@
             </div>
             <div class="arrow-toast-body" style="color:#fca5a5">${esc(voice)}</div>`;
         document.getElementById('arrow-toast-container').appendChild(toast);
-        autoDismissToast(toast);
+        autoDismissToast(toast, 30 * 1000);
 
         if (Notification.permission === 'granted') {
             new Notification('🚨 ' + type, { body: voice, tag: 'arrow-alert' });
