@@ -294,6 +294,7 @@
         hierarchy: null,
         operators: new Map(),
         tacticalObjects: new Map(),
+        cotTracks: new Map(),
         fireMissions: new Map(),    // id -> fire mission dto
         cbrnReports: new Map(),     // id -> parsed CBRN payload
         cbrnLayers:  new Map(),     // id -> [marker, zone1, zone2]
@@ -403,6 +404,67 @@
             iconSize: [sym.getSize().width, sym.getSize().height],
             iconAnchor: [sym.getAnchor().x, sym.getAnchor().y],
         });
+    }
+
+    // ── CoT Track rendering ───────────────────────────────────────────────────
+
+    function cotTypeToSidc(cotType) {
+        const MAP = {
+            'a-f-G-U-C':     'SFGPU-------',
+            'a-f-G-U-C-I':   'SFGPUCI-----',
+            'a-f-G-U-C-O':   'SFGPUCI----E',
+            'a-f-G-U-C-A':   'SFGPUCA-----',
+            'a-f-G-U-C-R':   'SFGPUCR-----',
+            'a-f-A-M-H':     'SFAPMH------',
+            'a-f-A-M-F':     'SFAPMFF-----',
+            'a-h-G-U-C-I':   'SHGPUCI-----',
+            'a-h-G-U-C-A':   'SHGPUCA-----',
+            'a-h-G-U-C-I-Z': 'SHGPUCIZ----',
+            'a-h-G-U-C-F':   'SHGPUCF-----',
+            'a-h-G-U-C-D':   'SHGPUCD-----',
+            'a-h-G-U-C-R':   'SHGPUCR-----',
+            'a-h-G-E-V':     'SHGPEV------',
+            'a-h-G-U-C-I-S': 'SHGPUCIS----',
+            'a-u-G':         'SUGPU-------',
+            'a-n-G-I-N':     'SNGPI-------',
+        };
+        if (MAP[cotType]) return MAP[cotType];
+        const parts = cotType.split('-');
+        const aff   = ({'f':'F','h':'H','u':'U','n':'N'}[parts[1]] || 'U');
+        const dim   = (parts[2] || 'G').toUpperCase();
+        return dim === 'A' ? `S${aff}APMF------` : `S${aff}GPU-------`;
+    }
+
+    function cotTrackIcon(track) {
+        const sidc = track.sidc || cotTypeToSidc(track.cot_type);
+        const sym  = new ms.Symbol(sidc, {
+            size: 28,
+            uniqueDesignation: track.callsign || track.cot_uid,
+            additionalInformation: track.team || '',
+        });
+        return L.divIcon({
+            className: 'cot-track-icon',
+            html:      sym.asSVG(),
+            iconSize:  [sym.getSize().width,  sym.getSize().height],
+            iconAnchor:[sym.getAnchor().x,    sym.getAnchor().y],
+        });
+    }
+
+    function placeCotTrack(track) {
+        const key      = `cot-${track.id}`;
+        const existing = state.markers.get(key);
+        if (existing) { map.removeLayer(existing); state.markers.delete(key); }
+        if (!enemyLayerVisible()) return;
+        const icon = cotTrackIcon(track);
+        const m = L.marker([track.latitude, track.longitude], { icon }).addTo(map);
+        m.bindPopup(
+            `<b>${escHtml(track.callsign || track.cot_uid)}</b><br/>` +
+            `Type: ${escHtml(track.cot_type)}<br/>` +
+            (track.team ? `Team: ${escHtml(track.team)}<br/>` : '') +
+            `Speed: ${(track.speed || 0).toFixed(1)} m/s &nbsp; Course: ${(track.course || 0).toFixed(0)}°<br/>` +
+            `<small style="color:#64748b">UID: ${escHtml(track.cot_uid)}</small>`
+        );
+        state.markers.set(key, m);
     }
 
     function markerVisible(op) {
@@ -708,9 +770,11 @@
     }
 
     function refreshEnemies() {
-        // Remove all tactical-object markers first
+        // Remove all tactical-object AND cot-track markers first
         state.markers.forEach((m, key) => {
-            if (key.startsWith('to-')) { map.removeLayer(m); state.markers.delete(key); }
+            if (key.startsWith('to-') || key.startsWith('cot-')) {
+                map.removeLayer(m); state.markers.delete(key);
+            }
         });
         const cnt = document.getElementById('enemies-count');
         if (cnt) cnt.textContent = [...state.tacticalObjects.values()]
@@ -739,6 +803,8 @@
             const isTg = isTgType(obj.type);
             if (isTg ? showTg : showLegacy) placeEnemy(obj);
         });
+        // CoT tracks (simulator / ATAK peers with non-operator UIDs)
+        if (showLegacy) state.cotTracks.forEach(t => placeCotTrack(t));
     }
 
     window.__arrowFocus = (lat, lon) => map.setView([lat, lon], 14);
@@ -1988,6 +2054,17 @@
         }
     }
 
+    async function loadCotTracks() {
+        try {
+            const r = await api('/cot/tracks');
+            if (!r.ok) { console.warn('[arrow] /cot/tracks fetch failed', r.status); return; }
+            const list = await r.json();
+            state.cotTracks = new Map(list.map(t => [t.id, t]));
+            console.log(`[arrow] loaded ${list.length} CoT tracks`);
+            refreshEnemies();
+        } catch (e) { console.warn('[arrow] loadCotTracks error', e); }
+    }
+
     function connectWS() {
         const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
@@ -1999,6 +2076,9 @@
                 op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
                 state.operators.set(op.id, op);
                 placeOperator(op);
+            } else if (msg.channel === 'cot-track' && msg.event === 'update') {
+                state.cotTracks.set(msg.data.id, msg.data);
+                placeCotTrack(msg.data);
             } else if (msg.channel === 'tactical-object') {
                 if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); refreshEnemies(); }
                 else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); refreshEnemies(); }
@@ -2021,7 +2101,7 @@
         ws.onclose = () => setTimeout(connectWS, 3000);
     }
 
-    loadHierarchy(); loadEnemies(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
+    loadHierarchy(); loadEnemies(); loadCotTracks(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
     setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);
     setInterval(loadMapReports, 30000);

@@ -126,6 +126,28 @@ class TacticalObject(Base):
     affiliation: Mapped[str] = mapped_column(String(12), default="FRIENDLY")
 
 
+class CotTrack(Base):
+    """Live CoT entity received via POST /cot from a non-operator (foreign) UID.
+
+    Upserted on every receipt; ``cot_uid`` is the CoT event uid field
+    (e.g. "SIM.HOT-INF-1").  Shown on the tactical map with the NATO
+    mil-symbol that matches the CoT type.
+    """
+    __tablename__ = "cot_tracks"
+
+    id:         Mapped[int]           = mapped_column(primary_key=True)
+    cot_uid:    Mapped[str]           = mapped_column(String(120), unique=True, index=True)
+    cot_type:   Mapped[str]           = mapped_column(String(40))
+    callsign:   Mapped[str]           = mapped_column(String(60),  default="")
+    latitude:   Mapped[float]         = mapped_column(Float)
+    longitude:  Mapped[float]         = mapped_column(Float)
+    hae:        Mapped[float]         = mapped_column(Float,        default=0.0)
+    speed:      Mapped[float]         = mapped_column(Float,        default=0.0)
+    course:     Mapped[float]         = mapped_column(Float,        default=0.0)
+    team:       Mapped[str]           = mapped_column(String(60),  default="")
+    last_seen:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class Alert(Base):
     __tablename__ = "alerts"
 

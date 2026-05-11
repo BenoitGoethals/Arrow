@@ -31,9 +31,16 @@ from lxml import etree
 # ── SIDC → CoT type ──────────────────────────────────────────────────────────
 
 SIDC_TO_COT: dict[str, str] = {
+    # Friendly ground
+    "SFGPUC------": "a-f-G-U-C",      # friendly ground combat (generic)
     "SFGPUCI-----": "a-f-G-U-C-I",    # friendly infantry
     "SFGPUCI----E": "a-f-G-U-C-O",    # friendly infantry / commander
     "SFGPUCA-----": "a-f-G-U-C-A",    # friendly armour
+    "SFGPUCR-----": "a-f-G-U-C-R",    # friendly recon
+    # Friendly air
+    "SFAPMH------": "a-f-A-M-H",      # friendly helicopter
+    "SFAPMFF-----": "a-f-A-M-F",      # friendly fixed-wing
+    # Hostile ground
     "SHGPUCI-----": "a-h-G-U-C-I",    # hostile infantry
     "SHGPUCA-----": "a-h-G-U-C-A",    # hostile armour
     "SHGPUCIZ----": "a-h-G-U-C-I-Z",  # hostile mechanised
@@ -42,6 +49,7 @@ SIDC_TO_COT: dict[str, str] = {
     "SHGPUCR-----": "a-h-G-U-C-R",    # hostile recon
     "SHGPEV------": "a-h-G-E-V",      # hostile vehicle
     "SHGPUCIS----": "a-h-G-U-C-I-S",  # hostile sniper
+    # Unknown / neutral
     "SUGPU-------": "a-u-G",           # unknown ground
     "SNGPI-------": "a-n-G-I-N",      # neutral POI
 }
@@ -72,7 +80,21 @@ def sidc_to_cot_type(sidc: str) -> str:
 
 
 def cot_type_to_sidc(cot_type: str) -> str:
-    return COT_TO_SIDC.get(cot_type, "SUGPU-------")
+    """Convert a CoT type to MIL-STD-2525C SIDC.
+
+    Falls back to a generic affiliation/dimension symbol when no exact match
+    exists in the table (e.g. "a-h-G-U-C-I-Z" → "SHGPUCIZ----" is in the
+    table, but "a-h-G-U-C-X" would fall back to "SHGPU-------").
+    """
+    if cot_type in COT_TO_SIDC:
+        return COT_TO_SIDC[cot_type]
+    parts  = cot_type.split("-")
+    aff    = (parts[1] if len(parts) > 1 else "u").upper()
+    dim    = (parts[2] if len(parts) > 2 else "G").upper()
+    sidc_aff = {"F": "F", "H": "H", "U": "U", "N": "N"}.get(aff, "U")
+    if dim == "A":
+        return f"S{sidc_aff}APMF------"
+    return f"S{sidc_aff}GPU-------"
 
 
 # ── CotEvent dataclass ────────────────────────────────────────────────────────
