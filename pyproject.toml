@@ -23,7 +23,6 @@ dependencies = [
     "python-json-logger>=3.2",
     "cryptography>=43",
     "reportlab>=4.2",
-    "wxpython>=4.2.4",
 ]
 
 [project.optional-dependencies]
