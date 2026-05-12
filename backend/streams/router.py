@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
-from backend.auth import jwt_auth as _jwt_auth  # re-use JWT config (read at call-time)
+from backend.auth.infrastructure import token_service as _token_service  # JWT config read at call-time
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage import database as _db  # SessionLocal accessed at call-time
 from backend.storage.database import get_db
@@ -84,12 +84,12 @@ def list_streams() -> list[dict]:
 def _verify_token(token: str) -> dict | None:
     """Return JWT payload or None.
 
-    Reads `_jwt_auth._cfg` at call-time — the FastAPI lifespan rebinds it after
-    resolving the real (auto-generated or env-provided) JWT secret, and a stale
-    captured reference would silently keep verifying against the default.
+    Reads `_token_service._cfg` at call-time — the FastAPI lifespan rebinds it
+    after resolving the real (auto-generated or env-provided) JWT secret, and a
+    stale captured reference would silently keep verifying against the default.
     """
     from jose import JWTError, jwt
-    cfg = _jwt_auth._cfg
+    cfg = _token_service._cfg
     try:
         return jwt.decode(token, cfg.secret, algorithms=[cfg.algorithm])
     except JWTError as exc:
