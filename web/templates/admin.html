@@ -514,8 +514,107 @@ main { padding: 0; }
         ${section('Default Operator', [['callsign', cfg.operator.callsign], ['team', cfg.operator.team]])}
         <p style="color:#64748b;font-size:0.8rem;margin-top:1rem">
             ℹ️  Edit <code>config.xml</code> in the project root to change these values, then restart the server.
-        </p>`;
+        </p>
+
+        <div class="cfg-section" id="apk-dist-section">
+            <h3>📱 APK Distribution</h3>
+            <div style="padding:1rem">
+                <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 1rem">
+                    Where the Android APK lives. Choose <strong>LOCAL</strong> for a filesystem path
+                    (use this for any NFS or SMB share you have mounted at the OS level), or
+                    <strong>SMB</strong> to read directly from a Windows/Samba server
+                    (requires the <code>smbprotocol</code> Python package).
+                </p>
+                <div class="field"><label>Transport</label>
+                    <select id="apk-kind">
+                        <option value="LOCAL">LOCAL (filesystem / mounted NFS|SMB)</option>
+                        <option value="SMB">SMB (direct, smbprotocol)</option>
+                    </select>
+                </div>
+                <div class="apk-smb-only">
+                    <div class="field"><label>SMB host</label>
+                        <input id="apk-host" placeholder="fileserver.lan or 10.0.0.5"/>
+                    </div>
+                    <div class="field"><label>SMB share</label>
+                        <input id="apk-share" placeholder="builds"/>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Path <span style="color:#475569">(LOCAL: filesystem path or directory; SMB: path within share)</span></label>
+                    <input id="apk-path" placeholder="/mnt/builds/arrow/  or  releases/2026-05"/>
+                </div>
+                <div class="field"><label>Filename</label>
+                    <input id="apk-filename" placeholder="arrow.apk"/>
+                </div>
+                <div class="apk-smb-only">
+                    <div class="field"><label>SMB username</label>
+                        <input id="apk-username" placeholder="DOMAIN\\user or user"/>
+                    </div>
+                    <div class="field"><label>SMB password
+                        <span style="color:#475569">(leave blank = no change)</span></label>
+                        <input id="apk-password" type="password" placeholder="••••••••"/>
+                    </div>
+                </div>
+                <div id="apk-status" style="font-size:0.8rem;color:#64748b;margin-bottom:0.6rem"></div>
+                <div id="apk-err" class="form-error"></div>
+                <div style="display:flex;gap:0.6rem;align-items:center">
+                    <button class="btn btn-primary" onclick="saveApkConfig()">💾 Save</button>
+                    <a class="btn btn-ghost" href="/download/">Open download page →</a>
+                </div>
+            </div>
+        </div>`;
+        loadApkConfig();
     }
+
+    function applyApkKindUi() {
+        const kind = document.getElementById('apk-kind').value;
+        document.querySelectorAll('.apk-smb-only').forEach(el => {
+            el.style.display = (kind === 'SMB') ? '' : 'none';
+        });
+    }
+
+    async function loadApkConfig() {
+        const r = await api('/admin/apk-config');
+        const status = document.getElementById('apk-status');
+        if (!r.ok) { status.innerHTML = '<span style="color:#ef4444">Could not load APK config.</span>'; return; }
+        const c = await r.json();
+        document.getElementById('apk-kind').value     = c.kind || 'LOCAL';
+        document.getElementById('apk-host').value     = c.host || '';
+        document.getElementById('apk-share').value    = c.share || '';
+        document.getElementById('apk-path').value     = c.path || '';
+        document.getElementById('apk-filename').value = c.filename || 'arrow.apk';
+        document.getElementById('apk-username').value = c.username || '';
+        document.getElementById('apk-password').value = '';
+        status.innerHTML = c.configured
+            ? `Currently configured — last updated ${c.updated_at ? c.updated_at.replace('T',' ').slice(0,16) : '—'}`
+              + (c.has_password ? ' · password set' : '')
+            : '<span style="color:#f59e0b">Not configured.</span>';
+        document.getElementById('apk-kind').addEventListener('change', applyApkKindUi);
+        applyApkKindUi();
+    }
+
+    window.saveApkConfig = async function() {
+        const body = {
+            kind:     document.getElementById('apk-kind').value,
+            host:     document.getElementById('apk-host').value.trim(),
+            share:    document.getElementById('apk-share').value.trim(),
+            path:     document.getElementById('apk-path').value.trim(),
+            filename: document.getElementById('apk-filename').value.trim() || 'arrow.apk',
+            username: document.getElementById('apk-username').value.trim(),
+            password: document.getElementById('apk-password').value,
+        };
+        const errEl = document.getElementById('apk-err');
+        errEl.textContent = '';
+        if (!body.path) { errEl.textContent = 'Path is required.'; return; }
+        if (body.kind === 'SMB' && (!body.host || !body.share)) {
+            errEl.textContent = 'SMB host and share are required.'; return;
+        }
+        const r = await api('/admin/apk-config', {
+            method: 'PUT', body: JSON.stringify(body),
+        });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status} ${await r.text()}`; return; }
+        await loadApkConfig();
+    };
 
     // ── Alerts ─────────────────────────────────────────────────────────────
     async function renderAlerts(el) {

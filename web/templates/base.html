@@ -48,18 +48,19 @@
 <body>
 <nav class="nav">
     <span class="brand">ARROW</span>
-    <a href="{{ url_for('dashboard.index') }}">Dashboard</a>
-    <a href="{{ url_for('tactical_map.index') }}">Tactical Map</a>
-    <a href="{{ url_for('messaging.index') }}">Messaging</a>
-    <a href="{{ url_for('reports.index') }}">Reports</a>
-    <a href="{{ url_for('opord.index') }}" style="color:#60a5fa;font-weight:600">📋 OPORDs</a>
-    <a href="{{ url_for('objectives.index') }}" style="color:#22c55e;font-weight:600">🚩 Objectives</a>
-    <a href="{{ url_for('history.index') }}">📜 History</a>
-    <a href="{{ url_for('history.photos') }}">📷 Photos</a>
-    <a href="{{ url_for('fire_missions.index') }}" style="color:#ef4444;font-weight:600">🎯 Fire Missions</a>
-    <a href="{{ url_for('streams.index') }}" style="color:#a78bfa;font-weight:600">📡 Live Streams</a>
-    <a href="{{ url_for('streams.recordings') }}" style="color:#a78bfa;font-weight:600">⏺ Recordings</a>
-    <a href="{{ url_for('admin.index') }}">Admin</a>
+    <a class="nav-internal" href="{{ url_for('dashboard.index') }}">Dashboard</a>
+    <a class="nav-internal" href="{{ url_for('tactical_map.index') }}">Tactical Map</a>
+    <a class="nav-internal" href="{{ url_for('messaging.index') }}">Messaging</a>
+    <a class="nav-internal" href="{{ url_for('reports.index') }}">Reports</a>
+    <a class="nav-internal" href="{{ url_for('opord.index') }}" style="color:#60a5fa;font-weight:600">📋 OPORDs</a>
+    <a class="nav-internal" href="{{ url_for('objectives.index') }}" style="color:#22c55e;font-weight:600">🚩 Objectives</a>
+    <a class="nav-internal" href="{{ url_for('history.index') }}">📜 History</a>
+    <a class="nav-internal" href="{{ url_for('history.photos') }}">📷 Photos</a>
+    <a class="nav-internal" href="{{ url_for('fire_missions.index') }}" style="color:#ef4444;font-weight:600">🎯 Fire Missions</a>
+    <a class="nav-internal" href="{{ url_for('streams.index') }}" style="color:#a78bfa;font-weight:600">📡 Live Streams</a>
+    <a class="nav-internal" href="{{ url_for('streams.recordings') }}" style="color:#a78bfa;font-weight:600">⏺ Recordings</a>
+    <a class="nav-internal" href="{{ url_for('admin.index') }}">Admin</a>
+    <a href="{{ url_for('apk.index') }}" style="color:#34d399;font-weight:600">📱 APK</a>
     <span class="spacer"></span>
     <span id="nav-user" class="nav-user"></span>
     <a id="nav-auth" href="{{ url_for('login') }}">Sign in</a>
@@ -67,13 +68,21 @@
 <script>
     (function () {
         const token = localStorage.getItem('arrow_token');
-        const role = localStorage.getItem('arrow_role');
-        const user = document.getElementById('nav-user');
-        const auth = document.getElementById('nav-auth');
+        const role  = (localStorage.getItem('arrow_role') || '').toUpperCase();
+        const user  = document.getElementById('nav-user');
+        const auth  = document.getElementById('nav-auth');
         if (token) {
             user.textContent = role ? `Signed in (${role})` : 'Signed in';
             auth.textContent = 'Sign out';
             auth.href = '/logout';
+        }
+        // Plain OPERATORs only see the APK download page. Hide all internal
+        // links and bounce them to /download if they land elsewhere.
+        if (token && role === 'OPERATOR') {
+            document.querySelectorAll('.nav-internal').forEach(a => a.style.display = 'none');
+            const path = location.pathname;
+            const allowed = path.startsWith('/download') || path === '/logout' || path === '/login';
+            if (!allowed) location.replace('/download/');
         }
     })();
 </script>
