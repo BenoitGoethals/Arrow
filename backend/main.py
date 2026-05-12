@@ -10,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 
 from backend.admin.router import router as admin_api_router
 from backend.alerts.router import router as alerts_router
+from backend.apk.router import router as apk_router
 from backend.streams.router import router as streams_router
 from backend.fire_missions.router import router as fire_missions_router
 from backend.history.router import router as history_router
@@ -147,6 +148,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(admin_api_router)
+    app.include_router(apk_router)
     app.include_router(cot_router)
     app.include_router(auth_router)
     app.include_router(operators_router)

@@ -282,6 +282,26 @@ class Opord(Base):
     updated_at:    Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
+class ApkDistConfig(Base):
+    """Admin-configured location of the Android APK to distribute.
+
+    Singleton row (id=1). The APK lives either on a locally-mounted path
+    (LOCAL — covers OS-mounted NFS shares) or on an SMB server reached
+    directly over the wire (SMB — requires ``smbprotocol``).
+    """
+    __tablename__ = "apk_dist_config"
+
+    id:        Mapped[int]   = mapped_column(primary_key=True, default=1)
+    kind:      Mapped[str]   = mapped_column(String(10), default="LOCAL")   # LOCAL | SMB
+    host:      Mapped[str]   = mapped_column(String(255), default="")       # SMB only
+    share:     Mapped[str]   = mapped_column(String(255), default="")       # SMB only
+    path:      Mapped[str]   = mapped_column(String(1024), default="")      # LOCAL: filesystem path (file or dir); SMB: path within share
+    filename:  Mapped[str]   = mapped_column(String(255), default="arrow.apk")
+    username:  Mapped[str]   = mapped_column(String(255), default="")       # SMB only
+    password:  Mapped[str]   = mapped_column(String(255), default="")       # SMB only (stored as-is — admin-only access)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class StreamRecording(Base):
     """Persisted record of an Android-produced video stream.
 

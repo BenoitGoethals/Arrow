@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Download Android APK — Arrow{% endblock %}
+{% block head %}
+<style>
+.dl-shell  { max-width: 640px; margin: 4rem auto; padding: 0 1.5rem; text-align: center; }
+.dl-card   { background: #161b25; border: 1px solid #2a3142; border-radius: 12px; padding: 2.5rem 2rem; }
+.dl-icon   { font-size: 4rem; margin-bottom: 0.5rem; }
+.dl-card h1 { margin: 0 0 0.4rem; font-size: 1.4rem; }
+.dl-card p  { color: #94a3b8; font-size: 0.92rem; margin: 0.4rem 0 1.5rem; }
+.dl-btn {
+    display: inline-flex; align-items: center; gap: 0.6rem;
+    background: #34d399; color: #0d1117; font-weight: 700;
+    font-size: 1.05rem; border: 0; border-radius: 8px;
+    padding: 0.85rem 1.8rem; cursor: pointer; text-decoration: none;
+    transition: background 0.15s;
+}
+.dl-btn:hover:not(:disabled) { background: #6ee7b7; }
+.dl-btn:disabled { background: #1f2937; color: #475569; cursor: not-allowed; }
+.dl-meta { margin-top: 1.2rem; font-size: 0.8rem; color: #64748b; font-family: monospace; }
+.dl-meta code { background: #0d1117; padding: 1px 6px; border-radius: 3px; color: #e2e8f0; }
+.dl-error { background: #7f1d1d22; border: 1px solid #ef4444; color: #fca5a5;
+            padding: 0.7rem 1rem; border-radius: 6px; margin-top: 1rem;
+            font-size: 0.85rem; text-align: left; }
+.dl-progress {
+    margin-top: 1rem; height: 6px; background: #0d1117;
+    border-radius: 3px; overflow: hidden; display: none;
+}
+.dl-progress.on { display: block; }
+.dl-progress .bar { height: 100%; background: #34d399; width: 0%; transition: width 0.2s; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dl-shell">
+  <div class="dl-card">
+    <div class="dl-icon">📱</div>
+    <h1>Arrow — Android Client</h1>
+    <p>Download the Arrow tactical operator APK to your device.</p>
+
+    <button id="dl-btn" class="dl-btn" disabled>
+      <span id="dl-btn-label">⬇  Download APK</span>
+    </button>
+
+    <div class="dl-progress" id="dl-progress"><div class="bar" id="dl-bar"></div></div>
+
+    <div class="dl-meta" id="dl-meta">Checking distribution…</div>
+
+    <div class="dl-error" id="dl-error" style="display:none"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+
+    const btn      = document.getElementById('dl-btn');
+    const label    = document.getElementById('dl-btn-label');
+    const meta     = document.getElementById('dl-meta');
+    const errBox   = document.getElementById('dl-error');
+    const progress = document.getElementById('dl-progress');
+    const bar      = document.getElementById('dl-bar');
+
+    const role = (localStorage.getItem('arrow_role') || '').toUpperCase();
+
+    function api(path, opts = {}) {
+        return fetch(window.ARROW_BACKEND_URL + path, {
+            ...opts,
+            headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+        });
+    }
+
+    // Probe the admin config endpoint to display source info (admins only).
+    // Non-admins still see a generic "Configured" / "Not configured" state via a HEAD.
+    async function refreshStatus() {
+        if (role === 'ADMIN') {
+            const r = await api('/admin/apk-config');
+            if (!r.ok) {
+                meta.textContent = 'Could not read APK configuration.';
+                return;
+            }
+            const c = await r.json();
+            if (!c.configured) {
+                meta.innerHTML = '<span style="color:#f59e0b">⚠ Not configured.</span> ' +
+                                 'Go to <a href="/admin/" style="color:#34d399">Admin → Configuration</a> to set the source.';
+                btn.disabled = true; return;
+            }
+            const where = c.kind === 'SMB'
+                ? `SMB <code>\\\\${c.host}\\${c.share}\\${c.path}</code>`
+                : `LOCAL <code>${c.path}</code>`;
+            meta.innerHTML = `Source: ${where}<br/>File: <code>${c.filename}</code>`;
+            btn.disabled = false;
+        } else {
+            // Best-effort probe: just enable the button and let the download surface the error
+            meta.textContent = 'Ready.';
+            btn.disabled = false;
+        }
+    }
+
+    btn.addEventListener('click', async () => {
+        errBox.style.display = 'none';
+        btn.disabled = true;
+        label.textContent = 'Downloading…';
+        progress.classList.add('on');
+        bar.style.width = '0%';
+
+        try {
+            const r = await api('/apk/download');
+            if (!r.ok) {
+                const txt = await r.text();
+                throw new Error(`HTTP ${r.status}: ${txt}`);
+            }
+            const total = Number(r.headers.get('Content-Length') || 0);
+            const cd    = r.headers.get('Content-Disposition') || '';
+            const m     = cd.match(/filename="?([^"]+)"?/);
+            const name  = m ? m[1] : 'arrow.apk';
+
+            const reader = r.body.getReader();
+            const chunks = [];
+            let received = 0;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                received += value.length;
+                if (total) bar.style.width = ((received / total) * 100).toFixed(1) + '%';
+            }
+            const blob = new Blob(chunks, { type: 'application/vnd.android.package-archive' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+            label.textContent = '✓ Downloaded';
+            setTimeout(() => { label.textContent = '⬇  Download APK'; btn.disabled = false;
+                               progress.classList.remove('on'); bar.style.width = '0%'; }, 2500);
+        } catch (e) {
+            errBox.style.display = 'block';
+            errBox.textContent = e.message || 'Download failed.';
+            label.textContent  = '⬇  Download APK';
+            btn.disabled = false;
+            progress.classList.remove('on');
+        }
+    });
+
+    refreshStatus();
+})();
+</script>
+{% endblock %}

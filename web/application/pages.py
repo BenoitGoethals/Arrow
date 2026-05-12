@@ -17,6 +17,9 @@ class PageService:
     def admin(self) -> PageView:
         return PageView("admin.html")
 
+    def apk_download(self) -> PageView:
+        return PageView("apk_download.html")
+
     def map(self) -> PageView:
         return PageView("map.html")
 

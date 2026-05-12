@@ -45,7 +45,14 @@
     function storeAndRedirect(data) {
         localStorage.setItem('arrow_token', data.access_token);
         localStorage.setItem('arrow_role',  data.role);
-        location.href = next;
+        // Plain OPERATORs are limited to the APK download page on the web UI.
+        const role = (data.role || '').toUpperCase();
+        const explicitNext = new URLSearchParams(location.search).get('next');
+        if (role === 'OPERATOR' && !explicitNext) {
+            location.href = '/download/';
+        } else {
+            location.href = next;
+        }
     }
 
     function showMfa() {
