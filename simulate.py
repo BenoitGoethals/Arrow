@@ -1129,6 +1129,146 @@ _OP_ENEMY_PLANT: list[dict] = [
 ]
 
 
+# ── Friendly battalion laydown ─────────────────────────────────────────────
+#
+# Plants a full battalion's worth of friendly unit markers (SEC / PL / COY /
+# BN echelons across the usual combat and combat-support branches) as plain
+# tactical objects on the map. These are NOT operators and NOT part of the
+# command hierarchy — they are doctrinal force-laydown symbols only, so the
+# map shows where the BN's sub-units sit on the ground.
+#
+# Each entry carries a MIL-STD-2525C friendly SIDC with the echelon modifier
+# at position 11 (A=team, C=section, D=platoon, E=company, F=battalion). The
+# map clients (web milsymbol.js and android MilsymRenderer) render the cyan
+# affiliation rectangle, function-modifier glyph and echelon bars from the
+# SIDC alone.
+
+# Battalion rear area — Brugge (Bruges), Belgium. Garrison / depot location
+# from which the BN deploys forward; markers fan out around the city centre.
+_FBN_BASE_LAT = 51.2093
+_FBN_BASE_LON = 3.2247
+
+# (label,                   SIDC,            d-lat,   d-lon,  notes)
+# Latitude offsets are negative south, longitude offsets east-west around base.
+_FRIENDLY_BN_LAYDOWN: list[tuple[str, str, float, float, str]] = [
+    # ── 1× BN HQ (centre, rear area) ─────────────────────────────────────
+    ("1-12 IN BN HQ",        "SFGPUCI----F",  0.0000,   0.0000,
+     "Battalion Tactical Operations Centre (TOC)"),
+    ("1-12 IN BN MAIN CP",   "SFGPUCI--H-F", -0.0050,   0.0030,
+     "Battalion Main Command Post (HQ modifier)"),
+
+    # ── 4× rifle companies (A/B/C/D) — fan north toward the line ─────────
+    ("A CO HQ",              "SFGPUCI--H-E",  0.0250,  -0.0450,
+     "A Company command post — supports OBJ HAWK (Bastogne)"),
+    ("B CO HQ",              "SFGPUCI--H-E",  0.0250,  -0.0150,
+     "B Company command post — supports OBJ EAGLE (Houffalize)"),
+    ("C CO HQ",              "SFGPUCI--H-E",  0.0250,   0.0150,
+     "C Company command post — supports OBJ FALCON (La Roche)"),
+    ("D CO HQ",              "SFGPUCI--H-E",  0.0250,   0.0450,
+     "D Company command post — supports OBJ KITE (Vielsalm)"),
+
+    # ── Combat-support companies (HHC + Weapons CO) ──────────────────────
+    ("HHC",                  "SFGPUCI--H-E", -0.0080,  -0.0250,
+     "Headquarters & Headquarters Company"),
+    ("WPNS CO",              "SFGPUCFH--HE", -0.0080,   0.0250,
+     "Weapons / Heavy Mortar Company"),
+
+    # ── 12× rifle platoons (3 per CO) ────────────────────────────────────
+    # A CO platoons
+    ("A/1 PL",               "SFGPUCI----D",  0.0420,  -0.0520,
+     "A Coy / 1 Pl rifle platoon"),
+    ("A/2 PL",               "SFGPUCI----D",  0.0420,  -0.0450,
+     "A Coy / 2 Pl rifle platoon"),
+    ("A/3 PL",               "SFGPUCIZ---D",  0.0420,  -0.0380,
+     "A Coy / 3 Pl mech-infantry platoon"),
+    # B CO platoons
+    ("B/1 PL",               "SFGPUCI----D",  0.0420,  -0.0220,
+     "B Coy / 1 Pl rifle platoon"),
+    ("B/2 PL",               "SFGPUCI----D",  0.0420,  -0.0150,
+     "B Coy / 2 Pl rifle platoon"),
+    ("B/3 PL",               "SFGPUCIZ---D",  0.0420,  -0.0080,
+     "B Coy / 3 Pl mech-infantry platoon"),
+    # C CO platoons
+    ("C/1 PL",               "SFGPUCI----D",  0.0420,   0.0080,
+     "C Coy / 1 Pl rifle platoon"),
+    ("C/2 PL",               "SFGPUCI----D",  0.0420,   0.0150,
+     "C Coy / 2 Pl rifle platoon"),
+    ("C/3 PL",               "SFGPUCIZ---D",  0.0420,   0.0220,
+     "C Coy / 3 Pl mech-infantry platoon"),
+    # D CO platoons
+    ("D/1 PL",               "SFGPUCI----D",  0.0420,   0.0380,
+     "D Coy / 1 Pl rifle platoon"),
+    ("D/2 PL",               "SFGPUCI----D",  0.0420,   0.0450,
+     "D Coy / 2 Pl rifle platoon"),
+    ("D/3 PL",               "SFGPUCIZ---D",  0.0420,   0.0520,
+     "D Coy / 3 Pl mech-infantry platoon"),
+
+    # ── Selected SEC markers under lead platoons (A/1 and D/1) ───────────
+    ("A/1/1 SEC",            "SFGPUCI----C",  0.0480,  -0.0540,
+     "A Coy / 1 Pl / 1 Sec rifle section"),
+    ("A/1/2 SEC",            "SFGPUCI----C",  0.0480,  -0.0500,
+     "A Coy / 1 Pl / 2 Sec rifle section"),
+    ("D/1/1 SEC",            "SFGPUCI----C",  0.0480,   0.0360,
+     "D Coy / 1 Pl / 1 Sec rifle section"),
+    ("D/1/2 SEC",            "SFGPUCI----C",  0.0480,   0.0400,
+     "D Coy / 1 Pl / 2 Sec rifle section"),
+
+    # ── Battalion combat-support platoons ────────────────────────────────
+    ("RECCE PL",             "SFGPUCRR---D",  0.0150,   0.0000,
+     "Battalion reconnaissance platoon — screen forward of FLOT"),
+    ("AT PL (TOW)",          "SFGPUCAA---D",  0.0080,  -0.0080,
+     "Battalion anti-armour platoon (TOW)"),
+    ("MOR PL",               "SFGPUCF----D",  0.0070,   0.0080,
+     "Battalion mortar platoon (81 mm)"),
+    ("AD PL (STINGER)",      "SFGPUCD----D",  0.0050,   0.0150,
+     "Battalion air-defence platoon (Stinger)"),
+    ("ENG PL",               "SFGPUCEN---D",  0.0030,  -0.0150,
+     "Combat engineer platoon — breach / mobility"),
+    ("SIG SEC",              "SFGPUCS----C", -0.0030,  -0.0080,
+     "Signal section — BN HQ communications"),
+
+    # ── Battalion combat-service-support ─────────────────────────────────
+    ("MED PL",               "SFGPUSM----D", -0.0080,   0.0080,
+     "Medical platoon — BAS (Battalion Aid Station)"),
+    ("SUP CO",               "SFGPUSS----E", -0.0150,   0.0150,
+     "Supply company — combat trains"),
+    ("MAINT SEC",            "SFGPUSM----C", -0.0150,  -0.0150,   # noqa: dup-key
+     "Maintenance section — recovery & repair"),
+]
+
+
+def _friendly_battalion_objects() -> list[dict]:
+    """Build TacticalObjectIn payloads for the friendly BN laydown."""
+    out: list[dict] = []
+    for label, sidc, dlat, dlon, notes in _FRIENDLY_BN_LAYDOWN:
+        out.append({
+            "type":        "FRIENDLY",
+            "symbol_code": sidc,
+            "affiliation": "FRIENDLY",
+            "latitude":    _FBN_BASE_LAT + dlat,
+            "longitude":   _FBN_BASE_LON + dlon,
+            "notes":       f"{label} — {notes}",
+        })
+    return out
+
+
+async def plant_friendly_battalion(client: httpx.AsyncClient, admin_op: SimOp) -> None:
+    """Plant a full friendly battalion as map markers — not operators."""
+    if not admin_op.token:
+        log.warning("Cannot plant friendly battalion — admin not logged in")
+        return
+    items = _friendly_battalion_objects()
+    log.info("── Planting friendly BN laydown — %d unit markers "
+             "(SEC/PL/COY/BN) ─────", len(items))
+    n_ok = 0
+    for item in items:
+        r = await api(client, "POST", "/tactical-objects",
+                      token=admin_op.token, json=item)
+        if r:
+            n_ok += 1
+    log.info("── Friendly BN laydown planted: %d / %d ─────", n_ok, len(items))
+
+
 async def plant_operation(client: httpx.AsyncClient, admin_op: SimOp) -> None:
     """One-shot: plant Operation IRON ARDENNES — four company plans, all
     tactical graphics, OPFOR defenders at each village, friendly POIs."""
@@ -1526,6 +1666,10 @@ async def main() -> None:
         # Plant the doctrinal operation graphics + enemy laydown — once.
         admin_op = next(o for o in all_ops if o.role == "ADMIN")
         await plant_operation(client, admin_op)
+
+        # Plant a friendly battalion-strength laydown (SEC/PL/COY/BN markers
+        # as plain tactical objects — NOT operators, NOT hierarchy).
+        await plant_friendly_battalion(client, admin_op)
 
         # Plant one full OPORD per company plan (idempotent).
         await plant_opords(client, admin_op)

@@ -50,4 +50,43 @@ enum class EnemyType(val label: String, val sidc: String, val abbr: String) {
     SNIPER("Sniper",                  "SHGPUCIS----", "SNP"),
     UNKNOWN("Unknown contact",        "SUGPU-------", "?"),
     POI("Point of interest",          "SNGPI-------", "POI"),
+    ;
+
+    companion object {
+        /**
+         * Resolve a tactical object's actual unit type from its DTO. The web /
+         * simulator usually sends ``type="ENEMY"`` with the real unit encoded in
+         * the SIDC (e.g. ``SHGPUCI-----`` for hostile combat infantry), so the
+         * symbol_code is the authoritative source. Falls back to the textual
+         * type if no SIDC is present.
+         */
+        fun resolve(type: String, symbolCode: String?): EnemyType {
+            fromSidc(symbolCode)?.let { return it }
+            return runCatching { valueOf(type.uppercase()) }.getOrElse { UNKNOWN }
+        }
+
+        /**
+         * Map a 15-char MIL-STD-2525C SIDC to one of our enum values. Positions
+         * 4-9 hold the function modifier; the leading ``U`` (unit) is stripped
+         * before matching. Returns null when the SIDC is empty / too short.
+         */
+        fun fromSidc(sidc: String?): EnemyType? {
+            if (sidc.isNullOrBlank() || sidc.length < 5) return null
+            // pos 4..9 = function modifier; uppercase to be safe
+            val fn = sidc.substring(4, minOf(sidc.length, 10)).uppercase()
+            // Order matters — longer prefixes first ("UCIZ", "UCIS" before "UCI").
+            return when {
+                fn.startsWith("UCIZ") -> MECHANIZED
+                fn.startsWith("UCIS") -> SNIPER
+                fn.startsWith("UCI")  -> INFANTRY
+                fn.startsWith("UCA")  -> ARMOR
+                fn.startsWith("UCF")  -> ARTILLERY
+                fn.startsWith("UCD")  -> AIR_DEFENSE
+                fn.startsWith("UCR")  -> RECON
+                fn.startsWith("EV")   -> VEHICLE
+                fn.startsWith("I")    -> POI            // infrastructure
+                else                   -> null
+            }
+        }
+    }
 }

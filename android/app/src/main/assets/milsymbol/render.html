@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <script src="milsymbol.js"></script>
+</head>
+<body>
+<script>
+    // Render a MIL-STD-2525 / APP-6 symbol from a SIDC plus a JSON options
+    // object. Returns a PNG dataURL through the Android JS bridge so the
+    // host can decode it to a Bitmap. We rasterise via <img> + <canvas>
+    // because the WebView's own snapshot path is async-only and racy.
+    window.renderSymbol = function (token, sidc, optionsJson) {
+        try {
+            var opts = optionsJson ? JSON.parse(optionsJson) : {};
+            var sym  = new ms.Symbol(sidc, opts);
+            var sz   = sym.getSize();
+            var ax   = sym.getAnchor();
+            var svg  = sym.asSVG();
+            // Use UTF-8 → base64 safely for non-ASCII chars (designators etc.)
+            var b64  = btoa(unescape(encodeURIComponent(svg)));
+            var img  = new Image();
+            img.onload = function () {
+                var c = document.createElement('canvas');
+                c.width  = Math.max(1, Math.ceil(sz.width));
+                c.height = Math.max(1, Math.ceil(sz.height));
+                c.getContext('2d').drawImage(img, 0, 0);
+                AndroidBridge.onSymbol(token, c.toDataURL('image/png'),
+                                       c.width, c.height, ax.x, ax.y);
+            };
+            img.onerror = function (e) {
+                AndroidBridge.onError(token, 'svg-load: ' + (e && e.message || 'failed'));
+            };
+            img.src = 'data:image/svg+xml;base64,' + b64;
+        } catch (e) {
+            AndroidBridge.onError(token, String(e && e.message || e));
+        }
+    };
+    AndroidBridge.onReady();
+</script>
+</body>
+</html>

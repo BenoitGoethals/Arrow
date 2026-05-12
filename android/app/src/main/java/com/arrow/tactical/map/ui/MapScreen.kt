@@ -342,16 +342,35 @@ fun MapScreen(
         for (op in visibleOps) {
             if (op.latitude == null || op.longitude == null) continue
             val isMe = op.id == currentMeId
-            Marker(map).apply {
+            val marker = Marker(map).apply {
                 position = GeoPoint(op.latitude, op.longitude)
                 title    = if (isMe) "📍 You — ${op.callsign}" else "${op.callsign}  ·  ${op.rank}"
                 snippet  = "${op.role}${if (op.online) " · online" else " · offline"}"
+                // Synchronous placeholder while milsymbol.js renders the proper
+                // MIL-STD-2525 SVG asynchronously. Anchored CENTER/CENTER —
+                // updated below when the real bitmap arrives.
                 icon     = MilSymbolRenderer.friendly(res, op, isMe)
-                // Own-position bitmap has a label below the arrow —
-                // anchor at arrow centre (pad+halfH / total height ≈ 22/57).
                 if (isMe) setAnchor(Marker.ANCHOR_CENTER, 0.39f)
                 else      setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 map.overlays.add(this)
+            }
+            if (!isMe) {
+                // SIDC for friendly ground combat infantry, with battle-captain
+                // headquarters modifier ("E" at position 11) when applicable.
+                val sidc = if (op.role.equals("BATTLE_CAPTAIN", true)) "SFGPUCI----E"
+                           else                                       "SFGPUCI-----"
+                scope.launch {
+                    val opts = mapOf<String, Any?>(
+                        "size" to 28,
+                        "uniqueDesignation" to op.callsign,
+                        "additionalInformation" to (if (op.online) "" else "OFFLINE"),
+                    )
+                    container.milsymRenderer.symbol(sidc, opts)?.let { r ->
+                        marker.icon = r.drawable
+                        marker.setAnchor(r.anchorX, r.anchorY)
+                        map.invalidate()
+                    }
+                }
             }
         }
 
@@ -379,15 +398,34 @@ fun MapScreen(
                 }
                 continue
             }
-            val type = runCatching { EnemyType.valueOf(e.type) }.getOrElse { EnemyType.UNKNOWN }
-            Marker(map).apply {
+            // Backend often sends type="ENEMY" with the real unit in symbol_code,
+            // so resolve from the SIDC first; fall back to the textual type.
+            val type = EnemyType.resolve(e.type, e.symbolCode)
+            val marker = Marker(map).apply {
                 position = GeoPoint(e.latitude, e.longitude)
                 title    = type.label
                 snippet  = e.notes.ifBlank { "SIDC: ${e.symbolCode}" }
+                // Synchronous placeholder — replaced by the milsymbol-rendered
+                // bitmap when ready (POIs keep the hand-drawn yellow disc).
                 icon     = if (type == EnemyType.POI) MilSymbolRenderer.poi(res)
                            else MilSymbolRenderer.hostile(res, type)
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 map.overlays.add(this)
+            }
+            if (type != EnemyType.POI) {
+                // Trust the server's SIDC when present; fall back to the
+                // per-type default (which already encodes the right affiliation
+                // and function modifier).
+                val sidc = if (e.symbolCode.length >= 10) e.symbolCode else type.sidc
+                scope.launch {
+                    container.milsymRenderer.symbol(
+                        sidc, mapOf("size" to 30),
+                    )?.let { r ->
+                        marker.icon = r.drawable
+                        marker.setAnchor(r.anchorX, r.anchorY)
+                        map.invalidate()
+                    }
+                }
             }
         }
 
