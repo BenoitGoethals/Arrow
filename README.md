@@ -30,6 +30,25 @@ The system consists of:
 
 ---
 
+## Documentation
+
+Sibling documents that go deeper than this spec:
+
+| Document | What it covers |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System context, component map, layered backend & web modules, real-time bus, data model, deployment topology, sequence diagrams for login/MFA and tracking. |
+| [CLAUDE.md](CLAUDE.md) | Codebase conventions: module layout, cross-cutting patterns, import rules, how to add new realtime channels and roles. |
+| [SECURITY.md](SECURITY.md) | Security posture, threat model, controls. |
+| [NIST_CSF2.md](NIST_CSF2.md) | NIST Cybersecurity Framework 2.0 mapping. |
+| [GOVERNANCE.md](GOVERNANCE.md) | Roles, decision rights, change-management policy. |
+| [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) | On-call runbook for security and outage incidents. |
+| [RECOVERY_PLAN.md](RECOVERY_PLAN.md) | Backup, restore, and disaster-recovery procedures. |
+| [USERS.md](USERS.md) | User roles, account lifecycle, MFA enrolment. |
+
+For interop and pitch material: `PITCH.txt`, `Arrow_Pitch.pdf`.
+
+---
+
 # 2. Core Functional Requirements
 
 ## Essential Capabilities
