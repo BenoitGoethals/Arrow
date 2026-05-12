@@ -106,8 +106,8 @@ async def lifespan(app: FastAPI):
 
     # Resolve JWT secret (auto-generates on first boot if config still has the default)
     resolved_secret = _resolve_jwt_secret(cfg.auth.secret)
-    from backend.auth import jwt_auth as _jwt_auth
-    _jwt_auth._cfg = type(_jwt_auth._cfg)(
+    from backend.auth.infrastructure import token_service as _token_service
+    _token_service._cfg = type(_token_service._cfg)(
         secret=resolved_secret,
         algorithm=cfg.auth.algorithm,
         token_expire_minutes=cfg.auth.token_expire_minutes,
