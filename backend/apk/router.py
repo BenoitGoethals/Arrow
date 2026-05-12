@@ -122,25 +122,51 @@ def _stream_smb(row: ApkDistConfig) -> tuple[Iterator[bytes], int]:
         rel = row.filename or "arrow.apk"
     unc = f"\\\\{row.host}\\{row.share}\\{rel}"
 
-    # Register session (auth). Wrap so we get a 401 instead of 500 on bad creds.
-    if row.username:
-        try:
-            smbclient.register_session(
-                row.host, username=row.username, password=row.password,
-                connection_timeout=10,
-            )
-        except Exception as exc:
-            log.exception("SMB register_session failed for %s", row.host)
+    # Always register a session so smbclient doesn't fall through to its
+    # default Kerberos / ccache path (which fails on workgroup shares and is
+    # the source of the "No username or password was specified" SpnegoError).
+    # If the admin left credentials blank, attempt anonymous / Guest auth.
+    try:
+        smbclient.register_session(
+            row.host,
+            username=row.username or "Guest",
+            password=row.password or "",
+            connection_timeout=10,
+        )
+    except Exception as exc:
+        log.exception("SMB register_session failed for %s", row.host)
+        msg = str(exc)
+        # If creds are blank AND auth fails, point the admin at the config.
+        if not row.username and "auth" in msg.lower():
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED,
-                f"SMB authentication / connection to {row.host} failed: {exc}",
+                f"SMB share at {row.host} requires authentication. Set the SMB "
+                f"username and password in Admin → APK Distribution. ({exc})",
             ) from exc
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            f"SMB authentication / connection to {row.host} failed: {exc}",
+        ) from exc
 
     # Stat the file to validate the path AND report Content-Length.
     try:
         size = smbclient.stat(unc).st_size
     except Exception as exc:
         log.exception("SMB stat failed for %s", unc)
+        # Common case: stat() can re-trigger auth on first real access; if
+        # the error mentions authentication, return 401 instead of 404 so
+        # the admin gets pointed at the credentials.
+        msg = str(exc)
+        is_auth = "SMBAuthenticationError" in type(exc).__name__ \
+                  or "auth" in msg.lower() or "credential" in msg.lower() \
+                  or "Spnego" in msg
+        if is_auth:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                f"SMB share {row.host}\\{row.share} rejected the credentials. "
+                f"Check the SMB username / password in Admin → APK Distribution. "
+                f"({type(exc).__name__}: {exc})",
+            ) from exc
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             f"SMB file not found or inaccessible: {unc} ({type(exc).__name__}: {exc})",
