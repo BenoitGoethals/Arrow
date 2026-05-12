@@ -90,6 +90,8 @@ fun MapScreen(
     // Independent layer for tactical control graphics — gates lines, polygons
     // and oriented-point graphics regardless of overlayMode.
     var tgVisible    by remember { mutableStateOf(true) }
+    var cbrnVisible  by remember { mutableStateOf(true) }
+    var cbrnReports  by remember { mutableStateOf<List<Pair<Int, com.arrow.tactical.cbrn.CbrnPayload>>>(emptyList()) }
     var myPlatoonIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var isStreaming  by remember {
         mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
@@ -250,6 +252,10 @@ fun MapScreen(
                         .onSuccess { enemies = it }
                     container.fireMissionRepository.list()
                         .onSuccess { fireMissions = it }
+                    container.reportRepository.list()
+                        .onSuccess { reps ->
+                            cbrnReports = com.arrow.tactical.cbrn.cbrnReportsFrom(reps)
+                        }
                 }
             } catch (e: Exception) {
                 serverOnline = false
@@ -272,6 +278,10 @@ fun MapScreen(
                             .onSuccess { enemies = it }
                         "fire-mission"    -> container.fireMissionRepository.list()
                             .onSuccess { fireMissions = it }
+                        "report"          -> container.reportRepository.list()
+                            .onSuccess { reps ->
+                                cbrnReports = com.arrow.tactical.cbrn.cbrnReportsFrom(reps)
+                            }
                         else -> {}
                     }
                 }
@@ -297,7 +307,7 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, fireMissions, meId, overlayMode, tgVisible, myPlatoonIds) {
+    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
@@ -399,6 +409,15 @@ fun MapScreen(
                     icon     = MilSymbolRenderer.fireMission(res, fm.missionType, fm.status)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     map.overlays.add(this)
+                }
+            }
+        }
+
+        // ── CBRN hazard layer ───────────────────────────────────────────────
+        if (cbrnVisible) {
+            for ((_, payload) in cbrnReports) {
+                for (ov in com.arrow.tactical.cbrn.buildCbrnOverlays(map, res, payload)) {
+                    map.overlays.add(ov)
                 }
             }
         }
@@ -655,6 +674,8 @@ fun MapScreen(
                 },
                 gfxOn           = tgVisible,
                 onToggleGfx     = { tgVisible = !tgVisible },
+                cbrnOn          = cbrnVisible,
+                onToggleCbrn    = { cbrnVisible = !cbrnVisible },
                 isStreaming     = isStreaming,
                 onToggleStream  = {
                     val wantOn = !isStreaming

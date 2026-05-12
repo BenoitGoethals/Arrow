@@ -93,6 +93,8 @@ fun SitawareTopBar(
     onOverlayChip: (String) -> Unit = {},
     gfxOn: Boolean = false,
     onToggleGfx: () -> Unit = {},
+    cbrnOn: Boolean = false,
+    onToggleCbrn: () -> Unit = {},
     isStreaming: Boolean = false,
     onToggleStream: () -> Unit = {},
     onLocateMe: () -> Unit = {},
@@ -152,6 +154,20 @@ fun SitawareTopBar(
         ) {
             Text("Gfx", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                  color = if (gfxOn) Color(0xFFFBBF24) else Color(0xFFCBD5E1))
+        }
+        // CBRN toggle — radiation/hazard layer
+        Box(
+            Modifier
+                .clickable { onToggleCbrn() }
+                .background(if (cbrnOn) Color(0x33EF4444) else Color(0xFF12233A),
+                            RoundedCornerShape(4.dp))
+                .border(0.5.dp, if (cbrnOn) Color(0xFFEF4444) else Color(0xFF2A3142),
+                        RoundedCornerShape(4.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("☢ CBRN", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                 color = if (cbrnOn) Color(0xFFFCA5A5) else Color(0xFFCBD5E1))
         }
         // Stream toggle
         IconButton(onClick = onToggleStream, modifier = Modifier.size(32.dp)) {
