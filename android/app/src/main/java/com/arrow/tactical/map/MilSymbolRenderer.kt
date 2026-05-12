@@ -80,78 +80,243 @@ object MilSymbolRenderer {
         return BitmapDrawable(res, bmp)
     }
 
-    // ── Friendly (NATO blue rectangle) ───────────────────────────────────────
+    // ── MIL-STD-2525C affiliation palette ───────────────────────────────────
+    //
+    // Doctrinal "light" fill colours (medium-saturation, suitable for daylight
+    // mono displays). Black 1-px frame outline on every affiliation.
+    private val FRAME_FRIENDLY_FILL = Color.rgb(0x80, 0xE0, 0xFF)   // cyan
+    private val FRAME_HOSTILE_FILL  = Color.rgb(0xFF, 0x80, 0x80)   // light red
+    private val FRAME_NEUTRAL_FILL  = Color.rgb(0xAA, 0xFF, 0xAA)   // light green
+    private val FRAME_UNKNOWN_FILL  = Color.rgb(0xFF, 0xFF, 0x80)   // light yellow
+    private val FRAME_BORDER        = Color.rgb(0x0D, 0x11, 0x17)   // near-black
 
+    // ── Friendly (MIL-STD-2525 ground unit — cyan rectangle) ────────────────
+
+    /**
+     * Renders a MIL-STD-2525C/APP-6 friendly ground-unit symbol:
+     *
+     *     ┌──────────┐
+     *     │  ╲ ╱     │  CALLSIGN
+     *     │  ╱ ╲     │
+     *     └──────────┘
+     *
+     * Cyan-filled rectangle with a black frame, infantry "X" glyph inside (or
+     * an HQ flag-staff for battle captains), and the operator's callsign as
+     * the unit designator (field "T") placed to the right of the frame —
+     * exactly how milsymbol.js renders ``SFGPUCI------`` with
+     * ``uniqueDesignation`` on the web.
+     */
     fun friendly(res: Resources, op: OperatorDto, isMe: Boolean = false): Drawable {
         if (isMe) return ownPosition(res, op)
 
         val dp = res.displayMetrics.density
-        val r  = 5 * dp                          // small dot radius
-        val pad = 2 * dp
-        val size = ((r + pad) * 2).toInt()
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        // Frame proportions per MIL-STD-2525C — ground-unit width ≈ 1.44 × height.
+        val frameH = 20 * dp
+        val frameW = 28 * dp
+        val pad    = 1.5f * dp
+        // Right-hand designator (callsign) sits outside the frame, like milsymbol.
+        val txtSize = 10 * dp
+        val txtPad  = 3 * dp
+        val paint   = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = txtSize; isFakeBoldText = true
+        }
+        val label   = op.callsign.take(12)
+        val textW   = if (label.isNotEmpty()) paint.measureText(label) + txtPad else 0f
+
+        // Pad the LEFT side by the same amount as the right-hand callsign label
+        // so the frame ends up at the centre of the bitmap. That lets the
+        // marker stay anchored CENTER/CENTER without drifting with callsign length.
+        val w = (textW + pad + frameW + textW + pad).toInt().coerceAtLeast(1)
+        val h = (pad + frameH + pad).toInt().coerceAtLeast(1)
+        val bmp    = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        val alpha = if (op.online) 255 else 110
+        val alpha  = if (op.online) 255 else 130
 
-        val cx = size / 2f
-        val cy = size / 2f
+        val left   = textW + pad
+        val top    = pad
+        val right  = left + frameW
+        val bottom = top + frameH
+        val rect   = RectF(left, top, right, bottom)
+        val borderCol = applyAlpha(FRAME_BORDER, alpha)
 
-        // Blue dot
-        paint.color = Color.argb(alpha, 37, 99, 235)   // #2563EB
+        // 1) Frame fill — cyan
+        paint.color = applyAlpha(FRAME_FRIENDLY_FILL, alpha)
         paint.style = Paint.Style.FILL
-        canvas.drawCircle(cx, cy, r, paint)
+        canvas.drawRect(rect, paint)
 
-        // Thin white outline for contrast on map
-        paint.color = Color.argb(alpha, 255, 255, 255)
+        // 2) Frame border — black
+        paint.color = borderCol
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 1.5f * dp
-        canvas.drawCircle(cx, cy, r, paint)
+        paint.strokeWidth = 1.6f * dp
+        canvas.drawRect(rect, paint)
+
+        // 3) Function-modifier glyph inside the inner area
+        val inset = 3 * dp
+        val inner = RectF(left + inset, top + inset, right - inset, bottom - inset)
+        if (op.role.equals("BATTLE_CAPTAIN", ignoreCase = true)) {
+            drawHqGlyph(canvas, inner, paint, borderCol, dp)
+        } else {
+            drawInfantryGlyph(canvas, inner, paint, borderCol, dp)
+        }
+
+        // 4) Callsign — placed outside, to the right of the frame (MIL-STD-2525
+        //    field "T"). Black halo + light-blue text for legibility on map.
+        if (label.isNotEmpty()) {
+            val tx = right + txtPad
+            // Baseline-centred on the frame middle
+            val fm = paint.fontMetrics
+            val ty = (top + bottom) / 2f - (fm.ascent + fm.descent) / 2f
+            paint.style = Paint.Style.FILL
+            paint.textAlign = Paint.Align.LEFT
+            // Black halo (4-way offsets) for contrast on light map tiles
+            paint.color = applyAlpha(Color.BLACK, alpha)
+            for ((ox, oy) in listOf(-1f to 0f, 1f to 0f, 0f to -1f, 0f to 1f)) {
+                canvas.drawText(label, tx + ox * dp, ty + oy * dp, paint)
+            }
+            paint.color = applyAlpha(Color.rgb(191, 219, 254), alpha)   // #BFDBFE
+            canvas.drawText(label, tx, ty, paint)
+        }
 
         return BitmapDrawable(res, bmp)
     }
 
-    // ── Hostile (red diamond) ────────────────────────────────────────────────
+    // ── Hostile (MIL-STD-2525 ground unit — red diamond) ────────────────────
 
     fun hostile(res: Resources, type: EnemyType): Drawable {
         val dp = res.displayMetrics.density
-        val size = (38 * dp).toInt()
+        // Larger frame so the inscribed function-modifier glyph is readable.
+        val size = (48 * dp).toInt()
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
         val cx = size / 2f
         val cy = size / 2f
-        val r = cx - 3 * dp
+        val r  = cx - 4 * dp                 // diamond half-diagonal
 
         val diamond = Path().apply {
-            moveTo(cx,     cy - r)   // top
-            lineTo(cx + r, cy)       // right
-            lineTo(cx,     cy + r)   // bottom
-            lineTo(cx - r, cy)       // left
+            moveTo(cx,     cy - r)
+            lineTo(cx + r, cy)
+            lineTo(cx,     cy + r)
+            lineTo(cx - r, cy)
             close()
         }
 
-        // Fill: NATO hostile red
-        paint.color = Color.rgb(200, 0, 0)
+        // 1) Fill — light hostile red (#FF8080)
+        paint.color = FRAME_HOSTILE_FILL
         paint.style = Paint.Style.FILL
         canvas.drawPath(diamond, paint)
 
-        // Stroke: darker red
-        paint.color = Color.rgb(110, 0, 0)
+        // 2) Frame border — black
+        paint.color = FRAME_BORDER
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2.5f * dp
+        paint.strokeWidth = 1.6f * dp
         canvas.drawPath(diamond, paint)
 
-        // Abbreviation
-        paint.style = Paint.Style.FILL
-        paint.color = Color.WHITE
-        paint.textSize = 8 * dp
-        paint.textAlign = Paint.Align.CENTER
-        paint.isFakeBoldText = true
-        canvas.drawText(type.abbr, cx, cy + 3 * dp, paint)
+        // 3) Inscribed function-modifier glyph. Inner square is half-diagonal × √2,
+        //    shrunk slightly so the glyph sits clear of the diamond edges.
+        val inscribed = (r * 0.62f)
+        val inner = RectF(cx - inscribed, cy - inscribed, cx + inscribed, cy + inscribed)
+        drawHostileGlyph(canvas, inner, paint, FRAME_BORDER, dp, type)
 
         return BitmapDrawable(res, bmp)
+    }
+
+    private fun applyAlpha(color: Int, alpha: Int): Int =
+        Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+
+    // ── APP-6 function-modifier glyphs ──────────────────────────────────────
+    //
+    // Drawn into the inner box of an affiliation frame. Inner box is fully
+    // contained within the frame so glyphs never touch the border.
+
+    private fun drawInfantryGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        p.color = col; p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.8f * dp; p.strokeCap = Paint.Cap.SQUARE
+        c.drawLine(r.left, r.top, r.right, r.bottom, p)     // ╲
+        c.drawLine(r.right, r.top, r.left, r.bottom, p)     // ╱
+    }
+
+    private fun drawArmorGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        // Horizontal track-oval — APP-6 armoured / tracked-vehicle modifier.
+        p.color = col; p.style = Paint.Style.FILL
+        val cx = r.centerX(); val cy = r.centerY()
+        val hw = r.width() * 0.40f; val hh = r.height() * 0.22f
+        c.drawOval(cx - hw, cy - hh, cx + hw, cy + hh, p)
+    }
+
+    private fun drawMechInfGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        drawInfantryGlyph(c, r, p, col, dp)
+        drawArmorGlyph(c, r, p, col, dp)
+    }
+
+    private fun drawArtilleryGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        // Filled dot (cannonball) — APP-6 field-artillery modifier.
+        p.color = col; p.style = Paint.Style.FILL
+        c.drawCircle(r.centerX(), r.centerY(), minOf(r.width(), r.height()) * 0.22f, p)
+    }
+
+    private fun drawAirDefenseGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        // Upward chevron / triangle — APP-6 air-defence modifier.
+        p.color = col; p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.8f * dp; p.strokeJoin = Paint.Join.MITER
+        val path = Path().apply {
+            moveTo(r.left + r.width() * 0.15f, r.bottom - r.height() * 0.20f)
+            lineTo(r.centerX(),                r.top    + r.height() * 0.15f)
+            lineTo(r.right - r.width() * 0.15f, r.bottom - r.height() * 0.20f)
+        }
+        c.drawPath(path, p)
+    }
+
+    private fun drawReconGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        // Bottom-left to top-right slash — APP-6 reconnaissance modifier.
+        p.color = col; p.style = Paint.Style.STROKE
+        p.strokeWidth = 1.8f * dp; p.strokeCap = Paint.Cap.SQUARE
+        c.drawLine(r.left, r.bottom, r.right, r.top, p)
+    }
+
+    private fun drawSniperGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        // Infantry X + cross-hair circle — sniper / designated marksman.
+        drawInfantryGlyph(c, r, p, col, dp)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.4f * dp
+        c.drawCircle(r.centerX(), r.centerY(), minOf(r.width(), r.height()) * 0.18f, p)
+    }
+
+    private fun drawHqGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        // Headquarters — APP-6 vertical flag-staff dropping from bottom-left
+        // of the frame, infantry X on the frame itself.
+        drawInfantryGlyph(c, r, p, col, dp)
+        p.color = col; p.style = Paint.Style.STROKE
+        p.strokeWidth = 2f * dp; p.strokeCap = Paint.Cap.SQUARE
+        // Staff drops from the bottom-left frame corner down past the frame —
+        // since we only have the inner box here, drop it to mid-low.
+        c.drawLine(r.left + 1 * dp, r.top, r.left + 1 * dp, r.bottom + 4 * dp, p)
+    }
+
+    private fun drawUnknownGlyph(c: Canvas, r: RectF, p: Paint, col: Int, dp: Float) {
+        p.color = col; p.style = Paint.Style.FILL
+        p.textSize = r.height() * 0.85f
+        p.textAlign = Paint.Align.CENTER
+        p.isFakeBoldText = true
+        val fm = p.fontMetrics
+        c.drawText("?", r.centerX(), r.centerY() - (fm.ascent + fm.descent) / 2f, p)
+    }
+
+    private fun drawHostileGlyph(
+        c: Canvas, inner: RectF, p: Paint, col: Int, dp: Float, type: EnemyType,
+    ) {
+        when (type) {
+            EnemyType.INFANTRY    -> drawInfantryGlyph(c, inner, p, col, dp)
+            EnemyType.ARMOR      -> drawArmorGlyph(c, inner, p, col, dp)
+            EnemyType.MECHANIZED -> drawMechInfGlyph(c, inner, p, col, dp)
+            EnemyType.ARTILLERY  -> drawArtilleryGlyph(c, inner, p, col, dp)
+            EnemyType.AIR_DEFENSE -> drawAirDefenseGlyph(c, inner, p, col, dp)
+            EnemyType.RECON      -> drawReconGlyph(c, inner, p, col, dp)
+            EnemyType.SNIPER     -> drawSniperGlyph(c, inner, p, col, dp)
+            EnemyType.VEHICLE    -> drawArmorGlyph(c, inner, p, col, dp)
+            EnemyType.UNKNOWN    -> drawUnknownGlyph(c, inner, p, col, dp)
+            EnemyType.POI        -> drawUnknownGlyph(c, inner, p, col, dp)   // POI uses poi() instead
+        }
     }
 
     // ── Call for Fire / Fire Mission (red target crosshair) ──────────────────

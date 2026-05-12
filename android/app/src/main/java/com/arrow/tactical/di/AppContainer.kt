@@ -7,6 +7,7 @@ import com.arrow.tactical.alerts.AlertRepository
 import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.auth.TokenStore
 import com.arrow.tactical.firemission.FireMissionRepository
+import com.arrow.tactical.map.MilsymRenderer
 import com.arrow.tactical.messaging.ChatNotificationManager
 import com.arrow.tactical.messaging.MessageRepository
 import com.arrow.tactical.photos.PhotoRepository
@@ -47,6 +48,7 @@ class AppContainer(private val context: Context) {
     val photoRepository       = PhotoRepository(apiClient)
     val fireMissionRepository = FireMissionRepository(apiClient)
     val logRepository         = LogRepository()
+    val milsymRenderer        = MilsymRenderer(context)
     val chatNotificationManager = ChatNotificationManager(context, wsClient, authRepository)
 
     private val _navigateToChatChannel = Channel<Unit>(Channel.BUFFERED)
