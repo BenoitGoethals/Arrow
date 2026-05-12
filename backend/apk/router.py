@@ -93,8 +93,12 @@ def _stream_smb(row: ApkDistConfig) -> tuple[Iterator[bytes], int]:
     """Open and stream a file from an SMB server. Requires ``smbprotocol``.
 
     Returns (iterator, total-size). The connection is closed when the
-    generator is exhausted.
+    generator is exhausted. All failure paths raise an HTTPException with a
+    descriptive ``detail`` so the operator can fix the misconfiguration.
     """
+    import logging
+    log = logging.getLogger(__name__)
+
     try:
         import smbclient                                          # type: ignore
     except ImportError as exc:
@@ -107,28 +111,64 @@ def _stream_smb(row: ApkDistConfig) -> tuple[Iterator[bytes], int]:
     if not row.host or not row.share:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "SMB mode requires host and share to be set.")
-    rel = (row.path or "").lstrip("/\\")
-    if rel and rel.lower().endswith(".apk") is False and row.filename:
-        rel = rel.rstrip("/\\") + "\\" + row.filename
+
+    # Build the UNC path. `path` may be a directory inside the share or the
+    # full file path; if it doesn't already end in `.apk`, treat it as a
+    # directory and append ``filename``.
+    rel = (row.path or "").strip().replace("/", "\\").lstrip("\\")
+    if rel and not rel.lower().endswith(".apk") and row.filename:
+        rel = rel.rstrip("\\") + "\\" + row.filename
     if not rel:
         rel = row.filename or "arrow.apk"
     unc = f"\\\\{row.host}\\{row.share}\\{rel}"
 
+    # Register session (auth). Wrap so we get a 401 instead of 500 on bad creds.
     if row.username:
-        smbclient.register_session(row.host, username=row.username, password=row.password)
+        try:
+            smbclient.register_session(
+                row.host, username=row.username, password=row.password,
+                connection_timeout=10,
+            )
+        except Exception as exc:
+            log.exception("SMB register_session failed for %s", row.host)
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                f"SMB authentication / connection to {row.host} failed: {exc}",
+            ) from exc
 
+    # Stat the file to validate the path AND report Content-Length.
     try:
         size = smbclient.stat(unc).st_size
     except Exception as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"SMB file not found: {unc} ({exc})") from exc
+        log.exception("SMB stat failed for %s", unc)
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"SMB file not found or inaccessible: {unc} ({type(exc).__name__}: {exc})",
+        ) from exc
+
+    # Open the file UP FRONT so connection errors surface as HTTPException
+    # (not a 500 mid-response after headers have been sent).
+    try:
+        fh = smbclient.open_file(unc, mode="rb")
+    except Exception as exc:
+        log.exception("SMB open_file failed for %s", unc)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            f"Cannot open SMB file {unc}: {type(exc).__name__}: {exc}",
+        ) from exc
 
     def _gen() -> Iterator[bytes]:
-        with smbclient.open_file(unc, mode="rb") as fh:
+        try:
             while True:
                 buf = fh.read(_CHUNK)
                 if not buf:
                     break
                 yield buf
+        finally:
+            try:
+                fh.close()
+            except Exception:
+                pass
 
     return _gen(), size
 
@@ -177,6 +217,9 @@ def download_apk(
     Any authenticated operator may download. The download name is taken
     from the configured ``filename``.
     """
+    import logging
+    log = logging.getLogger(__name__)
+
     row = _get_or_create(db)
     if not row.path:
         raise HTTPException(
@@ -187,16 +230,28 @@ def download_apk(
     headers = {
         "Content-Disposition": f'attachment; filename="{row.filename or "arrow.apk"}"',
     }
-    if row.kind == "SMB":
-        gen, size = _stream_smb(row)
-        headers["Content-Length"] = str(size)
-        return StreamingResponse(gen, media_type="application/vnd.android.package-archive", headers=headers)
+    try:
+        if row.kind == "SMB":
+            gen, size = _stream_smb(row)
+            headers["Content-Length"] = str(size)
+            return StreamingResponse(
+                gen, media_type="application/vnd.android.package-archive", headers=headers,
+            )
 
-    # LOCAL (includes OS-mounted NFS / SMB shares)
-    p = _resolve_local(row)
-    headers["Content-Length"] = str(os.path.getsize(p))
-    return StreamingResponse(
-        _stream_local(p),
-        media_type="application/vnd.android.package-archive",
-        headers=headers,
-    )
+        # LOCAL (includes OS-mounted NFS / SMB shares)
+        p = _resolve_local(row)
+        headers["Content-Length"] = str(os.path.getsize(p))
+        return StreamingResponse(
+            _stream_local(p),
+            media_type="application/vnd.android.package-archive",
+            headers=headers,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Unexpected APK download error (kind=%s path=%r)",
+                      row.kind, row.path)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"APK download failed: {type(exc).__name__}: {exc}",
+        ) from exc
