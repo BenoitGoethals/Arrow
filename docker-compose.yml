@@ -179,5 +179,5 @@ volumes:
     driver: local
     driver_opts:
       type: nfs
-      o: "addr=192.168.0.240,ro,nfsvers=4"
+      o: "addr=192.168.0.240,ro,vers=3,soft,timeo=30"
       device: ":/share/apks/release"
