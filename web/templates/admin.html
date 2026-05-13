@@ -606,6 +606,10 @@ main { padding: 0; }
         const errEl = document.getElementById('apk-err');
         errEl.textContent = '';
         if (!body.path) { errEl.textContent = 'Path is required.'; return; }
+        if (body.kind === 'LOCAL' && /^(nfs|smb|cifs):\/\//i.test(body.path)) {
+            errEl.textContent = 'LOCAL mode needs a mounted filesystem path (e.g. /mnt/apks), not a URI. Mount the NFS/SMB share on the server first, then enter the local mount point here.';
+            return;
+        }
         if (body.kind === 'SMB' && (!body.host || !body.share)) {
             errEl.textContent = 'SMB host and share are required.'; return;
         }

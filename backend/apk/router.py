@@ -72,7 +72,17 @@ def _resolve_local(row: ApkDistConfig) -> Path:
     """Local mode: ``path`` is either the APK file itself, or a directory
     that contains ``filename``. Mounted NFS / SMB shares fall under this
     branch — the admin mounts them at the OS level."""
-    p = Path(row.path).expanduser()
+    raw = row.path
+    # Catch the common mistake of entering an NFS/SMB URI instead of a mount point.
+    for scheme in ("nfs://", "smb://", "cifs://"):
+        if raw.lower().startswith(scheme):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"LOCAL mode requires a mounted filesystem path, not a URI. "
+                f"Mount the share on the server first (e.g. 'mount -t nfs {raw.split('://', 1)[1]} /mnt/apks') "
+                f"then set the path to the mount point (e.g. '/mnt/apks').",
+            )
+    p = Path(raw).expanduser()
     if p.is_dir():
         p = p / (row.filename or "arrow.apk")
     if not p.is_file():
