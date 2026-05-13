@@ -19,6 +19,7 @@ services:
     volumes:
       - arrow-data:/app/data
       - ./config.xml:/app/config.xml:ro
+      - apk-nfs:/mnt/apks:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -174,3 +175,9 @@ volumes:
   caddy-config:
   loki-data:
   grafana-data:
+  apk-nfs:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=192.168.0.240,ro,nfsvers=4"
+      device: ":/share/apks/release"
