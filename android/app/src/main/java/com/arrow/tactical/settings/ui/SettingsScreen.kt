@@ -12,7 +12,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(repo: SettingsRepository, onLogout: () -> Unit) {
+fun SettingsScreen(
+    repo: SettingsRepository,
+    onLogout: () -> Unit,
+    onOpenOfflineMaps: () -> Unit = {},
+) {
     val server   by repo.serverUrl.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
     val callsign by repo.callsign.collectAsState(initial = "")
     val team     by repo.team.collectAsState(initial = "")
@@ -81,6 +85,17 @@ fun SettingsScreen(repo: SettingsRepository, onLogout: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (saved) "Saved ✓" else "Save settings")
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            Text("Offline base maps", style = MaterialTheme.typography.labelLarge,
+                 color = MaterialTheme.colorScheme.primary)
+            OutlinedButton(
+                onClick  = onOpenOfflineMaps,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Download maps for offline use")
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))

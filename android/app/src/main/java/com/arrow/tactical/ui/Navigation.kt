@@ -54,6 +54,7 @@ import com.arrow.tactical.firemission.ui.FireMissionScreen
 import com.arrow.tactical.firemission.ui.MortarScreen
 import com.arrow.tactical.map.ui.MapScreen
 import com.arrow.tactical.map.ui.MarkEnemyScreen
+import com.arrow.tactical.map.ui.OfflineMapsScreen
 import com.arrow.tactical.messaging.ui.MessagingScreen
 import com.arrow.tactical.objectives.ui.ObjectivesScreen
 import com.arrow.tactical.opord.ui.OpordDetailScreen
@@ -332,6 +333,13 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                         scope.launch { container.authRepository.logout() }
                         onLogout()
                     },
+                    onOpenOfflineMaps = { tabNav.navigate("offline-maps") },
+                )
+            }
+            composable("offline-maps") {
+                OfflineMapsScreen(
+                    container = container,
+                    onBack    = { tabNav.popBackStack() },
                 )
             }
         }
