@@ -44,6 +44,7 @@ arrow-web = "web.app:run"
 arrow-seed = "backend.storage.seed:main"
 arrow-battlefield = "simulate_battlefield:main"
 arrow-cot-sim = "tools.cot_simulator:main"
+arrow-nuts = "simulate_ranger_bastogne:main"
 
 [build-system]
 requires = ["hatchling"]
