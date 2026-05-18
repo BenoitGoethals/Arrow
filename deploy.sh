@@ -18,7 +18,13 @@ cd "$(dirname "$0")"
 # Backend serves base-map tiles from MBTiles files in ./maps/, mounted into the
 # container at /app/maps. Drop new *.mbtiles in here, then ./deploy.sh restart
 # (no rebuild needed) and they appear in GET /map/sources for both web + Android.
+#
+# Uploads from the admin UI also write here. The backend container runs as the
+# `arrow` system user whose UID won't match the host directory owner, so the
+# dir needs to be world-writable for the upload endpoint to succeed. (`:ro`
+# mount mode prevented writes too — that flag has been removed in compose.)
 mkdir -p maps
+chmod 0777 maps 2>/dev/null || true
 
 list_maps() {
     echo "==> base-map sources (./maps/)"
