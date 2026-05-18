@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import os
 import sys
 from dataclasses import dataclass
 
@@ -283,8 +284,10 @@ def build_company_plan(coy: str, obj_name: str, village: str,
 # ── Main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(description="Arrow battlefield — Operation IRON ARDENNES")
-    parser.add_argument("--backend",  default="http://localhost:6001",
-                        help="Backend base URL (e.g. http://192.168.0.240:6001)")
+    parser.add_argument("--backend",
+                        default=os.environ.get("ARROW_BACKEND_URL", "http://localhost:6001"),
+                        help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, "
+                             "then localhost. e.g. http://78.21.255.210:6001")
     parser.add_argument("--admin",    default="benoit", help="ADMIN callsign")
     parser.add_argument("--password", default="ranger14", help="ADMIN password")
     parser.add_argument("--reset",    action="store_true",
