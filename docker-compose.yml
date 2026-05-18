@@ -19,6 +19,7 @@ services:
     volumes:
       - arrow-data:/app/data
       - ./config.xml:/app/config.xml:ro
+      - ./maps:/app/maps:ro
       - apk-nfs:/mnt/apks:ro
     depends_on:
       redis:

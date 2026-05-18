@@ -7,6 +7,7 @@ import com.arrow.tactical.alerts.AlertRepository
 import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.auth.TokenStore
 import com.arrow.tactical.firemission.FireMissionRepository
+import com.arrow.tactical.map.MapSourceRepository
 import com.arrow.tactical.map.MilsymRenderer
 import com.arrow.tactical.messaging.ChatNotificationManager
 import com.arrow.tactical.messaging.MessageRepository
@@ -44,6 +45,7 @@ class AppContainer(private val context: Context) {
     val reportRepository = ReportRepository(apiClient)
     val opordRepository = OpordRepository(apiClient) { settingsRepository.currentServerUrl() }
     val tacticalRepository = TacticalRepository(apiClient)
+    val mapSourceRepository = MapSourceRepository(apiClient)
 
     val photoRepository       = PhotoRepository(apiClient)
     val fireMissionRepository = FireMissionRepository(apiClient)

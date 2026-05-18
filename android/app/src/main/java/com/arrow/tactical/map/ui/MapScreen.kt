@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
@@ -41,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.arrow.tactical.di.AppContainer
+import com.arrow.tactical.map.BackendTileSource
+import com.arrow.tactical.map.MapSourceDto
 import com.arrow.tactical.map.MilSymbolRenderer
 import com.arrow.tactical.network.OperatorDto
 import com.arrow.tactical.network.TacticalObjectDto
@@ -93,6 +96,12 @@ fun MapScreen(
     var cbrnVisible  by remember { mutableStateOf(true) }
     var cbrnReports  by remember { mutableStateOf<List<Pair<Int, com.arrow.tactical.cbrn.CbrnPayload>>>(emptyList()) }
     var myPlatoonIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    // Base-layer switcher — fetched from /map/sources; null means "fall back
+    // to OSMdroid's built-in MAPNIK", which the AndroidView factory sets up
+    // synchronously so the map renders something while the list is loading.
+    var mapSources    by remember { mutableStateOf<List<MapSourceDto>>(emptyList()) }
+    var selectedMap   by remember { mutableStateOf<MapSourceDto?>(null) }
+    var layerMenuOpen by remember { mutableStateOf(false) }
     var isStreaming  by remember {
         mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
     }
@@ -295,6 +304,57 @@ fun MapScreen(
     // mapRef lets LaunchedEffect imperatively update overlays outside AndroidView.update,
     // which avoids Compose's state-tracking limitations for non-composable lambdas.
     val mapRef = remember { mutableStateOf<MapView?>(null) }
+
+    // Load the list of base-map sources once. The selected one is remembered
+    // across app launches via SettingsRepository; backend default ("osm" or the
+    // first MBTiles) is used otherwise.
+    LaunchedEffect(Unit) {
+        val list  = container.mapSourceRepository.list()
+        val saved = container.settingsRepository.currentBasemap()
+        mapSources = list
+        selectedMap = list.firstOrNull { it.name == saved }
+                   ?: list.firstOrNull { it.is_default }
+                   ?: list.firstOrNull()
+    }
+
+    // Apply the selected source to the MapView. Rebuilt on every switch — the
+    // backend tile source captures the current JWT in its URL, so this also
+    // refreshes auth on token rotation.
+    LaunchedEffect(mapRef.value, selectedMap) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        val src = selectedMap
+        val tileSource = if (src == null || src.url_template.startsWith("http")) {
+            // OSM (or no MBTiles known yet) — OSMdroid's built-in Mapnik handles tile fetch.
+            BackendTileSource.OSM_DEFAULT
+        } else {
+            val token = container.tokenStore.current().orEmpty()
+            val base  = container.settingsRepository.currentServerUrl()
+            BackendTileSource(
+                sourceName = src.name,
+                title      = src.title,
+                minZoom    = src.min_zoom,
+                maxZoom    = src.max_zoom,
+                format     = src.format,
+                baseUrl    = base,
+                token      = token,
+            )
+        }
+        map.setTileSource(tileSource)
+
+        // Clamp the map's zoom limits — and the current zoom — into the new
+        // source's range. Without this, switching to a world-coverage MBTiles
+        // (e.g. z 0..7) while viewing at z 8+ shows a black map because the
+        // source has nothing to render at that level.
+        val minZ = tileSource.minimumZoomLevel.toDouble()
+        val maxZ = tileSource.maximumZoomLevel.toDouble()
+        map.setMinZoomLevel(minZ)
+        map.setMaxZoomLevel(maxZ)
+        val z = map.zoomLevelDouble
+        if (z > maxZ) map.controller.setZoom(maxZ)
+        else if (z < minZ) map.controller.setZoom(minZ)
+
+        map.invalidate()
+    }
 
     // Auto-center on own position the first time both meId and a position are available.
     // Key on meId too — operators often loads before authRepository.me() returns.
@@ -747,6 +807,51 @@ fun MapScreen(
                     counts    = notif,
                     onDismiss = { bannerVisible = false },
                 )
+            }
+        }
+
+        // ── Base-layer switcher — small chip + dropdown anchored top-right
+        // below the SitaWare top bar. Hidden when only one source is known.
+        if (mapSources.size > 1) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 92.dp, end = 12.dp),
+            ) {
+                FilledIconButton(
+                    onClick = { layerMenuOpen = true },
+                    modifier = Modifier.size(36.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color(0xE50F2540),
+                        contentColor   = Color(0xFFE2E8F0),
+                    ),
+                ) {
+                    Icon(Icons.Filled.Layers, contentDescription = "Map layer",
+                         modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(
+                    expanded = layerMenuOpen,
+                    onDismissRequest = { layerMenuOpen = false },
+                ) {
+                    for (src in mapSources) {
+                        val active = src.name == selectedMap?.name
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = (if (active) "● " else "  ") + src.title,
+                                    color = if (active) Color(0xFF34D399) else Color.Unspecified,
+                                )
+                            },
+                            onClick = {
+                                layerMenuOpen = false
+                                if (!active) {
+                                    selectedMap = src
+                                    scope.launch { container.settingsRepository.setBasemap(src.name) }
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
 
