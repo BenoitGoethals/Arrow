@@ -242,18 +242,45 @@ async def upload_source(
     validated as a real MBTiles archive and then atomically renamed into
     place — readers never see a half-written file.
     """
+    import logging  # noqa: PLC0415
+    log = logging.getLogger(__name__)
+
     filename = file.filename or ""
     if not filename.lower().endswith(".mbtiles"):
         raise HTTPException(status_code=400, detail="Filename must end in .mbtiles")
-    stem = _safe_name(Path(filename).stem)
+    # Sanitise the filename stem — browsers may include spaces, parentheses,
+    # or other chars that break our strict regex. Normalise to underscores and
+    # collapse runs.
+    raw_stem = Path(filename).stem
+    safe_chars = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_stem).strip("._-")
+    if not safe_chars:
+        raise HTTPException(status_code=400, detail=f"Cannot derive a valid name from {filename!r}")
+    stem = _safe_name(safe_chars)
     final_path = _MBTILES_DIR / f"{stem}.mbtiles"
-    _MBTILES_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Use a sibling tmpfile so the os.replace() at the end is atomic on the same fs.
-    tmp_fd, tmp_path_str = tempfile.mkstemp(
-        prefix=f".{stem}.", suffix=".mbtiles.part", dir=_MBTILES_DIR
-    )
+    try:
+        _MBTILES_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log.exception("upload: cannot create maps dir %s", _MBTILES_DIR)
+        raise HTTPException(status_code=500, detail=f"maps dir not writable: {exc}")
+
+    if not os.access(_MBTILES_DIR, os.W_OK):
+        raise HTTPException(
+            status_code=500,
+            detail=f"maps dir {_MBTILES_DIR} is not writable by the backend "
+                   f"(check the docker-compose volume mount and host permissions)",
+        )
+
+    try:
+        tmp_fd, tmp_path_str = tempfile.mkstemp(
+            prefix=f".{stem}.", suffix=".mbtiles.part", dir=_MBTILES_DIR
+        )
+    except OSError as exc:
+        log.exception("upload: mkstemp failed in %s", _MBTILES_DIR)
+        raise HTTPException(status_code=500, detail=f"Cannot create temp file: {exc}")
+
     tmp_path = Path(tmp_path_str)
+    bytes_written = 0
     try:
         with os.fdopen(tmp_fd, "wb") as out:
             while True:
@@ -261,17 +288,30 @@ async def upload_source(
                 if not chunk:
                     break
                 out.write(chunk)
+                bytes_written += len(chunk)
+        if bytes_written == 0:
+            raise HTTPException(status_code=400, detail="Empty upload body")
+        log.info("upload: wrote %d bytes to %s", bytes_written, tmp_path)
         _validate_mbtiles(tmp_path)
         # Drop any cached connection to the destination before replacing the file.
         from backend.map.mbtiles import _open  # noqa: PLC0415
         _open.cache_clear()
         os.replace(tmp_path, final_path)
-    except Exception:
+    except HTTPException:
         if tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
         raise
+    except Exception as exc:
+        log.exception("upload: unexpected failure for %s", filename)
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"{type(exc).__name__}: {exc}")
 
-    meta = read_meta(final_path)
+    try:
+        meta = read_meta(final_path)
+    except Exception as exc:
+        log.exception("upload: read_meta failed for %s", final_path)
+        raise HTTPException(status_code=500, detail=f"Saved but unreadable: {exc}")
     ext = "jpg" if meta.fmt == "jpeg" else meta.fmt
     return MapSource(
         name=meta.name,
