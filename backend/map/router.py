@@ -207,27 +207,42 @@ def _safe_name(name: str) -> str:
 
 
 def _validate_mbtiles(path: Path) -> None:
-    """Refuse anything that isn't a real MBTiles SQLite archive."""
+    """Refuse anything that isn't a real MBTiles SQLite archive.
+
+    Per the MBTiles 1.2/1.3 spec `tiles` and `metadata` can be implemented as
+    either tables OR views — tippecanoe and mbutil both emit a `tiles` view
+    over `map` + `images` for de-duplication — so checking `type='table'`
+    alone falsely rejects valid files. Also probe the actual contents: a real
+    archive has at least one row in metadata and the tiles relation answers
+    a COUNT(*) without error.
+    """
     try:
         conn = sqlite3.connect(
             f"file:{path}?mode=ro", uri=True, check_same_thread=False
         )
         try:
-            tables = {
+            names = {
                 row[0]
                 for row in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
+                    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
                 )
             }
+            if "tiles" not in names or "metadata" not in names:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Missing required MBTiles relations 'tiles' and/or "
+                        f"'metadata'. Found: {sorted(names)}"
+                    ),
+                )
+            # Smoke-test the relations are queryable — covers files that have
+            # a `tiles` view referencing a missing underlying table.
+            conn.execute("SELECT COUNT(*) FROM metadata").fetchone()
+            conn.execute("SELECT COUNT(*) FROM tiles LIMIT 1").fetchone()
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        raise HTTPException(status_code=400, detail=f"Not a valid SQLite file: {exc}")
-    if "tiles" not in tables or "metadata" not in tables:
-        raise HTTPException(
-            status_code=400,
-            detail="Missing required MBTiles tables 'tiles' and/or 'metadata'",
-        )
+        raise HTTPException(status_code=400, detail=f"Not a valid MBTiles archive: {exc}")
 
 
 @router.post("/sources", response_model=MapSource, status_code=201)
