@@ -294,17 +294,23 @@
 
     const map = L.map('map').setView([50.85, 4.35], 8);
 
-    // ── Base-layer switcher ─────────────────────────────────────────────────
-    // Backend exposes /map/sources: an array of {name, url_template, min_zoom,
-    // max_zoom, attribution, is_default}. Each MBTiles file in maps/ is one
-    // source; OSM is always first. The chosen source is persisted across
-    // reloads so an operator's preferred basemap sticks. Tile auth uses a
-    // `?token=` query param because <img> tile requests can't carry headers.
-    const basemapLayers = {};
-    let activeBasemap = null;
+    // ── Base-layer + overlay switcher ──────────────────────────────────────
+    // OSM is *always* the bottom layer — it fills any gaps where a chosen
+    // MBTiles has no tile (deduplicated empties, redacted areas, coverage
+    // edges). Other sources from /map/sources are added as an overlay on top
+    // with transparent gaps so OSM shows through. Selecting "OpenStreetMap"
+    // simply means "no overlay". User choice is persisted in localStorage.
+    const baseOsm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        minZoom: 0, maxZoom: 19,
+        attribution: '© OpenStreetMap contributors',
+        zIndex: 0,
+    }).addTo(map);
+
+    const overlayLayers = {};   // name -> L.tileLayer
+    let   activeOverlay = null; // name of the overlay currently on the map
     const basemapSelect = document.getElementById('basemap-select');
 
-    function buildTileLayer(src) {
+    function buildOverlayLayer(src) {
         let url = src.url_template;
         if (url.startsWith('/')) {
             url = window.ARROW_BACKEND_URL + url + '?token=' + encodeURIComponent(token);
@@ -313,47 +319,41 @@
             minZoom:     src.min_zoom ?? 0,
             maxZoom:     src.max_zoom ?? 19,
             attribution: src.attribution || '',
+            // Higher than the OSM base so overlay paints on top.
+            zIndex:      10,
         });
     }
 
     function activateBasemap(name) {
-        const layer = basemapLayers[name];
-        if (!layer) return;
-        if (activeBasemap && basemapLayers[activeBasemap]) {
-            map.removeLayer(basemapLayers[activeBasemap]);
+        // Drop the previous overlay if any.
+        if (activeOverlay && overlayLayers[activeOverlay]) {
+            map.removeLayer(overlayLayers[activeOverlay]);
         }
-        layer.addTo(map);
-        // Tile layers paint at the bottom — push it under everything we add later.
-        layer.bringToBack();
-        activeBasemap = name;
+        activeOverlay = null;
+        // 'osm' (or anything not in overlayLayers) → no overlay; OSM base alone.
+        if (name && name !== 'osm' && overlayLayers[name]) {
+            overlayLayers[name].addTo(map);
+            activeOverlay = name;
+        }
         localStorage.setItem('arrow_basemap', name);
         basemapSelect.value = name;
-
-        // Sync the map's zoom limits to the new layer and snap the current zoom
-        // into range. Without this, switching from OSM (z 0..19) to a world
-        // raster MBTiles (e.g. z 0..7) while viewing at z 10 just shows blank
-        // tiles because the new layer has nothing at that level.
-        const opts = layer.options || {};
-        if (opts.minZoom != null) map.setMinZoom(opts.minZoom);
-        if (opts.maxZoom != null) map.setMaxZoom(opts.maxZoom);
-        const z = map.getZoom();
-        if (opts.maxZoom != null && z > opts.maxZoom) map.setZoom(opts.maxZoom);
-        else if (opts.minZoom != null && z < opts.minZoom) map.setZoom(opts.minZoom);
     }
 
     api('/map/sources').then(r => r.ok ? r.json() : []).then(sources => {
-        if (!Array.isArray(sources) || sources.length === 0) {
-            // Hard fallback if /map/sources is unreachable — keep OSM tiles online.
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
-            return;
-        }
+        sources = Array.isArray(sources) ? sources : [];
 
-        // Populate the <select> — replace the placeholder option.
+        // Populate the <select>. OSM is always first; only file-backed
+        // sources need a tile layer built (the OSM entry just selects "no
+        // overlay" mode).
         basemapSelect.innerHTML = '';
+        const osmOpt = document.createElement('option');
+        osmOpt.value = 'osm';
+        osmOpt.textContent = '🗺 OpenStreetMap';
+        basemapSelect.appendChild(osmOpt);
+
         for (const src of sources) {
-            const layer = buildTileLayer(src);
-            basemapLayers[src.name] = layer;
+            if (src.name === 'osm' || !src.downloadable) continue;
+            overlayLayers[src.name] = buildOverlayLayer(src);
             const opt = document.createElement('option');
             opt.value = src.name;
             opt.textContent = '🗺 ' + (src.title || src.name);
@@ -361,16 +361,14 @@
         }
 
         const saved = localStorage.getItem('arrow_basemap');
-        const initial = (saved && basemapLayers[saved] ? saved : null)
-                     || (sources.find(s => s.is_default) || sources[0]).name;
+        const initial = (saved && (saved === 'osm' || overlayLayers[saved])) ? saved : 'osm';
         activateBasemap(initial);
 
         basemapSelect.addEventListener('change', e => {
             if (e.target.value) activateBasemap(e.target.value);
         });
     }).catch(() => {
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
+        // OSM base is already on the map — no overlay needed on failure.
     });
     // Used by loadEnemies() to suppress the one-shot auto-fit once the user
     // has actively panned/zoomed somewhere of their own choosing.

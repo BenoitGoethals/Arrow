@@ -59,6 +59,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.MapTileProviderArray
+import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.tileprovider.MapTileProviderBasic
 import org.osmdroid.tileprovider.modules.MBTilesFileArchive
 import org.osmdroid.tileprovider.modules.MapTileFileArchiveProvider
@@ -69,6 +70,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.TilesOverlay
 
 // CATEGORY is gone — replaced by RadialMenu; ENEMY_TYPE and NOTES are direct bottom sheets
 private enum class MenuStep { ENEMY_TYPE, NOTES }
@@ -108,6 +110,9 @@ fun MapScreen(
     var mapSources    by remember { mutableStateOf<List<MapSourceDto>>(emptyList()) }
     var selectedMap   by remember { mutableStateOf<MapSourceDto?>(null) }
     var layerMenuOpen by remember { mutableStateOf(false) }
+    // Holds the currently-painted MBTiles overlay so we can remove it on
+    // basemap switch without disturbing other map overlays (markers, events).
+    val mbtilesOverlay = remember { mutableStateOf<TilesOverlay?>(null) }
     var isStreaming  by remember {
         mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
     }
@@ -323,42 +328,47 @@ fun MapScreen(
                    ?: list.firstOrNull()
     }
 
-    // Apply the selected source to the MapView. Three branches:
-    //   1. A local .mbtiles is present → use OSMdroid's MBTilesFileArchive
-    //      directly (fully offline, no backend round-trip).
-    //   2. Built-in OSM → OSMdroid MAPNIK online tiles.
-    //   3. Backend-served MBTiles → BackendTileSource over HTTP with the JWT
-    //      baked into the URL (rebuilt on each switch, also refreshing auth).
+    // OSM is the permanent base layer. Any non-OSM selection is painted as a
+    // TilesOverlay on top — where the MBTiles has a tile we see it, where it
+    // doesn't (deduped empties, redacted areas, outside coverage / zoom range)
+    // the transparent loading fill lets MAPNIK show through.
     LaunchedEffect(mapRef.value, selectedMap) {
         val map = mapRef.value ?: return@LaunchedEffect
+
+        // 1. Reset the primary tile source/provider to OSM. Cheap to re-set on
+        //    every change — OSMdroid no-ops if the source/provider is already
+        //    correct after the first paint.
+        map.setTileSource(BackendTileSource.OSM_DEFAULT)
+        map.tileProvider = MapTileProviderBasic(context, BackendTileSource.OSM_DEFAULT)
+        map.setMinZoomLevel(0.0)
+        map.setMaxZoomLevel(19.0)
+
+        // 2. Drop the previous MBTiles overlay if any.
+        mbtilesOverlay.value?.let { old ->
+            map.overlays.remove(old)
+            runCatching { old.onDetach(map) }
+        }
+        mbtilesOverlay.value = null
+
+        // 3. Build a new overlay for the selected MBTiles, if any.
+        //    Local-file path → OSMdroid archive provider (fully offline).
+        //    Otherwise the backend tile provider (online, JWT in URL).
         val src = selectedMap
-
-        val localFile = src?.let { container.mapSourceRepository.localFile(it.name) }
-
-        val tileSource = when {
-            localFile != null && src != null -> {
-                val ext = if (src.format.equals("jpeg", true)) "jpg" else src.format.lowercase()
+        if (src != null && !src.url_template.startsWith("http")) {
+            val localFile = container.mapSourceRepository.localFile(src.name)
+            val ext = if (src.format.equals("jpeg", true)) "jpg" else src.format.lowercase()
+            val overlayProvider: MapTileProviderBase = if (localFile != null) {
                 val offlineSource = XYTileSource(
                     src.name, src.min_zoom, src.max_zoom, 256, ".$ext", arrayOf<String>(),
                 )
                 val archive = MBTilesFileArchive.getDatabaseFileArchive(localFile)
                 val archiveProvider = MapTileFileArchiveProvider(
-                    SimpleRegisterReceiver(context),
-                    offlineSource,
-                    arrayOf(archive),
+                    SimpleRegisterReceiver(context), offlineSource, arrayOf(archive),
                 )
-                map.tileProvider = MapTileProviderArray(
-                    offlineSource,
-                    SimpleRegisterReceiver(context),
-                    arrayOf(archiveProvider),
+                MapTileProviderArray(
+                    offlineSource, SimpleRegisterReceiver(context), arrayOf(archiveProvider),
                 )
-                offlineSource
-            }
-            src == null || src.url_template.startsWith("http") -> {
-                map.tileProvider = MapTileProviderBasic(context, BackendTileSource.OSM_DEFAULT)
-                BackendTileSource.OSM_DEFAULT
-            }
-            else -> {
+            } else {
                 val token = container.tokenStore.current().orEmpty()
                 val base  = container.settingsRepository.currentServerUrl()
                 val backendSource = BackendTileSource(
@@ -370,23 +380,18 @@ fun MapScreen(
                     baseUrl    = base,
                     token      = token,
                 )
-                map.tileProvider = MapTileProviderBasic(context, backendSource)
-                backendSource
+                MapTileProviderBasic(context, backendSource)
             }
+            val overlay = TilesOverlay(overlayProvider, context).apply {
+                loadingBackgroundColor = android.graphics.Color.TRANSPARENT
+                loadingLineColor       = android.graphics.Color.TRANSPARENT
+            }
+            // Index 0 → painted first among overlays, but still on top of the
+            // base tile pane. Markers added later by other LaunchedEffects sit
+            // above it.
+            map.overlays.add(0, overlay)
+            mbtilesOverlay.value = overlay
         }
-        map.setTileSource(tileSource)
-
-        // Clamp the map's zoom limits — and the current zoom — into the new
-        // source's range. Without this, switching to a world-coverage MBTiles
-        // (e.g. z 0..7) while viewing at z 8+ shows a black map because the
-        // source has nothing to render at that level.
-        val minZ = tileSource.minimumZoomLevel.toDouble()
-        val maxZ = tileSource.maximumZoomLevel.toDouble()
-        map.setMinZoomLevel(minZ)
-        map.setMaxZoomLevel(maxZ)
-        val z = map.zoomLevelDouble
-        if (z > maxZ) map.controller.setZoom(maxZ)
-        else if (z < minZ) map.controller.setZoom(minZ)
 
         map.invalidate()
     }
