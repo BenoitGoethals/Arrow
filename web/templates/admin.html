@@ -103,6 +103,7 @@ main { padding: 0; }
     <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
     <button class="nav-btn" onclick="show('alerts',this)"><span class="ico">🚨</span> Alerts</button>
     <button class="nav-btn" onclick="show('snapshots',this)"><span class="ico">🗺</span> Map snapshots</button>
+    <button class="nav-btn" onclick="show('maps',this)" data-role-any><span class="ico">🗂</span> Base maps</button>
   </nav>
 
   <!-- ── Main area ───────────────────────────────────────────────────── -->
@@ -205,10 +206,21 @@ main { padding: 0; }
     const token = localStorage.getItem('arrow_token');
     if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
     const role = localStorage.getItem('arrow_role') || '';
-    if (role !== 'ADMIN') {
+    const isAdmin = role === 'ADMIN';
+    const isBC    = role === 'BATTLE_CAPTAIN';
+    if (!isAdmin && !isBC) {
         document.getElementById('adm-main').innerHTML =
-            '<p style="color:#ef4444;padding:2rem">Access denied — ADMIN role required.</p>';
+            '<p style="color:#ef4444;padding:2rem">Access denied — ADMIN or BATTLE_CAPTAIN role required.</p>';
         return;
+    }
+    // Battle Captains only have permission to manage base maps — hide every
+    // nav button except those marked `data-role-any`, and start them on the
+    // maps tab instead of the dashboard overview.
+    if (!isAdmin) {
+        document.querySelectorAll('.adm-nav .nav-btn').forEach(btn => {
+            if (!btn.hasAttribute('data-role-any')) btn.style.display = 'none';
+        });
+        document.querySelectorAll('.adm-nav h4').forEach(h => h.style.display = 'none');
     }
     const hdr  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     const api  = (p, o = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...o, headers: { ...hdr, ...(o.headers||{}) } });
@@ -217,6 +229,9 @@ main { padding: 0; }
     let operators = [], teams = [], sections = [], platoons = [], companies = [], alertsList = [];
 
     async function loadAll() {
+        // BCs can't hit the operators/hierarchy endpoints; skip them so the
+        // Maps tab still loads cleanly without unauthorised noise.
+        if (!isAdmin) return;
         [operators, teams, sections, platoons, companies] = await Promise.all([
             api('/operators').then(r => r.ok ? r.json() : []),
             api('/teams').then(r => r.ok ? r.json() : []),
@@ -242,7 +257,17 @@ main { padding: 0; }
             case 'config':    main.innerHTML = ''; renderConfig(main); break;
             case 'alerts':    main.innerHTML = ''; renderAlerts(main); break;
             case 'snapshots': main.innerHTML = ''; renderSnapshots(main); break;
+            case 'maps':      main.innerHTML = ''; renderMaps(main); break;
         }
+    }
+
+    // Battle Captains land directly on the Maps tab since other tabs are hidden.
+    if (!isAdmin) {
+        // Defer to the next tick so DOM is ready.
+        setTimeout(() => {
+            const btn = document.querySelector('[onclick*="show(\'maps\'"]');
+            if (btn) show('maps', btn);
+        }, 0);
     }
 
     // ── Overview ───────────────────────────────────────────────────────────
@@ -795,6 +820,127 @@ main { padding: 0; }
             alert(`Delete failed (${r.status}).`);
         }
     };
+
+    // ── Base maps (MBTiles) ────────────────────────────────────────────────
+    async function renderMaps(el) {
+        const sources = await api('/map/sources').then(r => r.ok ? r.json() : []);
+        const files = sources.filter(s => s.downloadable);   // exclude built-in OSM
+        const rows = files.length
+            ? files.map(s => `
+                <tr>
+                    <td style="font-family:monospace">${esc(s.title)}</td>
+                    <td>${s.format.toUpperCase()}</td>
+                    <td>z ${s.min_zoom}–${s.max_zoom}</td>
+                    <td>${humanSize(s.size_bytes || 0)}</td>
+                    <td style="text-align:right">
+                        <button class="btn btn-ghost" onclick="deleteMap('${esc(s.name)}')">🗑 Delete</button>
+                    </td>
+                </tr>`).join('')
+            : `<tr><td colspan="5" style="color:#475569;text-align:center;padding:1rem">
+                   No MBTiles uploaded yet — drop a file below to add one.
+               </td></tr>`;
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Base maps (${files.length})</h2>
+        </div>
+        <p style="color:#94a3b8;font-size:0.85rem;margin-top:-0.5rem">
+            MBTiles archives served as base layers to the web Leaflet map and the Android client.
+            Files are stored in <code>maps/</code> on the backend and read at request time —
+            uploading or deleting takes effect immediately (no restart required).
+        </p>
+        <table class="adm-table" style="margin-bottom:1rem">
+            <thead><tr>
+                <th>Name</th><th>Format</th><th>Zoom</th><th>Size</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+
+        <div class="cfg-section">
+            <h3>Upload MBTiles</h3>
+            <div style="padding:0.75rem 1rem">
+                <input type="file" id="map-upload-file" accept=".mbtiles"
+                       style="display:block;margin-bottom:0.75rem;color:#cbd5e1"/>
+                <div style="display:flex;align-items:center;gap:0.75rem">
+                    <button class="btn btn-primary" id="map-upload-btn" onclick="uploadMap()">⬆ Upload</button>
+                    <progress id="map-upload-progress" value="0" max="1"
+                              style="flex:1;height:14px;display:none"></progress>
+                    <span id="map-upload-status" style="color:#94a3b8;font-size:0.83rem"></span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    window.deleteMap = async (name) => {
+        if (!confirm(`Delete map "${name}"? This removes the .mbtiles file from disk.`)) return;
+        const r = await api(`/map/sources/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (r.ok || r.status === 204) {
+            renderMaps(document.getElementById('adm-main'));
+        } else {
+            alert(`Delete failed (${r.status}).`);
+        }
+    };
+
+    // XHR (not fetch) so we can stream a 1+ GB upload with progress events.
+    // fetch() doesn't yet expose upload progress reliably across browsers.
+    window.uploadMap = () => {
+        const input = document.getElementById('map-upload-file');
+        const file  = input.files[0];
+        if (!file) { alert('Pick a .mbtiles file first.'); return; }
+        if (!file.name.toLowerCase().endsWith('.mbtiles')) {
+            alert('File must end in .mbtiles');
+            return;
+        }
+        const btn  = document.getElementById('map-upload-btn');
+        const bar  = document.getElementById('map-upload-progress');
+        const stat = document.getElementById('map-upload-status');
+        const form = new FormData();
+        form.append('file', file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', window.ARROW_BACKEND_URL + '/map/sources');
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.upload.onprogress = e => {
+            if (e.lengthComputable) {
+                bar.value = e.loaded / e.total;
+                stat.textContent = `${humanSize(e.loaded)} / ${humanSize(e.total)}`;
+            }
+        };
+        xhr.onload = () => {
+            btn.disabled = false;
+            if (xhr.status >= 200 && xhr.status < 300) {
+                stat.textContent = 'Validating…';
+                bar.style.display = 'none';
+                input.value = '';
+                renderMaps(document.getElementById('adm-main'));
+            } else {
+                let msg = xhr.responseText;
+                try { msg = JSON.parse(xhr.responseText).detail || msg; } catch (_) {}
+                stat.textContent = `Upload failed (${xhr.status}): ${msg}`;
+                stat.style.color = '#ef4444';
+            }
+        };
+        xhr.onerror = () => {
+            btn.disabled = false;
+            stat.textContent = 'Network error during upload';
+            stat.style.color = '#ef4444';
+        };
+
+        btn.disabled = true;
+        bar.style.display = 'inline-block';
+        bar.value = 0;
+        stat.style.color = '#94a3b8';
+        stat.textContent = `Uploading ${humanSize(file.size)}…`;
+        xhr.send(form);
+    };
+
+    function humanSize(bytes) {
+        if (!bytes) return '0 B';
+        const u = ['B','KB','MB','GB','TB'];
+        let i = 0, n = bytes;
+        while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+        return `${n.toFixed(n < 10 ? 1 : 0)} ${u[i]}`;
+    }
 
     // ── Helpers ────────────────────────────────────────────────────────────
     function populateTeamSelect(selectId, selected) {

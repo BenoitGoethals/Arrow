@@ -58,7 +58,13 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.tileprovider.MapTileProviderArray
+import org.osmdroid.tileprovider.MapTileProviderBasic
+import org.osmdroid.tileprovider.modules.MBTilesFileArchive
+import org.osmdroid.tileprovider.modules.MapTileFileArchiveProvider
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
+import org.osmdroid.tileprovider.util.SimpleRegisterReceiver
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
@@ -317,27 +323,56 @@ fun MapScreen(
                    ?: list.firstOrNull()
     }
 
-    // Apply the selected source to the MapView. Rebuilt on every switch — the
-    // backend tile source captures the current JWT in its URL, so this also
-    // refreshes auth on token rotation.
+    // Apply the selected source to the MapView. Three branches:
+    //   1. A local .mbtiles is present → use OSMdroid's MBTilesFileArchive
+    //      directly (fully offline, no backend round-trip).
+    //   2. Built-in OSM → OSMdroid MAPNIK online tiles.
+    //   3. Backend-served MBTiles → BackendTileSource over HTTP with the JWT
+    //      baked into the URL (rebuilt on each switch, also refreshing auth).
     LaunchedEffect(mapRef.value, selectedMap) {
         val map = mapRef.value ?: return@LaunchedEffect
         val src = selectedMap
-        val tileSource = if (src == null || src.url_template.startsWith("http")) {
-            // OSM (or no MBTiles known yet) — OSMdroid's built-in Mapnik handles tile fetch.
-            BackendTileSource.OSM_DEFAULT
-        } else {
-            val token = container.tokenStore.current().orEmpty()
-            val base  = container.settingsRepository.currentServerUrl()
-            BackendTileSource(
-                sourceName = src.name,
-                title      = src.title,
-                minZoom    = src.min_zoom,
-                maxZoom    = src.max_zoom,
-                format     = src.format,
-                baseUrl    = base,
-                token      = token,
-            )
+
+        val localFile = src?.let { container.mapSourceRepository.localFile(it.name) }
+
+        val tileSource = when {
+            localFile != null && src != null -> {
+                val ext = if (src.format.equals("jpeg", true)) "jpg" else src.format.lowercase()
+                val offlineSource = XYTileSource(
+                    src.name, src.min_zoom, src.max_zoom, 256, ".$ext", arrayOf<String>(),
+                )
+                val archive = MBTilesFileArchive.getDatabaseFileArchive(localFile)
+                val archiveProvider = MapTileFileArchiveProvider(
+                    SimpleRegisterReceiver(context),
+                    offlineSource,
+                    arrayOf(archive),
+                )
+                map.tileProvider = MapTileProviderArray(
+                    offlineSource,
+                    SimpleRegisterReceiver(context),
+                    arrayOf(archiveProvider),
+                )
+                offlineSource
+            }
+            src == null || src.url_template.startsWith("http") -> {
+                map.tileProvider = MapTileProviderBasic(context, BackendTileSource.OSM_DEFAULT)
+                BackendTileSource.OSM_DEFAULT
+            }
+            else -> {
+                val token = container.tokenStore.current().orEmpty()
+                val base  = container.settingsRepository.currentServerUrl()
+                val backendSource = BackendTileSource(
+                    sourceName = src.name,
+                    title      = src.title,
+                    minZoom    = src.min_zoom,
+                    maxZoom    = src.max_zoom,
+                    format     = src.format,
+                    baseUrl    = base,
+                    token      = token,
+                )
+                map.tileProvider = MapTileProviderBasic(context, backendSource)
+                backendSource
+            }
         }
         map.setTileSource(tileSource)
 

@@ -45,7 +45,9 @@ class AppContainer(private val context: Context) {
     val reportRepository = ReportRepository(apiClient)
     val opordRepository = OpordRepository(apiClient) { settingsRepository.currentServerUrl() }
     val tacticalRepository = TacticalRepository(apiClient)
-    val mapSourceRepository = MapSourceRepository(apiClient)
+    val mapSourceRepository = MapSourceRepository(
+        apiClient, context, tokenStore, settingsRepository,
+    )
 
     val photoRepository       = PhotoRepository(apiClient)
     val fireMissionRepository = FireMissionRepository(apiClient)
