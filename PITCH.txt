@@ -8,8 +8,9 @@
 ONE LINE
 --------
 A TAK-class soldier system — operator GPS, MIL-STD-2525, full NATO five-
-paragraph OPORDs, tactical messaging, fires, alerts and CoT bridge — on a
-stack you can read, run and own.
+paragraph OPORDs, tactical messaging, fires, alerts, drone spot reports,
+CBRN_1..6, and a CoT bridge — across Android, web AND a cross-platform
+.NET 10 desktop client. On a stack you can read, run and own.
 
 
 THE PROBLEM
@@ -51,6 +52,12 @@ end-to-end, built on a clean three-tier architecture:
   Android  — Jetpack Compose tactical client: OSMdroid map, MIL-STD-2525
              symbology, foreground GPS tracking, encrypted media,
              offline tiles, Cursor-on-Target bridge for ATAK interop.
+             Scales phone <-> tablet, landscape and portrait.
+  Desktop  — .NET 10 + Avalonia cross-platform client (macOS, Windows,
+             Linux). AOT-publishable. Mapsui tactical map, MIL-STD-2525
+             affiliation frames, same WebSocket realtime bus as Android.
+             MFA-aware login. Path-prefix-aware backend URL — works
+             behind reverse proxies out of the box.
 
 Every domain is a SOLID, pluggable module — auth, tracking, alerts,
 messaging, reports, fires, OPORDs, battle management, CoT, photos,
@@ -98,6 +105,26 @@ A single, unified picture across operator -> squad -> section -> platoon
   ALERTS
     TIC / MEDICAL / EVAC / LOST_COMMS one-tap broadcast with audio +
     visual escalation across every connected client.
+
+  DRONE SPOT REPORT
+    Structured drone observation in one tap: type (QUADCOPTER / FPV /
+    LOITERING_MUNITION / SHAHED-136 / MAVIC / ...), altitude, heading,
+    speed, behavior (HOVERING / ATTACK_RUN / RECONNAISSANCE / ...),
+    notes. Submits a DRONE_SPOT report AND raises a DRONE_SPOTTED
+    alert with distinctive drone-buzz tone and purple toast carrying
+    all detail. Available on Android via the radial menu and a
+    dedicated top-bar FAB (drops at current map centre, no tap needed).
+
+  CBRN
+    Full NATO STANAG 2103 / ATP-45 CBRN_1..6 message support. Parse
+    raw text uploads or submit structured payloads. Map renders
+    Zone I (immediate hazard radius) and Zone II (downwind sector)
+    overlays per incident.
+
+  MEASURE TOOL
+    Two-tap distance + initial-bearing (azimuth in degrees AND NATO
+    mils) between any two map points. Spherical-earth math, no extra
+    deps.
 
   STREAMS
     Operator camera -> company TOC: live MJPEG over WebSocket, optional
@@ -186,6 +213,32 @@ real time so the picture moves.
     4  Ardennes COY plans
   124  backend tests passing
    24  live OPFOR units
+
+
+PROOF — OPERATION REGNUM IGNIS
+------------------------------
+A second simulator drops a global NATO / Russia / China CBRN exchange
+across the past 12 hours — seven phases of escalation from initial
+chemical strikes through strategic warhead launches:
+
+  Phase I    RU chem on NATO Europe        (Brussels, Paris, Berlin...)
+  Phase II   CN chem/bio on NATO Pacific   (Yokosuka, Guam, Taipei...)
+  Phase III  NATO retaliates on RU C2      (Moscow, Sevastopol...)
+  Phase IV   NATO strikes CN ports         (Beijing, Shanghai...)
+  Phase V    RU radiological/N on NATO US  (Washington, Norfolk, PH)
+  Phase VI   Sino-Russian border           (Vladivostok, Urumqi)
+  Phase VII  Strategic N exchange          (capitals)
+
+Every strike emits a CBRN_4 STANAG 2103 report with structured payload
+(agent, serial, DTG, delivery, wind dir/speed, lat/lon, yield_kT) and
+broadcasts to every connected client. Map renders Zone I + Zone II
+hazard polygons; alerts feed lights up; web plays distinctive tones.
+
+   31  CBRN_4 strikes per run
+    3  factions
+    7  escalation phases
+    4  agent categories (C / B / R / N)
+   ~6  reproducible seeds (--seed for deterministic playthroughs)
 
 
 WHERE IT GOES NEXT

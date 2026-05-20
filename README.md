@@ -19,14 +19,25 @@ The system consists of:
    * Used by Operators/Soldiers
    * Real-time tactical awareness
    * Messaging and battlefield reporting
+   * Adapts to phone and tablet form factors (`WindowSize` class-based scaling)
+   * Both landscape and portrait orientations
 
-3. **Backend Services**
+3. **Desktop Client** (`desktop/`, .NET 10 + Avalonia)
+
+   * Cross-platform native client (macOS, Windows, Linux); AOT-publishable
+   * Battle-captain / operator desktop UI parallel to the Android app
+   * Mapsui-based tactical map with MIL-STD-2525C affiliation frames
+   * Same WebSocket realtime bus + REST surface as the Android client
+   * Tabs: Map · Chat · Alerts · Objectives · Reports · Fire missions · CBRN · Photos · OPORD · Streams · Hierarchy · Admin (role-gated) · Settings
+   * MFA-aware login, persisted token, configurable backend URL with path-prefix support for reverse-proxied deployments
+
+4. **Backend Services**
 
    * FastAPI backend
    * WebSocket realtime communication
    * REST APIs
    * CoT (Cursor on Target) messaging
-   * SQLite storage
+   * SQLite storage (persisted under `/app/data/arrow.db` in Docker; overridable via `ARROW_DATABASE_URL`)
 
 ---
 
@@ -46,6 +57,35 @@ Sibling documents that go deeper than this spec:
 | [USERS.md](USERS.md) | User roles, account lifecycle, MFA enrolment. |
 
 For interop and pitch material: `PITCH.txt`, `Arrow_Pitch.pdf`.
+
+---
+
+## Quick Start
+
+On a fresh deploy (`docker compose up -d` or `uv run arrow-backend` locally) the backend
+auto-seeds the following accounts so you can log in immediately. **All passwords are `ranger14`.**
+
+| Callsign | Role             | Notes                                  |
+| -------- | ---------------- | -------------------------------------- |
+| `benoit` | ADMIN            | Full admin (hierarchy + audit + maps)  |
+| `capt`   | BATTLE_CAPTAIN   | Web dashboard / S-3 cell               |
+| `ops1`   | OPERATOR         | Android / desktop end-user             |
+| `ops2`   | OPERATOR         |                                        |
+| `ops3`   | OPERATOR         |                                        |
+
+The seed is per-row idempotent — restarts top up missing accounts without disturbing the rest.
+
+Default backend URLs:
+
+| Tier         | Default                          | Override                                  |
+| ------------ | -------------------------------- | ----------------------------------------- |
+| Direct       | `http://localhost:6001`          | `ARROW_BACKEND_URL` env / `--backend` CLI |
+| Behind Caddy | `http://localhost:6200/api`      | same                                      |
+
+The Python simulators (`simulate_*.py`) remember the last successful URL under
+`~/.config/arrow/simulator.json`, so re-runs without `--backend` use the same target.
+The Desktop and Android clients accept a path-prefix on the backend URL
+(`http://host:6200/api`), so they work transparently behind a reverse proxy.
 
 ---
 
@@ -173,18 +213,19 @@ Capabilities:
 
 ## 3.3 Operator
 
-Android tactical user.
+Android tactical user (and parallel desktop client).
 
 Capabilities:
 
-* View tactical map
+* View tactical map (with MIL-STD-2525C symbology)
 * View teammates
-* Send GPS position
+* Send GPS position (5 s heartbeat broadcast)
 * Plot enemy positions
-* Create markers
-* Send contact reports
-* Send enemy spot reports
-* Send 9-liners
+* Create markers via radial menu (Enemy / Fire Mission / Report / Mortar / POI / Measure / Drone Spot)
+* Measure tool: distance + azimuth (° and mils) between two map points
+* Submit drone-spot reports with type / altitude / direction / behavior
+* Send contact and spot reports
+* Send 9-liners (CASEVAC / MEDEVAC / CAS)
 * Send messages
 * Trigger alerts
 * Download offline maps
@@ -304,6 +345,7 @@ Examples:
 * MEDICAL
 * EVAC
 * LOST COMMS
+* DRONE SPOTTED (auto-raised on drone-spot submission — see §5.5)
 
 ---
 
@@ -315,6 +357,36 @@ Support structured tactical forms:
 * MEDEVAC
 * CAS requests
 * Tactical support requests
+
+---
+
+## 5.5 Drone Spot Report
+
+Operators must be able to report drone observations (UAV / loitering munition /
+FPV / ISR / fixed-wing) with structured detail:
+
+* Location (lat/lon)
+* Drone type (QUADCOPTER, FIXED_WING, FPV, LOITERING_MUNITION, ISR, SHAHED-136, MAVIC, …)
+* Estimated altitude (m)
+* Direction of travel (°)
+* Estimated speed (kt, optional)
+* Behavior (HOVERING, TRANSITING, ATTACK_RUN, RECONNAISSANCE, LOITERING, EVADING)
+* Free-text notes (colour, markings, intent)
+
+A single `POST /reports/drone-spot` stores a `DRONE_SPOT` report **and** raises a
+`DRONE_SPOTTED` alert. The web dashboard plays a distinctive drone-buzz tone, voices
+"Drone spotted", and shows a purple toast with all fields. Android exposes it via the
+radial menu (🛸 Drone Spot) and a dedicated top-bar FAB that drops the report at the
+current map centre with one tap.
+
+---
+
+## 5.6 NATO CBRN Messages
+
+Full support for STANAG 2103 / ATP-45 CBRN reporting (`CBRN_1` initial observation
+through `CBRN_6`), submitted as structured `/reports` POSTs **or** parsed from raw
+NATO message text via `/reports/cbrn/import`. The map renders Zone I (immediate
+hazard radius) and Zone II (downwind sector) overlays per incident.
 
 ---
 
@@ -542,15 +614,44 @@ backend/
 
 ```text
 android/
- ├── map/
+ ├── map/         (incl. measure tool + radial menu + MIL-STD-2525)
  ├── tracking/
  ├── messaging/
- ├── reports/
+ ├── reports/    (contact, spot, 9-liners, drone-spot, CBRN)
  ├── alerts/
+ ├── objectives/
+ ├── firemission/
+ ├── opord/
+ ├── photos/
+ ├── stream/
+ ├── cbrn/
  ├── cot/
  ├── offline/
- ├── auth/
+ ├── auth/       (incl. MFA TOTP)
  └── settings/
+```
+
+---
+
+## Desktop Modules (.NET 10 / Avalonia)
+
+```text
+desktop/
+ ├── src/
+ │   ├── Arrow.Core/             (POCOs + STJ source-gen)
+ │   ├── Arrow.Net/              (ApiClient, BroadcastClient, RealtimeBus)
+ │   ├── Arrow.Platform/         (ILocationService, ISecureStorage abstractions)
+ │   ├── Arrow.Platform.MacOS/   (Keychain + CoreLocation)
+ │   ├── Arrow.Platform.Linux/   (libsecret + GeoClue2)
+ │   ├── Arrow.Platform.Windows/ (DPAPI + WinRT Geolocator)
+ │   ├── Arrow.Stream/           (WebRTC client via SIPSorcery)
+ │   └── Arrow.Domain/           (Auth, Tracking, Alerts, Messaging, Reports,
+ │                                TacticalObjects, Cot, Hierarchy, Admin,
+ │                                Battles, Map, FireMissions, Opord, Photos,
+ │                                Streams, Settings, Offline)
+ └── host/
+     ├── Arrow.Host.Console/     (smoke-test CLI, AOT-publishable)
+     └── Arrow.Ui.Avalonia/      (Avalonia desktop UI + Mapsui map)
 ```
 
 ---
@@ -725,9 +826,22 @@ Format:
 
 * Kotlin
 * Jetpack Compose
-* Maps SDK
-* WebSocket client
-* Offline tile caching
+* OSMdroid map + MIL-STD-2525C symbology
+* WebSocket client (auto-reconnect, 3 s backoff)
+* Offline MBTiles caching
+* Foreground GPS tracking service
+
+---
+
+## Desktop
+
+* .NET 10 (`PublishAot=true` on the executable)
+* Avalonia 11.3 with FluentTheme and `DataGrid`
+* Mapsui 5 for the tactical map + tile layers
+* SIPSorcery for WebRTC stream support
+* CommunityToolkit.Mvvm for source-generated VM properties / commands
+* `Microsoft.Extensions.DependencyInjection` composition root
+* Per-OS `ILocationService` / `ISecureStorage` skeletons (CoreLocation / Keychain on macOS, GeoClue2 / libsecret on Linux, WinRT / DPAPI on Windows)
 
 ---
 
@@ -754,14 +868,21 @@ Format:
 
 Potential future modules:
 
-* Drone integration
-* ATAK interoperability
 * Mesh networking
 * Voice communication
-* Video streaming
-* Blue force tracking
 * AI threat detection
 * GIS analysis
 * Mission replay
 * Geofencing
 * Sensor fusion
+* Federated multi-TOC sync (no central server)
+* Coalition data-partitioning + auto-redaction
+
+Already shipped (no longer "future"):
+
+* Drone Spot Report (§5.5)
+* ATAK / Cursor-on-Target bridge
+* Video streaming (camera publisher + recordings)
+* Blue-force tracking (live operator GPS)
+* MIL-STD-2525C symbology
+* MFA TOTP authentication
