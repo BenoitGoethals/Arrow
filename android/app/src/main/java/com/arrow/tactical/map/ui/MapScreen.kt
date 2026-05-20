@@ -73,8 +73,18 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.TilesOverlay
 
 // CATEGORY is gone — replaced by RadialMenu; ENEMY_TYPE and NOTES are direct bottom sheets
-private enum class MenuStep { ENEMY_TYPE, NOTES }
+private enum class MenuStep { ENEMY_TYPE, NOTES, DRONE_SPOT }
 private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
+
+// Drone types + behaviours the operator can pick from in the radial bottom sheet.
+private val DRONE_TYPES = listOf(
+    "UNKNOWN", "QUADCOPTER", "FIXED_WING", "FPV", "LOITERING_MUNITION",
+    "ISR", "SHAHED-136", "BAYRAKTAR_TB2", "ORLAN-10", "MAVIC",
+)
+private val DRONE_BEHAVIOURS = listOf(
+    "UNKNOWN", "HOVERING", "TRANSITING", "ATTACK_RUN",
+    "RECONNAISSANCE", "LOITERING", "EVADING",
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -216,6 +226,14 @@ fun MapScreen(
     var pendingPhotoId  by remember { mutableStateOf<Int?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var uploadingPhoto  by remember { mutableStateOf(false) }
+
+    // ── Drone-spot form state (used by both radial-menu and top-bar buttons) ──
+    var droneType      by remember { mutableStateOf("UNKNOWN") }
+    var droneAltitude  by remember { mutableStateOf("") }
+    var droneDirection by remember { mutableStateOf("") }
+    var droneSpeed     by remember { mutableStateOf("") }
+    var droneBehavior  by remember { mutableStateOf("UNKNOWN") }
+    var droneNotes     by remember { mutableStateOf("") }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -946,6 +964,35 @@ fun MapScreen(
                  modifier = Modifier.size(20.dp))
         }
 
+        // ── Drone Spot FAB — opens the drone-spot sheet anchored on the
+        //    current map centre (operator's view). One-tap reporting when
+        //    a drone appears overhead — no need to first tap the map.
+        SmallFloatingActionButton(
+            onClick        = {
+                val map = mapRef.value
+                val centre = map?.mapCenter as? GeoPoint
+                    ?: GeoPoint(50.85, 4.35)  // fallback if map not ready
+                pendingPoint     = centre
+                pendingScreenPos = null   // skip radial, go straight to the sheet
+                droneType      = "UNKNOWN"
+                droneAltitude  = ""
+                droneDirection = ""
+                droneSpeed     = ""
+                droneBehavior  = "UNKNOWN"
+                droneNotes     = ""
+                submitError    = null
+                menuStep       = MenuStep.DRONE_SPOT
+            },
+            containerColor = Color(0xFF9333EA),
+            contentColor   = Color.White,
+            modifier       = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 108.dp)
+                .size(40.dp),
+        ) {
+            Text("🛸", fontSize = 18.sp)
+        }
+
         // ── Measure result panel — compact bottom-left chip; uses outer Box for align ──
         if (measureMode) {
             val cardMaxWidth = com.arrow.tactical.ui.byWindowDp(
@@ -1039,6 +1086,18 @@ fun MapScreen(
                     pendingPoint     = null
                     pendingScreenPos = null
                 },
+                RadialItem("🛸", "Drone\nSpot", Color(0xFF9333EA)) {
+                    // Reset the drone form, then open the dedicated bottom sheet.
+                    droneType      = "UNKNOWN"
+                    droneAltitude  = ""
+                    droneDirection = ""
+                    droneSpeed     = ""
+                    droneBehavior  = "UNKNOWN"
+                    droneNotes     = ""
+                    submitError    = null
+                    menuStep         = MenuStep.DRONE_SPOT
+                    pendingScreenPos = null   // dismiss radial, show the sheet
+                },
             ),
             onDismiss = { pendingPoint = null; pendingScreenPos = null },
         )
@@ -1082,8 +1141,12 @@ fun MapScreen(
 
     // ── Bottom sheets — shown after selecting from radial (pendingScreenPos == null) ─
     if (pendingPoint != null && pendingScreenPos == null) {
+        // Skip the partial-expand state so the sheet opens fully — critical on
+        // landscape phones where the half-expanded state cuts off the form.
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = { pendingPoint = null },
+            sheetState       = sheetState,
         ) {
             val point = pendingPoint ?: return@ModalBottomSheet
             when (menuStep) {
@@ -1093,6 +1156,39 @@ fun MapScreen(
                         menuStep = MenuStep.NOTES
                     },
                     onBack = { pendingPoint = null },
+                )
+
+                MenuStep.DRONE_SPOT -> DroneSpotMenu(
+                    droneType      = droneType,    onDroneTypeChange   = { droneType = it },
+                    altitude       = droneAltitude,  onAltitudeChange  = { droneAltitude = it },
+                    direction      = droneDirection, onDirectionChange = { droneDirection = it },
+                    speed          = droneSpeed,     onSpeedChange     = { droneSpeed = it },
+                    behavior       = droneBehavior,  onBehaviorChange  = { droneBehavior = it },
+                    notes          = droneNotes,     onNotesChange     = { droneNotes = it },
+                    submitting     = submitting,
+                    error          = submitError,
+                    onBack         = { pendingPoint = null },
+                    onSubmit       = {
+                        submitting  = true
+                        submitError = null
+                        scope.launch {
+                            container.reportRepository.submitDroneSpot(
+                                latitude      = point.latitude,
+                                longitude     = point.longitude,
+                                droneType     = droneType,
+                                altitudeM     = droneAltitude.toDoubleOrNull(),
+                                directionDeg  = droneDirection.toDoubleOrNull(),
+                                speedKts      = droneSpeed.toDoubleOrNull(),
+                                behavior      = droneBehavior,
+                                notes         = droneNotes,
+                            ).onSuccess {
+                                pendingPoint = null
+                            }.onFailure {
+                                submitError = it.message ?: "Failed"
+                            }
+                            submitting = false
+                        }
+                    },
                 )
 
                 MenuStep.NOTES -> NotesMenu(
@@ -1310,12 +1406,15 @@ private fun parsePlatoonIds(json: String, myId: Int): Set<Int> {
 private fun EnemyTypeMenu(onSelect: (EnemyType) -> Unit, onBack: () -> Unit) {
     val hostileTypes = EnemyType.entries.filter { it != EnemyType.POI }
 
+    // LazyVerticalGrid scrolls itself, so the outer Column doesn't need verticalScroll
+    // (mixing them throws). We cap the grid at a smaller max height so the header
+    // stays visible on landscape phones (~ 400 dp tall sheets).
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = 16.dp)
+            .padding(top = 4.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
@@ -1323,25 +1422,26 @@ private fun EnemyTypeMenu(onSelect: (EnemyType) -> Unit, onBack: () -> Unit) {
             }
             Text(
                 "Select enemy type",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.heightIn(max = 360.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement   = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.heightIn(max = 260.dp),
         ) {
             items(hostileTypes) { type ->
                 OutlinedButton(
                     onClick = { onSelect(type) },
                     modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = MaterialTheme.colorScheme.error,
                     ),
                 ) {
-                    Text(type.label, maxLines = 2)
+                    Text(type.label, maxLines = 2, fontSize = 13.sp)
                 }
             }
         }
@@ -1362,12 +1462,15 @@ private fun NotesMenu(
     onBack: () -> Unit,
     onSubmit: () -> Unit,
 ) {
+    // verticalScroll keeps the form usable on landscape phones — without it the
+    // photo preview (180 dp) + multi-line notes + submit button crop off the bottom.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .padding(bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(top = 4.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
@@ -1376,7 +1479,7 @@ private fun NotesMenu(
             Column {
                 Text(
                     type.label,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
@@ -1392,8 +1495,9 @@ private fun NotesMenu(
             label         = { Text("Details / observations") },
             placeholder   = { Text("e.g. ~6 dismounts, moving NE") },
             modifier      = Modifier.fillMaxWidth(),
-            minLines      = 3,
-            maxLines      = 5,
+            singleLine    = false,
+            minLines      = 1,
+            maxLines      = 3,
         )
 
         // Photo section
@@ -1404,7 +1508,7 @@ private fun NotesMenu(
                     contentDescription = "Attached photo",
                     modifier           = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 180.dp)
+                        .heightIn(max = 140.dp)
                         .clip(RoundedCornerShape(8.dp)),
                     contentScale       = ContentScale.Crop,
                 )
@@ -1443,6 +1547,135 @@ private fun NotesMenu(
                        else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
         ) {
             Text(if (submitting) "Marking…" else "Mark on map")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DroneSpotMenu(
+    droneType:         String,
+    onDroneTypeChange: (String) -> Unit,
+    altitude:          String,
+    onAltitudeChange:  (String) -> Unit,
+    direction:         String,
+    onDirectionChange: (String) -> Unit,
+    speed:             String,
+    onSpeedChange:     (String) -> Unit,
+    behavior:          String,
+    onBehaviorChange:  (String) -> Unit,
+    notes:             String,
+    onNotesChange:     (String) -> Unit,
+    submitting:        Boolean,
+    error:             String?,
+    onBack:            () -> Unit,
+    onSubmit:          () -> Unit,
+) {
+    // verticalScroll so the form stays usable on a landscape phone where the
+    // sheet would otherwise crop the Notes field and Submit button off-screen.
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(top = 8.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("🛸  Drone Spot Report",
+                 style = MaterialTheme.typography.titleSmall,
+                 color = Color(0xFFA855F7))
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = onBack,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) { Text("Cancel") }
+        }
+
+        DroneDropdown(label = "Drone type", value = droneType,
+                      options = DRONE_TYPES, onSelect = onDroneTypeChange)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(
+                value = altitude, onValueChange = onAltitudeChange,
+                label = { Text("Alt (m)") },
+                singleLine = true, modifier = Modifier.weight(1f),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+            )
+            OutlinedTextField(
+                value = direction, onValueChange = onDirectionChange,
+                label = { Text("Dir (°)") },
+                singleLine = true, modifier = Modifier.weight(1f),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+            )
+            OutlinedTextField(
+                value = speed, onValueChange = onSpeedChange,
+                label = { Text("Spd (kt)") },
+                singleLine = true, modifier = Modifier.weight(1f),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+            )
+        }
+
+        DroneDropdown(label = "Behavior", value = behavior,
+                      options = DRONE_BEHAVIOURS, onSelect = onBehaviorChange)
+
+        OutlinedTextField(
+            value = notes, onValueChange = onNotesChange,
+            label = { Text("Notes") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = false, minLines = 1, maxLines = 3,
+        )
+
+        error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error,
+                 style = MaterialTheme.typography.bodySmall)
+        }
+
+        Button(
+            onClick  = onSubmit,
+            enabled  = !submitting,
+            modifier = Modifier.fillMaxWidth(),
+            colors   = ButtonDefaults.buttonColors(containerColor = Color(0xFF9333EA)),
+        ) {
+            Text(if (submitting) "Reporting…" else "Submit drone spot")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DroneDropdown(
+    label:    String,
+    value:    String,
+    options:  List<String>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded },
+    ) {
+        OutlinedTextField(
+            value = value, onValueChange = {}, readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { opt ->
+                DropdownMenuItem(
+                    text = { Text(opt) },
+                    onClick = { onSelect(opt); expanded = false },
+                )
+            }
         }
     }
 }

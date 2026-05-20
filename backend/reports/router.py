@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import ReportIn, ReportOut, ReportUpdate
+from backend.api.schemas import DroneSpotIn, ReportIn, ReportOut, ReportUpdate
 from backend.audit import log_event
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.reports.cbrn import CbrnParseError, parse_cbrn
 from backend.storage.database import get_db
-from backend.storage.models import Operator, Report
+from backend.storage.models import Alert, Operator, Report
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 CBRN_TYPES    = {f"CBRN_{i}" for i in range(1, 7)}
-VALID_TYPES   = {"CONTACT", "SPOT", "CASEVAC", "MEDEVAC", "CAS"} | CBRN_TYPES
+VALID_TYPES   = {"CONTACT", "SPOT", "CASEVAC", "MEDEVAC", "CAS", "DRONE_SPOT"} | CBRN_TYPES
 VALID_STATUSES = {"RECEIVED", "ACKNOWLEDGED", "PROCESSED", "REJECTED"}
 
 
@@ -115,6 +116,78 @@ async def import_cbrn(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "; ".join(errors))
     return created
+
+
+@router.post("/drone-spot", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
+async def submit_drone_spot(
+    spot:    DroneSpotIn,
+    db:      Session  = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> Report:
+    """Operator-submitted drone observation.
+
+    Stores a ``DRONE_SPOT`` report (for the log / map / history) **and** raises
+    a ``DRONE_SPOTTED`` alert (so the web alert handler picks it up with sound
+    and a desktop notification). The report payload carries the full structured
+    detail (drone type, altitude, direction, behavior, observer); the alert
+    carries the headline + location so the alerts feed stays scannable.
+    """
+    payload = {
+        "drone_type":        spot.drone_type or "UNKNOWN",
+        "latitude":          spot.latitude,
+        "longitude":         spot.longitude,
+        "altitude_m":        spot.altitude_m,
+        "direction_deg":     spot.direction_deg,
+        "speed_kts":         spot.speed_kts,
+        "behavior":          spot.behavior or "UNKNOWN",
+        "notes":             spot.notes,
+        "observer_id":       current.id,
+        "observer_callsign": current.callsign,
+        "dtg":               datetime.now(timezone.utc).isoformat(),
+    }
+    rep = Report(type="DRONE_SPOT", operator_id=current.id,
+                 payload=json.dumps(payload), status="RECEIVED")
+    db.add(rep); db.commit(); db.refresh(rep)
+
+    # Side-effect: raise an alert so the existing web/desktop alert subsystems
+    # (toast + sound + feed) light up automatically — no per-surface plumbing.
+    alert = Alert(type="DRONE_SPOTTED", operator_id=current.id,
+                  latitude=spot.latitude, longitude=spot.longitude,
+                  status="ACTIVE")
+    db.add(alert); db.commit(); db.refresh(alert)
+
+    # Broadcast both channels.
+    await broadcaster.broadcast({
+        "channel": "report", "event": "submitted",
+        "data": {
+            "id":          rep.id,
+            "type":        rep.type,
+            "status":      rep.status,
+            "operator_id": rep.operator_id,
+            "payload":     payload,
+        },
+    })
+    await broadcaster.broadcast({
+        "channel": "alert", "event": "triggered",
+        "data": {
+            "id":           alert.id,
+            "type":         alert.type,
+            "status":       alert.status,
+            "operator_id":  alert.operator_id,
+            "latitude":     alert.latitude,
+            "longitude":    alert.longitude,
+            "drone_type":   payload["drone_type"],
+            "behavior":     payload["behavior"],
+            "altitude_m":   payload["altitude_m"],
+            "direction_deg": payload["direction_deg"],
+            "observer_callsign": current.callsign,
+            "report_id":    rep.id,
+        },
+    })
+    log_event(db, "DRONE_SPOT_SUBMITTED", operator_id=current.id,
+              resource=f"report:{rep.id}",
+              detail=f"drone_type={payload['drone_type']} behavior={payload['behavior']} alert={alert.id}")
+    return rep
 
 
 @router.patch("/{report_id}", response_model=ReportOut)
