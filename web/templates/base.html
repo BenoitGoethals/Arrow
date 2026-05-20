@@ -6,9 +6,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     {% block head %}{% endblock %}
 <style>
-/* ── Floating stream window ───────────────────────────────────────────────── */
-#stream-float {
-    display: none;
+/* ── Floating stream windows (multi-window) ───────────────────────────────── */
+.stream-float-win {
     position: fixed;
     bottom: 80px; right: 20px;
     width: 360px; height: 230px;
@@ -17,14 +16,13 @@
     border: 1px solid #7c3aed;
     border-radius: 8px;
     box-shadow: 0 6px 28px rgba(0,0,0,.85);
-    z-index: 9990;
     overflow: hidden;
     resize: both;
+    display: flex;
     flex-direction: column;
 }
-#stream-float.open { display: flex; }
-#stream-float.minimised { height: 32px !important; resize: none; }
-#sf-bar {
+.stream-float-win.minimised { height: 32px !important; resize: none; }
+.sf-bar {
     display: flex; align-items: center; gap: 6px;
     padding: 4px 8px;
     background: #1a0d30;
@@ -32,17 +30,17 @@
     user-select: none;
     flex-shrink: 0;
 }
-#sf-bar .sf-live  { width:8px;height:8px;border-radius:50%;background:#22c55e;
+.sf-bar .sf-live  { width:8px;height:8px;border-radius:50%;background:#22c55e;
                     box-shadow:0 0 6px #22c55e;animation:sflive 1s infinite;flex-shrink:0; }
 @keyframes sflive { 0%,100%{opacity:1} 50%{opacity:.3} }
-#sf-bar .sf-call  { color:#a78bfa;font-weight:700;font-size:.82rem;flex:1; }
-#sf-bar .sf-fps   { font-size:.7rem;font-family:monospace;color:#475569; }
+.sf-bar .sf-call  { color:#a78bfa;font-weight:700;font-size:.82rem;flex:1; }
+.sf-bar .sf-fps   { font-size:.7rem;font-family:monospace;color:#475569; }
 .sf-btn { background:none;border:0;color:#64748b;cursor:pointer;
           font-size:.85rem;padding:0 3px;line-height:1; }
 .sf-btn:hover { color:#e2e8f0; }
-#sf-video-wrap { flex:1;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden; }
-#sf-img { max-width:100%;max-height:100%;object-fit:contain;display:block; }
-#sf-no-feed { color:#475569;font-size:.8rem;text-align:center; }
+.sf-video-wrap { flex:1;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden; }
+.sf-img { max-width:100%;max-height:100%;object-fit:contain;display:block; }
+.sf-no-feed { color:#475569;font-size:.8rem;text-align:center; }
 </style>
 </head>
 <body>
@@ -86,21 +84,7 @@
         }
     })();
 </script>
-<!-- ── Floating video stream window ──────────────────────────────────────── -->
-<div id="stream-float">
-    <div id="sf-bar">
-        <span class="sf-live"></span>
-        <span class="sf-call" id="sf-callsign">—</span>
-        <span class="sf-fps"  id="sf-fps">— fps</span>
-        <button class="sf-btn" onclick="sfMinimise()" title="Minimise">_</button>
-        <button class="sf-btn" onclick="sfFullscreen()" title="Fullscreen">⛶</button>
-        <button class="sf-btn" onclick="sfClose()" title="Close">✕</button>
-    </div>
-    <div id="sf-video-wrap">
-        <div id="sf-no-feed">Connecting…</div>
-        <img id="sf-img" alt="Stream" style="display:none"/>
-    </div>
-</div>
+<!-- Floating stream windows are created dynamically by sfOpen() -->
 
 <main>
     {% block content %}{% endblock %}
@@ -256,86 +240,13 @@
         autoDismissToast(toast, replyable ? 10 * 60 * 1000 : 30 * 1000);
     }
 
-    // ── Floating stream window ─────────────────────────────────────────────────
-    let _sfWs = null, _sfFrames = 0, _sfLastT = Date.now(), _sfFpsTick = null;
+    // ── Floating stream windows (multi-window) ────────────────────────────────
+    const _sfWins = new Map(); // streamId → { el, ws, fpsTick, ping }
+    let _sfZTop = 9990;
 
-    function sfOpen(id, callsign) {
-        if (_sfWs) { _sfWs.close(); _sfWs = null; }
-
-        const el = document.getElementById('stream-float');
-        el.classList.add('open');
-        el.classList.remove('minimised');
-        document.getElementById('sf-callsign').textContent = callsign;
-        document.getElementById('sf-no-feed').style.display = 'block';
-        document.getElementById('sf-img').style.display     = 'none';
-        document.getElementById('sf-fps').textContent       = '— fps';
-
-        const token = localStorage.getItem('arrow_token') || '';
-        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws')
-            + `/streams/${encodeURIComponent(id)}/consume?token=${encodeURIComponent(token)}`;
-        const ws = new WebSocket(wsUrl);
-        ws.binaryType = 'arraybuffer';
-        _sfWs = ws;
-        _sfFrames = 0; _sfLastT = Date.now();
-
-        const img = document.getElementById('sf-img');
-        ws.onmessage = e => {
-            if (typeof e.data === 'string') {
-                try { if (JSON.parse(e.data).event === 'ended') sfClose(); } catch(_){}
-                return;
-            }
-            const blob = new Blob([e.data], { type: 'image/jpeg' });
-            const prev = img.src;
-            img.src = URL.createObjectURL(blob);
-            if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-            document.getElementById('sf-no-feed').style.display = 'none';
-            img.style.display = 'block';
-            _sfFrames++;
-        };
-        ws.onclose = () => { if (_sfWs === ws) sfClose(); };
-
-        clearInterval(_sfFpsTick);
-        _sfFpsTick = setInterval(() => {
-            const now = Date.now();
-            const fps = Math.round(_sfFrames / ((now - _sfLastT) / 1000));
-            document.getElementById('sf-fps').textContent = fps + ' fps';
-            _sfFrames = 0; _sfLastT = now;
-        }, 1000);
-
-        // Keep-alive ping
-        const ping = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-            else clearInterval(ping);
-        }, 15000);
-    }
-    window.sfOpen = sfOpen;
-
-    window.sfClose = function() {
-        if (_sfWs) { _sfWs.close(); _sfWs = null; }
-        clearInterval(_sfFpsTick);
-        const el = document.getElementById('stream-float');
-        el.classList.remove('open', 'minimised');
-        const img = document.getElementById('sf-img');
-        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-        img.src = ''; img.style.display = 'none';
-    };
-
-    window.sfMinimise = function() {
-        document.getElementById('stream-float').classList.toggle('minimised');
-    };
-
-    window.sfFullscreen = function() {
-        const wrap = document.getElementById('sf-video-wrap');
-        if (wrap.requestFullscreen) wrap.requestFullscreen();
-        else if (wrap.webkitRequestFullscreen) wrap.webkitRequestFullscreen();
-    };
-
-    // Drag the floating window by its title bar
-    (function() {
-        const el  = document.getElementById('stream-float');
-        const bar = document.getElementById('sf-bar');
+    function makeDraggable(el, handle) {
         let dragging = false, ox = 0, oy = 0;
-        bar.addEventListener('mousedown', e => {
+        handle.addEventListener('mousedown', e => {
             dragging = true;
             const r = el.getBoundingClientRect();
             ox = e.clientX - r.left;
@@ -350,13 +261,111 @@
             el.style.bottom = 'auto';
         });
         document.addEventListener('mouseup', () => { dragging = false; });
-    })();
+    }
+
+    function sfFocus(id) {
+        const win = _sfWins.get(id);
+        if (win) win.el.style.zIndex = ++_sfZTop;
+    }
+
+    function sfOpen(id, callsign) {
+        if (_sfWins.has(id)) { sfFocus(id); return; }
+
+        const offset = _sfWins.size * 30;
+        const el = document.createElement('div');
+        el.className = 'stream-float-win';
+        el.style.cssText = `right:${20 + offset}px;bottom:${80 + offset}px;z-index:${++_sfZTop}`;
+        el.innerHTML = `
+            <div class="sf-bar">
+                <span class="sf-live"></span>
+                <span class="sf-call">${esc(callsign)}</span>
+                <span class="sf-fps">— fps</span>
+                <button class="sf-btn sf-btn-min" title="Minimise">_</button>
+                <button class="sf-btn sf-btn-full" title="Fullscreen">⛶</button>
+                <button class="sf-btn sf-btn-close" title="Close">✕</button>
+            </div>
+            <div class="sf-video-wrap">
+                <div class="sf-no-feed">Connecting…</div>
+                <img class="sf-img" alt="Stream" style="display:none"/>
+            </div>`;
+
+        el.querySelector('.sf-btn-min').addEventListener('click',   () => sfMinimise(id));
+        el.querySelector('.sf-btn-full').addEventListener('click',  () => sfFullscreen(id));
+        el.querySelector('.sf-btn-close').addEventListener('click', () => sfClose(id));
+        el.addEventListener('mousedown', () => sfFocus(id));
+        document.body.appendChild(el);
+        makeDraggable(el, el.querySelector('.sf-bar'));
+
+        const tok = localStorage.getItem('arrow_token') || '';
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws')
+            + `/streams/${encodeURIComponent(id)}/consume?token=${encodeURIComponent(tok)}`;
+        const ws = new WebSocket(wsUrl);
+        ws.binaryType = 'arraybuffer';
+
+        const img     = el.querySelector('.sf-img');
+        const noFeed  = el.querySelector('.sf-no-feed');
+        const fpsEl   = el.querySelector('.sf-fps');
+        let frames = 0, lastT = Date.now();
+
+        ws.onmessage = e => {
+            if (typeof e.data === 'string') {
+                try { if (JSON.parse(e.data).event === 'ended') sfClose(id); } catch(_){}
+                return;
+            }
+            const blob = new Blob([e.data], { type: 'image/jpeg' });
+            const prev = img.src;
+            img.src = URL.createObjectURL(blob);
+            if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+            noFeed.style.display = 'none';
+            img.style.display = 'block';
+            frames++;
+        };
+        ws.onclose = () => { if (_sfWins.has(id) && _sfWins.get(id).ws === ws) sfClose(id); };
+
+        const fpsTick = setInterval(() => {
+            const now = Date.now();
+            fpsEl.textContent = Math.round(frames / ((now - lastT) / 1000)) + ' fps';
+            frames = 0; lastT = now;
+        }, 1000);
+
+        const ping = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+            else clearInterval(ping);
+        }, 15000);
+
+        _sfWins.set(id, { el, ws, fpsTick, ping });
+    }
+    window.sfOpen = sfOpen;
+
+    window.sfClose = function(id) {
+        const win = _sfWins.get(id);
+        if (!win) return;
+        win.ws.close();
+        clearInterval(win.fpsTick);
+        clearInterval(win.ping);
+        const img = win.el.querySelector('.sf-img');
+        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+        win.el.remove();
+        _sfWins.delete(id);
+    };
+
+    window.sfMinimise = function(id) {
+        const win = _sfWins.get(id);
+        if (win) win.el.classList.toggle('minimised');
+    };
+
+    window.sfFullscreen = function(id) {
+        const win = _sfWins.get(id);
+        if (!win) return;
+        const wrap = win.el.querySelector('.sf-video-wrap');
+        if (wrap.requestFullscreen) wrap.requestFullscreen();
+        else if (wrap.webkitRequestFullscreen) wrap.webkitRequestFullscreen();
+    };
 
     function handleStreamEvent(evt) {
         const d = evt.data || {};
         console.log('[arrow] stream event', evt);
         if (evt.event === 'started') {
-            // Audio chime so the operator notices even if not looking at screen.
             try {
                 const ctx  = audioCtx();
                 const now  = ctx.currentTime;
@@ -375,18 +384,18 @@
             toast.className = 'arrow-toast';
             toast.style.borderLeftColor = '#7c3aed';
             toast.style.borderLeftWidth = '4px';
+            const streamId = d.id, streamCs = d.callsign;
             toast.innerHTML = `
                 <div class="arrow-toast-header">
                     <span class="arrow-toast-from">
                         <span style="color:#a78bfa">📡 LIVE STREAM</span>
-                        <em style="color:#7c3aed">${esc(d.callsign)}</em>
+                        <em style="color:#7c3aed">${esc(streamCs)}</em>
                     </span>
                     <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
                 </div>
-                <div class="arrow-toast-body">Tactical video stream — ${esc(d.callsign)}</div>
+                <div class="arrow-toast-body">Tactical video stream — ${esc(streamCs)}</div>
                 <div class="arrow-toast-reply" style="gap:.5rem">
-                    <button onclick="sfOpen('${d.id}','${esc(d.callsign)}');this.closest('.arrow-toast').remove()"
-                            class="arrow-toast-send"
+                    <button class="sf-toast-accept arrow-toast-send"
                             style="background:#7c3aed;border:0;cursor:pointer;font:inherit">
                         ▶ Accept &amp; View
                     </button>
@@ -396,6 +405,10 @@
                         Decline
                     </button>
                 </div>`;
+            toast.querySelector('.sf-toast-accept').addEventListener('click', () => {
+                sfOpen(streamId, streamCs);
+                toast.remove();
+            });
             document.getElementById('arrow-toast-container').appendChild(toast);
             autoDismissToast(toast, 30 * 1000);
 
@@ -405,7 +418,7 @@
                 n.onclick = () => { sfOpen(d.id, d.callsign); n.close(); };
             }
         } else if (evt.event === 'ended') {
-            if (_sfWs) sfClose();
+            if (d.id) sfClose(d.id);
         }
     }
 
