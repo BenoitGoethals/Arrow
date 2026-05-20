@@ -518,7 +518,39 @@
         } catch (_) {}
     }
 
-    // Handle TIC / MEDICAL / EVAC / LOST_COMMS alerts from WebSocket
+    // Distinctive "drone buzz" — modulated triangle wave with rapid 0.1s pulses.
+    // Sounds clearly different from the steady TIC alarm so operators can tell
+    // a drone-spotted alert from a contact alert without looking at the screen.
+    function playDroneBuzz(duration) {
+        try {
+            const ctx  = audioCtx();
+            const now  = ctx.currentTime;
+            const osc  = ctx.createOscillator();
+            const lfo  = ctx.createOscillator();   // modulator → "buzz" effect
+            const lfoGain = ctx.createGain();
+            const gain = ctx.createGain();
+
+            osc.type = 'triangle';
+            osc.frequency.value = 540;             // mid-band carrier
+            lfo.type = 'square';
+            lfo.frequency.value = 12;              // 12 Hz buzz
+            lfoGain.gain.value = 180;              // ± 180 Hz modulation depth
+            lfo.connect(lfoGain).connect(osc.frequency);
+            osc.connect(gain).connect(ctx.destination);
+
+            // Rapid 0.1s on / 0.05s off pulses for the whole duration
+            const pulse = 0.15, onRatio = 0.66;
+            gain.gain.setValueAtTime(0, now);
+            for (let t = 0; t < duration; t += pulse) {
+                gain.gain.setValueAtTime(0.5, now + t);
+                gain.gain.setValueAtTime(0,   now + t + pulse * onRatio);
+            }
+            osc.start(now); lfo.start(now);
+            osc.stop(now + duration); lfo.stop(now + duration);
+        } catch (_) {}
+    }
+
+    // Handle TIC / MEDICAL / EVAC / LOST_COMMS / DRONE_SPOTTED alerts from WebSocket
     function handleTacAlert(evt) {
         if (evt.event !== 'triggered') return;
         const d = evt.data || {};
@@ -526,50 +558,86 @@
 
         // Choose voice text by alert type
         const voiceMap = {
-            TIC:        'Contact! Troops in contact!',
-            MEDICAL:    'Medical emergency! Casevac required!',
-            EVAC:       'Evacuation! All units evacuate!',
-            LOST_COMMS: 'Lost communications! Check radio!',
+            TIC:            'Contact! Troops in contact!',
+            MEDICAL:        'Medical emergency! Casevac required!',
+            EVAC:           'Evacuation! All units evacuate!',
+            LOST_COMMS:     'Lost communications! Check radio!',
+            DRONE_SPOTTED:  'Drone spotted! Drone spotted!',
         };
         const voice = voiceMap[type] || `Alert: ${type}`;
 
-        // Play audio — TIC gets the full "Contact" alarm
-        triggerAudioAlertWithText('tic', voice);
+        // Drone gets the distinctive buzz; everything else gets the contact alarm.
+        if (type === 'DRONE_SPOTTED') {
+            triggerAudioAlertWithText('drone', voice);
+        } else {
+            triggerAudioAlertWithText('tic', voice);
+        }
 
-        // Show a persistent red toast
+        // Build the toast body. Drone alerts pull extra detail from the event.
+        let bodyHtml = `<div class="arrow-toast-body" style="color:#fca5a5">${esc(voice)}</div>`;
+        let headerColor = '#ef4444';
+        let headerIcon  = '🚨';
+        let headerLabel = `${type} ALERT`;
+
+        if (type === 'DRONE_SPOTTED') {
+            headerColor = '#c084fc';
+            headerIcon  = '🛸';
+            headerLabel = 'DRONE SPOTTED';
+            const fmt = v => (v === undefined || v === null || v === '') ? '—' : v;
+            const altTxt = (d.altitude_m   != null) ? `${Math.round(d.altitude_m)} m` : '—';
+            const dirTxt = (d.direction_deg!= null) ? `${Math.round(d.direction_deg)}°` : '—';
+            const locTxt = (d.latitude     != null && d.longitude != null)
+                ? `${Number(d.latitude).toFixed(4)}, ${Number(d.longitude).toFixed(4)}` : '—';
+            bodyHtml = `
+                <div class="arrow-toast-body" style="color:#e9d5ff;font-size:13px;line-height:1.45">
+                    <div><b>Type:</b> ${esc(fmt(d.drone_type))} &nbsp;·&nbsp; <b>Behavior:</b> ${esc(fmt(d.behavior))}</div>
+                    <div><b>Alt:</b> ${esc(altTxt)} &nbsp;·&nbsp; <b>Heading:</b> ${esc(dirTxt)}</div>
+                    <div><b>Pos:</b> ${esc(locTxt)}</div>
+                    ${d.observer_callsign ? `<div style="color:#a78bfa;margin-top:4px">spotted by ${esc(d.observer_callsign)}</div>` : ''}
+                </div>`;
+        }
+
         const toast = document.createElement('div');
         toast.className = 'arrow-toast';
-        toast.style.cssText += 'border-left-color:#dc2626;border-left-width:4px';
+        toast.style.cssText += `border-left-color:${headerColor};border-left-width:4px`;
         toast.innerHTML = `
             <div class="arrow-toast-header">
-                <span class="arrow-toast-from" style="color:#ef4444">
-                    🚨 ${type} ALERT
+                <span class="arrow-toast-from" style="color:${headerColor}">
+                    ${headerIcon} ${esc(headerLabel)}
                 </span>
                 <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
             </div>
-            <div class="arrow-toast-body" style="color:#fca5a5">${esc(voice)}</div>`;
+            ${bodyHtml}`;
         document.getElementById('arrow-toast-container').appendChild(toast);
         autoDismissToast(toast, 30 * 1000);
 
         if (Notification.permission === 'granted') {
-            new Notification('🚨 ' + type, { body: voice, tag: 'arrow-alert' });
+            const notifBody = (type === 'DRONE_SPOTTED')
+                ? `${d.drone_type || 'Unknown'} · ${d.behavior || ''} · alt ${d.altitude_m ?? '—'} m`
+                : voice;
+            new Notification(`${headerIcon} ${headerLabel}`, { body: notifBody, tag: 'arrow-alert' });
         }
     }
 
-    // Variant that takes explicit voice text
+    // Variant that takes explicit voice text + alert kind for distinct tones.
     function triggerAudioAlertWithText(type, text) {
-        const isFireMission = type === 'fire';
-        const freq     = isFireMission ? 880  : 1200;
-        const waveform = isFireMission ? 'sawtooth' : 'square';
         if ('speechSynthesis' in window) {
             speechSynthesis.cancel();
             const utt = new SpeechSynthesisUtterance(text);
-            utt.lang  = 'en-US'; utt.rate = 0.85; utt.volume = 1;
-            utt.onend = () => playAlarmTone(freq, waveform, 5);
+            utt.lang  = 'en-US'; utt.rate = 0.9; utt.volume = 1;
+            utt.onend = () => playAlertTone(type);
             speechSynthesis.speak(utt);
         } else {
-            playAlarmTone(freq, waveform, 5);
+            playAlertTone(type);
         }
+    }
+
+    function playAlertTone(type) {
+        if (type === 'drone') { playDroneBuzz(4); return; }
+        const isFireMission = type === 'fire';
+        const freq     = isFireMission ? 880  : 1200;
+        const waveform = isFireMission ? 'sawtooth' : 'square';
+        playAlarmTone(freq, waveform, 5);
     }
 
     function connectWS() {

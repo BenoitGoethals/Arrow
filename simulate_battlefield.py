@@ -25,13 +25,58 @@ Run:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
+
+
+# ── Persistent backend URL ───────────────────────────────────────────────────
+# Remember the last successfully-used URL so re-running the simulator without
+# --backend keeps hitting the same server.
+_CONFIG_DIR  = Path.home() / ".config" / "arrow"
+_CONFIG_FILE = _CONFIG_DIR / "simulator.json"
+
+
+def _load_saved_backend() -> str | None:
+    try:
+        return json.loads(_CONFIG_FILE.read_text()).get("backend") or None
+    except Exception:
+        return None
+
+
+def _save_backend(url: str) -> None:
+    try:
+        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        _CONFIG_FILE.write_text(json.dumps({"backend": url}, indent=2))
+    except Exception as e:  # non-fatal — log and continue
+        log.debug("could not save backend URL to %s: %s", _CONFIG_FILE, e)
+
+
+# ── Path-prefix handling ─────────────────────────────────────────────────────
+# Backends mounted under a sub-path (e.g. behind Caddy as /api) need that
+# prefix preserved on every request — httpx's default URL-joining strips it
+# when relative request paths start with "/".
+_path_prefix: str = ""
+
+
+def _split_base(url: str) -> tuple[str, str]:
+    """Return (origin, prefix) — origin is scheme://host[:port], prefix is the path."""
+    p = urlsplit(url)
+    return f"{p.scheme}://{p.netloc}", (p.path or "").rstrip("/")
+
+
+def _p(path: str) -> str:
+    """Prepend the saved path prefix to a request path unless it's already there."""
+    if not _path_prefix or path.startswith(_path_prefix + "/") or path == _path_prefix:
+        return path
+    return _path_prefix + path
 
 # ── Tactical graphic types the backend understands ───────────────────────────
 POINT_TG_TYPES = {"ATK_AXIS", "COUNTERATTACK", "AMBUSH", "DEF_AREA",
@@ -76,7 +121,7 @@ PLANS = [
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
 def login(client: httpx.Client, callsign: str, password: str) -> str:
-    r = client.post("/auth/login", data={"username": callsign, "password": password})
+    r = client.post(_p("/auth/login"), data={"username": callsign, "password": password})
     if r.status_code != 200:
         sys.exit(f"login failed ({r.status_code}): {r.text}")
     payload = r.json()
@@ -87,7 +132,7 @@ def login(client: httpx.Client, callsign: str, password: str) -> str:
 
 def post_object(client: httpx.Client, token: str, obj: dict) -> int:
     r = client.post(
-        "/tactical-objects", json=obj,
+        _p("/tactical-objects"), json=obj,
         headers={"Authorization": f"Bearer {token}"},
     )
     if r.status_code != 201:
@@ -98,11 +143,11 @@ def post_object(client: httpx.Client, token: str, obj: dict) -> int:
 
 def reset_tactical_graphics(client: httpx.Client, token: str) -> int:
     h = {"Authorization": f"Bearer {token}"}
-    listed = client.get("/tactical-objects", headers=h).json()
+    listed = client.get(_p("/tactical-objects"), headers=h).json()
     n = 0
     for o in listed:
         if o.get("type") in (ALL_TG_TYPES | NON_TG_TYPES):
-            r = client.delete(f"/tactical-objects/{o['id']}", headers=h)
+            r = client.delete(_p(f"/tactical-objects/{o['id']}"), headers=h)
             if r.status_code == 204:
                 n += 1
     return n
@@ -283,11 +328,18 @@ def build_company_plan(coy: str, obj_name: str, village: str,
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
+    # Priority: explicit ARROW_BACKEND_URL env var → last successful saved URL
+    # → localhost. --backend on the CLI always wins.
+    default_backend = (
+        os.environ.get("ARROW_BACKEND_URL")
+        or _load_saved_backend()
+        or "http://localhost:6001"
+    )
     parser = argparse.ArgumentParser(description="Arrow battlefield — Operation IRON ARDENNES")
     parser.add_argument("--backend",
-                        default=os.environ.get("ARROW_BACKEND_URL", "http://localhost:6001"),
-                        help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, "
-                             "then localhost. e.g. http://78.21.255.210:6001")
+                        default=default_backend,
+                        help=f"Backend base URL (defaults to last-used: {default_backend}). "
+                             "May include a path prefix, e.g. http://78.21.255.210:6200/api")
     parser.add_argument("--admin",    default="benoit", help="ADMIN callsign")
     parser.add_argument("--password", default="ranger14", help="ADMIN password")
     parser.add_argument("--reset",    action="store_true",
@@ -297,13 +349,15 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s  %(levelname)-7s %(message)s",
                         datefmt="%H:%M:%S")
-    global log
+    global log, _path_prefix
     log = logging.getLogger("battlefield")
 
-    with httpx.Client(base_url=args.backend.rstrip("/"), timeout=15.0) as client:
+    origin, _path_prefix = _split_base(args.backend)
+    with httpx.Client(base_url=origin, timeout=15.0) as client:
         log.info("Logging in as %s @ %s …", args.admin, args.backend)
         token = login(client, args.admin, args.password)
         log.info("Authenticated.")
+        _save_backend(args.backend)  # remember for next run
 
         if args.reset:
             n = reset_tactical_graphics(client, token)

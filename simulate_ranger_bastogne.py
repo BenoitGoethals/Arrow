@@ -82,11 +82,30 @@ def lerp(a: LL, b: LL, t: float) -> LL:
 # ── HTTP plumbing ────────────────────────────────────────────────────────────
 
 class Api:
+    """HTTP client that honours a path prefix on the base URL.
+
+    Pass any of these as ``base_url`` and the leading-slash paths in the
+    rest of the script keep working unchanged:
+        http://host:6001                  (direct backend)
+        http://host:6200/api              (Caddy with /api prefix)
+        https://arrow.example/v1          (custom mount)
+    """
+
     def __init__(self, base_url: str) -> None:
-        self.c = httpx.Client(base_url=base_url.rstrip("/"), timeout=30.0)
+        from urllib.parse import urlsplit
+        parts = urlsplit(base_url)
+        self._prefix = (parts.path or "").rstrip("/")          # "" or "/api"
+        origin = f"{parts.scheme}://{parts.netloc}"
+        self.c = httpx.Client(base_url=origin, timeout=30.0)
+
+    def _p(self, path: str) -> str:
+        """Prepend the path prefix if the request path doesn't already have it."""
+        if not self._prefix or path.startswith(self._prefix + "/") or path == self._prefix:
+            return path
+        return self._prefix + path
 
     def login(self, callsign: str, password: str) -> str:
-        r = self.c.post("/auth/login", data={"username": callsign, "password": password})
+        r = self.c.post(self._p("/auth/login"), data={"username": callsign, "password": password})
         if r.status_code != 200:
             sys.exit(f"login failed for {callsign} ({r.status_code}): {r.text}")
         p = r.json()
@@ -98,19 +117,19 @@ class Api:
         return {"Authorization": f"Bearer {tok}"}
 
     def get(self, path: str, tok: str) -> Any:
-        r = self.c.get(path, headers=self._hdr(tok))
+        r = self.c.get(self._p(path), headers=self._hdr(tok))
         r.raise_for_status()
         return r.json()
 
     def post(self, path: str, tok: str, body: dict) -> Any:
-        r = self.c.post(path, json=body, headers=self._hdr(tok))
+        r = self.c.post(self._p(path), json=body, headers=self._hdr(tok))
         if r.status_code >= 400:
             log.warning("POST %s -> %d: %s", path, r.status_code, r.text[:200])
             r.raise_for_status()
         return r.json() if r.content else {}
 
     def delete(self, path: str, tok: str) -> int:
-        r = self.c.delete(path, headers=self._hdr(tok))
+        r = self.c.delete(self._p(path), headers=self._hdr(tok))
         return r.status_code
 
 
@@ -251,7 +270,7 @@ def register_operators(api: Api, admin_tok: str, teams: dict[str, int],
             "team_id":  r.team_id,
         }
         resp = api.c.post(
-            "/auth/register/admin", json=body,
+            api._p("/auth/register/admin"), json=body,
             headers={"Authorization": f"Bearer {admin_tok}"},
         )
         if resp.status_code == 201:

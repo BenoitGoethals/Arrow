@@ -193,6 +193,22 @@ class ReportIn(BaseModel):
     payload: dict
 
 
+class DroneSpotIn(BaseModel):
+    """Operator-submitted drone observation (UAV / loitering munition / FPV / ISR).
+
+    Stored as a Report with `type="DRONE_SPOT"` and an Alert with
+    `type="DRONE_SPOTTED"` so map + alerts both pick it up.
+    """
+    latitude:      float
+    longitude:     float
+    drone_type:    str   = "UNKNOWN"   # QUADCOPTER | FIXED_WING | FPV | LOITERING_MUNITION | ISR | UNKNOWN | <model>
+    altitude_m:    float | None = None
+    direction_deg: float | None = None  # 0..359, bearing of travel
+    speed_kts:     float | None = None
+    behavior:      str   = "UNKNOWN"   # HOVERING | TRANSITING | ATTACK_RUN | RECONNAISSANCE | LOITERING | EVADING | UNKNOWN
+    notes:         str   = ""
+
+
 class ReportUpdate(BaseModel):
     status: str
     reviewer_note: str = ""
