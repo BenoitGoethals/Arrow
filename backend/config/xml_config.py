@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,7 +65,9 @@ def load_config(path: Path | str | None = None) -> AppConfig:
     if not p.exists():
         return AppConfig(
             server=ServerConfig(),
-            database=DatabaseConfig(),
+            database=DatabaseConfig(
+                url=os.environ.get("ARROW_DATABASE_URL", "sqlite:///./arrow.db"),
+            ),
             auth=AuthConfig(),
             operator=OperatorConfig(),
             maps=MapsConfig(),
@@ -80,7 +83,10 @@ def load_config(path: Path | str | None = None) -> AppConfig:
             port=int(_text(root, "server/port", "6001")),
         ),
         database=DatabaseConfig(
-            url=_text(root, "database/url", "sqlite:///./arrow.db"),
+            # Env var wins so Docker can point at the persisted /app/data path
+            # without forcing local-dev to change config.xml.
+            url=os.environ.get("ARROW_DATABASE_URL")
+                or _text(root, "database/url", "sqlite:///./arrow.db"),
         ),
         auth=AuthConfig(
             secret=_text(root, "auth/secret", "change-me-in-production"),

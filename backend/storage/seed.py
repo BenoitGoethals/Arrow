@@ -1,11 +1,13 @@
-"""Seed the database with the minimum named accounts required to boot.
+"""Seed the database with the named accounts required to boot.
 
-- 1 admin: benoit / ranger14
-- 1 battle captain: capt / ranger14
+- 1 admin:          benoit / ranger14
+- 1 battle captain: capt   / ranger14
+- 3 operators:      ops1 / ops2 / ops3   (all  / ranger14)
 
-Deliberately creates NO random operators — the simulator or admin panel
-should be used to build the full hierarchy and assign operators to teams.
-Idempotent — does nothing if any operators already exist.
+Idempotent at the row level: each callsign is upserted via `_ensure`, so re-runs
+on an existing database insert any missing accounts without disturbing the rest.
+The simulator or admin panel should still be used to build the full hierarchy
+and assign operators to teams.
 """
 
 from __future__ import annotations
@@ -18,14 +20,20 @@ from backend.storage.models import Operator
 
 DEFAULT_PASSWORD = "ranger14"
 
-ADMIN = {"callsign": "benoit", "rank": "OF-3", "role": "ADMIN"}
-CAPTAIN = {"callsign": "capt", "rank": "OF-2", "role": "BATTLE_CAPTAIN"}
+ADMIN   = {"callsign": "benoit", "rank": "OF-3", "role": "ADMIN"}
+CAPTAIN = {"callsign": "capt",   "rank": "OF-2", "role": "BATTLE_CAPTAIN"}
+OPS = [
+    {"callsign": "ops1", "rank": "OR-1", "role": "OPERATOR"},
+    {"callsign": "ops2", "rank": "OR-1", "role": "OPERATOR"},
+    {"callsign": "ops3", "rank": "OR-1", "role": "OPERATOR"},
+]
 
 
-def _ensure(db: Session, callsign: str, password: str, rank: str, role: str) -> Operator:
+def _ensure(db: Session, callsign: str, password: str, rank: str, role: str) -> tuple[Operator, bool]:
+    """Insert a default account if it isn't there yet. Returns (operator, created)."""
     existing = db.query(Operator).filter(Operator.callsign == callsign).first()
     if existing:
-        return existing
+        return existing, False
     op = Operator(
         callsign=callsign,
         rank=rank,
@@ -33,32 +41,34 @@ def _ensure(db: Session, callsign: str, password: str, rank: str, role: str) -> 
         password_hash=hash_password(password),
     )
     db.add(op)
-    return op
-
+    return op, True
 
 
 def seed(force: bool = False) -> dict[str, list[str]]:
-    """Run the seed. Returns the callsigns created/already-present.
+    """Run the seed. Returns the callsigns created vs. those already present.
 
-    Skips entirely when the DB already has operators, unless force=True.
+    `force` used to re-check an already-populated DB; that's now the default
+    behaviour — `_ensure` is per-row idempotent so calling this on every boot
+    is cheap and safe.
     """
+    _ = force  # accepted for backwards compatibility with existing CLI scripts
     created: list[str] = []
+    skipped: list[str] = []
 
     with SessionLocal() as db:
-        if not force and db.query(Operator).count() > 0:
-            existing = [c for (c,) in db.query(Operator.callsign).all()]
-            return {"created": [], "existing": existing}
-
-        admin = _ensure(db, ADMIN["callsign"], DEFAULT_PASSWORD, ADMIN["rank"], ADMIN["role"])
-        capt = _ensure(db, CAPTAIN["callsign"], DEFAULT_PASSWORD, CAPTAIN["rank"], CAPTAIN["role"])
-        if admin in db.new:
-            created.append(ADMIN["callsign"])
-        if capt in db.new:
-            created.append(CAPTAIN["callsign"])
+        for entry in [ADMIN, CAPTAIN, *OPS]:
+            _, was_created = _ensure(
+                db,
+                entry["callsign"],
+                DEFAULT_PASSWORD,
+                entry["rank"],
+                entry["role"],
+            )
+            (created if was_created else skipped).append(entry["callsign"])
 
         db.commit()
 
-    return {"created": created, "existing": []}
+    return {"created": created, "existing": skipped}
 
 
 def main() -> None:
@@ -67,7 +77,7 @@ def main() -> None:
     from backend.storage.database import init_db
 
     parser = argparse.ArgumentParser(description="Seed Arrow's operator table.")
-    parser.add_argument("--force", action="store_true", help="Seed even if operators already exist.")
+    parser.add_argument("--force", action="store_true", help="(legacy) re-checks all entries; default behaviour now.")
     args = parser.parse_args()
 
     init_db()
@@ -76,10 +86,10 @@ def main() -> None:
         print(f"Created {len(result['created'])} operator(s):")
         for c in result["created"]:
             print(f"  - {c}  (password: {DEFAULT_PASSWORD})")
-    else:
-        print("DB already populated; nothing to do (use --force to re-seed missing entries).")
-        if result["existing"]:
-            print(f"Existing operators: {', '.join(result['existing'])}")
+    if result["existing"]:
+        print(f"Already present: {', '.join(result['existing'])}")
+    if not result["created"] and not result["existing"]:
+        print("Nothing seeded — empty DB but no defaults defined.")
 
 
 if __name__ == "__main__":
