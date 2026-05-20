@@ -14,6 +14,11 @@ services:
       #                         # if unset, a random secret is auto-generated on first boot
       #                         # and saved to data/jwt_secret.key (persisted in arrow-data volume)
       ARROW_REDIS_URL: redis://redis:6379/0
+      # Persist the SQLite DB inside the named volume (same path the backup
+      # service reads from at /data/arrow.db) so it survives container recreation
+      # and the default seed (benoit/capt/ops1/ops2/ops3 — all password "ranger14")
+      # only runs on first boot.
+      ARROW_DATABASE_URL: sqlite:////app/data/arrow.db
       ARROW_JSON_LOGS: "1"
       # ARROW_PHOTO_KEY: <64-char hex>      # enable photo encryption at rest
     volumes:

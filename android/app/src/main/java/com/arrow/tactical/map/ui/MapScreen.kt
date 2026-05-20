@@ -196,6 +196,17 @@ fun MapScreen(
     val pendingScreenPosState = remember { mutableStateOf<Offset?>(null) }
     var pendingPoint     by pendingPointState
     var pendingScreenPos by pendingScreenPosState
+
+    // ── Measure tool state — when measureMode is on, taps drop points instead of
+    //    opening the radial menu. Two points = distance + azimuth shown in a panel.
+    val measureModeState   = remember { mutableStateOf(false) }
+    val measureFirstState  = remember { mutableStateOf<GeoPoint?>(null) }
+    val measureSecondState = remember { mutableStateOf<GeoPoint?>(null) }
+    var measureMode   by measureModeState
+    var measureFirst  by measureFirstState
+    var measureSecond by measureSecondState
+    val measurePolylineRef = remember { mutableStateOf<org.osmdroid.views.overlay.Polyline?>(null) }
+    val measureMarkersRef  = remember { mutableStateOf<List<Marker>>(emptyList()) }
     // null screenPos = bottom-sheet showing; non-null = radial menu showing
     var menuStep     by remember { mutableStateOf(MenuStep.ENEMY_TYPE) }
     var selectedType by remember { mutableStateOf(EnemyType.INFANTRY) }
@@ -585,6 +596,18 @@ fun MapScreen(
                     val events = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             p ?: return false
+                            // In measure mode, taps populate point 1 / point 2 instead of opening the radial menu.
+                            if (measureModeState.value) {
+                                when {
+                                    measureFirstState.value == null  -> measureFirstState.value = p
+                                    measureSecondState.value == null -> measureSecondState.value = p
+                                    else -> { // both set — start a fresh measurement from this tap
+                                        measureFirstState.value  = p
+                                        measureSecondState.value = null
+                                    }
+                                }
+                                return true
+                            }
                             // Capture both geo point and screen pixel position
                             val px = projection?.toPixels(p, android.graphics.Point())
                             pendingPointState.value     = p
@@ -923,6 +946,59 @@ fun MapScreen(
                  modifier = Modifier.size(20.dp))
         }
 
+        // ── Measure result panel — compact bottom-left chip; uses outer Box for align ──
+        if (measureMode) {
+            val cardMaxWidth = com.arrow.tactical.ui.byWindowDp(
+                compact  = 320.dp,
+                medium   = 380.dp,
+                expanded = 460.dp,
+            )
+            Card(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 12.dp, end = 12.dp)
+                    .widthIn(max = cardMaxWidth),
+                colors = CardDefaults.cardColors(containerColor = Color(0xCC101626)),
+            ) {
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    val first = measureFirst
+                    val second = measureSecond
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = when {
+                                first == null  -> "📏  Tap for P1"
+                                second == null -> "📏  Tap for P2"
+                                else -> {
+                                    val dist = com.arrow.tactical.map.GeoMath.distanceMeters(first, second)
+                                    val az   = com.arrow.tactical.map.GeoMath.bearingDegrees(first, second)
+                                    val mils = com.arrow.tactical.map.GeoMath.degreesToMils(az)
+                                    "📏  ${com.arrow.tactical.map.GeoMath.formatDistance(dist)}  ·  ${"%.0f".format(az)}° / ${"%.0f".format(mils)} mil"
+                                }
+                            },
+                            color = Color(0xFFFBBF24),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (first != null && second != null) {
+                            TextButton(
+                                onClick = { measureFirst = null; measureSecond = null },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            ) { Text("Reset", fontSize = 12.sp) }
+                        }
+                        TextButton(
+                            onClick = {
+                                measureMode = false
+                                measureFirst = null
+                                measureSecond = null
+                            },
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        ) { Text("Done", fontSize = 12.sp) }
+                    }
+                }
+            }
+        }
+
     } // Box
 
     // ── Radial menu — shown immediately on tap (pendingScreenPos != null) ────
@@ -955,9 +1031,53 @@ fun MapScreen(
                     pendingScreenPos = null          // dismiss radial, show notes sheet
                     menuStep = MenuStep.NOTES
                 },
+                RadialItem("📏", "Measure", Color(0xFF6366F1)) {
+                    // Use the tapped point as the starting end; user taps once more for the other end.
+                    measureMode   = true
+                    measureFirst  = point
+                    measureSecond = null
+                    pendingPoint     = null
+                    pendingScreenPos = null
+                },
             ),
             onDismiss = { pendingPoint = null; pendingScreenPos = null },
         )
+    }
+
+    // ── Measure tool: keep map overlays in sync with the two-point state ──────
+    LaunchedEffect(measureMode, measureFirst, measureSecond, mapRef.value) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        // Clear previous overlays first.
+        measureMarkersRef.value.forEach { map.overlays.remove(it) }
+        measurePolylineRef.value?.let { map.overlays.remove(it) }
+        measureMarkersRef.value = emptyList()
+        measurePolylineRef.value = null
+
+        if (measureMode) {
+            val markers = listOfNotNull(measureFirst, measureSecond).map { gp ->
+                Marker(map).apply {
+                    position = gp
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    title = "Measurement point"
+                }
+            }
+            markers.forEach { map.overlays.add(it) }
+            measureMarkersRef.value = markers
+
+            val a = measureFirst
+            val b = measureSecond
+            if (a != null && b != null) {
+                val line = org.osmdroid.views.overlay.Polyline(map).apply {
+                    setPoints(listOf(a, b))
+                    outlinePaint.color = android.graphics.Color.parseColor("#FBBF24")
+                    outlinePaint.strokeWidth = 6f
+                    outlinePaint.isAntiAlias = true
+                }
+                map.overlays.add(line)
+                measurePolylineRef.value = line
+            }
+        }
+        map.invalidate()
     }
 
     // ── Bottom sheets — shown after selecting from radial (pendingScreenPos == null) ─
