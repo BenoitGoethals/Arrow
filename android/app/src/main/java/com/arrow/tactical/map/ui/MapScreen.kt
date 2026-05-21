@@ -151,8 +151,11 @@ fun MapScreen(
     // when they need a clean view. A small handle at top-left brings it back.
     var topBarCollapsed by remember { mutableStateOf(false) }
 
-    // ── Saved overlays — per-device active set, mirrors web localStorage ──
-    var overlays      by remember { mutableStateOf<List<OverlayDto>>(emptyList()) }
+    // ── Saved overlays — per-device active set, mirrors web localStorage.
+    // Named ``savedOverlays`` (not ``overlays``) so it never shadows the
+    // ``MapView.overlays`` member when this lambda is captured into the
+    // AndroidView factory block.
+    var savedOverlays  by remember { mutableStateOf<List<OverlayDto>>(emptyList()) }
     var activeOverlays by remember { mutableStateOf<Set<Int>>(emptySet()) }
     val overlayReloadTrigger = remember { mutableStateOf(0) }
     var overlayPanelOpen by remember { mutableStateOf(false) }
@@ -397,7 +400,7 @@ fun MapScreen(
     // ── Overlays — same WS-triggered reload pattern ──
     LaunchedEffect(overlayReloadTrigger.value) {
         container.overlayRepository.list().onSuccess { fresh ->
-            overlays = fresh
+            savedOverlays = fresh
             // Drop active ids whose overlay no longer exists on the server.
             val freshIds = fresh.map { it.id }.toSet()
             if (activeOverlays.any { it !in freshIds }) {
@@ -563,7 +566,7 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, overlays, activeOverlays) {
+    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, savedOverlays, activeOverlays) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
@@ -593,7 +596,7 @@ fun MapScreen(
         // Saved-overlay filter: null = no filter (every object shown), set =
         // only objects whose id is in the union of the active overlays.
         val overlayAllowed: Set<Int>? = if (activeOverlays.isEmpty()) null
-        else overlays.asSequence()
+        else savedOverlays.asSequence()
             .filter { it.id in activeOverlays }
             .flatMap { it.objectIds.asSequence() }
             .toSet()
@@ -788,7 +791,9 @@ fun MapScreen(
                         }
                         override fun longPressHelper(p: GeoPoint?): Boolean = false
                     })
-                    overlays.add(0, events)
+                    // Explicit ``this.`` so any future outer-scope variable
+                    // named ``overlays`` can't shadow MapView's member list.
+                    this.overlays.add(0, events)
                 }.also { mapRef.value = it }
             },
             update = { /* markers managed by LaunchedEffect above */ },
@@ -1121,7 +1126,7 @@ fun MapScreen(
                     androidx.compose.animation.fadeOut(),
         ) {
             com.arrow.tactical.overlays.ui.OverlayMapPanel(
-                overlays  = overlays,
+                overlays  = savedOverlays,
                 activeIds = activeOverlays,
                 onToggle  = { id, on ->
                     activeOverlays = if (on) activeOverlays + id else activeOverlays - id
