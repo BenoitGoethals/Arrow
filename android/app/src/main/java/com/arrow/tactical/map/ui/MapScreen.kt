@@ -133,6 +133,14 @@ fun MapScreen(
     var kmlLayers       by remember { mutableStateOf<List<KmlLayerDto>>(emptyList()) }
     val kmlFeatures = remember { mutableStateMapOf<Int, List<KmlFeature>>() }
     val kmlOverlays = remember { mutableStateMapOf<Int, List<org.osmdroid.views.overlay.Overlay>>() }
+    // Per-device "locally hidden" set. The server's ``visible`` flag is shared
+    // across every client and only ADMIN/BC can change it; this lets every
+    // operator hide a layer on their own screen without needing the role to
+    // PATCH the server. A layer renders only when (visible && !locallyHidden).
+    // Held as an immutable Set in a single MutableState (Compose 1.7 lacks
+    // mutableStateSetOf — added in 1.8) so the render LaunchedEffect can key
+    // off it directly without copying.
+    var kmlLocallyHidden by remember { mutableStateOf<Set<Int>>(emptySet()) }
     // Trigger bumped by the shared WS handler when a kml-layer event arrives;
     // a LaunchedEffect below reloads the layer list whenever it changes.
     val kmlReloadTrigger = remember { mutableStateOf(0) }
@@ -379,10 +387,14 @@ fun MapScreen(
     }
 
     // Materialise visible layers onto the map. Re-runs whenever the catalogue
-    // changes; feature payloads are fetched lazily and cached in kmlFeatures.
-    LaunchedEffect(mapRef.value, kmlLayers) {
+    // changes OR the local-hide set changes; feature payloads are fetched
+    // lazily and cached in kmlFeatures so a hide/show flip is instant.
+    LaunchedEffect(mapRef.value, kmlLayers, kmlLocallyHidden) {
         val map = mapRef.value ?: return@LaunchedEffect
-        val visibleIds = kmlLayers.filter { it.visible }.map { it.id }.toSet()
+        val visibleIds = kmlLayers
+            .filter { it.visible && it.id !in kmlLocallyHidden }
+            .map { it.id }
+            .toSet()
 
         // Drop overlays for layers that disappeared or were hidden.
         val toRemove = kmlOverlays.keys.filterNot { it in visibleIds }
@@ -392,7 +404,7 @@ fun MapScreen(
 
         // Add overlays for newly-visible layers, fetching features on demand.
         for (layer in kmlLayers) {
-            if (!layer.visible) continue
+            if (!layer.visible || layer.id in kmlLocallyHidden) continue
             if (kmlOverlays.containsKey(layer.id)) continue
             val features = kmlFeatures.getOrPut(layer.id) {
                 container.kmlLayerRepository.features(layer.id).getOrDefault(emptyList())
@@ -962,7 +974,7 @@ fun MapScreen(
                 onToggleGfx     = { tgVisible = !tgVisible },
                 cbrnOn          = cbrnVisible,
                 onToggleCbrn    = { cbrnVisible = !cbrnVisible },
-                kmlActiveCount  = kmlLayers.count { it.visible },
+                kmlActiveCount  = kmlLayers.count { it.visible && it.id !in kmlLocallyHidden },
                 onToggleKml     = { kmlPanelOpen = !kmlPanelOpen },
                 onCollapseBar   = { topBarCollapsed = true },
                 isStreaming     = isStreaming,
@@ -1033,17 +1045,20 @@ fun MapScreen(
                     androidx.compose.animation.fadeOut(),
         ) {
             com.arrow.tactical.kml.ui.KmlMapPanel(
-                layers   = kmlLayers,
+                // Apply the local-hide set to the panel's view so the Switch
+                // reflects what the operator actually sees on the map.
+                layers   = kmlLayers.map { l ->
+                    if (l.id in kmlLocallyHidden) l.copy(visible = false) else l
+                },
                 onClose  = { kmlPanelOpen = false },
                 onToggle = { id, wantOn ->
-                    val result = container.kmlLayerRepository.setVisible(id, wantOn)
-                    // Optimistic local update — the WS broadcast will reconcile.
-                    if (result.isSuccess) {
-                        kmlLayers = kmlLayers.map {
-                            if (it.id == id) it.copy(visible = wantOn) else it
-                        }
-                    }
-                    result
+                    // Local-only hide: no server call, so every role can do it
+                    // and the toggle is instant. The server's ``visible`` flag
+                    // stays untouched and remains the source of truth for the
+                    // "shared" default.
+                    kmlLocallyHidden = if (wantOn) kmlLocallyHidden - id
+                                       else        kmlLocallyHidden + id
+                    Result.success(Unit)
                 },
             )
         }

@@ -48,6 +48,15 @@ fun buildKmlOverlays(map: MapView, features: List<KmlFeature>): List<Overlay> {
                     // a custom drawable per layer would need style→bitmap caching.
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     relatedObject = KML_OVERLAY_TAG
+                    // CRITICAL: don't swallow the tap. A KML marker that consumes
+                    // taps blocks the MapEventsOverlay's singleTapConfirmed —
+                    // which means the operator's radial menu never opens when
+                    // they tap near a placemark. Returning false from the click
+                    // listener lets the tap propagate; the info window is then
+                    // suppressed too, which is fine because the operator can
+                    // still long-press the marker to inspect it via OSMdroid's
+                    // standard handling, and the radial menu wins on a tap.
+                    setOnMarkerClickListener { _, _ -> false }
                 }
                 out += marker
             }
