@@ -159,6 +159,14 @@ fun MapScreen(
     var activeOverlays by remember { mutableStateOf<Set<Int>>(emptySet()) }
     val overlayReloadTrigger = remember { mutableStateOf(0) }
     var overlayPanelOpen by remember { mutableStateOf(false) }
+
+    // ── Alert markers — built when an "alert/triggered" WS event arrives, the
+    // map auto-pans to the contact and a snackbar shows the MGRS so the BC
+    // can read it on the radio. Cleared when the alert is acknowledged.
+    val alertMarkers = remember {
+        mutableStateMapOf<Int, org.osmdroid.views.overlay.Marker>()
+    }
+    val snackbarHostState = remember { SnackbarHostState() }
     // Holds the currently-painted MBTiles overlay so we can remove it on
     // basemap switch without disturbing other map overlays (markers, events).
     val mbtilesOverlay = remember { mutableStateOf<TilesOverlay?>(null) }
@@ -377,6 +385,14 @@ fun MapScreen(
                             }
                         "kml-layer"       -> kmlReloadTrigger.value++
                         "overlay"         -> overlayReloadTrigger.value++
+                        "alert"           -> handleAlertWsEvent(
+                            evt,
+                            map = mapRef.value,
+                            ops = operators,
+                            alertMarkers = alertMarkers,
+                            snackbarHostState = snackbarHostState,
+                            context = context,
+                        )
                         else -> {}
                     }
                 }
@@ -576,8 +592,11 @@ fun MapScreen(
         // sits on a different overlay slot and isn't a Marker/Polyline/Polygon.
         // KML overlays are tagged via [com.arrow.tactical.kml.isKmlOverlay] so
         // they survive this wipe — their lifecycle is managed independently.
+        // Alert markers (TIC, MEDICAL, …) are tagged via AlertMarker.isAlertMarker
+        // for the same reason; they live until the alert is acknowledged.
         map.overlays.removeAll {
-            !com.arrow.tactical.kml.isKmlOverlay(it) && (
+            !com.arrow.tactical.kml.isKmlOverlay(it) &&
+            !com.arrow.tactical.alerts.AlertMarker.isAlertMarker(it) && (
                 it is Marker || it is org.osmdroid.views.overlay.Polyline ||
                 it is org.osmdroid.views.overlay.Polygon
             )
@@ -1371,6 +1390,15 @@ fun MapScreen(
                 }
             }
         }
+
+        // ── Alert snackbar — sits at the bottom so it doesn't cover the
+        // chrome. Triggered from handleAlertWsEvent on WS "alert/triggered".
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier  = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp),
+        )
 
     } // Box
 

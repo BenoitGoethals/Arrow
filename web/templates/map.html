@@ -2709,6 +2709,93 @@
         }
     });
 
+    // ── Alert handler — pan/zoom to contact, show MGRS in popup, pulse marker
+    // ───────────────────────────────────────────────────────────────────────
+    // TIC ("Troops in Contact") is the loud one: red pulsing ring, force-zoom,
+    // and the MGRS grid in the popup so the BC can call it in on the radio
+    // without re-deriving it. Other alert types (MEDICAL/EVAC/LOST_COMMS) get
+    // the same treatment but with their own colour so they're distinguishable
+    // at a glance. ``state.alertLayers`` keeps the markers around so they
+    // dismiss when the alert is acknowledged.
+    if (!state.alertLayers) state.alertLayers = new Map();    // id -> LayerGroup
+    const ALERT_COLOURS = {
+        TIC:         '#dc2626',
+        MEDICAL:     '#16a34a',
+        EVAC:        '#f59e0b',
+        LOST_COMMS:  '#6366f1',
+    };
+
+    function handleAlertTriggered(d) {
+        if (d.latitude == null || d.longitude == null) return;
+        // Drop a previous marker for the same alert id, if any (re-broadcast).
+        const prev = state.alertLayers.get(d.id);
+        if (prev) { map.removeLayer(prev); state.alertLayers.delete(d.id); }
+
+        const colour = ALERT_COLOURS[d.type] || '#dc2626';
+        const grid   = toMgrs(d.latitude, d.longitude);
+        const op     = state.operators.get(d.operator_id);
+        const cs     = op ? op.callsign : `op#${d.operator_id}`;
+        const popup  =
+            `<div style="font-family:monospace">` +
+            `<div style="color:${colour}; font-weight:700; font-size:1.05rem">⚠ ${d.type}</div>` +
+            `<div>From: <b>${cs.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</b></div>` +
+            `<div>Grid: <b>${grid}</b></div>` +
+            `<div style="color:#94a3b8">Lat ${d.latitude.toFixed(5)}, Lon ${d.longitude.toFixed(5)}</div>` +
+            `</div>`;
+
+        // Marker stack: a tight target dot + an animated pulsing ring so it
+        // catches the eye even when the operator is panning across the map.
+        const grp = L.layerGroup();
+        L.circleMarker([d.latitude, d.longitude], {
+            color: colour, fillColor: colour, fillOpacity: 0.9,
+            radius: 6, weight: 2,
+        }).addTo(grp);
+        const ring = L.circleMarker([d.latitude, d.longitude], {
+            color: colour, fill: false, radius: 14, weight: 3, opacity: 1,
+        }).addTo(grp);
+        // Manual pulse — Leaflet doesn't ship an animated marker, so step the
+        // radius/opacity on a 700 ms interval and let the group reference hold
+        // the timer for cleanup. 24 frames over 6 s is enough for the BC to
+        // visually locate the contact without becoming a perma-distraction.
+        let frame = 0;
+        const timer = setInterval(() => {
+            frame++;
+            const phase = frame % 8;
+            ring.setRadius(14 + phase * 2);
+            ring.setStyle({ opacity: 1 - phase / 8 });
+            if (frame >= 24) {
+                clearInterval(timer);
+                ring.setStyle({ radius: 14, opacity: 0.7 });
+            }
+        }, 220);
+        grp._arrowPulse = timer;     // remembered so removeAlert can clear it
+
+        grp.addTo(map);
+        grp.bindPopup(popup, { autoPan: true });
+        state.alertLayers.set(d.id, grp);
+
+        // Force the camera to the contact. Skip the auto-fit suppression so
+        // the BC always sees it even if they were panning. Use a hard zoom of
+        // 16 — close enough to pick out terrain but still shows neighbouring
+        // grid squares for context.
+        map.setView([d.latitude, d.longitude], 16, { animate: true });
+        grp.openPopup();
+
+        // Optional desktop notification — only when the page is backgrounded.
+        if (document.visibilityState !== 'visible' && 'Notification' in window
+            && Notification.permission === 'granted') {
+            new Notification(`${d.type} alert — ${cs}`, { body: `Grid: ${grid}` });
+        }
+    }
+
+    function removeAlertLayer(id) {
+        const lyr = state.alertLayers.get(id);
+        if (!lyr) return;
+        if (lyr._arrowPulse) clearInterval(lyr._arrowPulse);
+        map.removeLayer(lyr);
+        state.alertLayers.delete(id);
+    }
+
     function handleKmlWsEvent(msg) {
         if (msg.event === 'created' || msg.event === 'updated') {
             addKmlLayer(msg.data);
@@ -2736,12 +2823,9 @@
             } else if (msg.channel === 'tactical-object') {
                 if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); refreshEnemies(); }
                 else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); refreshEnemies(); }
-            } else if (msg.channel === 'alert' && msg.event === 'triggered') {
-                const d = msg.data;
-                if (d.latitude != null) {
-                    L.circleMarker([d.latitude, d.longitude], { color: 'red', radius: 14, weight: 3 })
-                        .addTo(map).bindPopup(`<b>ALERT: ${d.type}</b>`).openPopup();
-                }
+            } else if (msg.channel === 'alert') {
+                if (msg.event === 'triggered') handleAlertTriggered(msg.data);
+                else if (msg.event === 'ack')  removeAlertLayer(msg.data.id);
             } else if (msg.channel === 'presence') {
                 loadHierarchy();
             } else if (msg.channel === 'report') {
