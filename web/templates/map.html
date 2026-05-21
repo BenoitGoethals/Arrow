@@ -597,12 +597,39 @@
         }
     }
 
-    function objectiveIcon() {
+    // NATO-style OBJ control measure — green-outlined rectangle with corner
+    // ticks and "OBJ <NAME>" inside, anchored on a small pin tip. Replaces
+    // the previous cartoon 🚩 with a militarily readable symbol. `obj.notes`
+    // is the standard web format "TITLE\ndescription" — the first line is
+    // taken as the marker label.
+    function objectiveIcon(obj) {
+        const notes = (obj && obj.notes) || '';
+        const nl    = notes.indexOf('\n');
+        let label   = (nl >= 0 ? notes.substring(0, nl) : notes).trim() || 'OBJ';
+        // Avoid "OBJ OBJ X" if the title already carries the prefix.
+        label = label.replace(/^OBJ\s+/i, '').toUpperCase();
+        const display = label.length > 14 ? label.slice(0, 14) + '…' : label;
+        const w = Math.max(56, 22 + display.length * 7);
+        const h = 26;
+        const svg =
+            `<svg width="${w}" height="${h + 6}" xmlns="http://www.w3.org/2000/svg" overflow="visible">` +
+              `<path d="M${w/2-5},${h} L${w/2},${h+6} L${w/2+5},${h} Z" ` +
+                    `fill="#22c55e" stroke="#0a0a0a" stroke-width="0.8"/>` +
+              `<rect x="1.5" y="1.5" width="${w-3}" height="${h-3}" ` +
+                    `fill="rgba(20,83,45,0.85)" stroke="#22c55e" stroke-width="1.6"/>` +
+              `<line x1="1.5" y1="6"   x2="6"     y2="6"   stroke="#22c55e" stroke-width="1.6"/>` +
+              `<line x1="${w-1.5}" y1="6"   x2="${w-6}" y2="6"   stroke="#22c55e" stroke-width="1.6"/>` +
+              `<line x1="1.5" y1="${h-6}" x2="6"     y2="${h-6}" stroke="#22c55e" stroke-width="1.6"/>` +
+              `<line x1="${w-1.5}" y1="${h-6}" x2="${w-6}" y2="${h-6}" stroke="#22c55e" stroke-width="1.6"/>` +
+              `<text x="${w/2}" y="${h/2 + 4}" text-anchor="middle" ` +
+                    `font-family="Arial,sans-serif" font-size="11" font-weight="700" ` +
+                    `fill="#bbf7d0">OBJ ${display}</text>` +
+            `</svg>`;
         return L.divIcon({
-            className: 'objective-icon',
-            html: '🚩',
-            iconSize:   [28, 28],
-            iconAnchor: [6, 26],
+            className:  'objective-icon',
+            html:       svg,
+            iconSize:   [w, h + 6],
+            iconAnchor: [w / 2, h + 6],
         });
     }
 
@@ -803,7 +830,7 @@
         if (existing) { map.removeLayer(existing); state.markers.delete(key); }
         if (isTgType(obj.type)) { placeGraphic(obj); return; }
         const isObjective = obj.type === 'OBJECTIVE';
-        const icon = isObjective ? objectiveIcon() : enemyIcon(obj);
+        const icon = isObjective ? objectiveIcon(obj) : enemyIcon(obj);
         const m = L.marker([obj.latitude, obj.longitude], { icon }).addTo(map);
         // Photo endpoint requires auth → use data-photo-id placeholder, swapped to a
         // blob URL by arrowApplyPhotos() on popup open (see base.html).

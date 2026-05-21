@@ -26,8 +26,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Path
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
@@ -126,6 +129,11 @@ fun MapScreen(
     var isStreaming  by remember {
         mutableStateOf(com.arrow.tactical.stream.CameraStreamService.isStreaming.get())
     }
+    // Map rotation state — mapOrientation mirrors osmdroid's MapView.mapOrientation
+    // so the compass arrow can render the current heading. `northLocked` forces the
+    // map to stay north-up and disables the rotation-gesture overlay.
+    var mapOrientation by remember { mutableStateOf(0f) }
+    var northLocked    by remember { mutableStateOf(true) }
 
     // Suspend function to launch the stream service, called after permission grant.
     // Each early-return path emits a logcat E line + a Toast so the failure mode is
@@ -344,6 +352,36 @@ fun MapScreen(
     // mapRef lets LaunchedEffect imperatively update overlays outside AndroidView.update,
     // which avoids Compose's state-tracking limitations for non-composable lambdas.
     val mapRef = remember { mutableStateOf<MapView?>(null) }
+
+    // Sync the north-lock toggle with osmdroid: when locked we snap mapOrientation
+    // to 0 and strip the rotation-gesture overlay; when unlocked we install it so
+    // the user can rotate the map with a two-finger twist.
+    LaunchedEffect(mapRef.value, northLocked) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        val rotCls = org.osmdroid.views.overlay.gestures.RotationGestureOverlay::class.java
+        if (northLocked) {
+            map.mapOrientation = 0f
+            map.overlays.removeAll { rotCls.isInstance(it) }
+            mapOrientation = 0f
+        } else if (map.overlays.none { rotCls.isInstance(it) }) {
+            val rot = org.osmdroid.views.overlay.gestures.RotationGestureOverlay(map)
+            rot.isEnabled = true
+            map.overlays.add(rot)
+        }
+        map.postInvalidate()
+    }
+
+    // Poll the live map orientation into Compose state so the compass needle
+    // tracks two-finger rotation gestures. Cheap (one float read) and stops as
+    // soon as the composition leaves.
+    LaunchedEffect(mapRef.value) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        while (true) {
+            val cur = map.mapOrientation
+            if (cur != mapOrientation) mapOrientation = cur
+            delay(100)
+        }
+    }
 
     // Load the list of base-map sources once. The selected one is remembered
     // across app launches via SettingsRepository; backend default ("osm" or the
@@ -933,6 +971,88 @@ fun MapScreen(
                         )
                     }
                 }
+            }
+        }
+
+        // ── Compass + north-lock — top-left, below the SitaWare chrome ───
+        // The needle always points to true North on the ground: its rendering
+        // is rotated by -mapOrientation so it cancels out the map rotation.
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 12.dp, top = 92.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xE50F2540))
+                    .border(1.dp, Color(0xFF334155), CircleShape)
+                    .clickable {
+                        mapRef.value?.let {
+                            it.mapOrientation = 0f
+                            it.postInvalidate()
+                        }
+                        mapOrientation = 0f
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .rotate(-mapOrientation),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Canvas(modifier = Modifier.size(40.dp)) {
+                        val w = size.width
+                        val h = size.height
+                        val north = Path().apply {
+                            moveTo(w / 2f, h * 0.08f)
+                            lineTo(w * 0.62f, h * 0.50f)
+                            lineTo(w / 2f, h * 0.42f)
+                            lineTo(w * 0.38f, h * 0.50f)
+                            close()
+                        }
+                        drawPath(north, Color(0xFFEF4444))
+                        val south = Path().apply {
+                            moveTo(w / 2f, h * 0.92f)
+                            lineTo(w * 0.62f, h * 0.50f)
+                            lineTo(w / 2f, h * 0.58f)
+                            lineTo(w * 0.38f, h * 0.50f)
+                            close()
+                        }
+                        drawPath(south, Color(0xFFCBD5E1))
+                    }
+                    Text(
+                        text = "N",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (northLocked) Color(0xFF1E3A2F) else Color(0xE50F2540))
+                    .border(
+                        1.dp,
+                        if (northLocked) Color(0xFF34D399) else Color(0xFF334155),
+                        CircleShape,
+                    )
+                    .clickable { northLocked = !northLocked },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "N⇧",
+                    color = if (northLocked) Color(0xFF34D399) else Color(0xFFCBD5E1),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
 

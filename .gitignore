@@ -200,3 +200,6 @@ google-services.json
 # ./maps/, too large to track in git. Use Git LFS or external storage if
 # you want to version them.
 maps/*.mbtiles
+
+# Simulator local JWT cache — never commit live tokens.
+.arrow_sim_tokens.json
