@@ -62,6 +62,9 @@ class PageService:
     def opord_edit(self, opord_id: int) -> PageView:
         return PageView("opord_editor.html", {"opord_id": opord_id})
 
+    def tracks(self) -> PageView:
+        return PageView("tracks.html")
+
     def login(self) -> PageView:
         return PageView("login.html")
 
