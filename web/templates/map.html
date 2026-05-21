@@ -277,6 +277,7 @@
                 <button class="overlay-btn" id="tg-fit" title="Fit map to tactical graphics">🎯 Fit</button>
                 <button class="overlay-btn" id="kml-toggle" title="KML layers">📂 KML</button>
                 <button class="overlay-btn" id="ov-toggle" title="Saved overlays">📚 Overlays</button>
+                <button class="overlay-btn" id="goto-toggle" title="Go to location">🔍 Go To</button>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
             <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -316,6 +317,34 @@
                 <div style="margin-top:8px; color:#64748b; font-size:0.72rem; border-top:1px solid #2a3142; padding-top:6px">
                     When no overlay is active, every tactical object is shown. Activating one or more filters to their union.
                 </div>
+            </div>
+            <!-- ── Go To panel ─────────────────────────────────────────────── -->
+            <div id="goto-panel" style="display:none; position:absolute; top:60px; right:12px;
+                                         background:#0e1217; border:1px solid #2a3142;
+                                         border-radius:6px; padding:12px; z-index:1100;
+                                         min-width:320px; max-width:380px; color:#e2e8f0;
+                                         font-size:0.85rem; box-shadow:0 4px 14px rgba(0,0,0,0.5)">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px">
+                    <strong style="flex:1">Go To Location</strong>
+                    <button id="goto-close" class="overlay-btn" style="padding:0 8px">×</button>
+                </div>
+                <div style="color:#64748b; font-size:0.78rem; margin-bottom:8px">
+                    Enter MGRS, lat/lon, or address
+                </div>
+                <div style="display:flex; gap:6px; margin-bottom:6px">
+                    <input id="goto-input" type="text"
+                           placeholder="31UED48251223  ·  50.85, 4.35  ·  Brussels"
+                           style="flex:1; background:#0d1117; border:1px solid #2a3142;
+                                  border-radius:4px; color:#e2e8f0;
+                                  padding:0.35rem 0.6rem; font-size:0.82rem;
+                                  font-family:monospace; outline:none;"
+                           onfocus="this.style.borderColor='#6ee7b7'"
+                           onblur="this.style.borderColor='#2a3142'">
+                    <button id="goto-btn" class="overlay-btn" style="white-space:nowrap; padding:0.35rem 0.7rem">
+                        Go
+                    </button>
+                </div>
+                <div id="goto-status" style="font-size:0.78rem; color:#94a3b8; min-height:1.2em"></div>
             </div>
             <!-- ── New-overlay modal — name + multi-select tactical objects ── -->
             <div id="ov-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55);
@@ -2676,6 +2705,170 @@
     });
     document.getElementById('kml-close').addEventListener('click', () => {
         kml.panel.style.display = 'none';
+    });
+
+    // ── Go To — MGRS / lat,lon / address ──────────────────────────────────
+    // WGS-84 constants (mirrors MgrsConverter.kt)
+    const MGRS_A    = 6378137.0;
+    const MGRS_F    = 1.0 / 298.257223563;
+    const MGRS_E2   = 2 * MGRS_F - MGRS_F * MGRS_F;
+    const MGRS_E4   = MGRS_E2 * MGRS_E2;
+    const MGRS_E6   = MGRS_E4 * MGRS_E2;
+    const MGRS_EP2  = MGRS_E2 / (1.0 - MGRS_E2);
+    const MGRS_K0   = 0.9996;
+    const MGRS_BANDS    = 'CDEFGHJKLMNPQRSTUVWX';
+    const MGRS_SET_COLS = ['ABCDEFGH', 'JKLMNPQR', 'STUVWXYZ'];
+    const MGRS_ROW_ODD  = 'ABCDEFGHJKLMNPQRSTUV';
+    const MGRS_ROW_EVEN = 'FGHJKLMNPQRSTUVABCDE';
+
+    function mgrsBandNorthing(band) {
+        const idx = MGRS_BANDS.indexOf(band);
+        const minLat = idx * 8.0 - 80.0;
+        return minLat >= 0 ? minLat * 110574 : minLat * 110574 + 10000000;
+    }
+
+    function mgrsUtmToLatLon(zone, northern, e, n) {
+        const x    = e - 500000.0;
+        const y    = northern ? n : n - 10000000.0;
+        const lon0 = ((zone - 1) * 6 - 180 + 3) * Math.PI / 180;
+        const e1   = (1 - Math.sqrt(1 - MGRS_E2)) / (1 + Math.sqrt(1 - MGRS_E2));
+        const m    = y / MGRS_K0;
+        const mu   = m / (MGRS_A * (1 - MGRS_E2/4 - 3*MGRS_E4/64 - 5*MGRS_E6/256));
+        const latR = mu
+            + (3*e1/2    - 27*e1**3/32) * Math.sin(2*mu)
+            + (21*e1**2/16 - 55*e1**4/32) * Math.sin(4*mu)
+            + (151*e1**3/96)             * Math.sin(6*mu)
+            + (1097*e1**4/512)           * Math.sin(8*mu);
+        const n1 = MGRS_A / Math.sqrt(1 - MGRS_E2 * Math.sin(latR)**2);
+        const t1 = Math.tan(latR)**2;
+        const c1 = MGRS_EP2 * Math.cos(latR)**2;
+        const r1 = MGRS_A * (1 - MGRS_E2) / (1 - MGRS_E2 * Math.sin(latR)**2)**1.5;
+        const d  = x / (n1 * MGRS_K0);
+        const lat = latR - (n1 * Math.tan(latR) / r1) * (
+            d**2/2
+            - (5 + 3*t1 + 10*c1 - 4*c1**2 - 9*MGRS_EP2) * d**4/24
+            + (61 + 90*t1 + 298*c1 + 45*t1**2 - 252*MGRS_EP2 - 3*c1**2) * d**6/720
+        );
+        const lon = lon0 + (
+            d - (1 + 2*t1 + c1) * d**3/6
+            + (5 - 2*c1 + 28*t1 - 3*c1**2 + 8*MGRS_EP2 + 24*t1**2) * d**5/120
+        ) / Math.cos(latR);
+        return [lat * 180/Math.PI, lon * 180/Math.PI];
+    }
+
+    function decodeMgrs(str) {
+        try {
+            const s = str.replace(/\s/g, '').toUpperCase();
+            let i = 0;
+            while (i < s.length && /\d/.test(s[i])) i++;
+            if (i === 0 || i > 2) return null;
+            const zone = parseInt(s.slice(0, i), 10);
+            const band = s[i++];
+            if (!MGRS_BANDS.includes(band)) return null;
+            const sq1 = s[i++]; const sq2 = s[i++];
+            const half = Math.floor((s.length - i) / 2);
+            if (half < 1 || half > 5) return null;
+            const eStr = s.slice(i, i + half).padEnd(5, '0');
+            const nStr = s.slice(i + half).padEnd(5, '0');
+            const set    = (zone - 1) % 3;
+            const colIdx = MGRS_SET_COLS[set].indexOf(sq1);
+            if (colIdx < 0) return null;
+            const e100 = (colIdx + 1) * 100000.0;
+            const rowLetters = (zone % 2 === 1) ? MGRS_ROW_ODD : MGRS_ROW_EVEN;
+            const rowIdx = rowLetters.indexOf(sq2);
+            if (rowIdx < 0) return null;
+            let n100 = rowIdx * 100000.0;
+            const approxN = mgrsBandNorthing(band);
+            while (n100 < approxN - 100000) n100 += 2000000.0;
+            if (n100 - approxN > 1000000) n100 -= 2000000.0;
+            return mgrsUtmToLatLon(zone, band >= 'N', e100 + parseFloat(eStr), n100 + parseFloat(nStr));
+        } catch { return null; }
+    }
+
+    function parseLatLon(str) {
+        const parts = str.replace(/[°'"NSEW]/g, ' ').trim().split(/[\s,]+/).filter(Boolean);
+        if (parts.length < 2) return null;
+        const a = parseFloat(parts[0]), b = parseFloat(parts[1]);
+        if (isNaN(a) || isNaN(b) || a < -90 || a > 90 || b < -180 || b > 180) return null;
+        return [a, b];
+    }
+
+    let gotoPin = null;
+    function goToLocation(lat, lon, label) {
+        map.setView([lat, lon], 15);
+        if (gotoPin) { map.removeLayer(gotoPin); gotoPin = null; }
+        gotoPin = L.marker([lat, lon], {
+            icon: L.divIcon({
+                className: '',
+                html: '<div style="background:#3b82f6;border:2px solid #fff;border-radius:50%;' +
+                      'width:14px;height:14px;box-shadow:0 0 0 4px rgba(59,130,246,.35)"></div>',
+                iconSize: [14, 14], iconAnchor: [7, 7],
+            }),
+        }).addTo(map);
+        if (label) gotoPin.bindPopup(label).openPopup();
+    }
+
+    const gotoPanel   = document.getElementById('goto-panel');
+    const gotoInput   = document.getElementById('goto-input');
+    const gotoStatus  = document.getElementById('goto-status');
+    const gotoBtnEl   = document.getElementById('goto-btn');
+
+    async function resolveGoTo() {
+        const q = gotoInput.value.trim();
+        if (!q) return;
+        gotoStatus.style.color = '#94a3b8';
+        gotoStatus.textContent = '';
+        gotoBtnEl.disabled = true;
+
+        // 1. MGRS
+        const mgrs = decodeMgrs(q);
+        if (mgrs) {
+            goToLocation(mgrs[0], mgrs[1], 'MGRS: ' + q.toUpperCase());
+            gotoStatus.textContent = '✔ ' + mgrs[0].toFixed(5) + ', ' + mgrs[1].toFixed(5);
+            gotoBtnEl.disabled = false;
+            return;
+        }
+
+        // 2. Lat/Lon
+        const ll = parseLatLon(q);
+        if (ll) {
+            goToLocation(ll[0], ll[1], ll[0].toFixed(5) + ', ' + ll[1].toFixed(5));
+            gotoStatus.textContent = '✔ ' + ll[0].toFixed(5) + ', ' + ll[1].toFixed(5);
+            gotoBtnEl.disabled = false;
+            return;
+        }
+
+        // 3. Nominatim geocode
+        gotoStatus.textContent = 'Searching…';
+        try {
+            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
+                      + encodeURIComponent(q);
+            const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+            const data = await res.json();
+            if (data.length > 0) {
+                const place = data[0];
+                const lat = parseFloat(place.lat), lon = parseFloat(place.lon);
+                goToLocation(lat, lon, place.display_name);
+                gotoStatus.style.color = '#94a3b8';
+                gotoStatus.textContent = '✔ ' + place.display_name.slice(0, 70);
+            } else {
+                gotoStatus.style.color = '#f87171';
+                gotoStatus.textContent = '⚠ Location not found';
+            }
+        } catch (err) {
+            gotoStatus.style.color = '#f87171';
+            gotoStatus.textContent = '⚠ Geocoding failed: ' + err.message;
+        }
+        gotoBtnEl.disabled = false;
+    }
+
+    gotoBtnEl.addEventListener('click', resolveGoTo);
+    gotoInput.addEventListener('keydown', e => { if (e.key === 'Enter') resolveGoTo(); });
+    document.getElementById('goto-toggle').addEventListener('click', () => {
+        gotoPanel.style.display = gotoPanel.style.display === 'none' ? '' : 'none';
+    });
+    document.getElementById('goto-close').addEventListener('click', () => {
+        gotoPanel.style.display = 'none';
     });
 
     const kmlFileInput = document.getElementById('kml-file');

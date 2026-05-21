@@ -183,6 +183,9 @@ fun MapScreen(
     // map to stay north-up and disables the rotation-gesture overlay.
     var mapOrientation by remember { mutableStateOf(0f) }
     var northLocked    by remember { mutableStateOf(true) }
+    var goToOpen       by remember { mutableStateOf(false) }
+    // Temporary "Go To" pin — shown after the user navigates to a location.
+    val goToMarker = remember { mutableStateOf<Marker?>(null) }
 
     // Suspend function to launch the stream service, called after permission grant.
     // Each early-return path emits a logcat E line + a Toast so the failure mode is
@@ -1280,6 +1283,43 @@ fun MapScreen(
                     fontWeight = FontWeight.Bold,
                 )
             }
+            // Go To — navigate to MGRS / lat-lon / address
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xE50F2540))
+                    .border(1.dp, Color(0xFF334155), CircleShape)
+                    .clickable { goToOpen = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("🔍", fontSize = 16.sp)
+            }
+        }
+
+        // ── Go To dialog ──────────────────────────────────────────────────
+        if (goToOpen) {
+            GoToDialog(
+                onDismiss = { goToOpen = false },
+                onNavigate = { point, label ->
+                    goToOpen = false
+                    val map = mapRef.value ?: return@GoToDialog
+                    // Remove previous Go To pin if any
+                    goToMarker.value?.let { map.overlays.remove(it) }
+                    map.controller.animateTo(point, 16.0, null)
+                    // Place a temporary pin at the destination
+                    val pin = Marker(map).apply {
+                        position = point
+                        title    = label
+                        icon     = MilSymbolRenderer.poi(context.resources)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        setOnMarkerClickListener { m, _ -> m.showInfoWindow(); true }
+                        map.overlays.add(this)
+                    }
+                    goToMarker.value = pin
+                    map.invalidate()
+                },
+            )
         }
 
         // ── Call for Fire button — icon-only, compact ────────────────────
