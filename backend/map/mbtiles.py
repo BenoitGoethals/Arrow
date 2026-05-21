@@ -80,12 +80,27 @@ def read_tile(path: Path, z: int, x: int, y: int) -> bytes | None:
     """Look up one XYZ tile. Returns None if the tile is absent.
 
     The MBTiles row index is TMS (origin bottom-left), so we flip y first.
+
+    Connections are cached and shared across threads (FastAPI runs sync
+    endpoints on a threadpool). If an admin uploads a new MBTiles archive
+    mid-request, ``_open.cache_clear()`` plus ``os.replace`` can leave a
+    cached connection pointing at a stale inode or already-closed handle —
+    SQLite then raises ``InterfaceError: bad parameter or other API misuse``
+    on the next ``execute``. We invalidate the cache and retry exactly once,
+    which heals the race without spinning forever on a genuinely broken file.
     """
-    conn = _open(str(path))
     tms_y = (1 << z) - 1 - y
-    row = conn.execute(
-        "SELECT tile_data FROM tiles "
-        "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
-        (z, x, tms_y),
-    ).fetchone()
-    return row[0] if row else None
+    params = (int(z), int(x), int(tms_y))
+    for attempt in (0, 1):
+        conn = _open(str(path))
+        try:
+            row = conn.execute(
+                "SELECT tile_data FROM tiles "
+                "WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                params,
+            ).fetchone()
+            return row[0] if row else None
+        except (sqlite3.InterfaceError, sqlite3.ProgrammingError, sqlite3.OperationalError):
+            if attempt == 1:
+                raise
+            _open.cache_clear()
