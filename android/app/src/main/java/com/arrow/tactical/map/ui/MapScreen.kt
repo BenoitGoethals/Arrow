@@ -385,7 +385,7 @@ fun MapScreen(
                             }
                         "kml-layer"       -> kmlReloadTrigger.value++
                         "overlay"         -> overlayReloadTrigger.value++
-                        "alert"           -> handleAlertWsEvent(
+                        "alert"           -> com.arrow.tactical.alerts.handleAlertWsEvent(
                             evt,
                             map = mapRef.value,
                             ops = operators,
