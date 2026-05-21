@@ -302,6 +302,29 @@ class ApkDistConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
+class Overlay(Base):
+    """Named, persisted bundle of TacticalObject ids — reusable map view.
+
+    Operators on the web build an overlay by picking a set of tactical objects
+    (enemies / POIs / objectives / tactical control graphics) and saving them
+    under a name. The same overlay can be re-applied later, and multiple
+    overlays can be selected together — the active set is the union of their
+    member ids. ``object_ids`` is JSON to avoid an N-row join-table for what is
+    typically a small membership list.
+    """
+    __tablename__ = "overlays"
+
+    id:          Mapped[int]      = mapped_column(primary_key=True)
+    name:        Mapped[str]      = mapped_column(String(160))
+    description: Mapped[str]      = mapped_column(Text, default="")
+    created_by:  Mapped[int]      = mapped_column(ForeignKey("operators.id"))
+    created_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at:  Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    )
+    object_ids:  Mapped[str]      = mapped_column(Text, default="[]")   # JSON list of int
+
+
 class KmlLayer(Base):
     """Imported KML/KMZ file flattened into a JSON feature collection.
 

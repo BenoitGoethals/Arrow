@@ -276,6 +276,7 @@
                 <button class="overlay-btn active" id="tg-toggle" title="Tactical control graphics">📐 Tac Gfx</button>
                 <button class="overlay-btn" id="tg-fit" title="Fit map to tactical graphics">🎯 Fit</button>
                 <button class="overlay-btn" id="kml-toggle" title="KML layers">📂 KML</button>
+                <button class="overlay-btn" id="ov-toggle" title="Saved overlays">📚 Overlays</button>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
             <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -296,6 +297,57 @@
                     <div id="kml-status" style="margin-top:6px; color:#94a3b8; font-size:0.78rem;"></div>
                 </div>
                 <div id="kml-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
+            </div>
+            <!-- ── Saved overlays panel ─────────────────────────────────── -->
+            <div id="ov-panel" style="display:none; position:absolute; top:60px; right:12px;
+                                       background:#0e1217; border:1px solid #2a3142;
+                                       border-radius:6px; padding:10px; z-index:1100;
+                                       min-width:300px; max-width:360px; color:#e2e8f0;
+                                       font-size:0.85rem; box-shadow:0 4px 14px rgba(0,0,0,0.5)">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px">
+                    <strong style="flex:1">Saved overlays</strong>
+                    <button id="ov-close" class="overlay-btn" style="padding:0 8px">×</button>
+                </div>
+                <div id="ov-edit-row" style="display:none; margin-bottom:8px">
+                    <button id="ov-new" class="overlay-btn" style="width:100%">+ New overlay…</button>
+                </div>
+                <div id="ov-status" style="display:none; margin-bottom:6px; color:#94a3b8; font-size:0.78rem"></div>
+                <div id="ov-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
+                <div style="margin-top:8px; color:#64748b; font-size:0.72rem; border-top:1px solid #2a3142; padding-top:6px">
+                    When no overlay is active, every tactical object is shown. Activating one or more filters to their union.
+                </div>
+            </div>
+            <!-- ── New-overlay modal — name + multi-select tactical objects ── -->
+            <div id="ov-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55);
+                                       z-index:1200; align-items:center; justify-content:center">
+                <div style="background:#0e1217; border:1px solid #2a3142; border-radius:6px;
+                            padding:14px; width:min(520px, 92vw); max-height:80vh;
+                            display:flex; flex-direction:column; color:#e2e8f0">
+                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px">
+                        <strong style="flex:1">New overlay</strong>
+                        <button id="ov-modal-close" class="overlay-btn" style="padding:0 8px">×</button>
+                    </div>
+                    <input id="ov-modal-name" type="text" placeholder="Overlay name (e.g. Op Alpha — Phase 1)"
+                           style="background:#161b25; color:#e2e8f0; border:1px solid #2a3142;
+                                  border-radius:4px; padding:6px 8px; margin-bottom:6px; width:100%"/>
+                    <input id="ov-modal-desc" type="text" placeholder="Description (optional)"
+                           style="background:#161b25; color:#e2e8f0; border:1px solid #2a3142;
+                                  border-radius:4px; padding:6px 8px; margin-bottom:8px; width:100%"/>
+                    <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; color:#94a3b8; font-size:0.78rem">
+                        <span>Pick tactical objects:</span>
+                        <span style="flex:1"></span>
+                        <button id="ov-modal-all" class="overlay-btn" style="padding:0 6px">All</button>
+                        <button id="ov-modal-none" class="overlay-btn" style="padding:0 6px">None</button>
+                    </div>
+                    <div id="ov-modal-objs"
+                         style="flex:1; min-height:160px; overflow-y:auto;
+                                border:1px solid #2a3142; border-radius:4px; padding:6px;
+                                background:#0a0d11; display:flex; flex-direction:column; gap:2px"></div>
+                    <div style="display:flex; gap:6px; justify-content:flex-end; margin-top:10px">
+                        <button id="ov-modal-cancel" class="overlay-btn">Cancel</button>
+                        <button id="ov-modal-save"   class="overlay-btn" style="background:#1e3a2f; border-color:#34d399; color:#34d399">Save</button>
+                    </div>
+                </div>
             </div>
         </div>
         <div id="map"></div>
@@ -930,15 +982,249 @@
         // Two independent layers:
         //   • hostiles/POI/objective  ← gated by overlay mode (enemyLayerVisible)
         //   • tactical control graphics ← gated by the standalone Tac Gfx toggle
+        // Plus the saved-overlay filter: when one or more overlays are active,
+        // only objects whose id is in the union are rendered. CoT tracks aren't
+        // members of overlays so they bypass the filter.
         const showLegacy = enemyLayerVisible();
         const showTg     = tgLayerVisible();
+        const allowedByOverlay = computeActiveOverlayIds();   // null = no filter
         state.tacticalObjects.forEach(obj => {
             const isTg = isTgType(obj.type);
-            if (isTg ? showTg : showLegacy) placeEnemy(obj);
+            if (!(isTg ? showTg : showLegacy)) return;
+            if (allowedByOverlay && !allowedByOverlay.has(obj.id)) return;
+            placeEnemy(obj);
         });
         // CoT tracks (simulator / ATAK peers with non-operator UIDs)
         if (showLegacy) state.cotTracks.forEach(t => placeCotTrack(t));
     }
+
+    // ── Saved overlays ───────────────────────────────────────────────────────
+    // Each overlay bundles a list of TacticalObject ids. Activating one or
+    // more in the panel restricts ``refreshEnemies`` to their union. The set
+    // of active ids is persisted in localStorage so a page reload keeps the
+    // operator's filter choice without a server roundtrip.
+    const ovState = {
+        overlays:        new Map(),                   // id -> dto
+        active:          new Set(JSON.parse(localStorage.getItem('arrow_active_overlays') || '[]')),
+        panel:           document.getElementById('ov-panel'),
+        list:            document.getElementById('ov-list'),
+        editRow:         document.getElementById('ov-edit-row'),
+        status:          document.getElementById('ov-status'),
+        modal:           document.getElementById('ov-modal'),
+        modalName:       document.getElementById('ov-modal-name'),
+        modalDesc:       document.getElementById('ov-modal-desc'),
+        modalObjs:       document.getElementById('ov-modal-objs'),
+        canEdit:         role === 'ADMIN' || role === 'BATTLE_CAPTAIN',
+    };
+    ovState.editRow.style.display = ovState.canEdit ? '' : 'none';
+
+    function computeActiveOverlayIds() {
+        if (ovState.active.size === 0) return null;   // no filter
+        const out = new Set();
+        for (const id of ovState.active) {
+            const ov = ovState.overlays.get(id);
+            if (!ov) continue;
+            (ov.object_ids || []).forEach(x => out.add(x));
+        }
+        return out;
+    }
+
+    function persistActiveOverlays() {
+        localStorage.setItem('arrow_active_overlays', JSON.stringify([...ovState.active]));
+    }
+
+    function renderOverlayList() {
+        ovState.list.innerHTML = '';
+        if (ovState.overlays.size === 0) {
+            ovState.list.innerHTML = '<div style="color:#64748b">No overlays saved yet.</div>';
+            return;
+        }
+        const sorted = [...ovState.overlays.values()]
+            .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+        for (const ov of sorted) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:6px; ' +
+                                'padding:4px 6px; border:1px solid #2a3142; border-radius:4px';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = ovState.active.has(ov.id);
+            cb.addEventListener('change', () => {
+                if (cb.checked) ovState.active.add(ov.id);
+                else            ovState.active.delete(ov.id);
+                persistActiveOverlays();
+                refreshEnemies();
+            });
+            row.appendChild(cb);
+
+            const safe = ov.name.replace(/[<>&]/g, c =>
+                ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+            const name = document.createElement('div');
+            name.style.cssText = 'flex:1; min-width:0';
+            name.innerHTML = `<div style="font-weight:600">${safe}</div>` +
+                `<div style="color:#64748b; font-size:0.72rem">${ov.object_ids.length} object(s)` +
+                (ov.description ? ` · ${ov.description.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}` : '') +
+                `</div>`;
+            row.appendChild(name);
+
+            const fit = document.createElement('button');
+            fit.className = 'overlay-btn';
+            fit.title = 'Zoom to overlay';
+            fit.textContent = '🎯';
+            fit.addEventListener('click', () => {
+                const pts = (ov.object_ids || [])
+                    .map(id => state.tacticalObjects.get(id))
+                    .filter(o => o)
+                    .map(o => [o.latitude, o.longitude]);
+                if (pts.length === 0) return;
+                map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
+            });
+            row.appendChild(fit);
+
+            if (ovState.canEdit) {
+                const del = document.createElement('button');
+                del.className = 'overlay-btn';
+                del.textContent = '🗑';
+                del.title = 'Delete overlay';
+                del.addEventListener('click', async () => {
+                    if (!confirm(`Delete overlay "${ov.name}"?`)) return;
+                    const r = await fetch(window.ARROW_BACKEND_URL + `/overlays/${ov.id}`, {
+                        method: 'DELETE', headers,
+                    });
+                    if (r.ok) removeOverlayLocal(ov.id);
+                });
+                row.appendChild(del);
+            }
+
+            ovState.list.appendChild(row);
+        }
+    }
+
+    function removeOverlayLocal(id) {
+        ovState.overlays.delete(id);
+        if (ovState.active.delete(id)) persistActiveOverlays();
+        renderOverlayList();
+        refreshEnemies();
+    }
+
+    function upsertOverlayLocal(ov) {
+        ovState.overlays.set(ov.id, ov);
+        renderOverlayList();
+        // If the active overlay's members changed, the filter needs refreshing.
+        if (ovState.active.has(ov.id)) refreshEnemies();
+    }
+
+    async function loadOverlays() {
+        try {
+            const r = await api('/overlays');
+            if (!r.ok) return;
+            const list = await r.json();
+            ovState.overlays = new Map(list.map(o => [o.id, o]));
+            // Drop any stale active ids whose overlay no longer exists.
+            let changed = false;
+            for (const id of [...ovState.active]) {
+                if (!ovState.overlays.has(id)) { ovState.active.delete(id); changed = true; }
+            }
+            if (changed) persistActiveOverlays();
+            renderOverlayList();
+            refreshEnemies();
+        } catch (e) {
+            console.warn('[arrow] loadOverlays failed', e);
+        }
+    }
+
+    document.getElementById('ov-toggle').addEventListener('click', () => {
+        ovState.panel.style.display = ovState.panel.style.display === 'none' ? '' : 'none';
+    });
+    document.getElementById('ov-close').addEventListener('click', () => {
+        ovState.panel.style.display = 'none';
+    });
+
+    function openNewOverlayModal(prefillIds = null) {
+        ovState.modalName.value = '';
+        ovState.modalDesc.value = '';
+        // Re-render the picklist from the current tactical-object inventory.
+        ovState.modalObjs.innerHTML = '';
+        const items = [...state.tacticalObjects.values()].sort((a, b) => a.id - b.id);
+        if (items.length === 0) {
+            ovState.modalObjs.innerHTML =
+                '<div style="color:#64748b">No tactical objects on the map yet.</div>';
+        }
+        const prefill = prefillIds instanceof Set ? prefillIds : null;
+        for (const o of items) {
+            const row = document.createElement('label');
+            row.style.cssText = 'display:flex; align-items:center; gap:6px; ' +
+                                'padding:2px 4px; border-radius:3px; cursor:pointer';
+            row.onmouseenter = () => row.style.background = '#161b25';
+            row.onmouseleave = () => row.style.background = 'transparent';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.dataset.id = o.id;
+            if (prefill && prefill.has(o.id)) cb.checked = true;
+            row.appendChild(cb);
+            const safeNotes = (o.notes || '').replace(/[<>&]/g, c =>
+                ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])).slice(0, 60);
+            row.insertAdjacentHTML('beforeend',
+                `<span style="font-family:monospace; color:#94a3b8; font-size:0.78rem">#${o.id}</span>` +
+                `<span style="font-weight:600">${o.type}</span>` +
+                (safeNotes ? `<span style="color:#94a3b8; font-size:0.78rem">${safeNotes}</span>` : ''));
+            ovState.modalObjs.appendChild(row);
+        }
+        ovState.modal.style.display = 'flex';
+    }
+    function closeNewOverlayModal() { ovState.modal.style.display = 'none'; }
+
+    document.getElementById('ov-new').addEventListener('click', () => openNewOverlayModal());
+    document.getElementById('ov-modal-close').addEventListener('click', closeNewOverlayModal);
+    document.getElementById('ov-modal-cancel').addEventListener('click', closeNewOverlayModal);
+    document.getElementById('ov-modal-all').addEventListener('click', () => {
+        ovState.modalObjs.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = true);
+    });
+    document.getElementById('ov-modal-none').addEventListener('click', () => {
+        ovState.modalObjs.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+    });
+    document.getElementById('ov-modal-save').addEventListener('click', async () => {
+        const name = ovState.modalName.value.trim();
+        if (!name) {
+            ovState.status.style.display = '';
+            ovState.status.textContent = 'Name is required.';
+            return;
+        }
+        const ids = [...ovState.modalObjs.querySelectorAll('input[type=checkbox]:checked')]
+            .map(cb => Number(cb.dataset.id));
+        const r = await fetch(window.ARROW_BACKEND_URL + '/overlays', {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                description: ovState.modalDesc.value.trim(),
+                object_ids: ids,
+            }),
+        });
+        if (!r.ok) {
+            const txt = await r.text();
+            ovState.status.style.display = '';
+            ovState.status.textContent = `Save failed: ${txt.slice(0, 160)}`;
+            return;
+        }
+        const ov = await r.json();
+        upsertOverlayLocal(ov);
+        // Activate the new overlay immediately — useful right after creating.
+        ovState.active.add(ov.id);
+        persistActiveOverlays();
+        renderOverlayList();
+        refreshEnemies();
+        closeNewOverlayModal();
+    });
+
+    function handleOverlayWsEvent(msg) {
+        if (msg.event === 'created' || msg.event === 'updated') {
+            upsertOverlayLocal(msg.data);
+        } else if (msg.event === 'deleted') {
+            removeOverlayLocal(msg.data.id);
+        }
+    }
+
+    loadOverlays();
 
     window.__arrowFocus = (lat, lon) => map.setView([lat, lon], 14);
     window.__arrowDeleteEnemy = async (id) => {
@@ -2466,6 +2752,8 @@
                 loadMapFireMissions();
             } else if (msg.channel === 'kml-layer') {
                 handleKmlWsEvent(msg);
+            } else if (msg.channel === 'overlay') {
+                handleOverlayWsEvent(msg);
             }
         };
         ws.onclose = () => setTimeout(connectWS, 3000);

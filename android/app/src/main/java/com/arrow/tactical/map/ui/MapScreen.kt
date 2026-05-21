@@ -49,6 +49,7 @@ import com.arrow.tactical.kml.KmlFeature
 import com.arrow.tactical.kml.KmlLayerDto
 import com.arrow.tactical.kml.buildKmlOverlays
 import com.arrow.tactical.map.BackendTileSource
+import com.arrow.tactical.overlays.OverlayDto
 import com.arrow.tactical.map.MapSourceDto
 import com.arrow.tactical.map.MilSymbolRenderer
 import com.arrow.tactical.network.OperatorDto
@@ -149,6 +150,12 @@ fun MapScreen(
     // Lets the operator collapse the entire SitaWare chrome off to the left
     // when they need a clean view. A small handle at top-left brings it back.
     var topBarCollapsed by remember { mutableStateOf(false) }
+
+    // ── Saved overlays — per-device active set, mirrors web localStorage ──
+    var overlays      by remember { mutableStateOf<List<OverlayDto>>(emptyList()) }
+    var activeOverlays by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    val overlayReloadTrigger = remember { mutableStateOf(0) }
+    var overlayPanelOpen by remember { mutableStateOf(false) }
     // Holds the currently-painted MBTiles overlay so we can remove it on
     // basemap switch without disturbing other map overlays (markers, events).
     val mbtilesOverlay = remember { mutableStateOf<TilesOverlay?>(null) }
@@ -366,6 +373,7 @@ fun MapScreen(
                                 cbrnReports = com.arrow.tactical.cbrn.cbrnReportsFrom(reps)
                             }
                         "kml-layer"       -> kmlReloadTrigger.value++
+                        "overlay"         -> overlayReloadTrigger.value++
                         else -> {}
                     }
                 }
@@ -384,6 +392,18 @@ fun MapScreen(
     LaunchedEffect(kmlReloadTrigger.value) {
         container.kmlLayerRepository.list()
             .onSuccess { kmlLayers = it }
+    }
+
+    // ── Overlays — same WS-triggered reload pattern ──
+    LaunchedEffect(overlayReloadTrigger.value) {
+        container.overlayRepository.list().onSuccess { fresh ->
+            overlays = fresh
+            // Drop active ids whose overlay no longer exists on the server.
+            val freshIds = fresh.map { it.id }.toSet()
+            if (activeOverlays.any { it !in freshIds }) {
+                activeOverlays = activeOverlays.intersect(freshIds)
+            }
+        }
     }
 
     // Materialise visible layers onto the map. Re-runs whenever the catalogue
@@ -543,7 +563,7 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds) {
+    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, overlays, activeOverlays) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
@@ -570,13 +590,29 @@ fun MapScreen(
         //   • legacy hostile/POI/objective markers ← gated by overlayMode
         //   • tactical control graphics            ← gated by tgVisible
         val showLegacyHostiles = overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.ENEMIES
+        // Saved-overlay filter: null = no filter (every object shown), set =
+        // only objects whose id is in the union of the active overlays.
+        val overlayAllowed: Set<Int>? = if (activeOverlays.isEmpty()) null
+        else overlays.asSequence()
+            .filter { it.id in activeOverlays }
+            .flatMap { it.objectIds.asSequence() }
+            .toSet()
+        fun passesOverlay(id: Int): Boolean =
+            overlayAllowed == null || id in overlayAllowed
+
         val visibleEnemies = if (showLegacyHostiles)
-            enemies.filterNot { MilSymbolRenderer.isTacticalGraphic(it.type) ||
-                                MilSymbolRenderer.isTacticalLineOrPolygon(it.type) }
+            enemies.filter {
+                !MilSymbolRenderer.isTacticalGraphic(it.type) &&
+                !MilSymbolRenderer.isTacticalLineOrPolygon(it.type) &&
+                passesOverlay(it.id)
+            }
         else emptyList()
         val visibleGraphics = if (tgVisible)
-            enemies.filter { MilSymbolRenderer.isTacticalGraphic(it.type) ||
-                             MilSymbolRenderer.isTacticalLineOrPolygon(it.type) }
+            enemies.filter {
+                (MilSymbolRenderer.isTacticalGraphic(it.type) ||
+                 MilSymbolRenderer.isTacticalLineOrPolygon(it.type)) &&
+                passesOverlay(it.id)
+            }
         else emptyList()
 
         for (op in visibleOps) {
@@ -975,7 +1011,15 @@ fun MapScreen(
                 cbrnOn          = cbrnVisible,
                 onToggleCbrn    = { cbrnVisible = !cbrnVisible },
                 kmlActiveCount  = kmlLayers.count { it.visible && it.id !in kmlLocallyHidden },
-                onToggleKml     = { kmlPanelOpen = !kmlPanelOpen },
+                onToggleKml     = {
+                    kmlPanelOpen = !kmlPanelOpen
+                    if (kmlPanelOpen) overlayPanelOpen = false
+                },
+                overlayActiveCount = activeOverlays.size,
+                onToggleOverlays   = {
+                    overlayPanelOpen = !overlayPanelOpen
+                    if (overlayPanelOpen) kmlPanelOpen = false
+                },
                 onCollapseBar   = { topBarCollapsed = true },
                 isStreaming     = isStreaming,
                 onToggleStream  = {
@@ -1060,6 +1104,29 @@ fun MapScreen(
                                        else        kmlLocallyHidden + id
                     Result.success(Unit)
                 },
+            )
+        }
+
+        // ── Overlay panel — saved bundles of tactical objects (right side).
+        //    Stacked above the KML panel so the two never overlap; we shift
+        //    the KML panel down only when the overlay panel is also showing.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = overlayPanelOpen,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = kmlPanelTop, end = 12.dp),
+            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }) +
+                    androidx.compose.animation.fadeIn(),
+            exit  = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }) +
+                    androidx.compose.animation.fadeOut(),
+        ) {
+            com.arrow.tactical.overlays.ui.OverlayMapPanel(
+                overlays  = overlays,
+                activeIds = activeOverlays,
+                onToggle  = { id, on ->
+                    activeOverlays = if (on) activeOverlays + id else activeOverlays - id
+                },
+                onClose   = { overlayPanelOpen = false },
             )
         }
 

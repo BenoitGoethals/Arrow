@@ -58,6 +58,16 @@ def _migrate(conn: object) -> None:
         "  object_count INTEGER DEFAULT 0,"
         "  payload TEXT NOT NULL"
         ")",
+        # Saved overlays — reusable named bundles of TacticalObject ids
+        "CREATE TABLE IF NOT EXISTS overlays ("
+        "  id INTEGER PRIMARY KEY,"
+        "  name VARCHAR(160) NOT NULL,"
+        "  description TEXT DEFAULT '',"
+        "  created_by INTEGER REFERENCES operators(id),"
+        "  created_at DATETIME,"
+        "  updated_at DATETIME,"
+        "  object_ids TEXT DEFAULT '[]'"
+        ")",
         # Imported KML layers shared between web (Leaflet) and Android (OSMdroid)
         "CREATE TABLE IF NOT EXISTS kml_layers ("
         "  id INTEGER PRIMARY KEY,"

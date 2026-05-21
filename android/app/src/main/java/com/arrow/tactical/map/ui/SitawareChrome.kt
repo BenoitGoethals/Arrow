@@ -100,6 +100,9 @@ fun SitawareTopBar(
     /** Open count of KML layers currently visible — drives the KML chip badge. */
     kmlActiveCount: Int = 0,
     onToggleKml: () -> Unit = {},
+    /** Active saved-overlay count — drives the Overlays chip badge. */
+    overlayActiveCount: Int = 0,
+    onToggleOverlays: () -> Unit = {},
     isStreaming: Boolean = false,
     onToggleStream: () -> Unit = {},
     onLocateMe: () -> Unit = {},
@@ -193,6 +196,24 @@ fun SitawareTopBar(
                 text = if (kmlOn) "KML · $kmlActiveCount" else "KML",
                 fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                 color = if (kmlOn) Color(0xFF67E8F9) else Color(0xFFCBD5E1),
+            )
+        }
+        // Saved overlays — chip opens the overlay panel; label shows live-count when >0.
+        val ovOn = overlayActiveCount > 0
+        Box(
+            Modifier
+                .clickable { onToggleOverlays() }
+                .background(if (ovOn) Color(0x33A78BFA) else Color(0xFF12233A),
+                            RoundedCornerShape(4.dp))
+                .border(0.5.dp, if (ovOn) Color(0xFFA78BFA) else Color(0xFF2A3142),
+                        RoundedCornerShape(4.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (ovOn) "Ovl · $overlayActiveCount" else "Ovl",
+                fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                color = if (ovOn) Color(0xFFC4B5FD) else Color(0xFFCBD5E1),
             )
         }
         // Stream toggle
