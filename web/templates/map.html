@@ -2838,12 +2838,18 @@
             return;
         }
 
-        // 3. Nominatim geocode
+        // 3. Geocode via backend proxy → Nominatim (avoids CORS/CSP)
         gotoStatus.textContent = 'Searching…';
         try {
-            const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
-                      + encodeURIComponent(q);
-            const res = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+            const url = window.ARROW_BACKEND_URL + '/map/geocode?q=' + encodeURIComponent(q);
+            const res = await fetch(url, { headers });
+            if (!res.ok) {
+                const txt = await res.text();
+                gotoStatus.style.color = '#f87171';
+                gotoStatus.textContent = '⚠ ' + txt.slice(0, 120);
+                gotoBtnEl.disabled = false;
+                return;
+            }
             const data = await res.json();
             if (data.length > 0) {
                 const place = data[0];
