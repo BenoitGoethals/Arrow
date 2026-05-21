@@ -167,6 +167,11 @@ fun MapScreen(
         mutableStateMapOf<Int, org.osmdroid.views.overlay.Marker>()
     }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // mapRef lets LaunchedEffect imperatively update overlays outside AndroidView.update,
+    // which avoids Compose's state-tracking limitations for non-composable lambdas.
+    // Declared early so the WS handler below can capture it for alert markers.
+    val mapRef = remember { mutableStateOf<MapView?>(null) }
     // Holds the currently-painted MBTiles overlay so we can remove it on
     // basemap switch without disturbing other map overlays (markers, events).
     val mbtilesOverlay = remember { mutableStateOf<TilesOverlay?>(null) }
@@ -402,10 +407,6 @@ fun MapScreen(
             delay(3_000)
         }
     }
-
-    // mapRef lets LaunchedEffect imperatively update overlays outside AndroidView.update,
-    // which avoids Compose's state-tracking limitations for non-composable lambdas.
-    val mapRef = remember { mutableStateOf<MapView?>(null) }
 
     // ── KML — fetch the layer list on entry and on every kml-layer WS event ──
     LaunchedEffect(kmlReloadTrigger.value) {
