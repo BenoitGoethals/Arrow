@@ -6,6 +6,8 @@ import os
 import re
 import sqlite3
 import tempfile
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from fastapi import (
@@ -18,7 +20,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from backend.auth.dependencies import get_current_operator
@@ -131,6 +133,29 @@ def _scan_sources() -> list[MapSource]:
 
 
 # ── Public endpoints ──────────────────────────────────────────────────────────
+
+
+@router.get("/geocode")
+def geocode(
+    q: str = Query(..., description="Address, place name, or free-text location"),
+    _: Operator = Depends(get_current_operator),
+) -> JSONResponse:
+    """Proxy Nominatim geocoding to avoid browser CORS/CSP restrictions."""
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Query is empty")
+    url = (
+        "https://nominatim.openstreetmap.org/search?"
+        + urllib.parse.urlencode({"q": q, "format": "json", "limit": "5",
+                                  "addressdetails": "0"})
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "ArrowTactical/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            import json
+            data = json.loads(resp.read())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Geocoding failed: {exc}") from exc
+    return JSONResponse(content=data)
 
 
 @router.get("/config")
