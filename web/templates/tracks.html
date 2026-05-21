@@ -1,0 +1,500 @@
+{% extends "base.html" %}
+{% block title %}Track History — Arrow{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+    main { padding: 0; }
+    .tracks-shell {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        height: calc(100vh - 60px);
+        overflow: hidden;
+    }
+    /* ── Sidebar ──────────────────────────────────────────────────── */
+    #tr-sidebar {
+        background: #161b25;
+        border-right: 1px solid #2a3142;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .tr-sidebar-head {
+        padding: 10px 12px;
+        border-bottom: 1px solid #2a3142;
+        flex-shrink: 0;
+    }
+    .tr-sidebar-head h3 {
+        margin: 0 0 8px;
+        font-size: 0.78rem;
+        letter-spacing: .15em;
+        text-transform: uppercase;
+        color: #94a3b8;
+    }
+    .tr-range-btns { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+    .tr-range-btn {
+        background: #1e2a3a; color: #94a3b8; border: 1px solid #2a3142;
+        padding: 3px 9px; border-radius: 4px; cursor: pointer; font-size: 0.78rem;
+    }
+    .tr-range-btn:hover { background: #263040; }
+    .tr-range-btn.active { background: #1e3a2f; color: #6ee7b7; border-color: #34d399; }
+    .tr-action-row { display: flex; gap: 6px; }
+    .tr-btn {
+        flex: 1; padding: 5px 8px; border-radius: 4px; cursor: pointer;
+        font-size: 0.8rem; border: 1px solid; font-family: inherit;
+    }
+    .tr-btn-load { background: #1e3a2f; color: #6ee7b7; border-color: #34d399; }
+    .tr-btn-load:hover { background: #14532d; }
+    .tr-btn-clear { background: #1c0a0a; color: #f87171; border-color: #7f1d1d; }
+    .tr-btn-clear:hover { background: #3b0a0a; }
+    #tr-global-status {
+        margin-top: 6px; font-size: 0.75rem; color: #64748b; min-height: 1.1em;
+    }
+    /* ── Operator list ────────────────────────────────────────────── */
+    #tr-op-list {
+        flex: 1;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #2a3142 transparent;
+    }
+    .tr-op-row {
+        padding: 7px 12px;
+        border-bottom: 1px solid #1a2233;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: background .12s;
+        user-select: none;
+    }
+    .tr-op-row:hover { background: #1a2233; }
+    .tr-op-row.loaded { background: #0d1a28; }
+    .tr-swatch {
+        width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+        box-shadow: 0 0 5px currentColor;
+    }
+    .tr-op-info { flex: 1; min-width: 0; }
+    .tr-op-name { font-size: 0.85rem; font-weight: 600; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tr-op-sub  { font-size: 0.7rem; color: #64748b; margin-top: 1px; }
+    .tr-op-dot  { display: inline-block; width: 6px; height: 6px; border-radius: 50%; vertical-align: middle; margin-right: 3px; }
+    .tr-badge { font-size: 0.62rem; padding: 1px 4px; border-radius: 3px; vertical-align: middle; }
+    .tr-badge-adm { background: #7c2d12; color: #fed7aa; }
+    .tr-badge-bc  { background: #1e40af; color: #bfdbfe; }
+    /* ── Stats drawer ─────────────────────────────────────────────── */
+    .tr-drawer {
+        display: none;
+        background: #0b1420;
+        padding: 8px 12px 10px;
+        border-bottom: 1px solid #1a2233;
+    }
+    .tr-drawer.open { display: block; }
+    .tr-drawer-lbl { font-size: 0.65rem; color: #475569; letter-spacing: .1em; margin-bottom: 5px; }
+    .tr-stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+    .tr-stat {
+        background: #111827; border: 1px solid #1e2a3a;
+        border-radius: 4px; padding: 4px 6px; text-align: center;
+    }
+    .tr-stat-lbl { font-size: 0.58rem; color: #475569; letter-spacing: .08em; }
+    .tr-stat-val { font-size: 0.82rem; font-weight: 700; color: #6ee7b7; font-family: monospace; }
+    .tr-drawer-time { font-size: 0.68rem; color: #475569; margin-top: 5px; }
+    /* ── Map area ─────────────────────────────────────────────────── */
+    #tr-map-wrap { position: relative; }
+    #tr-map { width: 100%; height: calc(100vh - 60px); }
+    #tr-map-toolbar {
+        position: absolute; top: 8px; right: 8px; z-index: 1000;
+        display: flex; gap: 6px;
+    }
+    .tr-map-btn {
+        background: rgba(14,18,23,.85); border: 1px solid #2a3142;
+        color: #e2e8f0; padding: 4px 11px; border-radius: 4px;
+        cursor: pointer; font-size: 0.8rem; backdrop-filter: blur(4px);
+    }
+    .tr-map-btn:hover { background: rgba(26,34,51,.9); }
+    /* Legend */
+    #tr-legend {
+        display: none;
+        position: absolute; top: 40px; right: 8px; z-index: 1001;
+        background: rgba(14,18,23,.95); border: 1px solid #2a3142;
+        border-radius: 6px; padding: 10px 12px; color: #e2e8f0; font-size: 0.78rem;
+        min-width: 160px;
+    }
+    #tr-legend.open { display: block; }
+    .tr-legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .tr-legend-line { width: 28px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="tracks-shell">
+
+    <!-- ── LEFT SIDEBAR ──────────────────────────────────────────── -->
+    <div id="tr-sidebar">
+        <div class="tr-sidebar-head">
+            <h3>📊 Track History</h3>
+            <div style="font-size:.72rem; color:#64748b; margin-bottom:6px; letter-spacing:.06em">TIME RANGE</div>
+            <div class="tr-range-btns">
+                <button class="tr-range-btn" data-hours="1">1 h</button>
+                <button class="tr-range-btn active" data-hours="6">6 h</button>
+                <button class="tr-range-btn" data-hours="24">24 h</button>
+                <button class="tr-range-btn" data-hours="168">7 d</button>
+                <button class="tr-range-btn" data-hours="720">30 d</button>
+            </div>
+            <div class="tr-action-row">
+                <button id="tr-load-all" class="tr-btn tr-btn-load">⟳ Load All</button>
+                <button id="tr-clear-all" class="tr-btn tr-btn-clear">✕ Clear</button>
+            </div>
+            <div id="tr-global-status"></div>
+        </div>
+        <div id="tr-op-list">
+            <div style="padding:16px 12px; color:#475569; font-size:.82rem">Loading operators…</div>
+        </div>
+    </div>
+
+    <!-- ── MAP ───────────────────────────────────────────────────── -->
+    <div id="tr-map-wrap">
+        <div id="tr-map"></div>
+        <div id="tr-map-toolbar">
+            <button class="tr-map-btn" id="tr-fit-btn">⊞ Fit All</button>
+            <button class="tr-map-btn" id="tr-legend-toggle">▤ Legend</button>
+        </div>
+        <div id="tr-legend">
+            <div style="font-size:.68rem; color:#64748b; letter-spacing:.1em; margin-bottom:8px">LEGEND</div>
+            <div class="tr-legend-row">
+                <span class="tr-legend-line" style="background:#22c55e"></span>
+                <span>Start of track</span>
+            </div>
+            <div class="tr-legend-row">
+                <span class="tr-legend-line" style="background:#ef4444"></span>
+                <span>Last fix</span>
+            </div>
+            <div class="tr-legend-row">
+                <span style="display:inline-block;width:28px;height:3px;background:linear-gradient(90deg,#34d399,#6ee7b7);border-radius:2px;flex-shrink:0"></span>
+                <span>Track line (per operator)</span>
+            </div>
+            <div style="margin-top:8px; color:#475569; font-size:.68rem">Click an operator to toggle their track.</div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+    'use strict';
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const hdrs = { Authorization: 'Bearer ' + token };
+    const api  = (p) => fetch(window.ARROW_BACKEND_URL + p, { headers: hdrs });
+
+    // ── Map init ────────────────────────────────────────────────────────────
+    const map = L.map('tr-map').setView([50.85, 4.35], 8);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '© OpenStreetMap contributors',
+    }).addTo(map);
+
+    // ── Palette — each operator gets a unique colour ────────────────────────
+    const PALETTE = [
+        '#6ee7b7', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa',
+        '#34d399', '#f87171', '#38bdf8', '#fb923c', '#4ade80',
+        '#e879f9', '#facc15', '#2dd4bf', '#f97316', '#818cf8',
+    ];
+    let paletteIdx = 0;
+
+    // ── State ───────────────────────────────────────────────────────────────
+    const operators = new Map();   // id → op (with .color, .trackLayers, .pts)
+    let trackHours  = 6;
+
+    // ── Geometry helpers ────────────────────────────────────────────────────
+    function haversineKm(lat1, lon1, lat2, lon2) {
+        const R = 6371, r = Math.PI / 180;
+        const dLat = (lat2 - lat1) * r, dLon = (lon2 - lon1) * r;
+        const a = Math.sin(dLat/2)**2
+            + Math.cos(lat1*r) * Math.cos(lat2*r) * Math.sin(dLon/2)**2;
+        return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    function computeStats(pts) {
+        if (pts.length < 2) return null;
+        let dist = 0, maxSpd = 0, movingSecs = 0;
+        for (let i = 1; i < pts.length; i++) {
+            const p = pts[i], q = pts[i - 1];
+            const dtH = (new Date(p.recorded_at) - new Date(q.recorded_at)) / 3_600_000;
+            const dk  = haversineKm(q.latitude, q.longitude, p.latitude, p.longitude);
+            const spd = dtH > 0 ? dk / dtH : 0;
+            dist += dk;
+            if (spd > maxSpd) maxSpd = spd;
+            if (spd > 0.5) movingSecs += dtH * 3600;
+        }
+        const durSecs = (new Date(pts.at(-1).recorded_at) - new Date(pts[0].recorded_at)) / 1000;
+        return {
+            fixes:   pts.length,
+            distKm:  dist,
+            durSecs: durSecs,
+            avgSpd:  durSecs > 0 ? dist / (durSecs / 3600) : 0,
+            maxSpd:  maxSpd,
+            movPct:  durSecs > 0 ? Math.round(movingSecs / durSecs * 100) : 0,
+            first:   pts[0].recorded_at,
+            last:    pts.at(-1).recorded_at,
+        };
+    }
+
+    function fmtDist(km) { return km < 1 ? Math.round(km * 1000) + ' m' : km.toFixed(2) + ' km'; }
+    function fmtDur(s)   { return s < 3600 ? Math.round(s / 60) + ' min' : (s / 3600).toFixed(1) + ' h'; }
+    function fmtTime(iso) { return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }); }
+
+    // ── Track drawing ───────────────────────────────────────────────────────
+    function clearOpTrack(op) {
+        for (const l of (op.trackLayers || [])) map.removeLayer(l);
+        op.trackLayers = [];
+        op.pts = [];
+    }
+
+    function drawTrack(op, pts) {
+        clearOpTrack(op);
+        op.pts = pts;
+        if (pts.length === 0) return;
+
+        const col = op.color;
+
+        if (pts.length === 1) {
+            op.trackLayers.push(
+                L.circleMarker([pts[0].latitude, pts[0].longitude], {
+                    radius: 5, color: col, fillColor: col, fillOpacity: 1, weight: 2,
+                }).addTo(map)
+            );
+            return;
+        }
+
+        // Main polyline — operator colour
+        op.trackLayers.push(
+            L.polyline(pts.map(p => [p.latitude, p.longitude]), {
+                color: col, weight: 3, opacity: 0.88,
+            }).addTo(map)
+        );
+
+        // Start marker (green)
+        op.trackLayers.push(
+            L.circleMarker([pts[0].latitude, pts[0].longitude], {
+                radius: 7, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 1, weight: 2,
+            })
+            .bindTooltip(`<b>${esc(op.callsign)}</b><br>Start: ${fmtTime(pts[0].recorded_at)}`)
+            .addTo(map)
+        );
+
+        // End marker (red)
+        op.trackLayers.push(
+            L.circleMarker([pts.at(-1).latitude, pts.at(-1).longitude], {
+                radius: 7, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.9, weight: 2,
+            })
+            .bindTooltip(`<b>${esc(op.callsign)}</b><br>Last fix: ${fmtTime(pts.at(-1).recorded_at)}`)
+            .addTo(map)
+        );
+
+        // Direction tick every ~50 fixes to show movement direction
+        const step = Math.max(1, Math.floor(pts.length / 20));
+        for (let i = step; i < pts.length - 1; i += step) {
+            const p = pts[i], q = pts[i - 1];
+            const bearing = Math.atan2(p.longitude - q.longitude, p.latitude - q.latitude);
+            const arrowEl = document.createElement('div');
+            arrowEl.style.cssText = `
+                width:0; height:0;
+                border-left:4px solid transparent; border-right:4px solid transparent;
+                border-bottom:8px solid ${col}; opacity:.7;
+                transform:rotate(${bearing}rad);`;
+            op.trackLayers.push(
+                L.marker([p.latitude, p.longitude], {
+                    icon: L.divIcon({ html: arrowEl.outerHTML, iconSize: [8, 8], iconAnchor: [4, 4], className: '' }),
+                    interactive: false,
+                }).addTo(map)
+            );
+        }
+    }
+
+    // ── Stats drawer ────────────────────────────────────────────────────────
+    function renderStats(op) {
+        const drawer = document.getElementById('tr-drawer-' + op.id);
+        if (!drawer) return;
+        const s = op.pts.length > 0 ? computeStats(op.pts) : null;
+        if (!s) { drawer.classList.remove('open'); return; }
+        drawer.innerHTML = `
+            <div class="tr-drawer-lbl">BEHAVIOUR SUMMARY · ${esc(op.callsign)}</div>
+            <div class="tr-stats-grid">
+                <div class="tr-stat"><div class="tr-stat-lbl">FIXES</div>
+                    <div class="tr-stat-val">${s.fixes}</div></div>
+                <div class="tr-stat"><div class="tr-stat-lbl">DISTANCE</div>
+                    <div class="tr-stat-val">${fmtDist(s.distKm)}</div></div>
+                <div class="tr-stat"><div class="tr-stat-lbl">DURATION</div>
+                    <div class="tr-stat-val">${fmtDur(s.durSecs)}</div></div>
+                <div class="tr-stat"><div class="tr-stat-lbl">AVG km/h</div>
+                    <div class="tr-stat-val">${s.avgSpd.toFixed(1)}</div></div>
+                <div class="tr-stat"><div class="tr-stat-lbl">MAX km/h</div>
+                    <div class="tr-stat-val">${s.maxSpd.toFixed(1)}</div></div>
+                <div class="tr-stat"><div class="tr-stat-lbl">MOVING %</div>
+                    <div class="tr-stat-val">${s.movPct}%</div></div>
+            </div>
+            <div class="tr-drawer-time">
+                ${fmtTime(s.first)} → ${fmtTime(s.last)}
+            </div>`;
+        drawer.classList.add('open');
+    }
+
+    // ── Load a single operator's track ──────────────────────────────────────
+    async function loadOpTrack(op) {
+        const since = new Date(Date.now() - trackHours * 3_600_000).toISOString();
+        const url   = window.ARROW_BACKEND_URL
+            + `/tracking/${op.id}/history?since=${encodeURIComponent(since)}&limit=10000`;
+        try {
+            const res = await fetch(url, { headers: hdrs });
+            if (!res.ok) return;
+            const pts = await res.json();
+            drawTrack(op, pts);
+            renderStats(op);
+            updateRowState(op);
+        } catch (e) {
+            console.warn('[arrow/tracks] load failed for', op.callsign, e);
+        }
+    }
+
+    // ── Toggle track on click ───────────────────────────────────────────────
+    window.toggleOpTrack = async (opId) => {
+        const op = operators.get(opId);
+        if (!op) return;
+        if (op.trackLayers && op.trackLayers.length > 0) {
+            clearOpTrack(op);
+            renderStats(op);
+            updateRowState(op);
+        } else {
+            await loadOpTrack(op);
+        }
+    };
+
+    function updateRowState(op) {
+        const row = document.getElementById('tr-row-' + op.id);
+        if (row) row.classList.toggle('loaded', (op.trackLayers || []).length > 0);
+    }
+
+    // ── Fit map to all visible tracks ───────────────────────────────────────
+    function fitAll() {
+        const pts = [];
+        for (const op of operators.values()) {
+            for (const p of (op.pts || [])) pts.push([p.latitude, p.longitude]);
+        }
+        if (pts.length > 0) map.fitBounds(L.latLngBounds(pts).pad(0.08));
+    }
+
+    // ── Load / clear all operators ──────────────────────────────────────────
+    async function loadAll() {
+        const status = document.getElementById('tr-global-status');
+        const ops    = [...operators.values()];
+        status.textContent = 'Loading ' + ops.length + ' operators…';
+        await Promise.all(ops.map(loadOpTrack));
+        fitAll();
+        const loaded = ops.filter(o => (o.pts || []).length > 0).length;
+        status.textContent = `✔ ${loaded} / ${ops.length} operators have tracks`;
+    }
+
+    function clearAll() {
+        for (const op of operators.values()) {
+            clearOpTrack(op);
+            renderStats(op);
+            updateRowState(op);
+        }
+        document.getElementById('tr-global-status').textContent = '';
+    }
+
+    // ── Operator list rendering ─────────────────────────────────────────────
+    function renderOpList() {
+        const list = document.getElementById('tr-op-list');
+        const sorted = [...operators.values()].sort((a, b) => {
+            if (a.online !== b.online) return a.online ? -1 : 1;
+            return a.callsign.localeCompare(b.callsign);
+        });
+
+        list.innerHTML = sorted.map(op => `
+            <div class="tr-op-row" id="tr-row-${op.id}"
+                 onclick="toggleOpTrack(${op.id})" title="Click to toggle track">
+                <span class="tr-swatch" style="background:${op.color}; color:${op.color}"></span>
+                <div class="tr-op-info">
+                    <div class="tr-op-name">
+                        ${esc(op.callsign)}
+                        ${op.role === 'ADMIN'          ? '<span class="tr-badge tr-badge-adm">ADM</span>' : ''}
+                        ${op.role === 'BATTLE_CAPTAIN' ? '<span class="tr-badge tr-badge-bc">BC</span>'  : ''}
+                    </div>
+                    <div class="tr-op-sub">
+                        <span class="tr-op-dot" style="background:${op.online ? '#22c55e' : '#475569'}"></span>
+                        ${esc(op.rank)} · ${op.online ? 'online' : 'offline'}
+                        ${op.team_name ? ' · ' + esc(op.team_name) : ''}
+                    </div>
+                </div>
+            </div>
+            <div class="tr-drawer" id="tr-drawer-${op.id}"></div>
+        `).join('');
+
+        if (sorted.length === 0) {
+            list.innerHTML = '<div style="padding:16px 12px; color:#475569; font-size:.82rem">No operators found.</div>';
+        }
+    }
+
+    // ── Hierarchy load ──────────────────────────────────────────────────────
+    async function loadHierarchy() {
+        const r = await api('/hierarchy');
+        if (!r.ok) return;
+        const h = await r.json();
+
+        const addOp = (op, teamName) => {
+            if (!operators.has(op.id)) {
+                op.color       = PALETTE[paletteIdx++ % PALETTE.length];
+                op.trackLayers = [];
+                op.pts         = [];
+            } else {
+                const ex = operators.get(op.id);
+                op.color       = ex.color;
+                op.trackLayers = ex.trackLayers;
+                op.pts         = ex.pts;
+            }
+            if (teamName) op.team_name = teamName;
+            operators.set(op.id, op);
+        };
+
+        h.companies.forEach(c =>
+            c.platoons.forEach(p =>
+                p.sections.forEach(s =>
+                    s.teams.forEach(t =>
+                        t.operators.forEach(o => addOp(o, t.name))
+                    )
+                )
+            )
+        );
+        (h.unassigned_operators || []).forEach(o => addOp(o, null));
+
+        renderOpList();
+        // Re-apply loaded state to rows that were loaded before hierarchy refreshed
+        for (const op of operators.values()) updateRowState(op);
+    }
+
+    // ── Utility ─────────────────────────────────────────────────────────────
+    function esc(s) {
+        return String(s || '').replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // ── Wire controls ───────────────────────────────────────────────────────
+    document.querySelectorAll('.tr-range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tr-range-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            trackHours = parseInt(btn.dataset.hours, 10);
+        });
+    });
+
+    document.getElementById('tr-load-all').addEventListener('click', loadAll);
+    document.getElementById('tr-clear-all').addEventListener('click', clearAll);
+    document.getElementById('tr-fit-btn').addEventListener('click', fitAll);
+    document.getElementById('tr-legend-toggle').addEventListener('click', () => {
+        document.getElementById('tr-legend').classList.toggle('open');
+    });
+
+    loadHierarchy();
+    setInterval(loadHierarchy, 30_000);
+})();
+</script>
+{% endblock %}
