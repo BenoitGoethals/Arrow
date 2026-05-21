@@ -124,6 +124,15 @@ fun SitawareTopBar(
             Icon(Icons.Filled.Menu, contentDescription = "Menu",
                  tint = c.IconTint, modifier = Modifier.size(22.dp))
         }
+        // Collapse-to-left button — placed early so it stays visible even when
+        // the bar's trailing icons get clipped off a narrow screen. Only
+        // rendered when the parent wires the callback.
+        onCollapseBar?.let { cb ->
+            IconButton(onClick = cb, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.ChevronLeft, contentDescription = "Collapse menu",
+                     tint = c.IconTint, modifier = Modifier.size(22.dp))
+            }
+        }
         Text(
             text = brand,
             color = c.Brand,
@@ -281,16 +290,6 @@ fun SitawareTopBar(
         IconButton(onClick = onOverflow, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Filled.MoreVert, contentDescription = "More",
                  tint = c.IconTint, modifier = Modifier.size(22.dp))
-        }
-
-        // Optional collapse-to-left button — only rendered if the caller wires
-        // the callback. Stays at the far right so the swipe direction matches
-        // the chevron direction the user clicks.
-        onCollapseBar?.let { cb ->
-            IconButton(onClick = cb, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Filled.ChevronLeft, contentDescription = "Collapse menu",
-                     tint = c.IconTint, modifier = Modifier.size(22.dp))
-            }
         }
     }
 }
