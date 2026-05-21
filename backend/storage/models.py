@@ -80,6 +80,31 @@ class Operator(Base):
     mfa_enabled: Mapped[bool] = mapped_column(default=False)
 
     team: Mapped[Team | None] = relationship(back_populates="operators")
+    positions: Mapped[list["OperatorPosition"]] = relationship(
+        back_populates="operator", cascade="all, delete-orphan", passive_deletes=True,
+    )
+
+
+class OperatorPosition(Base):
+    """Time-series of every GPS fix received from an operator.
+
+    The Operator row still holds the *current* position for fast live queries.
+    This table keeps the full history for track visualisation and behaviour analytics.
+    """
+    __tablename__ = "operator_positions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operator_id: Mapped[int] = mapped_column(
+        ForeignKey("operators.id", ondelete="CASCADE"), index=True,
+    )
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True,
+    )
+
+    operator: Mapped["Operator"] = relationship(back_populates="positions")
 
 
 class Photo(Base):

@@ -28,6 +28,15 @@
     .filter-bar .count { color: #94a3b8; }
     .leaflet-popup-content { color: #0e1217; }
 
+    /* ── Track history ───────────────────────────────────────────── */
+    .track-stat-box { background:#111827; border:1px solid #2a3142; border-radius:5px; padding:6px 8px; }
+    .track-stat-label { font-size:0.65rem; letter-spacing:.12em; color:#64748b; margin-bottom:2px; }
+    .track-stat-val { font-size:1.05rem; font-weight:700; color:#6ee7b7; font-family:monospace; }
+    .track-range-btn.active { background:#1e3a2f !important; color:#6ee7b7; border-color:#34d399; }
+    .op-track-btn { background:none; border:none; cursor:pointer; padding:0 4px; font-size:0.8rem;
+                    color:#64748b; line-height:1; opacity:0.7; }
+    .op-track-btn:hover { color:#6ee7b7; opacity:1; }
+
     /* ── Radial context menu ─────────────────────────────────────── */
     #radial-bg  { display:none; position:fixed; inset:0; z-index:800; background:rgba(0,0,0,.50); }
     #radial-bg.open { display:block; }
@@ -278,6 +287,7 @@
                 <button class="overlay-btn" id="kml-toggle" title="KML layers">📂 KML</button>
                 <button class="overlay-btn" id="ov-toggle" title="Saved overlays">📚 Overlays</button>
                 <button class="overlay-btn" id="goto-toggle" title="Go to location">🔍 Go To</button>
+                <button class="overlay-btn" id="track-toggle" title="Operator track history">📊 Tracks</button>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
             <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -345,6 +355,79 @@
                     </button>
                 </div>
                 <div id="goto-status" style="font-size:0.78rem; color:#94a3b8; min-height:1.2em"></div>
+            </div>
+            <!-- ── Track History panel ───────────────────────────────────────── -->
+            <div id="track-panel" style="display:none; position:absolute; top:60px; right:12px;
+                                          background:#0e1217; border:1px solid #2a3142;
+                                          border-radius:6px; padding:12px; z-index:1100;
+                                          min-width:300px; max-width:380px; color:#e2e8f0;
+                                          font-size:0.85rem; box-shadow:0 4px 14px rgba(0,0,0,0.5)">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:10px">
+                    <strong style="flex:1">Track History</strong>
+                    <button id="track-clear" class="overlay-btn"
+                            style="padding:0 8px; color:#f87171" title="Clear track">✕ Clear</button>
+                    <button id="track-close" class="overlay-btn" style="padding:0 8px">×</button>
+                </div>
+                <!-- Operator selector -->
+                <div style="margin-bottom:8px">
+                    <label style="color:#94a3b8; font-size:0.75rem; letter-spacing:.08em">OPERATOR</label>
+                    <select id="track-op-select" style="display:block; width:100%; margin-top:3px;
+                            background:#0d1117; border:1px solid #2a3142; border-radius:4px;
+                            color:#e2e8f0; padding:0.35rem 0.5rem; font-size:0.85rem; cursor:pointer">
+                        <option value="">— Select operator —</option>
+                    </select>
+                </div>
+                <!-- Time-range presets -->
+                <div style="margin-bottom:8px">
+                    <label style="color:#94a3b8; font-size:0.75rem; letter-spacing:.08em">TIME RANGE</label>
+                    <div style="display:flex; gap:4px; margin-top:4px; flex-wrap:wrap">
+                        <button class="track-range-btn overlay-btn active" data-hours="1">1 h</button>
+                        <button class="track-range-btn overlay-btn" data-hours="6">6 h</button>
+                        <button class="track-range-btn overlay-btn" data-hours="24">24 h</button>
+                        <button class="track-range-btn overlay-btn" data-hours="168">7 d</button>
+                        <button class="track-range-btn overlay-btn" data-hours="720">30 d</button>
+                    </div>
+                </div>
+                <!-- Load button -->
+                <button id="track-load" class="overlay-btn"
+                        style="width:100%; padding:0.4rem; margin-bottom:10px;
+                               background:#1e3a2f; color:#6ee7b7; border-color:#34d399">
+                    Load Track
+                </button>
+                <!-- Stats section — hidden until a track is loaded -->
+                <div id="track-stats" style="display:none; border-top:1px solid #2a3142; padding-top:10px">
+                    <div style="color:#94a3b8; font-size:0.72rem; letter-spacing:.08em; margin-bottom:6px">BEHAVIOUR SUMMARY</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px">
+                        <div class="track-stat-box" id="ts-fixes">
+                            <div class="track-stat-label">FIXES</div>
+                            <div class="track-stat-val" id="ts-fixes-val">—</div>
+                        </div>
+                        <div class="track-stat-box" id="ts-dist">
+                            <div class="track-stat-label">DISTANCE</div>
+                            <div class="track-stat-val" id="ts-dist-val">—</div>
+                        </div>
+                        <div class="track-stat-box">
+                            <div class="track-stat-label">DURATION</div>
+                            <div class="track-stat-val" id="ts-dur-val">—</div>
+                        </div>
+                        <div class="track-stat-box">
+                            <div class="track-stat-label">AVG SPEED</div>
+                            <div class="track-stat-val" id="ts-avg-val">—</div>
+                        </div>
+                        <div class="track-stat-box">
+                            <div class="track-stat-label">MAX SPEED</div>
+                            <div class="track-stat-val" id="ts-max-val">—</div>
+                        </div>
+                        <div class="track-stat-box">
+                            <div class="track-stat-label">MOVING</div>
+                            <div class="track-stat-val" id="ts-mov-val">—</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:8px; font-size:0.75rem; color:#64748b">
+                        <span id="ts-first-val"></span>
+                    </div>
+                </div>
+                <div id="track-status" style="font-size:0.78rem; color:#94a3b8; margin-top:4px; min-height:1.2em"></div>
             </div>
             <!-- ── New-overlay modal — name + multi-select tactical objects ── -->
             <div id="ov-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55);
@@ -1280,6 +1363,8 @@
                 <span>${op.callsign}</span>
                 <span style="color:#94a3b8;font-size:0.75rem">${op.rank}</span>
                 ${opIcons(op)}
+                <button class="op-track-btn" data-track-op="${op.id}"
+                        title="Show track history" onclick="event.stopPropagation();openTrackFor(${op.id})">📊</button>
             </div>`;
         };
 
@@ -2472,6 +2557,7 @@
         // Resolve own-platoon membership whenever hierarchy or me changes
         if (state.me) state.myPlatoonOpIds = resolvePlatoonIds(state.hierarchy, state.me.id);
         refreshAllMarkers(); renderTree();
+        if (typeof refreshTrackOpSelect === 'function') refreshTrackOpSelect();
     }
 
     async function loadEnemies() {
@@ -2699,6 +2785,201 @@
             console.warn('[arrow] loadKmlLayers failed', e);
         }
     }
+
+    // ── Track History ─────────────────────────────────────────────────────────
+    const trackPanel   = document.getElementById('track-panel');
+    const trackOpSel   = document.getElementById('track-op-select');
+    const trackStatus  = document.getElementById('track-status');
+    const trackStats   = document.getElementById('track-stats');
+
+    // Active layers for the current track
+    let trackLayers     = [];   // L.polyline / L.circleMarker
+    let trackHours      = 1;    // selected preset hours
+    let trackOperatorId = null; // currently displayed operator
+
+    // Populate/refresh the operator dropdown whenever the hierarchy is updated.
+    // Called from loadHierarchy() success path (see below — hoisted).
+    function refreshTrackOpSelect() {
+        const cur = trackOpSel.value;
+        trackOpSel.innerHTML = '<option value="">— Select operator —</option>';
+        const sorted = [...state.operators.values()].sort((a, b) =>
+            a.callsign.localeCompare(b.callsign));
+        for (const op of sorted) {
+            const opt = document.createElement('option');
+            opt.value = op.id;
+            opt.textContent = op.callsign + (op.online ? ' ●' : '');
+            trackOpSel.appendChild(opt);
+        }
+        if (cur) trackOpSel.value = cur;
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2
+            + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180)
+            * Math.sin(dLon/2)**2;
+        return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
+    function clearTrackLayers() {
+        for (const l of trackLayers) map.removeLayer(l);
+        trackLayers = [];
+        trackStats.style.display = 'none';
+        trackStatus.textContent = '';
+        trackOperatorId = null;
+    }
+
+    // Segment the track by instant speed so slow/fast movement renders differently.
+    // Returns L.polyline array (green ≤2 km/h, teal 2-20, orange >20).
+    function buildTrackPolylines(pts) {
+        if (pts.length < 2) {
+            // Single fix — just a marker
+            if (pts.length === 1) {
+                const m = L.circleMarker([pts[0].latitude, pts[0].longitude], {
+                    radius: 5, color: '#6ee7b7', fillColor: '#6ee7b7', fillOpacity: 1, weight: 1,
+                });
+                trackLayers.push(m.addTo(map));
+            }
+            return;
+        }
+
+        const SLOW  = '#34d399';   // ≤ 2 km/h (stationary / foot)
+        const WALK  = '#60a5fa';   // 2-15 km/h (walking / jog)
+        const DRIVE = '#f97316';   // > 15 km/h (vehicle)
+
+        let segCoords = [[pts[0].latitude, pts[0].longitude]];
+        let segColor  = SLOW;
+
+        for (let i = 1; i < pts.length; i++) {
+            const p = pts[i], q = pts[i - 1];
+            const dt = (new Date(p.recorded_at) - new Date(q.recorded_at)) / 3600000; // hours
+            const dk = haversineKm(q.latitude, q.longitude, p.latitude, p.longitude);
+            const spd = dt > 0 ? dk / dt : 0;
+            const color = spd > 15 ? DRIVE : spd > 2 ? WALK : SLOW;
+
+            if (color === segColor) {
+                segCoords.push([p.latitude, p.longitude]);
+            } else {
+                const pl = L.polyline(segCoords, { color: segColor, weight: 3, opacity: 0.85 });
+                trackLayers.push(pl.addTo(map));
+                segCoords = [segCoords[segCoords.length - 1], [p.latitude, p.longitude]];
+                segColor  = color;
+            }
+        }
+        if (segCoords.length > 1) {
+            trackLayers.push(L.polyline(segCoords, { color: segColor, weight: 3, opacity: 0.85 }).addTo(map));
+        }
+
+        // Start (green) and end (red) markers
+        const first = pts[0], last = pts[pts.length - 1];
+        trackLayers.push(L.circleMarker([first.latitude, first.longitude], {
+            radius: 6, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 1, weight: 2,
+        }).bindTooltip('Start ' + new Date(first.recorded_at).toLocaleTimeString()).addTo(map));
+        trackLayers.push(L.circleMarker([last.latitude, last.longitude], {
+            radius: 6, color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1, weight: 2,
+        }).bindTooltip('Last fix ' + new Date(last.recorded_at).toLocaleTimeString()).addTo(map));
+    }
+
+    function renderTrackStats(pts) {
+        if (pts.length === 0) { trackStats.style.display = 'none'; return; }
+
+        let totalKm = 0, maxSpd = 0, movingSecs = 0;
+        const speeds = [];
+        for (let i = 1; i < pts.length; i++) {
+            const p = pts[i], q = pts[i - 1];
+            const dtH = (new Date(p.recorded_at) - new Date(q.recorded_at)) / 3600000;
+            const dtS = dtH * 3600;
+            const dk  = haversineKm(q.latitude, q.longitude, p.latitude, p.longitude);
+            const spd = dtH > 0 ? dk / dtH : 0;
+            totalKm += dk;
+            if (spd > maxSpd) maxSpd = spd;
+            if (spd > 0.5) movingSecs += dtS;
+            speeds.push(spd);
+        }
+
+        const durSecs = (new Date(pts[pts.length-1].recorded_at) - new Date(pts[0].recorded_at)) / 1000;
+        const avgSpd  = durSecs > 0 ? (totalKm / (durSecs / 3600)) : 0;
+        const movPct  = durSecs > 0 ? Math.round(movingSecs / durSecs * 100) : 0;
+
+        const fmtDist = totalKm < 1 ? Math.round(totalKm * 1000) + ' m'
+                                     : totalKm.toFixed(2) + ' km';
+        const fmtDur  = durSecs < 3600
+            ? Math.round(durSecs / 60) + ' min'
+            : (durSecs / 3600).toFixed(1) + ' h';
+
+        document.getElementById('ts-fixes-val').textContent = pts.length;
+        document.getElementById('ts-dist-val').textContent  = fmtDist;
+        document.getElementById('ts-dur-val').textContent   = fmtDur;
+        document.getElementById('ts-avg-val').textContent   = avgSpd.toFixed(1) + ' km/h';
+        document.getElementById('ts-max-val').textContent   = maxSpd.toFixed(1) + ' km/h';
+        document.getElementById('ts-mov-val').textContent   = movPct + '%';
+        document.getElementById('ts-first-val').textContent =
+            'From ' + new Date(pts[0].recorded_at).toLocaleString()
+            + ' → ' + new Date(pts[pts.length-1].recorded_at).toLocaleString();
+        trackStats.style.display = '';
+    }
+
+    async function loadTrack() {
+        const opId = parseInt(trackOpSel.value, 10);
+        if (!opId) { trackStatus.textContent = '⚠ Select an operator first'; return; }
+        clearTrackLayers();
+        trackStatus.textContent = 'Loading…';
+        const since = new Date(Date.now() - trackHours * 3600000).toISOString();
+        const url = window.ARROW_BACKEND_URL + `/tracking/${opId}/history?since=${encodeURIComponent(since)}&limit=10000`;
+        try {
+            const res = await fetch(url, { headers });
+            if (!res.ok) throw new Error(await res.text());
+            const pts = await res.json();
+            if (pts.length === 0) {
+                trackStatus.textContent = '⚠ No fixes in this period';
+                return;
+            }
+            buildTrackPolylines(pts);
+            renderTrackStats(pts);
+            // Fit map to track bounds
+            const bounds = L.latLngBounds(pts.map(p => [p.latitude, p.longitude]));
+            map.fitBounds(bounds.pad(0.15));
+            trackOperatorId = opId;
+            const op = state.operators.get(opId);
+            trackStatus.textContent = `✔ ${pts.length} fixes — ${op?.callsign ?? 'operator'}`;
+        } catch (e) {
+            trackStatus.textContent = '⚠ ' + e.message;
+        }
+    }
+
+    // Called from the 📊 sidebar button via inline onclick
+    window.openTrackFor = (opId) => {
+        trackPanel.style.display = '';
+        trackOpSel.value = opId;
+        trackHours = 24;
+        document.querySelectorAll('.track-range-btn').forEach(b => {
+            b.classList.toggle('active', parseInt(b.dataset.hours) === trackHours);
+        });
+        loadTrack();
+    };
+
+    document.getElementById('track-load').addEventListener('click', loadTrack);
+    document.getElementById('track-clear').addEventListener('click', clearTrackLayers);
+    document.getElementById('track-close').addEventListener('click', () => {
+        trackPanel.style.display = 'none';
+    });
+    document.getElementById('track-toggle').addEventListener('click', () => {
+        if (trackPanel.style.display === 'none') {
+            trackPanel.style.display = '';
+            refreshTrackOpSelect();
+        } else {
+            trackPanel.style.display = 'none';
+        }
+    });
+    document.querySelectorAll('.track-range-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.track-range-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            trackHours = parseInt(btn.dataset.hours, 10);
+        });
+    });
 
     document.getElementById('kml-toggle').addEventListener('click', () => {
         kml.panel.style.display = kml.panel.style.display === 'none' ? '' : 'none';

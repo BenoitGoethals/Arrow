@@ -174,6 +174,15 @@ class PositionIn(BaseModel):
     altitude: float | None = None
 
 
+class PositionHistoryOut(ORMModel):
+    id: int
+    operator_id: int
+    latitude: float
+    longitude: float
+    altitude: float | None
+    recorded_at: datetime
+
+
 class BattleIn(BaseModel):
     name: str
     description: str = ""
