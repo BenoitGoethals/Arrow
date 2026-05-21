@@ -45,7 +45,16 @@ class KmlParseError(ValueError):
     """Raised when the upload is not a recognisable KML/KMZ document."""
 
 
-def _strip_ns(tag: str) -> str:
+def _strip_ns(tag: object) -> str:
+    """Return the local name of an lxml tag, or ``""`` for non-element nodes.
+
+    lxml represents Comment/ProcessingInstruction nodes by setting ``.tag`` to
+    a *callable* (``etree.Comment`` / ``etree.ProcessingInstruction``). Naive
+    string handling there crashes — return an empty string so callers can
+    filter the node out by an inequality check.
+    """
+    if not isinstance(tag, str):
+        return ""
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
