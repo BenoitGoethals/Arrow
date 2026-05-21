@@ -136,6 +136,11 @@ fun MapScreen(
     // Trigger bumped by the shared WS handler when a kml-layer event arrives;
     // a LaunchedEffect below reloads the layer list whenever it changes.
     val kmlReloadTrigger = remember { mutableStateOf(0) }
+    // Floating panel listing the imported KML layers; opens from the KML chip.
+    var kmlPanelOpen by remember { mutableStateOf(false) }
+    // Lets the operator collapse the entire SitaWare chrome off to the left
+    // when they need a clean view. A small handle at top-left brings it back.
+    var topBarCollapsed by remember { mutableStateOf(false) }
     // Holds the currently-painted MBTiles overlay so we can remove it on
     // basemap switch without disturbing other map overlays (markers, events).
     val mbtilesOverlay = remember { mutableStateOf<TilesOverlay?>(null) }
@@ -917,7 +922,15 @@ fun MapScreen(
             }
         }
         val showBanner = bannerVisible && notif.total > 0
-        Column(modifier = Modifier.fillMaxWidth().align(Alignment.TopStart)) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !topBarCollapsed,
+            modifier = Modifier.fillMaxWidth().align(Alignment.TopStart),
+            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it }) +
+                    androidx.compose.animation.fadeIn(),
+            exit  = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it }) +
+                    androidx.compose.animation.fadeOut(),
+        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             SitawareTopBar(
                 brand   = "ARROW",
                 mgrs    = mgrs,
@@ -949,6 +962,9 @@ fun MapScreen(
                 onToggleGfx     = { tgVisible = !tgVisible },
                 cbrnOn          = cbrnVisible,
                 onToggleCbrn    = { cbrnVisible = !cbrnVisible },
+                kmlActiveCount  = kmlLayers.count { it.visible },
+                onToggleKml     = { kmlPanelOpen = !kmlPanelOpen },
+                onCollapseBar   = { topBarCollapsed = true },
                 isStreaming     = isStreaming,
                 onToggleStream  = {
                     val wantOn = !isStreaming
@@ -983,6 +999,53 @@ fun MapScreen(
                     onDismiss = { bannerVisible = false },
                 )
             }
+        }
+        }   // AnimatedVisibility(!topBarCollapsed)
+
+        // Small floating handle shown when the bar is collapsed — taps restore it.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = topBarCollapsed,
+            modifier = Modifier.align(Alignment.TopStart),
+            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it }) +
+                    androidx.compose.animation.fadeIn(),
+            exit  = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it }) +
+                    androidx.compose.animation.fadeOut(),
+        ) {
+            SitawareCollapsedHandle(onExpand = { topBarCollapsed = false })
+        }
+
+        // ── KML layer panel — slides in from the right under the top bar.
+        //    Top offset clears both the SitaWare chrome and the base-layer
+        //    chip when those are present, so the chip stays tappable.
+        val kmlPanelTop = when {
+            topBarCollapsed       -> 12.dp
+            mapSources.size > 1   -> 136.dp   // 92 (bar) + 36 (chip) + 8 (gap)
+            else                  -> 92.dp
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = kmlPanelOpen,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = kmlPanelTop, end = 12.dp),
+            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }) +
+                    androidx.compose.animation.fadeIn(),
+            exit  = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }) +
+                    androidx.compose.animation.fadeOut(),
+        ) {
+            com.arrow.tactical.kml.ui.KmlMapPanel(
+                layers   = kmlLayers,
+                onClose  = { kmlPanelOpen = false },
+                onToggle = { id, wantOn ->
+                    val result = container.kmlLayerRepository.setVisible(id, wantOn)
+                    // Optimistic local update — the WS broadcast will reconcile.
+                    if (result.isSuccess) {
+                        kmlLayers = kmlLayers.map {
+                            if (it.id == id) it.copy(visible = wantOn) else it
+                        }
+                    }
+                    result
+                },
+            )
         }
 
         // ── Base-layer switcher — small chip + dropdown anchored top-right

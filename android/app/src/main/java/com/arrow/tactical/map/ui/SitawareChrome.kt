@@ -11,6 +11,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -95,9 +97,15 @@ fun SitawareTopBar(
     onToggleGfx: () -> Unit = {},
     cbrnOn: Boolean = false,
     onToggleCbrn: () -> Unit = {},
+    /** Open count of KML layers currently visible — drives the KML chip badge. */
+    kmlActiveCount: Int = 0,
+    onToggleKml: () -> Unit = {},
     isStreaming: Boolean = false,
     onToggleStream: () -> Unit = {},
     onLocateMe: () -> Unit = {},
+    /** When non-null, renders a chevron-left button at the far right that
+     *  collapses the bar. The MapScreen owns the collapse state. */
+    onCollapseBar: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val c = SitawareChromeColors
@@ -169,6 +177,24 @@ fun SitawareTopBar(
             Text("☢ CBRN", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                  color = if (cbrnOn) Color(0xFFFCA5A5) else Color(0xFFCBD5E1))
         }
+        // KML layers — chip opens the layer panel; label shows live-count when >0.
+        val kmlOn = kmlActiveCount > 0
+        Box(
+            Modifier
+                .clickable { onToggleKml() }
+                .background(if (kmlOn) Color(0x3322D3EE) else Color(0xFF12233A),
+                            RoundedCornerShape(4.dp))
+                .border(0.5.dp, if (kmlOn) Color(0xFF22D3EE) else Color(0xFF2A3142),
+                        RoundedCornerShape(4.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (kmlOn) "KML · $kmlActiveCount" else "KML",
+                fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                color = if (kmlOn) Color(0xFF67E8F9) else Color(0xFFCBD5E1),
+            )
+        }
         // Stream toggle
         IconButton(onClick = onToggleStream, modifier = Modifier.size(32.dp)) {
             Icon(
@@ -234,6 +260,44 @@ fun SitawareTopBar(
         IconButton(onClick = onOverflow, modifier = Modifier.size(32.dp)) {
             Icon(Icons.Filled.MoreVert, contentDescription = "More",
                  tint = c.IconTint, modifier = Modifier.size(22.dp))
+        }
+
+        // Optional collapse-to-left button — only rendered if the caller wires
+        // the callback. Stays at the far right so the swipe direction matches
+        // the chevron direction the user clicks.
+        onCollapseBar?.let { cb ->
+            IconButton(onClick = cb, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.ChevronLeft, contentDescription = "Collapse menu",
+                     tint = c.IconTint, modifier = Modifier.size(22.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Small floating chevron shown when the top bar is collapsed; tapping it
+ * restores the bar. Designed to be placed at top-left via Alignment.TopStart.
+ */
+@Composable
+fun SitawareCollapsedHandle(
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = SitawareChromeColors
+    Box(
+        modifier = modifier
+            .padding(start = 6.dp, top = 6.dp)
+            .background(c.BarBg, RoundedCornerShape(6.dp))
+            .border(0.5.dp, Color(0xFF2A3142), RoundedCornerShape(6.dp))
+            .clickable { onExpand() }
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Menu, contentDescription = "Show menu",
+                 tint = c.IconTint, modifier = Modifier.size(18.dp))
+            Icon(Icons.Filled.ChevronRight, contentDescription = null,
+                 tint = c.IconTint, modifier = Modifier.size(16.dp))
         }
     }
 }
