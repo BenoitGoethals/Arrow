@@ -84,6 +84,13 @@ class ApiClient(
         ).execute().use { ApiResponse(it.code, it.body?.string().orEmpty()) }
     }
 
+    suspend fun patchJson(path: String, body: String): ApiResponse = withContext(Dispatchers.IO) {
+        httpClient.newCall(
+            Request.Builder().url(baseUrl() + path)
+                .patch(body.toRequestBody(jsonMedia)).build()
+        ).execute().use { ApiResponse(it.code, it.body?.string().orEmpty()) }
+    }
+
     suspend fun postForm(path: String, form: Map<String, String>): ApiResponse = withContext(Dispatchers.IO) {
         val encoded = form.entries.joinToString("&") {
             "${java.net.URLEncoder.encode(it.key, "UTF-8")}=${java.net.URLEncoder.encode(it.value, "UTF-8")}"

@@ -275,6 +275,27 @@
                 <button class="overlay-btn active" id="cbrn-toggle">☢ CBRN</button>
                 <button class="overlay-btn active" id="tg-toggle" title="Tactical control graphics">📐 Tac Gfx</button>
                 <button class="overlay-btn" id="tg-fit" title="Fit map to tactical graphics">🎯 Fit</button>
+                <button class="overlay-btn" id="kml-toggle" title="KML layers">📂 KML</button>
+            </div>
+            <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
+            <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
+                                       background:#0e1217; border:1px solid #2a3142;
+                                       border-radius:6px; padding:10px; z-index:1100;
+                                       min-width:280px; max-width:340px; color:#e2e8f0;
+                                       font-size:0.85rem; box-shadow:0 4px 14px rgba(0,0,0,0.5)">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px">
+                    <strong style="flex:1">KML layers</strong>
+                    <button id="kml-close" class="overlay-btn" style="padding:0 8px">×</button>
+                </div>
+                <div id="kml-upload-row" style="display:none; margin-bottom:8px">
+                    <label class="overlay-btn" style="display:block; text-align:center; cursor:pointer">
+                        ⤴ Import .kml / .kmz
+                        <input id="kml-file" type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz"
+                               style="display:none">
+                    </label>
+                    <div id="kml-status" style="margin-top:6px; color:#94a3b8; font-size:0.78rem;"></div>
+                </div>
+                <div id="kml-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
             </div>
         </div>
         <div id="map"></div>
@@ -2177,6 +2198,241 @@
         } catch (e) { console.warn('[arrow] loadCotTracks error', e); }
     }
 
+    // ── KML layers ───────────────────────────────────────────────────────────
+    // Each layer fetched from /kml-layers is rendered as a single L.LayerGroup
+    // we can toggle on/off without re-fetching. Visibility is server-side
+    // (PATCH /kml-layers/{id}) so it survives reloads and is shared across
+    // operators — toggling on the web is reflected on the Android client.
+    const kml = {
+        layers:    new Map(),  // id -> { meta, group, loaded:bool, hidden:bool }
+        panel:     document.getElementById('kml-panel'),
+        list:      document.getElementById('kml-list'),
+        statusEl:  document.getElementById('kml-status'),
+        canEdit:   role === 'ADMIN' || role === 'BATTLE_CAPTAIN',
+    };
+    document.getElementById('kml-upload-row').style.display = kml.canEdit ? '' : 'none';
+
+    function kmlStyleFor(feature) {
+        const s = feature.style || {};
+        return {
+            color:       s.stroke || '#34d399',
+            weight:      s.width  || 2,
+            opacity:     0.9,
+            fillColor:   s.fill   || s.stroke || '#34d399',
+            fillOpacity: 0.18,
+        };
+    }
+
+    function buildKmlLayerGroup(features) {
+        const grp = L.layerGroup();
+        for (const f of features) {
+            let lyr = null;
+            const opts = kmlStyleFor(f);
+            if (f.type === 'POINT') {
+                lyr = L.circleMarker(f.coords, {
+                    radius: 6, color: opts.color, weight: 2,
+                    fillColor: opts.fillColor, fillOpacity: 0.85,
+                });
+            } else if (f.type === 'LINE') {
+                lyr = L.polyline(f.coords, opts);
+            } else if (f.type === 'POLYGON') {
+                lyr = L.polygon(f.coords, opts);
+            }
+            if (!lyr) continue;
+            const title = (f.name || '').toString();
+            const desc  = (f.description || '').toString();
+            if (title || desc) {
+                const safe = (s) => s.replace(/[<>&"]/g,
+                    c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+                lyr.bindPopup(
+                    (title ? `<b>${safe(title)}</b>` : '') +
+                    (desc  ? `<br/>${safe(desc).slice(0, 500)}` : '')
+                );
+            }
+            grp.addLayer(lyr);
+        }
+        return grp;
+    }
+
+    async function loadKmlLayerDetail(meta) {
+        const r = await api(`/kml-layers/${meta.id}`);
+        if (!r.ok) throw new Error('Cannot load layer');
+        const detail = await r.json();
+        return buildKmlLayerGroup(detail.features || []);
+    }
+
+    async function ensureKmlGroup(entry) {
+        if (entry.group) return entry.group;
+        entry.group = await loadKmlLayerDetail(entry.meta);
+        return entry.group;
+    }
+
+    async function applyKmlVisibility(entry) {
+        const shouldShow = entry.meta.visible && !entry.hidden;
+        if (shouldShow) {
+            const grp = await ensureKmlGroup(entry);
+            if (!map.hasLayer(grp)) grp.addTo(map);
+        } else if (entry.group && map.hasLayer(entry.group)) {
+            map.removeLayer(entry.group);
+        }
+    }
+
+    function renderKmlList() {
+        kml.list.innerHTML = '';
+        if (kml.layers.size === 0) {
+            kml.list.innerHTML = '<div style="color:#64748b">No layers imported yet.</div>';
+            return;
+        }
+        const sorted = [...kml.layers.values()]
+            .sort((a, b) => (b.meta.uploaded_at || '').localeCompare(a.meta.uploaded_at || ''));
+        for (const entry of sorted) {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:6px; ' +
+                                'padding:4px 6px; border:1px solid #2a3142; border-radius:4px';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = entry.meta.visible;
+            cb.addEventListener('change', async () => {
+                entry.meta.visible = cb.checked;
+                await applyKmlVisibility(entry);
+                if (kml.canEdit) {
+                    fetch(window.ARROW_BACKEND_URL + `/kml-layers/${entry.meta.id}`, {
+                        method:  'PATCH',
+                        headers: { ...headers, 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({ visible: cb.checked }),
+                    });
+                }
+            });
+            row.appendChild(cb);
+
+            const name = document.createElement('div');
+            name.style.cssText = 'flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap';
+            const safe = entry.meta.name.replace(/[<>&]/g, c =>
+                ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+            name.innerHTML = `<div title="${safe}">${safe}</div>` +
+                `<div style="color:#64748b; font-size:0.72rem">${entry.meta.feature_count} feature(s)</div>`;
+            row.appendChild(name);
+
+            const fit = document.createElement('button');
+            fit.className = 'overlay-btn';
+            fit.title = 'Zoom to layer';
+            fit.textContent = '🎯';
+            fit.addEventListener('click', async () => {
+                if (entry.meta.bbox && entry.meta.bbox.length === 4) {
+                    const [minLon, minLat, maxLon, maxLat] = entry.meta.bbox;
+                    map.fitBounds([[minLat, minLon], [maxLat, maxLon]], { padding: [30, 30] });
+                } else {
+                    const grp = await ensureKmlGroup(entry);
+                    if (grp.getLayers().length) {
+                        const b = L.featureGroup(grp.getLayers()).getBounds();
+                        if (b.isValid()) map.fitBounds(b, { padding: [30, 30] });
+                    }
+                }
+            });
+            row.appendChild(fit);
+
+            if (kml.canEdit) {
+                const del = document.createElement('button');
+                del.className = 'overlay-btn';
+                del.textContent = '🗑';
+                del.title = 'Delete layer';
+                del.addEventListener('click', async () => {
+                    if (!confirm(`Delete layer "${entry.meta.name}"?`)) return;
+                    const r = await fetch(window.ARROW_BACKEND_URL + `/kml-layers/${entry.meta.id}`, {
+                        method: 'DELETE', headers,
+                    });
+                    if (r.ok) removeKmlLayer(entry.meta.id);
+                });
+                row.appendChild(del);
+            }
+
+            kml.list.appendChild(row);
+        }
+    }
+
+    function removeKmlLayer(id) {
+        const entry = kml.layers.get(id);
+        if (!entry) return;
+        if (entry.group && map.hasLayer(entry.group)) map.removeLayer(entry.group);
+        kml.layers.delete(id);
+        renderKmlList();
+    }
+
+    async function addKmlLayer(meta) {
+        const existing = kml.layers.get(meta.id);
+        if (existing) {
+            existing.meta = meta;
+            await applyKmlVisibility(existing);
+            renderKmlList();
+            return existing;
+        }
+        const entry = { meta, group: null, hidden: false };
+        kml.layers.set(meta.id, entry);
+        await applyKmlVisibility(entry);
+        renderKmlList();
+        return entry;
+    }
+
+    async function loadKmlLayers() {
+        try {
+            const r = await api('/kml-layers');
+            if (!r.ok) return;
+            const list = await r.json();
+            for (const meta of list) await addKmlLayer(meta);
+            renderKmlList();
+        } catch (e) {
+            console.warn('[arrow] loadKmlLayers failed', e);
+        }
+    }
+
+    document.getElementById('kml-toggle').addEventListener('click', () => {
+        kml.panel.style.display = kml.panel.style.display === 'none' ? '' : 'none';
+    });
+    document.getElementById('kml-close').addEventListener('click', () => {
+        kml.panel.style.display = 'none';
+    });
+
+    const kmlFileInput = document.getElementById('kml-file');
+    kmlFileInput?.addEventListener('change', async () => {
+        const f = kmlFileInput.files?.[0];
+        if (!f) return;
+        kml.statusEl.textContent = `Uploading ${f.name}…`;
+        const fd = new FormData();
+        fd.append('file', f);
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/kml-layers', {
+                method: 'POST', headers, body: fd,
+            });
+            if (!r.ok) {
+                const txt = await r.text();
+                kml.statusEl.textContent = `Failed: ${txt.slice(0, 160)}`;
+                return;
+            }
+            const layer = await r.json();
+            kml.statusEl.textContent = `Imported ${layer.feature_count} feature(s).`;
+            // Skip the network roundtrip: the response already has features.
+            const grp = buildKmlLayerGroup(layer.features || []);
+            const entry = { meta: layer, group: grp, hidden: false };
+            kml.layers.set(layer.id, entry);
+            await applyKmlVisibility(entry);
+            renderKmlList();
+        } catch (e) {
+            kml.statusEl.textContent = `Failed: ${e.message}`;
+        } finally {
+            kmlFileInput.value = '';
+        }
+    });
+
+    function handleKmlWsEvent(msg) {
+        if (msg.event === 'created' || msg.event === 'updated') {
+            addKmlLayer(msg.data);
+        } else if (msg.event === 'deleted') {
+            removeKmlLayer(msg.data.id);
+        }
+    }
+
+    loadKmlLayers();
+
     function connectWS() {
         const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
@@ -2208,6 +2464,8 @@
             } else if (msg.channel === 'fire-mission') {
                 loadFmMarkers();
                 loadMapFireMissions();
+            } else if (msg.channel === 'kml-layer') {
+                handleKmlWsEvent(msg);
             }
         };
         ws.onclose = () => setTimeout(connectWS, 3000);

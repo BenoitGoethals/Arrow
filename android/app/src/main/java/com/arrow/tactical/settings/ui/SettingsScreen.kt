@@ -16,6 +16,7 @@ fun SettingsScreen(
     repo: SettingsRepository,
     onLogout: () -> Unit,
     onOpenOfflineMaps: () -> Unit = {},
+    onOpenKmlLayers: () -> Unit = {},
 ) {
     val server   by repo.serverUrl.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
     val callsign by repo.callsign.collectAsState(initial = "")
@@ -96,6 +97,15 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Download maps for offline use")
+            }
+
+            Text("KML overlays", style = MaterialTheme.typography.labelLarge,
+                 color = MaterialTheme.colorScheme.primary)
+            OutlinedButton(
+                onClick  = onOpenKmlLayers,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Browse imported KML layers")
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
