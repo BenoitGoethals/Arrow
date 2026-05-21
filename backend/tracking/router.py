@@ -1,13 +1,13 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import OperatorOut, PositionIn
+from backend.api.schemas import OperatorOut, PositionHistoryOut, PositionIn
 from backend.auth.jwt_auth import get_current_operator
 from backend.cot.cot import CotEvent, role_to_cot_type
 from backend.storage.database import get_db
-from backend.storage.models import Operator
+from backend.storage.models import Operator, OperatorPosition
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
@@ -19,11 +19,20 @@ async def update_position(
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
 ) -> Operator:
-    current.latitude = payload.latitude
+    current.latitude  = payload.latitude
     current.longitude = payload.longitude
-    current.altitude = payload.altitude
+    current.altitude  = payload.altitude
     current.last_seen = datetime.now(timezone.utc)
-    current.status = "ONLINE"
+    current.status    = "ONLINE"
+
+    # Persist every fix for track history and behaviour analytics.
+    db.add(OperatorPosition(
+        operator_id=current.id,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        altitude=payload.altitude,
+        recorded_at=current.last_seen,
+    ))
     db.commit()
     db.refresh(current)
 
@@ -67,3 +76,23 @@ def live_operators(
         .filter(Operator.latitude.is_not(None), Operator.longitude.is_not(None))
         .all()
     )
+
+
+@router.get("/{operator_id}/history", response_model=list[PositionHistoryOut])
+def operator_history(
+    operator_id: int,
+    since: datetime | None = Query(default=None, description="ISO-8601 start time (inclusive)"),
+    until: datetime | None = Query(default=None, description="ISO-8601 end time (inclusive)"),
+    limit: int = Query(default=5000, le=20000),
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[OperatorPosition]:
+    q = (
+        db.query(OperatorPosition)
+        .filter(OperatorPosition.operator_id == operator_id)
+    )
+    if since:
+        q = q.filter(OperatorPosition.recorded_at >= since)
+    if until:
+        q = q.filter(OperatorPosition.recorded_at <= until)
+    return q.order_by(OperatorPosition.recorded_at.asc()).limit(limit).all()

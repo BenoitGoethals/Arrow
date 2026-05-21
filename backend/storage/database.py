@@ -93,6 +93,17 @@ def _migrate(conn: object) -> None:
         "  byte_size INTEGER DEFAULT 0,"
         "  file_path VARCHAR(255) NOT NULL"
         ")",
+        # Operator position history — every GPS fix saved for track replay and analytics
+        "CREATE TABLE IF NOT EXISTS operator_positions ("
+        "  id INTEGER PRIMARY KEY,"
+        "  operator_id INTEGER NOT NULL REFERENCES operators(id) ON DELETE CASCADE,"
+        "  latitude FLOAT NOT NULL,"
+        "  longitude FLOAT NOT NULL,"
+        "  altitude FLOAT,"
+        "  recorded_at DATETIME"
+        ")",
+        "CREATE INDEX IF NOT EXISTS ix_op_pos_operator_id ON operator_positions(operator_id)",
+        "CREATE INDEX IF NOT EXISTS ix_op_pos_recorded_at ON operator_positions(recorded_at)",
     ]
     for sql in migrations:
         try:
