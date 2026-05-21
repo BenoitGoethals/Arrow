@@ -45,6 +45,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.arrow.tactical.di.AppContainer
+import com.arrow.tactical.kml.KmlFeature
+import com.arrow.tactical.kml.KmlLayerDto
+import com.arrow.tactical.kml.buildKmlOverlays
 import com.arrow.tactical.map.BackendTileSource
 import com.arrow.tactical.map.MapSourceDto
 import com.arrow.tactical.map.MilSymbolRenderer
@@ -123,6 +126,16 @@ fun MapScreen(
     var mapSources    by remember { mutableStateOf<List<MapSourceDto>>(emptyList()) }
     var selectedMap   by remember { mutableStateOf<MapSourceDto?>(null) }
     var layerMenuOpen by remember { mutableStateOf(false) }
+    // KML layers — fetched from /kml-layers. ``kmlFeatures`` caches the heavy
+    // feature lists so toggling a layer's visibility doesn't re-hit the server.
+    // ``kmlOverlays`` maps layer-id → the osmdroid Overlays currently on the
+    // map, so we can remove them cleanly on hide / WS deletion.
+    var kmlLayers       by remember { mutableStateOf<List<KmlLayerDto>>(emptyList()) }
+    val kmlFeatures = remember { mutableStateMapOf<Int, List<KmlFeature>>() }
+    val kmlOverlays = remember { mutableStateMapOf<Int, List<org.osmdroid.views.overlay.Overlay>>() }
+    // Trigger bumped by the shared WS handler when a kml-layer event arrives;
+    // a LaunchedEffect below reloads the layer list whenever it changes.
+    val kmlReloadTrigger = remember { mutableStateOf(0) }
     // Holds the currently-painted MBTiles overlay so we can remove it on
     // basemap switch without disturbing other map overlays (markers, events).
     val mbtilesOverlay = remember { mutableStateOf<TilesOverlay?>(null) }
@@ -339,6 +352,7 @@ fun MapScreen(
                             .onSuccess { reps ->
                                 cbrnReports = com.arrow.tactical.cbrn.cbrnReportsFrom(reps)
                             }
+                        "kml-layer"       -> kmlReloadTrigger.value++
                         else -> {}
                     }
                 }
@@ -352,6 +366,44 @@ fun MapScreen(
     // mapRef lets LaunchedEffect imperatively update overlays outside AndroidView.update,
     // which avoids Compose's state-tracking limitations for non-composable lambdas.
     val mapRef = remember { mutableStateOf<MapView?>(null) }
+
+    // ── KML — fetch the layer list on entry and on every kml-layer WS event ──
+    LaunchedEffect(kmlReloadTrigger.value) {
+        container.kmlLayerRepository.list()
+            .onSuccess { kmlLayers = it }
+    }
+
+    // Materialise visible layers onto the map. Re-runs whenever the catalogue
+    // changes; feature payloads are fetched lazily and cached in kmlFeatures.
+    LaunchedEffect(mapRef.value, kmlLayers) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        val visibleIds = kmlLayers.filter { it.visible }.map { it.id }.toSet()
+
+        // Drop overlays for layers that disappeared or were hidden.
+        val toRemove = kmlOverlays.keys.filterNot { it in visibleIds }
+        for (id in toRemove) {
+            kmlOverlays.remove(id)?.forEach { map.overlays.remove(it) }
+        }
+
+        // Add overlays for newly-visible layers, fetching features on demand.
+        for (layer in kmlLayers) {
+            if (!layer.visible) continue
+            if (kmlOverlays.containsKey(layer.id)) continue
+            val features = kmlFeatures.getOrPut(layer.id) {
+                container.kmlLayerRepository.features(layer.id).getOrDefault(emptyList())
+            }
+            if (features.isEmpty()) continue
+            val overlays = buildKmlOverlays(map, features)
+            // Insert just above the base tile / mbtiles overlay (index 1) so
+            // tactical markers added later still sit on top.
+            val insertAt = (kmlOverlays.values.sumOf { it.size }).coerceAtMost(map.overlays.size)
+            for ((i, o) in overlays.withIndex()) {
+                map.overlays.add((insertAt + i + 1).coerceAtMost(map.overlays.size), o)
+            }
+            kmlOverlays[layer.id] = overlays
+        }
+        map.invalidate()
+    }
 
     // Sync the north-lock toggle with osmdroid: when locked we snap mapOrientation
     // to 0 and strip the rotation-gesture overlay; when unlocked we install it so
@@ -482,9 +534,13 @@ fun MapScreen(
         // Wipe ALL transient overlays we own (markers + tactical graphic
         // polylines/polygons) before rebuilding. The base map-events overlay
         // sits on a different overlay slot and isn't a Marker/Polyline/Polygon.
+        // KML overlays are tagged via [com.arrow.tactical.kml.isKmlOverlay] so
+        // they survive this wipe — their lifecycle is managed independently.
         map.overlays.removeAll {
-            it is Marker || it is org.osmdroid.views.overlay.Polyline ||
-            it is org.osmdroid.views.overlay.Polygon
+            !com.arrow.tactical.kml.isKmlOverlay(it) && (
+                it is Marker || it is org.osmdroid.views.overlay.Polyline ||
+                it is org.osmdroid.views.overlay.Polygon
+            )
         }
 
         val visibleOps = when (overlayMode) {

@@ -54,6 +54,7 @@ import com.arrow.tactical.firemission.ui.FireMissionScreen
 import com.arrow.tactical.firemission.ui.MortarScreen
 import com.arrow.tactical.map.ui.MapScreen
 import com.arrow.tactical.map.ui.MarkEnemyScreen
+import com.arrow.tactical.kml.ui.KmlLayersScreen
 import com.arrow.tactical.map.ui.OfflineMapsScreen
 import com.arrow.tactical.messaging.ui.MessagingScreen
 import com.arrow.tactical.objectives.ui.ObjectivesScreen
@@ -334,10 +335,17 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
                         onLogout()
                     },
                     onOpenOfflineMaps = { tabNav.navigate("offline-maps") },
+                    onOpenKmlLayers   = { tabNav.navigate("kml-layers") },
                 )
             }
             composable("offline-maps") {
                 OfflineMapsScreen(
+                    container = container,
+                    onBack    = { tabNav.popBackStack() },
+                )
+            }
+            composable("kml-layers") {
+                KmlLayersScreen(
                     container = container,
                     onBack    = { tabNav.popBackStack() },
                 )

@@ -58,6 +58,19 @@ def _migrate(conn: object) -> None:
         "  object_count INTEGER DEFAULT 0,"
         "  payload TEXT NOT NULL"
         ")",
+        # Imported KML layers shared between web (Leaflet) and Android (OSMdroid)
+        "CREATE TABLE IF NOT EXISTS kml_layers ("
+        "  id INTEGER PRIMARY KEY,"
+        "  name VARCHAR(160) NOT NULL,"
+        "  description TEXT DEFAULT '',"
+        "  visible BOOLEAN DEFAULT 1,"
+        "  uploaded_by INTEGER REFERENCES operators(id),"
+        "  uploaded_at DATETIME,"
+        "  feature_count INTEGER DEFAULT 0,"
+        "  features TEXT DEFAULT '[]',"
+        "  bbox TEXT DEFAULT '',"
+        "  raw_kml TEXT DEFAULT ''"
+        ")",
         # Auto-saved video stream recordings
         "CREATE TABLE IF NOT EXISTS stream_recordings ("
         "  id INTEGER PRIMARY KEY,"

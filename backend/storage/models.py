@@ -302,6 +302,27 @@ class ApkDistConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
+class KmlLayer(Base):
+    """Imported KML/KMZ file flattened into a JSON feature collection.
+
+    ``features`` is a JSON string of {type, name, description, style, coords}
+    entries shared verbatim by the web (Leaflet) and Android (OSMdroid)
+    clients so neither needs to parse XML.
+    """
+    __tablename__ = "kml_layers"
+
+    id:           Mapped[int]      = mapped_column(primary_key=True)
+    name:         Mapped[str]      = mapped_column(String(160))
+    description:  Mapped[str]      = mapped_column(Text, default="")
+    visible:      Mapped[bool]     = mapped_column(default=True)
+    uploaded_by:  Mapped[int]      = mapped_column(ForeignKey("operators.id"))
+    uploaded_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    feature_count: Mapped[int]     = mapped_column(Integer, default=0)
+    features:     Mapped[str]      = mapped_column(Text, default="[]")    # JSON array
+    bbox:         Mapped[str]      = mapped_column(Text, default="")      # "minLon,minLat,maxLon,maxLat" or ""
+    raw_kml:      Mapped[str]      = mapped_column(Text, default="")      # original XML for re-download
+
+
 class StreamRecording(Base):
     """Persisted record of an Android-produced video stream.
 
