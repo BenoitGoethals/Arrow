@@ -179,11 +179,19 @@
             <div id="enemies"></div>
         </details>
 
-        <h3 style="margin-top:1rem">Fire Missions</h3>
-        <div id="map-fire-missions"><small style="color:#475569">Loading…</small></div>
+        <details class="sb-section" style="margin-top:1rem">
+            <summary><h3 style="display:inline">Fire Missions</h3>
+                <span id="fm-count" class="sb-count">0</span>
+            </summary>
+            <div id="map-fire-missions"><small style="color:#475569">Loading…</small></div>
+        </details>
 
-        <h3 style="margin-top:1rem">Reports</h3>
-        <div id="map-reports"><small style="color:#475569">Loading…</small></div>
+        <details class="sb-section" style="margin-top:1rem">
+            <summary><h3 style="display:inline">Reports</h3>
+                <span id="reports-count" class="sb-count">0</span>
+            </summary>
+            <div id="map-reports"><small style="color:#475569">Loading…</small></div>
+        </details>
 
         <details class="sb-section" style="margin-top:1rem">
             <summary><h3 style="display:inline">Tactical Graphics</h3>
@@ -2151,10 +2159,12 @@
     async function loadMapFireMissions() {
         const el = document.getElementById('map-fire-missions');
         if (!el) return;
+        const cnt = document.getElementById('fm-count');
         try {
             const r = await api('/fire-missions');
-            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; return; }
+            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; if (cnt) cnt.textContent = '!'; return; }
             const list = await r.json();
+            if (cnt) cnt.textContent = list.length;
             if (!list.length) { el.innerHTML = '<small style="color:#475569">No missions</small>'; return; }
             el.innerHTML = list.slice(0, 15).map(fm => {
                 const sc    = FM_STATUS_COLORS[fm.status] || '#64748b';
@@ -2383,10 +2393,12 @@
     async function loadMapReports() {
         const el = document.getElementById('map-reports');
         if (!el) return;
+        const cnt = document.getElementById('reports-count');
         try {
             const r = await api('/reports');
-            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; return; }
+            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; if (cnt) cnt.textContent = '!'; return; }
             const list = await r.json();
+            if (cnt) cnt.textContent = list.length;
             if (!list.length) { el.innerHTML = '<small style="color:#475569">No reports yet</small>'; return; }
             el.innerHTML = list.slice(0, 20).map(rep => {
                 const c = REP_COLORS[rep.type] || '#64748b';
