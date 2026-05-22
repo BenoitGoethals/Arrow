@@ -7,14 +7,18 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import TacticalObjectOut
+from backend.auth.dependencies import get_current_operator
 from backend.auth.jwt_auth import require_role
 from backend.config.xml_config import load_config
 from backend.storage.database import get_db
 from backend.storage.models import (
-    Alert, AuditLog, FireMission, MapSnapshot, Message, Operator, Report, TacticalObject,
+    Alert, AuditLog, CotTrack, FireMission, KmlLayer, MapSnapshot,
+    MapVisibility, Message, Operator, OperatorPosition, Overlay, Report,
+    TacticalObject,
 )
 from backend.websocket.manager import broadcaster
 
@@ -123,15 +127,21 @@ def _iso(dt: datetime | None) -> str | None:
 def _capture_state(db: Session) -> dict:
     """Snapshot every operational record visible on the dashboard / map.
 
-    Excludes operators, hierarchy, photos and audit logs — those are people
-    and immutable records, not "operational state".
+    Captured (and wiped on reset): tactical objects, messages, reports,
+    alerts, fire missions, CoT tracks, KML layers, saved overlays, and
+    every non-ADMIN operator (with their full position history).
+
+    Preserved: ADMIN accounts (so the operator pressing the button isn't
+    locked out), hierarchy (companies / platoons / sections / teams),
+    photos, audit logs, and prior snapshots.
     """
     return {
         "tactical_objects": [
             {"type": o.type, "symbol_code": o.symbol_code,
              "latitude": o.latitude, "longitude": o.longitude,
              "notes": o.notes, "visibility": o.visibility, "photo_id": o.photo_id,
-             "rotation": o.rotation, "geometry": o.geometry, "echelon": o.echelon}
+             "rotation": o.rotation, "geometry": o.geometry, "echelon": o.echelon,
+             "affiliation": o.affiliation}
             for o in db.query(TacticalObject).all()
         ],
         "messages": [
@@ -163,6 +173,33 @@ def _capture_state(db: Session) -> dict:
              "timestamp": _iso(f.timestamp), "notes": f.notes}
             for f in db.query(FireMission).all()
         ],
+        "cot_tracks": [
+            {"cot_uid": t.cot_uid, "cot_type": t.cot_type, "callsign": t.callsign,
+             "latitude": t.latitude, "longitude": t.longitude, "hae": t.hae,
+             "speed": t.speed, "course": t.course, "team": t.team}
+            for t in db.query(CotTrack).all()
+        ],
+        "kml_layers": [
+            {"name": k.name, "description": k.description, "visible": k.visible,
+             "feature_count": k.feature_count, "features": k.features,
+             "bbox": k.bbox}
+            for k in db.query(KmlLayer).all()
+        ],
+        "overlays": [
+            {"name": v.name, "description": v.description,
+             "object_ids": v.object_ids}
+            for v in db.query(Overlay).all()
+        ],
+        # Non-ADMIN operators get archived too — sim accounts, BCs, OPERATORs.
+        # Stored without password_hash for security; restoring will re-seed
+        # them with the standard sim password if anyone calls /restore.
+        "operators": [
+            {"callsign": op.callsign, "rank": op.rank, "role": op.role,
+             "status": op.status, "team_id": op.team_id,
+             "latitude": op.latitude, "longitude": op.longitude,
+             "altitude": op.altitude}
+            for op in db.query(Operator).filter(Operator.role != "ADMIN").all()
+        ],
     }
 
 
@@ -189,10 +226,15 @@ async def map_reset(
     db: Session = Depends(get_db),
     current: Operator = Depends(require_role("ADMIN")),
 ) -> dict:
-    """Snapshot every operational record, then delete them all.
+    """Snapshot every operational record then wipe the map clean.
 
-    Captured: tactical objects, messages, reports, alerts, fire missions.
-    Preserved: operators, hierarchy, photos, audit logs, prior snapshots.
+    Captured & deleted: tactical objects, messages, reports, alerts, fire
+    missions, CoT tracks, KML layers, saved overlays, and every non-ADMIN
+    operator (with their position history — cascade-deleted via FK).
+
+    Preserved: ADMIN accounts (calling admin must survive — they need to
+    issue follow-on commands), unit hierarchy (companies / platoons /
+    sections / teams), photos, audit logs, and prior snapshots.
 
     Returns the new snapshot's metadata so the admin UI can refresh its history.
     """
@@ -212,12 +254,25 @@ async def map_reset(
     # Capture deleted IDs BEFORE deletion so we can broadcast clears
     deleted_to = [o.id for o in db.query(TacticalObject).all()]
 
-    # Bulk delete every snapshotted entity
+    # Bulk delete every snapshotted entity. ``synchronize_session=False`` is
+    # safe because we discard the session's identity map right after with
+    # ``db.commit()`` / ``db.refresh(snap)``.
     db.query(TacticalObject).delete(synchronize_session=False)
     db.query(Message).delete(synchronize_session=False)
     db.query(Report).delete(synchronize_session=False)
     db.query(Alert).delete(synchronize_session=False)
     db.query(FireMission).delete(synchronize_session=False)
+    db.query(CotTrack).delete(synchronize_session=False)
+    db.query(KmlLayer).delete(synchronize_session=False)
+    db.query(Overlay).delete(synchronize_session=False)
+    # Wipe operator position history before deleting operators so SQLite
+    # without ON DELETE CASCADE still gets a clean state.
+    db.query(OperatorPosition).delete(synchronize_session=False)
+    # Delete every non-ADMIN operator. The calling admin and any other
+    # ADMINs survive so the chain of command isn't decapitated.
+    db.query(Operator).filter(Operator.role != "ADMIN").delete(
+        synchronize_session=False,
+    )
 
     db.commit()
     db.refresh(snap)
@@ -229,6 +284,16 @@ async def map_reset(
         await broadcaster.broadcast(
             {"channel": "tactical-object", "event": "deleted", "data": {"id": oid}}
         )
+    # Nudge specific panels: KML / overlay / presence WS subscribers reload
+    # their state in response to channel-level events. Each is a single tick
+    # — the listening client sends a fresh GET to refresh.
+    for ch in ("kml-layer", "overlay", "presence", "tracking", "fire-mission",
+               "report", "alert", "cot-track"):
+        try:
+            await broadcaster.broadcast({"channel": ch, "event": "reset",
+                                          "data": {"snapshot_id": snap.id}})
+        except Exception:
+            pass
     await broadcaster.broadcast(
         {"channel": "admin", "event": "map-reset",
          "data": {"snapshot_id": snap.id, "deleted": total}}
@@ -420,3 +485,73 @@ async def map_snapshot_restore(
         "restored":    sum(counts.values()),
         "counts":      counts,
     }
+
+
+# ── Map visibility — admin-controlled per-category filter ──────────────────
+class MapVisibilityIn(BaseModel):
+    tactical_objects: bool | None = None
+    operators:        bool | None = None
+    fire_missions:    bool | None = None
+    alerts:           bool | None = None
+    reports:          bool | None = None
+    cot_tracks:       bool | None = None
+    kml_layers:       bool | None = None
+    overlays:         bool | None = None
+
+
+def _visibility_payload(row: MapVisibility) -> dict:
+    return {
+        "tactical_objects": bool(row.tactical_objects),
+        "operators":        bool(row.operators),
+        "fire_missions":    bool(row.fire_missions),
+        "alerts":           bool(row.alerts),
+        "reports":          bool(row.reports),
+        "cot_tracks":       bool(row.cot_tracks),
+        "kml_layers":       bool(row.kml_layers),
+        "overlays":         bool(row.overlays),
+        "updated_at":       row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _get_or_create_visibility(db: Session) -> MapVisibility:
+    row = db.get(MapVisibility, 1)
+    if row is None:
+        row = MapVisibility(id=1)
+        db.add(row); db.commit(); db.refresh(row)
+    return row
+
+
+@router.get("/map-visibility")
+def get_map_visibility(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> dict:
+    """Read the per-category map visibility flags.
+
+    Available to every authenticated operator — every client respects the
+    same filter, so they need to know which categories the ADMIN has turned
+    off when deciding what to render locally.
+    """
+    return _visibility_payload(_get_or_create_visibility(db))
+
+
+@router.put("/map-visibility")
+async def set_map_visibility(
+    payload: MapVisibilityIn,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """ADMIN-only — toggle any subset of categories. Broadcasts on change."""
+    row = _get_or_create_visibility(db)
+    for field in ("tactical_objects", "operators", "fire_missions", "alerts",
+                  "reports", "cot_tracks", "kml_layers", "overlays"):
+        val = getattr(payload, field)
+        if val is not None:
+            setattr(row, field, bool(val))
+    db.commit(); db.refresh(row)
+    out = _visibility_payload(row)
+    await broadcaster.broadcast(
+        {"channel": "map-visibility", "event": "updated", "data": out}
+    )
+    return out
+

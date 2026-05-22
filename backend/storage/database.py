@@ -104,6 +104,21 @@ def _migrate(conn: object) -> None:
         ")",
         "CREATE INDEX IF NOT EXISTS ix_op_pos_operator_id ON operator_positions(operator_id)",
         "CREATE INDEX IF NOT EXISTS ix_op_pos_recorded_at ON operator_positions(recorded_at)",
+        # Map-visibility singleton — admin-controlled per-category filter
+        "CREATE TABLE IF NOT EXISTS map_visibility ("
+        "  id INTEGER PRIMARY KEY,"
+        "  tactical_objects BOOLEAN DEFAULT 1,"
+        "  operators        BOOLEAN DEFAULT 1,"
+        "  fire_missions    BOOLEAN DEFAULT 1,"
+        "  alerts           BOOLEAN DEFAULT 1,"
+        "  reports          BOOLEAN DEFAULT 1,"
+        "  cot_tracks       BOOLEAN DEFAULT 1,"
+        "  kml_layers       BOOLEAN DEFAULT 1,"
+        "  overlays         BOOLEAN DEFAULT 1,"
+        "  updated_at       DATETIME"
+        ")",
+        "INSERT OR IGNORE INTO map_visibility (id, updated_at) "
+        "VALUES (1, datetime('now'))",
     ]
     for sql in migrations:
         try:

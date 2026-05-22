@@ -586,7 +586,45 @@
         overlayMode: 'all',
         me: null,
         myPlatoonOpIds: new Set(),
+        // Admin-controlled global filter (all on until /admin/map-visibility
+        // replies). Each false-flag hides one category server-wide.
+        visibility: {
+            tactical_objects: true,  operators:     true,
+            fire_missions:    true,  alerts:        true,
+            reports:          true,  cot_tracks:    true,
+            kml_layers:       true,  overlays:      true,
+        },
     };
+
+    // ── Admin map-visibility — global per-category filter ───────────────────
+    async function loadMapVisibility() {
+        try {
+            const r = await api('/admin/map-visibility');
+            if (!r.ok) return;          // operator may not be authorised — keep defaults
+            const v = await r.json();
+            for (const k of Object.keys(state.visibility)) {
+                if (k in v) state.visibility[k] = !!v[k];
+            }
+            applyVisibilityToMap();
+        } catch (_) { /* keep defaults */ }
+    }
+
+    function applyVisibilityToMap() {
+        // Re-render everything so the new flags take effect. Each loader
+        // is cheap because the data is already cached in `state.*` Maps.
+        refreshAllMarkers();
+        refreshEnemies();
+        loadFmMarkers();
+        loadMapFireMissions();
+        loadMapReports();
+        loadCbrnReports();
+        // KML / overlay panels: rebuild the active overlays from the cached
+        // entries — when ``visibility.kml_layers`` flips off, every layer
+        // group is removed from the map.
+        if (typeof refreshKmlLayers === 'function') refreshKmlLayers();
+    }
+
+    loadMapVisibility();
 
     // Fetch current user and resolve platoon membership from hierarchy
     api('/auth/me').then(r => r.ok ? r.json() : null).then(me => {
@@ -1061,15 +1099,14 @@
     }
 
     function refreshAllMarkers() {
-        // Operators
-        state.operators.forEach((op) => placeOperator(op));
-        // Drop op markers no longer in state
+        // Wipe every existing operator marker — admin may have just hidden them.
         state.markers.forEach((m, key) => {
-            if (key.startsWith('op-')) {
-                const id = parseInt(key.slice(3), 10);
-                if (!state.operators.has(id)) { map.removeLayer(m); state.markers.delete(key); }
-            }
+            if (key.startsWith('op-')) { map.removeLayer(m); state.markers.delete(key); }
         });
+        // Only re-paint when the admin-controlled filter allows it.
+        if (state.visibility.operators) {
+            state.operators.forEach((op) => placeOperator(op));
+        }
         const onlineCount = [...state.operators.values()].filter(o => o.online).length;
         document.getElementById('online-count').textContent = `${onlineCount} online · ${state.operators.size} total`;
     }
@@ -1107,15 +1144,23 @@
         // members of overlays so they bypass the filter.
         const showLegacy = enemyLayerVisible();
         const showTg     = tgLayerVisible();
-        const allowedByOverlay = computeActiveOverlayIds();   // null = no filter
-        state.tacticalObjects.forEach(obj => {
-            const isTg = isTgType(obj.type);
-            if (!(isTg ? showTg : showLegacy)) return;
-            if (allowedByOverlay && !allowedByOverlay.has(obj.id)) return;
-            placeEnemy(obj);
-        });
-        // CoT tracks (simulator / ATAK peers with non-operator UIDs)
-        if (showLegacy) state.cotTracks.forEach(t => placeCotTrack(t));
+        // Admin global filter — when off, skip ALL tactical objects.
+        const showTactical = state.visibility.tactical_objects;
+        // Saved-overlay filter only applies when the admin allows overlays.
+        const allowedByOverlay = state.visibility.overlays
+            ? computeActiveOverlayIds() : null;
+        if (showTactical) {
+            state.tacticalObjects.forEach(obj => {
+                const isTg = isTgType(obj.type);
+                if (!(isTg ? showTg : showLegacy)) return;
+                if (allowedByOverlay && !allowedByOverlay.has(obj.id)) return;
+                placeEnemy(obj);
+            });
+        }
+        // CoT tracks have their own admin toggle.
+        if (showLegacy && state.visibility.cot_tracks) {
+            state.cotTracks.forEach(t => placeCotTrack(t));
+        }
     }
 
     // ── Saved overlays ───────────────────────────────────────────────────────
@@ -2337,6 +2382,12 @@
         state.cbrnLayers.forEach((_, id) => {
             if (!state.cbrnReports.has(id)) clearCbrnLayer(id);
         });
+        // Admin global filter — when reports are hidden, drop every CBRN
+        // marker too (CBRN markers are driven by reports of type CBRN_*).
+        if (!state.visibility.reports) {
+            state.cbrnLayers.forEach((_, id) => clearCbrnLayer(id));
+            return;
+        }
         state.cbrnReports.forEach((p, id) => renderCbrn(id, p));
     }
 
@@ -2474,6 +2525,8 @@
         state.fmImpactLayers.clear();
 
         if (state.overlayMode === 'none') return;
+        // Admin global filter — hide FM markers entirely when off.
+        if (!state.visibility.fire_missions) return;
 
         state.fireMissions.forEach(fm => {
             if (fm.status === 'CANCELLED') return;
@@ -2681,13 +2734,21 @@
     }
 
     async function applyKmlVisibility(entry) {
-        const shouldShow = entry.meta.visible && !entry.hidden;
+        // Per-layer visible flag AND the admin global kml_layers toggle.
+        const shouldShow = entry.meta.visible && !entry.hidden &&
+                           state.visibility.kml_layers;
         if (shouldShow) {
             const grp = await ensureKmlGroup(entry);
             if (!map.hasLayer(grp)) grp.addTo(map);
         } else if (entry.group && map.hasLayer(entry.group)) {
             map.removeLayer(entry.group);
         }
+    }
+
+    // Called by applyVisibilityToMap() when the admin flips kml_layers.
+    function refreshKmlLayers() {
+        if (typeof kml === 'undefined') return;
+        kml.layers.forEach(entry => applyKmlVisibility(entry));
     }
 
     function renderKmlList() {
@@ -3219,6 +3280,8 @@
 
     function handleAlertTriggered(d) {
         if (d.latitude == null || d.longitude == null) return;
+        // Admin global filter — when alerts are muted, swallow the pulse/zoom.
+        if (!state.visibility.alerts) return;
         // Drop a previous marker for the same alert id, if any (re-broadcast).
         const prev = state.alertLayers.get(d.id);
         if (prev) { map.removeLayer(prev); state.alertLayers.delete(d.id); }
@@ -3330,6 +3393,13 @@
                 handleKmlWsEvent(msg);
             } else if (msg.channel === 'overlay') {
                 handleOverlayWsEvent(msg);
+            } else if (msg.channel === 'map-visibility') {
+                // Admin updated the global filter; merge new flags and re-render.
+                const v = msg.data || {};
+                for (const k of Object.keys(state.visibility)) {
+                    if (k in v) state.visibility[k] = !!v[k];
+                }
+                applyVisibilityToMap();
             }
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
