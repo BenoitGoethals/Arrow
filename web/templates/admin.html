@@ -840,20 +840,22 @@ main { padding: 0; }
         }
     };
 
-    // ── Map visibility — per-category global filter ────────────────────────
-    // Categories an ADMIN can toggle off to reduce on-map clutter. Each entry
-    // matches a field on the MapVisibility singleton on the server. Toggling
-    // here PUTs the change; every connected web/Android map respects it on
-    // their next render via the WS broadcast on the ``map-visibility`` channel.
-    const VIS_CATEGORIES = [
+    // ── Map + notification visibility — per-category global filter ─────────
+    // Two independent axes:
+    //   * MAP    — what gets drawn on the map canvas
+    //   * NOTIF  — what pops up as a toast card on the right of the screen
+    // Each entry matches a field on the MapVisibility singleton on the server.
+    // Toggling PUTs the change; every connected web/Android client respects it
+    // live via the WS broadcast on the ``map-visibility`` channel.
+    const MAP_CATEGORIES = [
         { key: 'tactical_objects', icon: '🎯', label: 'Tactical objects',
           desc: 'Enemies, POIs, objectives, tactical control graphics, ATK_AXIS, FLET, …' },
         { key: 'operators',        icon: '👥', label: 'Operators',
           desc: 'Friendly position markers (live tracking).' },
         { key: 'fire_missions',    icon: '💥', label: 'Fire missions',
-          desc: 'CFF requests and impact splashes.' },
+          desc: 'CFF markers and impact splashes on the map.' },
         { key: 'alerts',           icon: '🚨', label: 'Alerts',
-          desc: 'TIC / MEDICAL / EVAC / LOST_COMMS pulses and pop-ups.' },
+          desc: 'TIC / MEDICAL / EVAC / LOST_COMMS pulses and auto-zoom.' },
         { key: 'reports',          icon: '📋', label: 'Reports',
           desc: 'SPOT, CASEVAC, MEDEVAC, CAS, CBRN (also drives CBRN zones).' },
         { key: 'cot_tracks',       icon: '📡', label: 'CoT tracks',
@@ -863,37 +865,28 @@ main { padding: 0; }
         { key: 'overlays',         icon: '📚', label: 'Saved overlays',
           desc: 'Named bundles of TacticalObject ids used as map filters.' },
     ];
+    const NOTIF_CATEGORIES = [
+        { key: 'notif_chat',          icon: '💬', label: 'Chat toasts',
+          desc: 'BROADCAST / DIRECT / GROUP chat messages popping up on the right.' },
+        { key: 'notif_fire_missions', icon: '🎯', label: 'Fire-mission toasts',
+          desc: 'Red "FIRE MISSION" cards (call-for-fire alerts), inc. audio.' },
+        { key: 'notif_alerts',        icon: '🚨', label: 'TIC / alert toasts',
+          desc: 'TIC, MEDICAL, EVAC, LOST_COMMS, DRONE_SPOTTED toast cards + voice alarms.' },
+        { key: 'notif_streams',       icon: '🎥', label: 'Stream toasts',
+          desc: 'Live-stream notifications (operator goes live / ends stream).' },
+    ];
+    const VIS_CATEGORIES = MAP_CATEGORIES;   // kept for backward-compat refs
 
     async function renderVisibility(el) {
         const r   = await api('/admin/map-visibility');
         if (!r.ok) { el.innerHTML = `<p style="color:#ef4444">Could not load (${r.status})</p>`; return; }
         const cur = await r.json();
 
-        el.innerHTML = `
-        <div class="sec-header">
-            <h2>Map visibility</h2>
-            <div style="display:flex; gap:0.4rem">
-                <button class="btn btn-ghost" onclick="visAll(true)">Show all</button>
-                <button class="btn btn-ghost" onclick="visAll(false)">Hide all</button>
-            </div>
-        </div>
-        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
-            Turn a category off to hide it on every connected map (web + Android).
-            The underlying records are <b>not</b> deleted — they stay in the database
-            and re-appear the moment you toggle the category back on. Use this when
-            an overlay is overloading the map; use <i>Map snapshots → Reset map</i>
-            instead if you want to permanently clear records.
-        </p>
-        <p style="color:#64748b;font-size:0.75rem;margin:0 0 1rem">
-            Last changed: ${cur.updated_at ? cur.updated_at.replace('T',' ').slice(0,19) : '—'}
-        </p>
-        <div id="vis-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem">
-        ${VIS_CATEGORIES.map(c => {
-            const on = cur[c.key];
+        const card = (c, on, onTone='#1e3a2f', offTone='#7f1d1d') => {
             const safe = (s) => s.replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));
             return `
                 <label style="display:flex; align-items:center; gap:0.6rem;
-                              background:#161b25; border:1px solid ${on?'#1e3a2f':'#2a3142'};
+                              background:#161b25; border:1px solid ${on?onTone:'#2a3142'};
                               border-radius:6px; padding:0.7rem 0.9rem; cursor:pointer">
                     <input type="checkbox" id="vis-${c.key}" ${on?'checked':''}
                            onchange="visToggle('${c.key}', this.checked, this)"
@@ -911,7 +904,43 @@ main { padding: 0; }
                         </div>
                     </div>
                 </label>`;
-        }).join('')}
+        };
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Map + notification visibility</h2>
+            <div style="display:flex; gap:0.4rem">
+                <button class="btn btn-ghost" onclick="visAll(true)">Show all</button>
+                <button class="btn btn-ghost" onclick="visAll(false)">Hide all</button>
+            </div>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            Two independent axes — <b>Map</b> controls what's drawn on the tactical
+            map canvas; <b>Notifications</b> controls the toast cards that pop up on
+            the right of the screen (chat, fire-mission, alert, stream events).
+            The underlying records are <b>not</b> deleted — they re-appear the moment
+            you toggle the category back on. Use this to cut clutter without
+            losing data; use <i>Map snapshots → Reset map</i> if you actually
+            want to delete records.
+        </p>
+        <p style="color:#64748b;font-size:0.75rem;margin:0 0 1rem">
+            Last changed: ${cur.updated_at ? cur.updated_at.replace('T',' ').slice(0,19) : '—'}
+        </p>
+
+        <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
+                   text-transform:uppercase;margin:0.5rem 0 0.5rem">
+            🗺  On the map
+        </h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem">
+            ${MAP_CATEGORIES.map(c => card(c, cur[c.key])).join('')}
+        </div>
+
+        <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
+                   text-transform:uppercase;margin:1.2rem 0 0.5rem">
+            🔔  Notification toasts
+        </h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem">
+            ${NOTIF_CATEGORIES.map(c => card(c, cur[c.key])).join('')}
         </div>`;
     }
 
@@ -931,7 +960,7 @@ main { padding: 0; }
 
     window.visAll = async function(on) {
         const body = {};
-        for (const c of VIS_CATEGORIES) body[c.key] = !!on;
+        for (const c of [...MAP_CATEGORIES, ...NOTIF_CATEGORIES]) body[c.key] = !!on;
         const r = await api('/admin/map-visibility', {
             method: 'PUT', body: JSON.stringify(body),
         });

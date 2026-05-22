@@ -10,9 +10,41 @@ def test_default_all_categories_visible(client) -> None:
     r = client.get("/admin/map-visibility", headers=auth(op_tok))
     assert r.status_code == 200, r.text
     body = r.json()
-    for key in ("tactical_objects", "operators", "fire_missions", "alerts",
-                "reports", "cot_tracks", "kml_layers", "overlays"):
+    for key in (
+        # Map axis
+        "tactical_objects", "operators", "fire_missions", "alerts",
+        "reports", "cot_tracks", "kml_layers", "overlays",
+        # Notification axis
+        "notif_chat", "notif_fire_missions", "notif_alerts", "notif_streams",
+    ):
         assert body[key] is True, f"{key} should default to True"
+
+
+def test_map_and_notif_are_independent(client) -> None:
+    """Muting notif_alerts must NOT hide alert markers on the map, and
+    vice versa — the two axes are decoupled."""
+    _, admin_tok, _ = register(client, "ADMIN")
+    # Mute the alert toast but leave alerts on the map.
+    r = client.put("/admin/map-visibility", headers=auth(admin_tok),
+                   json={"notif_alerts": False})
+    body = r.json()
+    assert body["notif_alerts"] is False
+    assert body["alerts"]       is True
+    # Inverse: hide alerts on the map but keep toasts.
+    r = client.put("/admin/map-visibility", headers=auth(admin_tok),
+                   json={"alerts": False, "notif_alerts": True})
+    body = r.json()
+    assert body["alerts"]       is False
+    assert body["notif_alerts"] is True
+
+
+def test_chat_toast_toggle_persists(client) -> None:
+    _, admin_tok, _ = register(client, "ADMIN")
+    r = client.put("/admin/map-visibility", headers=auth(admin_tok),
+                   json={"notif_chat": False})
+    assert r.json()["notif_chat"] is False
+    fresh = client.get("/admin/map-visibility", headers=auth(admin_tok)).json()
+    assert fresh["notif_chat"] is False
 
 
 def test_admin_can_toggle(client) -> None:
