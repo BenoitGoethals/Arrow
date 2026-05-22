@@ -3,6 +3,7 @@ package com.arrow.tactical.di
 import android.content.Context
 import coil.ImageLoader
 import com.arrow.tactical.admin.LogRepository
+import com.arrow.tactical.admin.MapVisibilityRepository
 import com.arrow.tactical.alerts.AlertRepository
 import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.auth.TokenStore
@@ -52,12 +53,15 @@ class AppContainer(private val context: Context) {
     )
     val kmlLayerRepository = KmlLayerRepository(apiClient)
     val overlayRepository  = OverlayRepository(apiClient)
+    val mapVisibilityRepository = MapVisibilityRepository(apiClient)
 
     val photoRepository       = PhotoRepository(apiClient)
     val fireMissionRepository = FireMissionRepository(apiClient)
     val logRepository         = LogRepository()
     val milsymRenderer        = MilsymRenderer(context)
-    val chatNotificationManager = ChatNotificationManager(context, wsClient, authRepository)
+    val chatNotificationManager = ChatNotificationManager(
+        context, wsClient, authRepository, mapVisibilityRepository,
+    )
 
     private val _navigateToChatChannel = Channel<Unit>(Channel.BUFFERED)
     val navigateToChatFlow = _navigateToChatChannel.receiveAsFlow()

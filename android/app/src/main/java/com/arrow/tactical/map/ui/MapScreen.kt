@@ -160,6 +160,12 @@ fun MapScreen(
     val overlayReloadTrigger = remember { mutableStateOf(0) }
     var overlayPanelOpen by remember { mutableStateOf(false) }
 
+    // ── Admin map+notification visibility — global filter ──────────────────
+    // The repository holds a StateFlow; we collect it here so every render
+    // path that gates on a flag re-runs the moment the admin toggles it.
+    val visibility by container.mapVisibilityRepository.flow.collectAsState()
+    LaunchedEffect(Unit) { container.mapVisibilityRepository.refresh() }
+
     // ── Alert markers — built when an "alert/triggered" WS event arrives, the
     // map auto-pans to the contact and a snackbar shows the MGRS so the BC
     // can read it on the radio. Cleared when the alert is acknowledged.
@@ -393,6 +399,7 @@ fun MapScreen(
                             }
                         "kml-layer"       -> kmlReloadTrigger.value++
                         "overlay"         -> overlayReloadTrigger.value++
+                        "map-visibility"  -> container.mapVisibilityRepository.applyServerEvent(evt)
                         "alert"           -> com.arrow.tactical.alerts.handleAlertWsEvent(
                             evt,
                             map = mapRef.value,
@@ -400,6 +407,7 @@ fun MapScreen(
                             alertMarkers = alertMarkers,
                             snackbarHostState = snackbarHostState,
                             context = context,
+                            visibility = container.mapVisibilityRepository.current,
                         )
                         else -> {}
                     }
@@ -432,9 +440,11 @@ fun MapScreen(
     // Materialise visible layers onto the map. Re-runs whenever the catalogue
     // changes OR the local-hide set changes; feature payloads are fetched
     // lazily and cached in kmlFeatures so a hide/show flip is instant.
-    LaunchedEffect(mapRef.value, kmlLayers, kmlLocallyHidden) {
+    LaunchedEffect(mapRef.value, kmlLayers, kmlLocallyHidden, visibility.kmlLayers) {
         val map = mapRef.value ?: return@LaunchedEffect
-        val visibleIds = kmlLayers
+        // Admin global KML toggle — when off, no layer is rendered regardless
+        // of the per-layer ``visible`` flag and the local-hide set.
+        val visibleIds = if (!visibility.kmlLayers) emptySet() else kmlLayers
             .filter { it.visible && it.id !in kmlLocallyHidden }
             .map { it.id }
             .toSet()
@@ -445,6 +455,11 @@ fun MapScreen(
             kmlOverlays.remove(id)?.forEach { map.overlays.remove(it) }
         }
 
+        // Skip the add-pass entirely when the admin has hidden KML globally.
+        if (!visibility.kmlLayers) {
+            map.invalidate()
+            return@LaunchedEffect
+        }
         // Add overlays for newly-visible layers, fetching features on demand.
         for (layer in kmlLayers) {
             if (!layer.visible || layer.id in kmlLocallyHidden) continue
@@ -586,7 +601,7 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, savedOverlays, activeOverlays) {
+    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, savedOverlays, activeOverlays, visibility) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
@@ -606,7 +621,9 @@ fun MapScreen(
             )
         }
 
-        val visibleOps = when (overlayMode) {
+        // Admin-axis filter — when ``operators`` is off, no friendly markers
+        // are drawn regardless of the overlayMode chip choice.
+        val visibleOps = if (!visibility.operators) emptyList() else when (overlayMode) {
             OverlayMode.ALL         -> operators
             OverlayMode.NONE        -> emptyList()
             OverlayMode.ENEMIES     -> emptyList()
@@ -615,14 +632,18 @@ fun MapScreen(
         // Two independent layers:
         //   • legacy hostile/POI/objective markers ← gated by overlayMode
         //   • tactical control graphics            ← gated by tgVisible
-        val showLegacyHostiles = overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.ENEMIES
-        // Saved-overlay filter: null = no filter (every object shown), set =
-        // only objects whose id is in the union of the active overlays.
-        val overlayAllowed: Set<Int>? = if (activeOverlays.isEmpty()) null
-        else savedOverlays.asSequence()
-            .filter { it.id in activeOverlays }
-            .flatMap { it.objectIds.asSequence() }
-            .toSet()
+        // Both ALSO gated by visibility.tacticalObjects (admin global filter).
+        val showLegacyHostiles = visibility.tacticalObjects &&
+            (overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.ENEMIES)
+        // Saved-overlay filter is gated by the admin's overlays toggle.
+        val overlayAllowed: Set<Int>? = when {
+            !visibility.overlays      -> null
+            activeOverlays.isEmpty()  -> null
+            else -> savedOverlays.asSequence()
+                .filter { it.id in activeOverlays }
+                .flatMap { it.objectIds.asSequence() }
+                .toSet()
+        }
         fun passesOverlay(id: Int): Boolean =
             overlayAllowed == null || id in overlayAllowed
 
@@ -633,7 +654,7 @@ fun MapScreen(
                 passesOverlay(it.id)
             }
         else emptyList()
-        val visibleGraphics = if (tgVisible)
+        val visibleGraphics = if (tgVisible && visibility.tacticalObjects)
             enemies.filter {
                 (MilSymbolRenderer.isTacticalGraphic(it.type) ||
                  MilSymbolRenderer.isTacticalLineOrPolygon(it.type)) &&
@@ -736,8 +757,9 @@ fun MapScreen(
             renderTacticalGraphic(map, res, g)
         }
 
-        // Fire missions — always visible except in NONE mode
-        if (overlayMode != OverlayMode.NONE) {
+        // Fire missions — always visible except in NONE mode OR when the
+        // admin has hidden fire missions globally.
+        if (overlayMode != OverlayMode.NONE && visibility.fireMissions) {
             for (fm in fireMissions.filter { it.status != "CANCELLED" }) {
                 val mgrsStr = runCatching {
                     com.arrow.tactical.network.MgrsConverter.encode(fm.latitude, fm.longitude)
@@ -754,7 +776,9 @@ fun MapScreen(
         }
 
         // ── CBRN hazard layer ───────────────────────────────────────────────
-        if (cbrnVisible) {
+        // Gated by the operator's local CBRN toggle AND the admin's reports
+        // flag (CBRN markers are driven entirely by reports of type CBRN_*).
+        if (cbrnVisible && visibility.reports) {
             for ((_, payload) in cbrnReports) {
                 for (ov in com.arrow.tactical.cbrn.buildCbrnOverlays(map, res, payload)) {
                     map.overlays.add(ov)
