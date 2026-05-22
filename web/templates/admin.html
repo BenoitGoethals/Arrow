@@ -103,6 +103,7 @@ main { padding: 0; }
     <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
     <button class="nav-btn" onclick="show('alerts',this)"><span class="ico">🚨</span> Alerts</button>
     <button class="nav-btn" onclick="show('snapshots',this)"><span class="ico">🗺</span> Map snapshots</button>
+    <button class="nav-btn" onclick="show('visibility',this)"><span class="ico">👁</span> Map visibility</button>
     <button class="nav-btn" onclick="show('maps',this)" data-role-any><span class="ico">🗂</span> Base maps</button>
   </nav>
 
@@ -257,6 +258,7 @@ main { padding: 0; }
             case 'config':    main.innerHTML = ''; renderConfig(main); break;
             case 'alerts':    main.innerHTML = ''; renderAlerts(main); break;
             case 'snapshots': main.innerHTML = ''; renderSnapshots(main); break;
+            case 'visibility':main.innerHTML = ''; renderVisibility(main); break;
             case 'maps':      main.innerHTML = ''; renderMaps(main); break;
         }
     }
@@ -711,10 +713,13 @@ main { padding: 0; }
             </span>
         </div>
         <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
-            Reset captures every record above into a snapshot then clears them — operators,
-            hierarchy, photos and audit logs stay untouched. Restore is additive: it
-            re-creates the snapshotted records (with fresh IDs) on top of whatever's there.
-            Operator references that no longer exist (deleted users) are reassigned to you.
+            Reset captures every record into a snapshot then <b>wipes the map clean</b>:
+            tactical objects, messages, reports, alerts, fire missions, CoT tracks,
+            KML layers, saved overlays, and every non-ADMIN operator (sim accounts,
+            BCs, OPERATORs) along with their position history. ADMIN accounts,
+            company / platoon / section / team hierarchy, photos and audit logs
+            survive. Restore is additive: re-creates the snapshotted records with
+            fresh IDs (operator references that no longer exist get reassigned to you).
         </p>
         <table class="adm-table">
             <thead><tr>
@@ -761,16 +766,26 @@ main { padding: 0; }
         if (c.reports)          parts.push(`${c.reports} rpt`);
         if (c.alerts)           parts.push(`${c.alerts} alt`);
         if (c.fire_missions)    parts.push(`${c.fire_missions} FM`);
+        if (c.cot_tracks)       parts.push(`${c.cot_tracks} CoT`);
+        if (c.kml_layers)       parts.push(`${c.kml_layers} KML`);
+        if (c.overlays)         parts.push(`${c.overlays} ovl`);
+        if (c.operators)        parts.push(`${c.operators} ops`);
         const el = document.getElementById(`snap-bd-${id}`);
         if (el) el.textContent = parts.length ? parts.join(' · ') : '— empty —';
     }
 
     window.snapReset = async function() {
-        if (!confirm("Reset the map?\n\n" +
-                     "Every tactical object, message, report, alert and fire mission " +
-                     "will be deleted from the live system. A snapshot is saved first " +
-                     "so you can restore later. Operators, hierarchy and audit logs " +
-                     "are untouched.")) return;
+        if (!confirm(
+            "Reset the map?\n\n" +
+            "EVERY live record will be deleted from the live system:\n" +
+            "  • tactical objects (enemies, OBJs, axes, FLET, …)\n" +
+            "  • messages / reports / alerts / fire missions\n" +
+            "  • CoT tracks (simulator + ATAK peers)\n" +
+            "  • KML layers + saved overlays\n" +
+            "  • EVERY non-ADMIN operator and their position history\n\n" +
+            "A snapshot is saved first so you can restore later.\n" +
+            "ADMIN accounts, unit hierarchy, photos and audit logs survive."
+        )) return;
         const name = prompt("Optional snapshot name:", "");
         const r = await api('/admin/map/reset', {
             method: 'POST',
@@ -785,6 +800,10 @@ main { padding: 0; }
             if (c.reports)          parts.push(`${c.reports} reports`);
             if (c.alerts)           parts.push(`${c.alerts} alerts`);
             if (c.fire_missions)    parts.push(`${c.fire_missions} fire missions`);
+            if (c.cot_tracks)       parts.push(`${c.cot_tracks} CoT tracks`);
+            if (c.kml_layers)       parts.push(`${c.kml_layers} KML layers`);
+            if (c.overlays)         parts.push(`${c.overlays} overlays`);
+            if (c.operators)        parts.push(`${c.operators} operators`);
             alert(`Map reset. Snapshot #${out.id} saved with ${out.object_count} record(s)` +
                   (parts.length ? `:\n  ${parts.join('\n  ')}` : '.'));
             renderSnapshots(document.getElementById('adm-main'));
@@ -819,6 +838,105 @@ main { padding: 0; }
         } else {
             alert(`Delete failed (${r.status}).`);
         }
+    };
+
+    // ── Map visibility — per-category global filter ────────────────────────
+    // Categories an ADMIN can toggle off to reduce on-map clutter. Each entry
+    // matches a field on the MapVisibility singleton on the server. Toggling
+    // here PUTs the change; every connected web/Android map respects it on
+    // their next render via the WS broadcast on the ``map-visibility`` channel.
+    const VIS_CATEGORIES = [
+        { key: 'tactical_objects', icon: '🎯', label: 'Tactical objects',
+          desc: 'Enemies, POIs, objectives, tactical control graphics, ATK_AXIS, FLET, …' },
+        { key: 'operators',        icon: '👥', label: 'Operators',
+          desc: 'Friendly position markers (live tracking).' },
+        { key: 'fire_missions',    icon: '💥', label: 'Fire missions',
+          desc: 'CFF requests and impact splashes.' },
+        { key: 'alerts',           icon: '🚨', label: 'Alerts',
+          desc: 'TIC / MEDICAL / EVAC / LOST_COMMS pulses and pop-ups.' },
+        { key: 'reports',          icon: '📋', label: 'Reports',
+          desc: 'SPOT, CASEVAC, MEDEVAC, CAS, CBRN (also drives CBRN zones).' },
+        { key: 'cot_tracks',       icon: '📡', label: 'CoT tracks',
+          desc: 'Foreign-UID Cursor-on-Target tracks (simulator / ATAK peers).' },
+        { key: 'kml_layers',       icon: '📂', label: 'KML layers',
+          desc: 'Imported KML/KMZ overlay features (points / lines / polygons).' },
+        { key: 'overlays',         icon: '📚', label: 'Saved overlays',
+          desc: 'Named bundles of TacticalObject ids used as map filters.' },
+    ];
+
+    async function renderVisibility(el) {
+        const r   = await api('/admin/map-visibility');
+        if (!r.ok) { el.innerHTML = `<p style="color:#ef4444">Could not load (${r.status})</p>`; return; }
+        const cur = await r.json();
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Map visibility</h2>
+            <div style="display:flex; gap:0.4rem">
+                <button class="btn btn-ghost" onclick="visAll(true)">Show all</button>
+                <button class="btn btn-ghost" onclick="visAll(false)">Hide all</button>
+            </div>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            Turn a category off to hide it on every connected map (web + Android).
+            The underlying records are <b>not</b> deleted — they stay in the database
+            and re-appear the moment you toggle the category back on. Use this when
+            an overlay is overloading the map; use <i>Map snapshots → Reset map</i>
+            instead if you want to permanently clear records.
+        </p>
+        <p style="color:#64748b;font-size:0.75rem;margin:0 0 1rem">
+            Last changed: ${cur.updated_at ? cur.updated_at.replace('T',' ').slice(0,19) : '—'}
+        </p>
+        <div id="vis-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem">
+        ${VIS_CATEGORIES.map(c => {
+            const on = cur[c.key];
+            const safe = (s) => s.replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));
+            return `
+                <label style="display:flex; align-items:center; gap:0.6rem;
+                              background:#161b25; border:1px solid ${on?'#1e3a2f':'#2a3142'};
+                              border-radius:6px; padding:0.7rem 0.9rem; cursor:pointer">
+                    <input type="checkbox" id="vis-${c.key}" ${on?'checked':''}
+                           onchange="visToggle('${c.key}', this.checked, this)"
+                           style="width:18px; height:18px; cursor:pointer"/>
+                    <div style="flex:1; min-width:0">
+                        <div style="font-weight:600; color:#e2e8f0">
+                            ${c.icon} ${safe(c.label)}
+                            <span style="font-size:0.72rem; color:${on?'#34d399':'#ef4444'};
+                                         font-weight:700; margin-left:0.4rem">
+                                ${on ? 'VISIBLE' : 'HIDDEN'}
+                            </span>
+                        </div>
+                        <div style="color:#94a3b8; font-size:0.78rem; margin-top:0.15rem">
+                            ${safe(c.desc)}
+                        </div>
+                    </div>
+                </label>`;
+        }).join('')}
+        </div>`;
+    }
+
+    window.visToggle = async function(key, on, cbox) {
+        const body = {}; body[key] = !!on;
+        const r = await api('/admin/map-visibility', {
+            method: 'PUT', body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+            alert(`Toggle failed (${r.status}). Restoring previous state.`);
+            if (cbox) cbox.checked = !on;
+            return;
+        }
+        // Re-render so the colour / VISIBLE-HIDDEN pill and last-changed update.
+        renderVisibility(document.getElementById('adm-main'));
+    };
+
+    window.visAll = async function(on) {
+        const body = {};
+        for (const c of VIS_CATEGORIES) body[c.key] = !!on;
+        const r = await api('/admin/map-visibility', {
+            method: 'PUT', body: JSON.stringify(body),
+        });
+        if (!r.ok) { alert(`Bulk toggle failed (${r.status}).`); return; }
+        renderVisibility(document.getElementById('adm-main'));
     };
 
     // ── Base maps (MBTiles) ────────────────────────────────────────────────

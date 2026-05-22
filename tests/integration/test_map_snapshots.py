@@ -42,7 +42,10 @@ def test_reset_captures_and_clears(client) -> None:
                     json={"name": "before refit"})
     assert r.status_code == 201, r.text
     snap = r.json()
-    assert snap["object_count"] == 3
+    # 3 tactical objects + 1 OPERATOR (now also captured & wiped)
+    assert snap["counts"]["tactical_objects"] == 3
+    assert snap["counts"]["operators"]        == 1
+    assert snap["object_count"]               == 4
     assert snap["name"] == "before refit"
     assert snap["id"] >= 1
 
@@ -132,7 +135,9 @@ def test_reset_captures_messages_reports_alerts_fire_missions(client) -> None:
     assert out["counts"]["reports"]          == 1
     assert out["counts"]["alerts"]           == 1
     assert out["counts"]["fire_missions"]    == 1
-    assert out["object_count"]               == 5
+    # The OPERATOR that posted the records is also wiped now.
+    assert out["counts"]["operators"]        == 1
+    assert out["object_count"]               == 6
 
     # Live state empty across the board
     h = auth(admin_tok)
@@ -178,20 +183,31 @@ def test_restore_recreates_messages_reports_alerts_fire_missions(client) -> None
     assert any(f["mission_type"] == "FIRE_FOR_EFFECT" for f in fms)
 
 
-def test_restore_preserves_audit_logs_and_operators(client) -> None:
-    """The snapshot net deliberately excludes operators + audit logs."""
-    cs, op_tok, op_id = register(client, "OPERATOR")
-    _, admin_tok, _   = register(client, "ADMIN")
+def test_reset_preserves_admins_only(client) -> None:
+    """Reset wipes every non-ADMIN operator; ADMINs and audit logs survive."""
+    cs_op, op_tok, _   = register(client, "OPERATOR")
+    cs_bc, bc_tok, _   = register(client, "BATTLE_CAPTAIN")
+    _, admin_tok, _    = register(client, "ADMIN")
 
     _make_object(client, op_tok, "POI")
     audit_before = len(client.get("/admin/audit", headers=auth(admin_tok)).json())
-    op_count_before = len(client.get("/operators", headers=auth(admin_tok)).json())
 
-    client.post("/admin/map/reset", headers=auth(admin_tok), json={})
+    before = client.get("/operators", headers=auth(admin_tok)).json()
+    admins_before  = [o for o in before if o["role"] == "ADMIN"]
+    non_adm_before = [o for o in before if o["role"] != "ADMIN"]
+    assert cs_op in {o["callsign"] for o in non_adm_before}
+    assert cs_bc in {o["callsign"] for o in non_adm_before}
 
-    # Operators unchanged
-    assert len(client.get("/operators", headers=auth(admin_tok)).json()) == op_count_before
-    # Audit log grew (the reset itself is not audited yet, but pre-existing entries persist)
+    out = client.post("/admin/map/reset", headers=auth(admin_tok), json={}).json()
+    assert out["counts"]["operators"] == len(non_adm_before)
+
+    after  = client.get("/operators", headers=auth(admin_tok)).json()
+    admins = [o for o in after if o["role"] == "ADMIN"]
+    others = [o for o in after if o["role"] != "ADMIN"]
+    # Every pre-existing ADMIN survives; every non-ADMIN is gone.
+    assert {a["callsign"] for a in admins} == {a["callsign"] for a in admins_before}
+    assert others == []
+    # Audit log persisted (pre-existing entries are not snapshotted/cleared).
     assert len(client.get("/admin/audit", headers=auth(admin_tok)).json()) >= audit_before
 
 

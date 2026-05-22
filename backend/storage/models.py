@@ -118,6 +118,30 @@ class Photo(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class MapVisibility(Base):
+    """Singleton (id=1) — admin-controlled global filter for the tactical map.
+
+    Each flag toggles whether a category of objects is rendered on every
+    connected client. The goal is anti-clutter: an ADMIN can hide e.g. CoT
+    tracks or fire-mission markers when they're overloading the map, without
+    deleting the underlying data. Defaults are all-on.
+    """
+    __tablename__ = "map_visibility"
+
+    id:               Mapped[int]  = mapped_column(primary_key=True, default=1)
+    tactical_objects: Mapped[bool] = mapped_column(default=True)
+    operators:        Mapped[bool] = mapped_column(default=True)
+    fire_missions:    Mapped[bool] = mapped_column(default=True)
+    alerts:           Mapped[bool] = mapped_column(default=True)
+    reports:          Mapped[bool] = mapped_column(default=True)
+    cot_tracks:       Mapped[bool] = mapped_column(default=True)
+    kml_layers:       Mapped[bool] = mapped_column(default=True)
+    overlays:         Mapped[bool] = mapped_column(default=True)
+    updated_at:       Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    )
+
+
 class TacticalObject(Base):
     __tablename__ = "tactical_objects"
 
