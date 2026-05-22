@@ -19,6 +19,7 @@ from backend.storage.models import Operator, Opord, Photo
 PHOTO_DIR = Path("data/photos")
 
 
+
 def _attach_snapshot(db, opord: Opord, label: str, bbox: list[float],
                      zoom: int, annotations: str, author_id: int) -> None:
     """Render OSM tiles for ``bbox`` and append the snapshot to the OPORD."""
