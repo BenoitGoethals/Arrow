@@ -119,16 +119,21 @@ class Photo(Base):
 
 
 class MapVisibility(Base):
-    """Singleton (id=1) — admin-controlled global filter for the tactical map.
+    """Singleton (id=1) — admin-controlled global filter for what shows on
+    every connected client. Two independent axes:
 
-    Each flag toggles whether a category of objects is rendered on every
-    connected client. The goal is anti-clutter: an ADMIN can hide e.g. CoT
-    tracks or fire-mission markers when they're overloading the map, without
-    deleting the underlying data. Defaults are all-on.
+      * Map axis (``tactical_objects`` … ``overlays``) — toggles whether a
+        category of objects is rendered on the tactical map.
+      * Notification axis (``notif_*``) — toggles whether the right-side
+        toast cards (chat, FM, alerts, stream events) pop up.
+
+    An ADMIN can hide e.g. CoT tracks on the map without silencing the
+    fire-mission radio toasts, and vice versa. Defaults are all-on.
     """
     __tablename__ = "map_visibility"
 
     id:               Mapped[int]  = mapped_column(primary_key=True, default=1)
+    # Map axis — what shows on the map canvas.
     tactical_objects: Mapped[bool] = mapped_column(default=True)
     operators:        Mapped[bool] = mapped_column(default=True)
     fire_missions:    Mapped[bool] = mapped_column(default=True)
@@ -137,6 +142,11 @@ class MapVisibility(Base):
     cot_tracks:       Mapped[bool] = mapped_column(default=True)
     kml_layers:       Mapped[bool] = mapped_column(default=True)
     overlays:         Mapped[bool] = mapped_column(default=True)
+    # Notification axis — what pops up as a toast card on the right.
+    notif_chat:          Mapped[bool] = mapped_column(default=True)
+    notif_fire_missions: Mapped[bool] = mapped_column(default=True)
+    notif_alerts:        Mapped[bool] = mapped_column(default=True)
+    notif_streams:       Mapped[bool] = mapped_column(default=True)
     updated_at:       Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
     )

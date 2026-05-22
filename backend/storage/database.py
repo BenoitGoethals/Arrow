@@ -119,6 +119,11 @@ def _migrate(conn: object) -> None:
         ")",
         "INSERT OR IGNORE INTO map_visibility (id, updated_at) "
         "VALUES (1, datetime('now'))",
+        # Notification-axis flags — added on top of the original map-axis row
+        "ALTER TABLE map_visibility ADD COLUMN notif_chat          BOOLEAN DEFAULT 1",
+        "ALTER TABLE map_visibility ADD COLUMN notif_fire_missions BOOLEAN DEFAULT 1",
+        "ALTER TABLE map_visibility ADD COLUMN notif_alerts        BOOLEAN DEFAULT 1",
+        "ALTER TABLE map_visibility ADD COLUMN notif_streams       BOOLEAN DEFAULT 1",
     ]
     for sql in migrations:
         try:

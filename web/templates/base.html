@@ -138,6 +138,24 @@
         Notification.requestPermission();
     }
 
+    // ── Admin notification-visibility filter ──────────────────────────────
+    // The ADMIN page (Map visibility tab) can mute whole categories of toast
+    // cards. We fetch the current flags on load and keep them refreshed via
+    // the ``map-visibility`` WS broadcast. Defaults to all-on so suppression
+    // can never lock an operator out of a critical alert before the GET resolves.
+    const notifVis = {
+        notif_chat:          true,
+        notif_fire_missions: true,
+        notif_alerts:        true,
+        notif_streams:       true,
+    };
+    api('/admin/map-visibility').then(r => r.ok ? r.json() : null).then(v => {
+        if (!v) return;
+        for (const k of Object.keys(notifVis)) {
+            if (k in v) notifVis[k] = !!v[k];
+        }
+    });
+
     function esc(s) {
         return String(s).replace(/[&<>"']/g, c =>
             ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -173,6 +191,8 @@
     function showToast(evt) {
         const data = evt.data || {};
         if (meId && data.sender_id === meId) return;
+        // Admin can mute chat toasts globally via the Map visibility page.
+        if (!notifVis.notif_chat) return;
         // Suppress in-page toast when already viewing messaging and tab is focused
         if (location.pathname.startsWith('/messaging') && document.visibilityState === 'visible') return;
 
@@ -364,6 +384,8 @@
     };
 
     function handleStreamEvent(evt) {
+        // Admin can mute live-stream notifications.
+        if (!notifVis.notif_streams) return;
         const d = evt.data || {};
         console.log('[arrow] stream event', evt);
         if (evt.event === 'started') {
@@ -424,6 +446,9 @@
     }
 
     function showFireMissionAlert(evt) {
+        // Admin can mute the FM toast banner globally; audio is suppressed
+        // by the caller (connectWS) which also reads the same flag.
+        if (!notifVis.notif_fire_missions) return;
         const d    = evt.data || {};
         const cs   = d.callsign || 'Unknown';
         const type = (d.mission_type || '').replace(/_/g, ' ');
@@ -567,6 +592,8 @@
     // Handle TIC / MEDICAL / EVAC / LOST_COMMS / DRONE_SPOTTED alerts from WebSocket
     function handleTacAlert(evt) {
         if (evt.event !== 'triggered') return;
+        // Admin can mute TIC / MEDICAL / EVAC / LOST_COMMS / DRONE toasts globally.
+        if (!notifVis.notif_alerts) return;
         const d = evt.data || {};
         const type = (d.type || '').toUpperCase();
 
@@ -661,9 +688,20 @@
             try {
                 const e = JSON.parse(ev.data);
                 if (e.channel === 'chat')         showToast(e);
-                if (e.channel === 'fire-mission') { showFireMissionAlert(e); if ((e.data||{}).weapon !== 'L16_81MM') triggerAudioAlert('fire'); }
+                if (e.channel === 'fire-mission') {
+                    showFireMissionAlert(e);
+                    // Audio also obeys the FM-notif toggle — no FM toast means
+                    // no FM klaxon either; the BC asked for the radio to shut up.
+                    if (notifVis.notif_fire_missions &&
+                        (e.data||{}).weapon !== 'L16_81MM') triggerAudioAlert('fire');
+                }
                 if (e.channel === 'alert')        { handleTacAlert(e); }
                 if (e.channel === 'stream')       handleStreamEvent(e);
+                if (e.channel === 'map-visibility' && e.data) {
+                    for (const k of Object.keys(notifVis)) {
+                        if (k in e.data) notifVis[k] = !!e.data[k];
+                    }
+                }
             } catch (_) {}
         };
         ws.onclose = () => setTimeout(connectWS, 3000);

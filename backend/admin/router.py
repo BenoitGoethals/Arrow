@@ -487,8 +487,19 @@ async def map_snapshot_restore(
     }
 
 
-# ── Map visibility — admin-controlled per-category filter ──────────────────
+# ── Map + notification visibility — admin-controlled per-category filter ──
+# Two axes: ``map_*`` (what shows on the map canvas) and ``notif_*`` (the
+# toast cards that pop up on the right). The same endpoint controls both
+# axes; PUT accepts any subset of fields (partial patch).
+_VIS_FIELDS = (
+    "tactical_objects", "operators", "fire_missions", "alerts",
+    "reports", "cot_tracks", "kml_layers", "overlays",
+    "notif_chat", "notif_fire_missions", "notif_alerts", "notif_streams",
+)
+
+
 class MapVisibilityIn(BaseModel):
+    # Map axis
     tactical_objects: bool | None = None
     operators:        bool | None = None
     fire_missions:    bool | None = None
@@ -497,20 +508,17 @@ class MapVisibilityIn(BaseModel):
     cot_tracks:       bool | None = None
     kml_layers:       bool | None = None
     overlays:         bool | None = None
+    # Notification axis
+    notif_chat:           bool | None = None
+    notif_fire_missions:  bool | None = None
+    notif_alerts:         bool | None = None
+    notif_streams:        bool | None = None
 
 
 def _visibility_payload(row: MapVisibility) -> dict:
-    return {
-        "tactical_objects": bool(row.tactical_objects),
-        "operators":        bool(row.operators),
-        "fire_missions":    bool(row.fire_missions),
-        "alerts":           bool(row.alerts),
-        "reports":          bool(row.reports),
-        "cot_tracks":       bool(row.cot_tracks),
-        "kml_layers":       bool(row.kml_layers),
-        "overlays":         bool(row.overlays),
-        "updated_at":       row.updated_at.isoformat() if row.updated_at else None,
-    }
+    out = {f: bool(getattr(row, f)) for f in _VIS_FIELDS}
+    out["updated_at"] = row.updated_at.isoformat() if row.updated_at else None
+    return out
 
 
 def _get_or_create_visibility(db: Session) -> MapVisibility:
@@ -526,11 +534,11 @@ def get_map_visibility(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
 ) -> dict:
-    """Read the per-category map visibility flags.
+    """Read the per-category map + notification visibility flags.
 
     Available to every authenticated operator — every client respects the
     same filter, so they need to know which categories the ADMIN has turned
-    off when deciding what to render locally.
+    off when deciding what to render and which toasts to suppress.
     """
     return _visibility_payload(_get_or_create_visibility(db))
 
@@ -543,9 +551,8 @@ async def set_map_visibility(
 ) -> dict:
     """ADMIN-only — toggle any subset of categories. Broadcasts on change."""
     row = _get_or_create_visibility(db)
-    for field in ("tactical_objects", "operators", "fire_missions", "alerts",
-                  "reports", "cot_tracks", "kml_layers", "overlays"):
-        val = getattr(payload, field)
+    for field in _VIS_FIELDS:
+        val = getattr(payload, field, None)
         if val is not None:
             setattr(row, field, bool(val))
     db.commit(); db.refresh(row)
