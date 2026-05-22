@@ -877,10 +877,49 @@ main { padding: 0; }
     ];
     const VIS_CATEGORIES = MAP_CATEGORIES;   // kept for backward-compat refs
 
+    // ── Per-operator local prefs (no server PUT) ──────────────────────────
+    // Each device stores its own visibility choices in localStorage. The
+    // server endpoint is hit ONLY for first-time defaults — once the user
+    // has touched a toggle the local copy is authoritative. Other browser
+    // tabs on this device pick up the change via the ``storage`` event.
+    const VIS_LS_KEY = 'arrow_visibility_prefs';
+    function _allOnDefaults() {
+        const d = {};
+        [...MAP_CATEGORIES, ...NOTIF_CATEGORIES].forEach(c => d[c.key] = true);
+        return d;
+    }
+    function _readVisPrefs() {
+        try {
+            const raw = localStorage.getItem(VIS_LS_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (_) { return null; }
+    }
+    function _writeVisPrefs(prefs) {
+        localStorage.setItem(VIS_LS_KEY, JSON.stringify(prefs));
+        // Manually fire a storage event for same-tab listeners (the standard
+        // 'storage' event only fires on OTHER tabs of the same origin).
+        try {
+            window.dispatchEvent(new CustomEvent('arrow-visibility-changed',
+                { detail: prefs }));
+        } catch (_) {}
+    }
+
     async function renderVisibility(el) {
-        const r   = await api('/admin/map-visibility');
-        if (!r.ok) { el.innerHTML = `<p style="color:#ef4444">Could not load (${r.status})</p>`; return; }
-        const cur = await r.json();
+        // Start with locally saved prefs; if none, seed from the server's
+        // (admin-controlled) defaults so a brand-new install isn't all-off.
+        let cur = _readVisPrefs();
+        if (!cur) {
+            const r = await api('/admin/map-visibility');
+            cur = r.ok ? await r.json() : _allOnDefaults();
+            // Trim to known keys + persist so the next visit is offline-OK.
+            const trimmed = _allOnDefaults();
+            for (const k of Object.keys(trimmed)) {
+                if (k in cur) trimmed[k] = !!cur[k];
+            }
+            cur = trimmed;
+            _writeVisPrefs(cur);
+        }
 
         const card = (c, on, onTone='#1e3a2f', offTone='#7f1d1d') => {
             const safe = (s) => s.replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));
@@ -912,19 +951,16 @@ main { padding: 0; }
             <div style="display:flex; gap:0.4rem">
                 <button class="btn btn-ghost" onclick="visAll(true)">Show all</button>
                 <button class="btn btn-ghost" onclick="visAll(false)">Hide all</button>
+                <button class="btn btn-ghost" onclick="visResetDefaults()" title="Re-fetch admin defaults">↺ Defaults</button>
             </div>
         </div>
         <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
-            Two independent axes — <b>Map</b> controls what's drawn on the tactical
-            map canvas; <b>Notifications</b> controls the toast cards that pop up on
-            the right of the screen (chat, fire-mission, alert, stream events).
-            The underlying records are <b>not</b> deleted — they re-appear the moment
-            you toggle the category back on. Use this to cut clutter without
-            losing data; use <i>Map snapshots → Reset map</i> if you actually
-            want to delete records.
-        </p>
-        <p style="color:#64748b;font-size:0.75rem;margin:0 0 1rem">
-            Last changed: ${cur.updated_at ? cur.updated_at.replace('T',' ').slice(0,19) : '—'}
+            <b>These are your personal device preferences</b> — every operator has
+            their own settings, stored locally. Toggling a category here only
+            affects what <i>you</i> see; other operators are not impacted. Two
+            independent axes: <b>Map</b> controls what's drawn on the tactical map
+            canvas; <b>Notifications</b> controls the toast cards (chat,
+            fire-mission, alert, stream events).
         </p>
 
         <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
@@ -944,27 +980,28 @@ main { padding: 0; }
         </div>`;
     }
 
-    window.visToggle = async function(key, on, cbox) {
-        const body = {}; body[key] = !!on;
-        const r = await api('/admin/map-visibility', {
-            method: 'PUT', body: JSON.stringify(body),
-        });
-        if (!r.ok) {
-            alert(`Toggle failed (${r.status}). Restoring previous state.`);
-            if (cbox) cbox.checked = !on;
-            return;
-        }
-        // Re-render so the colour / VISIBLE-HIDDEN pill and last-changed update.
+    window.visToggle = function(key, on, _cbox) {
+        const cur = _readVisPrefs() || _allOnDefaults();
+        cur[key] = !!on;
+        _writeVisPrefs(cur);
         renderVisibility(document.getElementById('adm-main'));
     };
 
-    window.visAll = async function(on) {
-        const body = {};
-        for (const c of [...MAP_CATEGORIES, ...NOTIF_CATEGORIES]) body[c.key] = !!on;
-        const r = await api('/admin/map-visibility', {
-            method: 'PUT', body: JSON.stringify(body),
-        });
-        if (!r.ok) { alert(`Bulk toggle failed (${r.status}).`); return; }
+    window.visAll = function(on) {
+        const cur = _allOnDefaults();
+        for (const k of Object.keys(cur)) cur[k] = !!on;
+        _writeVisPrefs(cur);
+        renderVisibility(document.getElementById('adm-main'));
+    };
+
+    window.visResetDefaults = async function() {
+        // Pull the admin-controlled server defaults again and overwrite local.
+        const r = await api('/admin/map-visibility');
+        if (!r.ok) { alert(`Could not fetch defaults (${r.status}).`); return; }
+        const server = await r.json();
+        const out = _allOnDefaults();
+        for (const k of Object.keys(out)) if (k in server) out[k] = !!server[k];
+        _writeVisPrefs(out);
         renderVisibility(document.getElementById('adm-main'));
     };
 

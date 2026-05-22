@@ -79,13 +79,20 @@ def test_partial_patch_keeps_other_fields(client) -> None:
     assert body["reports"]          is True
 
 
-def test_operator_cannot_toggle(client) -> None:
-    _, op_tok, _    = register(client, "OPERATOR")
-    _, bc_tok, _    = register(client, "BATTLE_CAPTAIN")
+def test_any_operator_can_toggle_defaults(client) -> None:
+    """Per-operator prefs live client-side now; the server-side singleton is
+    just the default a fresh device pulls in. Every authenticated operator
+    can adjust those defaults."""
+    _, op_tok, _ = register(client, "OPERATOR")
+    _, bc_tok, _ = register(client, "BATTLE_CAPTAIN")
     for tok in (op_tok, bc_tok):
         r = client.put("/admin/map-visibility", headers=auth(tok),
                        json={"alerts": False})
-        assert r.status_code == 403, f"non-ADMIN PUT should 403, got {r.status_code}"
+        assert r.status_code == 200, r.text
+        assert r.json()["alerts"] is False
+        # Reset for the next iteration.
+        client.put("/admin/map-visibility", headers=auth(tok),
+                   json={"alerts": True})
 
 
 def test_unknown_field_ignored(client) -> None:

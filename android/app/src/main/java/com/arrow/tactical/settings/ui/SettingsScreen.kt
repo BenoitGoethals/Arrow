@@ -17,6 +17,7 @@ fun SettingsScreen(
     onLogout: () -> Unit,
     onOpenOfflineMaps: () -> Unit = {},
     onOpenKmlLayers: () -> Unit = {},
+    onOpenVisibility: () -> Unit = {},
 ) {
     val server   by repo.serverUrl.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
     val callsign by repo.callsign.collectAsState(initial = "")
@@ -106,6 +107,15 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text("Browse imported KML layers")
+            }
+
+            Text("Visibility", style = MaterialTheme.typography.labelLarge,
+                 color = MaterialTheme.colorScheme.primary)
+            OutlinedButton(
+                onClick  = onOpenVisibility,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Map + notification preferences")
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
