@@ -547,9 +547,15 @@ def get_map_visibility(
 async def set_map_visibility(
     payload: MapVisibilityIn,
     db: Session = Depends(get_db),
-    current: Operator = Depends(require_role("ADMIN")),
+    _: Operator = Depends(get_current_operator),
 ) -> dict:
-    """ADMIN-only — toggle any subset of categories. Broadcasts on change."""
+    """Update the server-side defaults for new clients.
+
+    Per-operator preferences are stored client-side now (localStorage on web,
+    DataStore on Android) — this endpoint only sets the bootstrap defaults
+    that a brand-new device sees the first time it loads. Any authenticated
+    operator can adjust them; existing devices keep their local choices.
+    """
     row = _get_or_create_visibility(db)
     for field in _VIS_FIELDS:
         val = getattr(payload, field, None)

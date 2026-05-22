@@ -596,18 +596,40 @@
         },
     };
 
-    // ── Admin map-visibility — global per-category filter ───────────────────
+    // ── Per-operator visibility — local device preferences ─────────────────
+    // Each browser stores its own choices in localStorage under
+    // ``arrow_visibility_prefs``. We seed from the server's (admin-controlled)
+    // defaults the first time only; after that, the local copy is the source
+    // of truth and changes via the admin page propagate via:
+    //   * the in-tab CustomEvent ``arrow-visibility-changed``
+    //   * the cross-tab native ``storage`` event
+    const VIS_LS_KEY = 'arrow_visibility_prefs';
+    function _applyVis(prefs) {
+        if (!prefs) return;
+        for (const k of Object.keys(state.visibility)) {
+            if (k in prefs) state.visibility[k] = !!prefs[k];
+        }
+        applyVisibilityToMap();
+    }
     async function loadMapVisibility() {
         try {
+            const raw = localStorage.getItem(VIS_LS_KEY);
+            if (raw) { _applyVis(JSON.parse(raw)); return; }
+            // No local prefs yet — seed from the server defaults (best-effort).
             const r = await api('/admin/map-visibility');
-            if (!r.ok) return;          // operator may not be authorised — keep defaults
+            if (!r.ok) return;
             const v = await r.json();
-            for (const k of Object.keys(state.visibility)) {
-                if (k in v) state.visibility[k] = !!v[k];
-            }
-            applyVisibilityToMap();
+            localStorage.setItem(VIS_LS_KEY, JSON.stringify(v));
+            _applyVis(v);
         } catch (_) { /* keep defaults */ }
     }
+    // Same-tab changes from admin.html
+    window.addEventListener('arrow-visibility-changed', e => _applyVis(e.detail));
+    // Cross-tab changes
+    window.addEventListener('storage', e => {
+        if (e.key !== VIS_LS_KEY || !e.newValue) return;
+        try { _applyVis(JSON.parse(e.newValue)); } catch (_) {}
+    });
 
     function applyVisibilityToMap() {
         // Re-render everything so the new flags take effect. Each loader
@@ -3393,14 +3415,10 @@
                 handleKmlWsEvent(msg);
             } else if (msg.channel === 'overlay') {
                 handleOverlayWsEvent(msg);
-            } else if (msg.channel === 'map-visibility') {
-                // Admin updated the global filter; merge new flags and re-render.
-                const v = msg.data || {};
-                for (const k of Object.keys(state.visibility)) {
-                    if (k in v) state.visibility[k] = !!v[k];
-                }
-                applyVisibilityToMap();
             }
+            // NOTE: visibility prefs are now per-device (localStorage), so
+            // there's no WS subscription here — the admin singleton on the
+            // server is only consulted for first-time defaults.
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
     }

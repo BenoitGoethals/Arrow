@@ -138,22 +138,35 @@
         Notification.requestPermission();
     }
 
-    // ── Admin notification-visibility filter ──────────────────────────────
-    // The ADMIN page (Map visibility tab) can mute whole categories of toast
-    // cards. We fetch the current flags on load and keep them refreshed via
-    // the ``map-visibility`` WS broadcast. Defaults to all-on so suppression
-    // can never lock an operator out of a critical alert before the GET resolves.
+    // ── Per-operator notification preferences ─────────────────────────────
+    // Stored in localStorage under ``arrow_visibility_prefs`` (same blob the
+    // admin page edits and the map page reads). Each operator controls their
+    // own toast stack; reload on cross-tab or same-tab changes. Defaults
+    // to all-on so a missing-key never silences a critical alert.
+    const VIS_LS_KEY = 'arrow_visibility_prefs';
     const notifVis = {
         notif_chat:          true,
         notif_fire_missions: true,
         notif_alerts:        true,
         notif_streams:       true,
     };
-    api('/admin/map-visibility').then(r => r.ok ? r.json() : null).then(v => {
-        if (!v) return;
+    function _applyNotifVis(prefs) {
+        if (!prefs) return;
         for (const k of Object.keys(notifVis)) {
-            if (k in v) notifVis[k] = !!v[k];
+            if (k in prefs) notifVis[k] = !!prefs[k];
         }
+    }
+    try {
+        const raw = localStorage.getItem(VIS_LS_KEY);
+        if (raw) _applyNotifVis(JSON.parse(raw));
+        else api('/admin/map-visibility').then(r => r.ok ? r.json() : null).then(v => {
+            if (v) { localStorage.setItem(VIS_LS_KEY, JSON.stringify(v)); _applyNotifVis(v); }
+        });
+    } catch (_) {}
+    window.addEventListener('arrow-visibility-changed', e => _applyNotifVis(e.detail));
+    window.addEventListener('storage', e => {
+        if (e.key !== VIS_LS_KEY || !e.newValue) return;
+        try { _applyNotifVis(JSON.parse(e.newValue)); } catch (_) {}
     });
 
     function esc(s) {
@@ -697,11 +710,7 @@
                 }
                 if (e.channel === 'alert')        { handleTacAlert(e); }
                 if (e.channel === 'stream')       handleStreamEvent(e);
-                if (e.channel === 'map-visibility' && e.data) {
-                    for (const k of Object.keys(notifVis)) {
-                        if (k in e.data) notifVis[k] = !!e.data[k];
-                    }
-                }
+                // Visibility prefs are per-device now; no WS subscription.
             } catch (_) {}
         };
         ws.onclose = () => setTimeout(connectWS, 3000);

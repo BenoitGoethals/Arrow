@@ -53,7 +53,7 @@ class AppContainer(private val context: Context) {
     )
     val kmlLayerRepository = KmlLayerRepository(apiClient)
     val overlayRepository  = OverlayRepository(apiClient)
-    val mapVisibilityRepository = MapVisibilityRepository(apiClient)
+    val mapVisibilityRepository = MapVisibilityRepository(context, apiClient)
 
     val photoRepository       = PhotoRepository(apiClient)
     val fireMissionRepository = FireMissionRepository(apiClient)
