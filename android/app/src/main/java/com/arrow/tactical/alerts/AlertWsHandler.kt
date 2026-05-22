@@ -3,6 +3,7 @@ package com.arrow.tactical.alerts
 import android.content.Context
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.snapshots.SnapshotStateMap
+import com.arrow.tactical.admin.MapVisibility
 import com.arrow.tactical.network.MgrsConverter
 import com.arrow.tactical.network.OperatorDto
 import kotlinx.serialization.json.JsonObject
@@ -34,6 +35,9 @@ suspend fun handleAlertWsEvent(
     alertMarkers: SnapshotStateMap<Int, Marker>,
     snackbarHostState: SnackbarHostState,
     context: Context,
+    /** Latest admin visibility config — gates marker (alerts) and snackbar
+     *  (notifAlerts) independently. Defaults to all-on. */
+    visibility: MapVisibility = MapVisibility(),
 ) {
     val event = evt["event"]?.jsonPrimitive?.contentOrNull ?: return
     val data  = evt["data"]?.jsonObject ?: return
@@ -58,9 +62,9 @@ suspend fun handleAlertWsEvent(
         runCatching { MgrsConverter.encode(lat, lon) }.getOrNull() ?: "—"
     } else "—"
 
-    // Drop / replace the marker first so the snackbar always shows after the
-    // pin lands (rough ordering — Compose recomposition is async but cheap).
-    if (lat != null && lon != null && map != null) {
+    // Drop / replace the marker only when the MAP-axis "alerts" flag is on.
+    // The notification-axis "notifAlerts" only controls the snackbar / sound.
+    if (visibility.alerts && lat != null && lon != null && map != null) {
         alertMarkers.remove(id)?.let { map.overlays.remove(it) }
         val marker = AlertMarker.build(
             map = map, res = context.resources,
@@ -71,16 +75,16 @@ suspend fun handleAlertWsEvent(
         )
         map.overlays.add(marker)
         alertMarkers[id] = marker
-        // Force-pan to the contact at a useful tactical zoom. We pick 16 —
-        // close enough to read terrain features but still shows the adjacent
-        // grid square so the BC keeps spatial context.
+        // Force-pan to the contact at a useful tactical zoom.
         map.controller.animateTo(GeoPoint(lat, lon), 16.0, null)
         marker.showInfoWindow()
         map.invalidate()
     }
 
     // Snackbar — read the grid aloud or radio it in without leaving the map.
-    val msg = if (lat != null && lon != null) "$type · $callsign · $mgrs"
-              else                            "$type · $callsign · (no position)"
-    snackbarHostState.showSnackbar(message = msg, withDismissAction = true)
+    if (visibility.notifAlerts) {
+        val msg = if (lat != null && lon != null) "$type · $callsign · $mgrs"
+                  else                            "$type · $callsign · (no position)"
+        snackbarHostState.showSnackbar(message = msg, withDismissAction = true)
+    }
 }

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.arrow.tactical.MainActivity
+import com.arrow.tactical.admin.MapVisibilityRepository
 import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.network.WsClient
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +26,7 @@ class ChatNotificationManager(
     private val context: Context,
     private val wsClient: WsClient,
     private val authRepository: AuthRepository,
+    private val mapVisibilityRepository: MapVisibilityRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val counter = AtomicInteger(100)
@@ -34,12 +36,19 @@ class ChatNotificationManager(
     fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch { authRepository.me().onSuccess { meId = it.id } }
+        // Pull the latest map-visibility config so notif_chat is fresh by the
+        // first incoming chat event. The MapScreen WS dispatcher keeps it in
+        // sync afterwards via mapVisibilityRepository.applyServerEvent().
+        scope.launch { mapVisibilityRepository.refresh() }
         ensureChannel()
         scope.launch {
             while (true) {
                 try {
                     wsClient.events().collect { event ->
                         if (event["channel"]?.jsonPrimitive?.content != "chat") return@collect
+                        // Admin can mute chat notifications globally; the
+                        // underlying message still lands in /messages.
+                        if (!mapVisibilityRepository.current.notifChat) return@collect
                         val data = event["data"]?.jsonObject ?: return@collect
                         val senderId = data["sender_id"]?.jsonPrimitive?.intOrNull ?: return@collect
                         if (senderId == meId) return@collect
