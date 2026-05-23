@@ -436,10 +436,10 @@
             return;
         }
         document.getElementById('oct-status').textContent = cfg.url;
-        octopusRefresh();
+        await octopusRefresh();
     }
 
-    window.octopusRefresh = async function() {
+    window.octopusRefresh = async function octopusRefresh() {
         const btn = document.getElementById('oct-refresh-btn');
         const el  = document.getElementById('oct-list-el');
         btn.disabled = true;
@@ -541,13 +541,22 @@
         else alert('Failed to pin stream: ' + r2.status);
     };
 
-    // Auto-join live stream if stream_id in URL
+    // Auto-join live stream if stream_id in URL path
     const pathId = location.pathname.split('/streams/')[1]?.replace(/\/$/, '');
     if (pathId) {
         api('/streams').then(r => r.json()).then(list => {
             const s = list.find(x => x.id === pathId);
             if (s) joinStream(s.id, s.callsign);
         });
+    }
+
+    // Auto-open Octopus stream if ?octopus=<stream_id> in query string
+    const octopusParam = new URLSearchParams(location.search).get('octopus');
+    if (octopusParam) {
+        // Wait for octopusInit to complete (config + connection check), then open
+        octopusInit().then(() => octView(octopusParam)).catch(() => octView(octopusParam));
+        // Clean up the URL so a page refresh doesn't re-trigger
+        history.replaceState(null, '', location.pathname);
     }
 
     loadList();

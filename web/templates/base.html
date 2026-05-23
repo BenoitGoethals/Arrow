@@ -779,6 +779,14 @@
                         bbox [${d.bbox.map(Math.round).join(', ')}]
                        </div>`
                     : ''}
+                <div style="margin-top:.5rem">
+                    <a href="/streams/?octopus=${encodeURIComponent(d.stream_id)}"
+                       style="display:inline-block;background:#f59e0b22;color:#fbbf24;
+                              border:1px solid #f59e0b44;border-radius:4px;
+                              padding:3px 10px;font-size:.75rem;text-decoration:none">
+                        ▶ View Stream
+                    </a>
+                </div>
             </div>`;
 
         document.getElementById('arrow-toast-container').appendChild(toast);
