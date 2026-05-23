@@ -128,6 +128,15 @@
             <img id="stream-img" alt="Live stream" style="display:none"/>
             <img id="ext-img" alt="External stream"/>
             <video id="ext-video" controls autoplay muted playsinline></video>
+            <!-- HLS status overlay (loading / error) -->
+            <div id="hls-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.7);
+                 align-items:center;justify-content:center;flex-direction:column;gap:.6rem;z-index:10;">
+                <div id="hls-overlay-icon" style="font-size:2rem"></div>
+                <div id="hls-overlay-msg" style="color:#e2e8f0;font-size:.9rem;text-align:center;max-width:340px;padding:0 1rem"></div>
+                <button id="hls-retry-btn" onclick="hlsRetry()" style="display:none;
+                    background:#34d399;color:#0d1117;border:0;border-radius:6px;
+                    padding:.35rem .9rem;font:inherit;cursor:pointer;font-weight:600">↺ Retry</button>
+            </div>
             <div class="fps-badge" id="fps-badge" style="display:none">— fps</div>
             <div class="quality-bar" id="quality-bar" style="display:none">
                 <button class="q-btn" onclick="fullscreen()">⛶ Fullscreen</button>
@@ -179,6 +188,7 @@
     const api  = (p, opts) => fetch(window.ARROW_BACKEND_URL + p, { headers, ...opts });
 
     let activeWs = null, activeId = null, activeHls = null;
+    let _hlsRetryUrl = null;
     let frameCount = 0, lastFpsTime = Date.now();
     const img    = document.getElementById('stream-img');
     const extImg = document.getElementById('ext-img');
@@ -195,11 +205,71 @@
         extImg.style.display = 'none'; extImg.src = '';
         extVid.style.display = 'none'; extVid.pause(); extVid.src = '';
         if (activeHls) { activeHls.destroy(); activeHls = null; }
+        _hlsOverlayHide();
+        _hlsRetryUrl = null;
         document.getElementById('no-stream-msg').style.display  = 'block';
         document.getElementById('stream-topbar').style.display  = 'none';
         document.getElementById('fps-badge').style.display      = 'none';
         document.getElementById('quality-bar').style.display    = 'none';
     }
+
+    // ── HLS overlay helpers ──────────────────────────────────────
+    function _hlsOverlayShow(icon, msg, showRetry) {
+        const ov  = document.getElementById('hls-overlay');
+        ov.style.display = 'flex';
+        document.getElementById('hls-overlay-icon').textContent = icon;
+        document.getElementById('hls-overlay-msg').textContent  = msg;
+        document.getElementById('hls-retry-btn').style.display  = showRetry ? 'inline-block' : 'none';
+    }
+    function _hlsOverlayHide() {
+        document.getElementById('hls-overlay').style.display = 'none';
+    }
+
+    function _playHls(url) {
+        if (activeHls) { activeHls.destroy(); activeHls = null; }
+        _hlsRetryUrl = url;
+        extVid.style.display = 'block';
+        _hlsOverlayShow('⏳', 'Connecting to stream…', false);
+
+        if (Hls.isSupported()) {
+            activeHls = new Hls({
+                lowLatencyMode: true,
+                maxBufferLength: 10,
+                manifestLoadingMaxRetry: 4,
+                manifestLoadingRetryDelay: 1000,
+                levelLoadingMaxRetry: 4,
+                fragLoadingMaxRetry: 4,
+            });
+            activeHls.loadSource(url);
+            activeHls.attachMedia(extVid);
+            activeHls.on(Hls.Events.MANIFEST_PARSED, () => {
+                _hlsOverlayHide();
+                extVid.play().catch(() => {});
+            });
+            activeHls.on(Hls.Events.ERROR, (_, d) => {
+                if (!d.fatal) return;
+                if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                    _hlsOverlayShow('📡', 'Stream not ready — segments not available yet.\n' + (d.details || ''), true);
+                } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                    _hlsOverlayShow('⚠', 'Media error — trying to recover…', false);
+                    activeHls.recoverMediaError();
+                } else {
+                    _hlsOverlayShow('✖', 'Fatal error: ' + (d.details || d.type), true);
+                }
+            });
+        } else if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
+            // Safari native HLS
+            _hlsOverlayHide();
+            extVid.src = url;
+            extVid.play().catch(() => {});
+        } else {
+            _hlsOverlayShow('✖', 'HLS not supported in this browser.', false);
+        }
+    }
+
+    window.hlsRetry = function() {
+        if (_hlsRetryUrl) _playHls(_hlsRetryUrl);
+    };
 
     function showTopbar(callsign, meta) {
         document.getElementById('stream-topbar').style.display = 'flex';
@@ -331,20 +401,11 @@
             extImg.src = url;
             extImg.style.display = 'block';
         } else if (type === 'hls') {
-            extVid.style.display = 'block';
-            if (Hls.isSupported()) {
-                activeHls = new Hls();
-                activeHls.loadSource(url);
-                activeHls.attachMedia(extVid);
-                activeHls.on(Hls.Events.MANIFEST_PARSED, () => extVid.play());
-            } else if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
-                extVid.src = url;
-                extVid.play();
-            }
+            _playHls(url);
         } else {
             extVid.src = url;
             extVid.style.display = 'block';
-            extVid.play();
+            extVid.play().catch(() => {});
         }
 
         // Mark active card
@@ -504,17 +565,9 @@
             extImg.src = url;
             extImg.style.display = 'block';
         } else if (type === 'hls') {
-            extVid.style.display = 'block';
-            if (Hls.isSupported()) {
-                activeHls = new Hls();
-                activeHls.loadSource(url);
-                activeHls.attachMedia(extVid);
-                activeHls.on(Hls.Events.MANIFEST_PARSED, () => extVid.play());
-            } else if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
-                extVid.src = url; extVid.play();
-            }
+            _playHls(url);
         } else {
-            extVid.src = url; extVid.style.display = 'block'; extVid.play();
+            extVid.src = url; extVid.style.display = 'block'; extVid.play().catch(() => {});
         }
     };
 
