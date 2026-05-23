@@ -103,7 +103,23 @@ async def get_octopus_stream(
         except httpx.RequestError as exc:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                                 f"Cannot reach Octopus: {exc}")
-    return r.json()
+    data = r.json()
+
+    # Octopus relays every source (including RTSP) as HLS.
+    # If the detail response doesn't include a ready-made playback URL,
+    # construct the standard Octopus HLS path so the browser can play it.
+    if not any(data.get(f) for f in ("hls_url", "url", "playback_url", "stream_url")):
+        params = f"?api_key={key}" if key else ""
+        data["hls_url"] = f"{url}/hls/{stream_id}/index.m3u8{params}"
+    elif key:
+        # Ensure api_key is appended to whichever URL field Octopus returned
+        for field in ("hls_url", "url", "playback_url", "stream_url"):
+            if data.get(field) and "api_key" not in data[field]:
+                sep = "&" if "?" in data[field] else "?"
+                data[field] = f"{data[field]}{sep}api_key={key}"
+                break
+
+    return data
 
 
 # ── Add Octopus stream as persistent external stream ─────────────────────────
