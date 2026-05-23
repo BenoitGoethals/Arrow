@@ -9,8 +9,19 @@
                      cursor:pointer; margin-bottom:.4rem; transition:background .15s; }
     .stream-card:hover { background:#241535; }
     .stream-card.active { background:#2d1b45; }
+    .ext-card      { border-left-color:#0ea5e9; background:#0c1a25; }
+    .ext-card:hover { background:#112233; }
+    .ext-card.active { background:#0f2a40; }
+    .oct-card      { border-left-color:#f59e0b; background:#1a150a; }
+    .oct-card:hover { background:#231b0e; }
+    .oct-card.active { background:#2e2010; }
     .sc-call  { font-weight:700; color:#a78bfa; font-size:.88rem; }
+    .ext-call { color:#38bdf8; }
+    .oct-call { color:#fbbf24; }
     .sc-meta  { font-size:.72rem; color:#64748b; }
+    .type-badge { display:inline-block; font-size:.6rem; font-weight:700; letter-spacing:.08em;
+                  padding:1px 5px; border-radius:3px; background:#0e2233; color:#38bdf8;
+                  border:1px solid #1e4060; vertical-align:middle; margin-left:4px; }
     .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%;
                 background:#22c55e; box-shadow:0 0 6px #22c55e;
                 animation:ldot 1s infinite; margin-right:4px; }
@@ -36,6 +47,31 @@
              padding:2px 8px; font:inherit; font-size:.72rem; cursor:pointer; }
     .q-btn:hover { border-color:#7c3aed; color:#a78bfa; }
     main { padding:0; }
+
+    /* Add-external modal */
+    .ext-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75);
+                    z-index:8000; align-items:center; justify-content:center; }
+    .ext-modal-bg.open { display:flex; }
+    .ext-modal { background:#161b25; border:1px solid #2a3142; border-radius:8px;
+                 padding:1.4rem 1.6rem; width:380px; max-width:95vw; }
+    .ext-modal h3 { margin:0 0 1rem; color:#38bdf8; font-size:.95rem; }
+    .ext-field { margin-bottom:.75rem; }
+    .ext-field label { display:block; font-size:.75rem; color:#94a3b8; margin-bottom:.3rem; }
+    .ext-field input, .ext-field select, .ext-field textarea {
+        width:100%; box-sizing:border-box; background:#0d1117; border:1px solid #2a3142;
+        border-radius:4px; padding:.45rem .6rem; color:#e2e8f0; font:inherit; font-size:.85rem; }
+    .ext-field input:focus, .ext-field select:focus, .ext-field textarea:focus {
+        outline:none; border-color:#38bdf8; }
+    .ext-modal-btns { display:flex; gap:.5rem; justify-content:flex-end; margin-top:1rem; }
+    .ext-btn-save { background:#0ea5e9; color:#fff; border:0; border-radius:4px;
+                    padding:.4rem 1rem; font:inherit; cursor:pointer; }
+    .ext-btn-save:hover { background:#0284c7; }
+    .ext-btn-cancel { background:#1f2937; color:#94a3b8; border:1px solid #2a3142;
+                      border-radius:4px; padding:.4rem 1rem; font:inherit; cursor:pointer; }
+
+    /* External video player */
+    #ext-video { max-width:100%; max-height:100%; display:none; }
+    #ext-img   { max-width:100%; max-height:100%; display:none; object-fit:contain; }
 </style>
 {% endblock %}
 
@@ -45,6 +81,28 @@
     <aside class="stream-list">
         <h3>Live Streams</h3>
         <div id="stream-list-el"><small style="color:#475569">No active streams</small></div>
+
+        <h3 style="margin-top:.9rem; display:flex; align-items:center; justify-content:space-between">
+            External Streams
+            <button onclick="extModalOpen()"
+                    style="background:#0ea5e922;color:#38bdf8;border:1px solid #0ea5e944;
+                           border-radius:4px;padding:1px 7px;font:inherit;font-size:.68rem;cursor:pointer">
+                + Add
+            </button>
+        </h3>
+        <div id="ext-list-el"><small style="color:#475569">None registered</small></div>
+
+        <h3 style="margin-top:.9rem; display:flex; align-items:center; justify-content:space-between">
+            <span>⏺ OCTOPUS</span>
+            <button onclick="octopusRefresh()"
+                    style="background:#f59e0b22;color:#fbbf24;border:1px solid #f59e0b44;
+                           border-radius:4px;padding:1px 7px;font:inherit;font-size:.68rem;cursor:pointer"
+                    id="oct-refresh-btn">
+                ↺ Refresh
+            </button>
+        </h3>
+        <div id="oct-status" style="font-size:.72rem;color:#64748b;margin-bottom:.3rem"></div>
+        <div id="oct-list-el"><small style="color:#475569">Not loaded</small></div>
     </aside>
 
     <!-- ── Viewer ──────────────────────────────────────────────── -->
@@ -68,6 +126,8 @@
                 <small style="color:#2a3142">Streams appear here when operators go live</small>
             </div>
             <img id="stream-img" alt="Live stream" style="display:none"/>
+            <img id="ext-img" alt="External stream"/>
+            <video id="ext-video" controls autoplay muted playsinline></video>
             <div class="fps-badge" id="fps-badge" style="display:none">— fps</div>
             <div class="quality-bar" id="quality-bar" style="display:none">
                 <button class="q-btn" onclick="fullscreen()">⛶ Fullscreen</button>
@@ -75,38 +135,98 @@
         </div>
     </div>
 </div>
+
+<!-- Add external stream modal -->
+<div class="ext-modal-bg" id="ext-modal" onclick="if(event.target===this)extModalClose()">
+    <div class="ext-modal">
+        <h3>📡 Add External Stream</h3>
+        <div class="ext-field">
+            <label>Name</label>
+            <input id="ext-name" type="text" placeholder="e.g. North Gate Camera"/>
+        </div>
+        <div class="ext-field">
+            <label>Type</label>
+            <select id="ext-type">
+                <option value="mjpeg">MJPEG (HTTP)</option>
+                <option value="hls">HLS (.m3u8)</option>
+                <option value="video">Video URL (MP4 / WebM)</option>
+            </select>
+        </div>
+        <div class="ext-field">
+            <label>URL</label>
+            <input id="ext-url" type="url" placeholder="http://…"/>
+        </div>
+        <div class="ext-field">
+            <label>Description (optional)</label>
+            <input id="ext-desc" type="text" placeholder="Location, purpose, …"/>
+        </div>
+        <div class="ext-modal-btns">
+            <button class="ext-btn-cancel" onclick="extModalClose()">Cancel</button>
+            <button class="ext-btn-save" onclick="extAdd()">Save</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<!-- HLS.js for HLS stream support -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
 <script>
 (function () {
     const token = localStorage.getItem('arrow_token');
     if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
     const headers = { Authorization: `Bearer ${token}` };
-    const api = p => fetch(window.ARROW_BACKEND_URL + p, { headers });
+    const api  = (p, opts) => fetch(window.ARROW_BACKEND_URL + p, { headers, ...opts });
 
-    let activeWs = null, activeId = null;
+    let activeWs = null, activeId = null, activeHls = null;
     let frameCount = 0, lastFpsTime = Date.now();
-    const img = document.getElementById('stream-img');
+    const img    = document.getElementById('stream-img');
+    const extImg = document.getElementById('ext-img');
+    const extVid = document.getElementById('ext-video');
 
-    // ── Stream list ──────────────────────────────────────────────
+    function esc(s) {
+        return String(s || '').replace(/[&<>"']/g, c =>
+            ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    // ── Shared helpers ───────────────────────────────────────────
+    function hideAll() {
+        img.style.display    = 'none'; img.src = '';
+        extImg.style.display = 'none'; extImg.src = '';
+        extVid.style.display = 'none'; extVid.pause(); extVid.src = '';
+        if (activeHls) { activeHls.destroy(); activeHls = null; }
+        document.getElementById('no-stream-msg').style.display  = 'block';
+        document.getElementById('stream-topbar').style.display  = 'none';
+        document.getElementById('fps-badge').style.display      = 'none';
+        document.getElementById('quality-bar').style.display    = 'none';
+    }
+
+    function showTopbar(callsign, meta) {
+        document.getElementById('stream-topbar').style.display = 'flex';
+        document.getElementById('tb-callsign').textContent = callsign;
+        document.getElementById('tb-meta').textContent     = meta;
+        document.getElementById('tb-viewers').textContent  = '';
+        document.getElementById('no-stream-msg').style.display = 'none';
+        document.getElementById('quality-bar').style.display = 'flex';
+    }
+
+    // ── Live operator streams ─────────────────────────────────────
     async function loadList() {
         const r = await api('/streams');
         if (!r.ok) return;
         const list = await r.json();
         const el   = document.getElementById('stream-list-el');
-
         if (!list.length) {
             el.innerHTML = '<small style="color:#475569">No active streams</small>';
             return;
         }
         el.innerHTML = list.map(s => `
             <div class="stream-card ${s.id === activeId ? 'active' : ''}"
-                 onclick="joinStream('${s.id}','${s.callsign}')">
+                 onclick="joinStream('${esc(s.id)}','${esc(s.callsign)}')">
                 <div><span class="live-dot"></span><span class="sc-call">${esc(s.callsign)}</span></div>
                 <div class="sc-meta">${s.viewers} viewer${s.viewers !== 1 ? 's' : ''}</div>
                 <div style="margin-top:3px">
-                    <button onclick="event.stopPropagation();sfOpen('${s.id}','${s.callsign}')"
+                    <button onclick="event.stopPropagation();sfOpen('${esc(s.id)}','${esc(s.callsign)}')"
                             style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44;
                                    border-radius:4px;padding:1px 8px;font:inherit;font-size:.72rem;cursor:pointer">
                         ⧉ Float
@@ -115,9 +235,8 @@
             </div>`).join('');
     }
 
-    // ── Join stream ──────────────────────────────────────────────
     window.joinStream = function(id, callsign) {
-        if (activeWs) { activeWs.close(); activeWs = null; }
+        stopViewing();
         activeId = id;
 
         const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws')
@@ -126,62 +245,44 @@
         ws.binaryType = 'arraybuffer';
         activeWs = ws;
 
-        document.getElementById('stream-topbar').style.display = 'flex';
-        document.getElementById('tb-callsign').textContent = callsign;
-        document.getElementById('tb-meta').textContent     = id;
-        document.getElementById('no-stream-msg').style.display = 'none';
+        showTopbar(callsign, id);
         img.style.display = 'block';
-        document.getElementById('fps-badge').style.display   = 'block';
-        document.getElementById('quality-bar').style.display = 'flex';
+        document.getElementById('fps-badge').style.display = 'block';
 
         ws.onmessage = e => {
             if (typeof e.data === 'string') {
-                // Control message (e.g. stream ended)
-                try {
-                    const msg = JSON.parse(e.data);
-                    if (msg.event === 'ended') stopViewing();
-                } catch (_) {}
+                try { if (JSON.parse(e.data).event === 'ended') stopViewing(); } catch (_) {}
                 return;
             }
-            // Binary JPEG frame
             const blob = new Blob([e.data], { type: 'image/jpeg' });
             const prev = img.src;
             img.src = URL.createObjectURL(blob);
             if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
             frameCount++;
         };
-
         ws.onclose = () => { if (activeId === id) stopViewing(); };
         ws.onerror = () => ws.close();
 
-        // Ping to keep alive
-        const ping = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-            else clearInterval(ping);
-        }, 15000);
-
-        // FPS counter
+        const ping    = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('ping'); else clearInterval(ping); }, 15000);
         const fpsTick = setInterval(() => {
-            const now  = Date.now();
-            const fps  = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+            const fps = Math.round(frameCount / ((Date.now() - lastFpsTime) / 1000));
             document.getElementById('fps-badge').textContent = `${fps} fps`;
-            frameCount = 0; lastFpsTime = now;
+            frameCount = 0; lastFpsTime = Date.now();
         }, 1000);
-
-        ws._fpsTick = fpsTick;
+        ws._ping = ping; ws._fpsTick = fpsTick;
         loadList();
     };
 
     window.stopViewing = function() {
-        if (activeWs) { activeWs.close(); activeWs = null; }
-        if (activeWs?._fpsTick) clearInterval(activeWs._fpsTick);
+        if (activeWs) {
+            clearInterval(activeWs._ping);
+            clearInterval(activeWs._fpsTick);
+            activeWs.close(); activeWs = null;
+        }
         activeId = null;
-        img.style.display = 'none'; img.src = '';
-        document.getElementById('no-stream-msg').style.display = 'block';
-        document.getElementById('stream-topbar').style.display = 'none';
-        document.getElementById('fps-badge').style.display     = 'none';
-        document.getElementById('quality-bar').style.display   = 'none';
+        hideAll();
         loadList();
+        loadExtList();
     };
 
     window.fullscreen = function() {
@@ -189,25 +290,256 @@
         if (wrap.requestFullscreen) wrap.requestFullscreen();
     };
 
-    // ── WebSocket: live stream notifications ─────────────────────
+    // ── External streams ─────────────────────────────────────────
+    async function loadExtList() {
+        const r = await api('/streams/external');
+        if (!r.ok) return;
+        const list = await r.json();
+        const el   = document.getElementById('ext-list-el');
+        if (!list.length) {
+            el.innerHTML = '<small style="color:#475569">None registered</small>';
+            return;
+        }
+        el.innerHTML = list.map(s => `
+            <div class="stream-card ext-card" id="ext-card-${s.id}">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span class="sc-call ext-call" style="cursor:pointer" onclick="joinExtStream(${s.id},'${esc(s.name)}','${esc(s.url)}','${esc(s.stream_type)}')">${esc(s.name)}</span>
+                    <span class="type-badge">${esc(s.stream_type.toUpperCase())}</span>
+                </div>
+                ${s.description ? `<div class="sc-meta">${esc(s.description)}</div>` : ''}
+                <div style="margin-top:4px;display:flex;gap:4px">
+                    <button onclick="joinExtStream(${s.id},'${esc(s.name)}','${esc(s.url)}','${esc(s.stream_type)}')"
+                            style="background:#0ea5e922;color:#38bdf8;border:1px solid #0ea5e944;
+                                   border-radius:4px;padding:1px 8px;font:inherit;font-size:.68rem;cursor:pointer">
+                        ▶ View
+                    </button>
+                    <button onclick="extDelete(${s.id}, this)"
+                            style="background:#ef444422;color:#f87171;border:1px solid #ef444444;
+                                   border-radius:4px;padding:1px 8px;font:inherit;font-size:.68rem;cursor:pointer">
+                        ✕
+                    </button>
+                </div>
+            </div>`).join('');
+    }
+
+    window.joinExtStream = function(id, name, url, type) {
+        stopViewing();
+        activeId = 'ext-' + id;
+        showTopbar(name, type.toUpperCase());
+
+        if (type === 'mjpeg') {
+            extImg.src = url;
+            extImg.style.display = 'block';
+        } else if (type === 'hls') {
+            extVid.style.display = 'block';
+            if (Hls.isSupported()) {
+                activeHls = new Hls();
+                activeHls.loadSource(url);
+                activeHls.attachMedia(extVid);
+                activeHls.on(Hls.Events.MANIFEST_PARSED, () => extVid.play());
+            } else if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
+                extVid.src = url;
+                extVid.play();
+            }
+        } else {
+            extVid.src = url;
+            extVid.style.display = 'block';
+            extVid.play();
+        }
+
+        // Mark active card
+        document.querySelectorAll('.ext-card').forEach(c => c.classList.remove('active'));
+        const card = document.getElementById('ext-card-' + id);
+        if (card) card.classList.add('active');
+    };
+
+    window.extDelete = async function(id, btn) {
+        if (!confirm('Remove this external stream?')) return;
+        btn.disabled = true;
+        const r = await api(`/streams/external/${id}`, { method: 'DELETE' });
+        if (r.ok) {
+            if (activeId === 'ext-' + id) stopViewing();
+            loadExtList();
+        } else {
+            alert(r.status === 403 ? 'Not your stream.' : `Delete failed (${r.status}).`);
+            btn.disabled = false;
+        }
+    };
+
+    // ── Add-stream modal ─────────────────────────────────────────
+    window.extModalOpen  = () => document.getElementById('ext-modal').classList.add('open');
+    window.extModalClose = () => document.getElementById('ext-modal').classList.remove('open');
+
+    window.extAdd = async function() {
+        const name = document.getElementById('ext-name').value.trim();
+        const url  = document.getElementById('ext-url').value.trim();
+        const type = document.getElementById('ext-type').value;
+        const desc = document.getElementById('ext-desc').value.trim();
+        if (!name || !url) { alert('Name and URL are required.'); return; }
+
+        const r = await api('/streams/external', {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, url, stream_type: type, description: desc }),
+        });
+        if (r.ok) {
+            document.getElementById('ext-name').value = '';
+            document.getElementById('ext-url').value  = '';
+            document.getElementById('ext-desc').value = '';
+            extModalClose();
+            loadExtList();
+        } else {
+            alert('Failed to add stream: ' + r.status);
+        }
+    };
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') extModalClose(); });
+
+    // ── WebSocket: live notifications ────────────────────────────
     function connectWS() {
         const ws = new WebSocket(
             window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
         ws.onmessage = ev => {
-            try {
-                const e = JSON.parse(ev.data);
-                if (e.channel === 'stream') loadList();
-            } catch (_) {}
+            try { const e = JSON.parse(ev.data); if (e.channel === 'stream') loadList(); } catch (_) {}
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
     }
 
-    function esc(s) {
-        return String(s || '').replace(/[&<>"']/g, c =>
-            ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    // ── OCTOPUS ──────────────────────────────────────────────────
+    let _octStreams = [];   // cached list from last refresh
+
+    function _octStreamType(s) {
+        // Heuristic: detect type from known fields or URL patterns
+        const url = (s.hls_url || s.url || s.playback_url || s.stream_url || '').toLowerCase();
+        if (url.includes('.m3u8') || url.includes('/hls/')) return 'hls';
+        if (url.includes('mjpeg') || url.includes('/mjpeg')) return 'mjpeg';
+        return 'hls';  // default for Octopus (usually serves HLS)
     }
 
-    // Auto-join if stream_id passed in URL
+    function _octPlayUrl(s) {
+        const base = _cfg_octopus_url || '';
+        // Try fields returned by Octopus in priority order
+        return s.hls_url || s.url || s.playback_url || s.stream_url
+            || (base && s.id ? `${base}/hls/${s.id}/index.m3u8` : '');
+    }
+
+    let _cfg_octopus_url = '';
+
+    async function octopusInit() {
+        const r = await api('/octopus/config');
+        if (!r.ok) { document.getElementById('oct-status').textContent = 'Not configured'; return; }
+        const cfg = await r.json();
+        _cfg_octopus_url = cfg.url;
+        if (!cfg.configured) {
+            document.getElementById('oct-status').textContent = 'No server configured';
+            return;
+        }
+        document.getElementById('oct-status').textContent = cfg.url;
+        octopusRefresh();
+    }
+
+    window.octopusRefresh = async function() {
+        const btn = document.getElementById('oct-refresh-btn');
+        const el  = document.getElementById('oct-list-el');
+        btn.disabled = true;
+        el.innerHTML = '<small style="color:#64748b">Loading…</small>';
+        const r = await api('/octopus/streams');
+        btn.disabled = false;
+        if (!r.ok) {
+            el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`;
+            return;
+        }
+        _octStreams = await r.json();
+        if (!_octStreams.length) {
+            el.innerHTML = '<small style="color:#475569">No streams on server</small>';
+            return;
+        }
+        el.innerHTML = _octStreams.map(s => {
+            const name    = esc(s.name || s.id || String(s));
+            const id      = s.id || s.stream_id || '';
+            const typeTag = _octStreamType(s).toUpperCase();
+            const status  = s.status || s.state || '';
+            return `
+            <div class="stream-card oct-card" id="oct-card-${esc(id)}">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span class="sc-call oct-call" style="cursor:pointer"
+                          onclick="octView('${esc(id)}')">${name}</span>
+                    <span class="type-badge" style="background:#1a0e00;color:#fbbf24;border-color:#7c5a0055">${typeTag}</span>
+                </div>
+                ${status ? `<div class="sc-meta">${esc(status)}</div>` : ''}
+                <div style="margin-top:4px;display:flex;gap:4px">
+                    <button onclick="octView('${esc(id)}')"
+                            style="background:#f59e0b22;color:#fbbf24;border:1px solid #f59e0b44;
+                                   border-radius:4px;padding:1px 8px;font:inherit;font-size:.68rem;cursor:pointer">
+                        ▶ View
+                    </button>
+                    <button onclick="octAdd('${esc(id)}')"
+                            style="background:#22c55e22;color:#86efac;border:1px solid #22c55e44;
+                                   border-radius:4px;padding:1px 8px;font:inherit;font-size:.68rem;cursor:pointer">
+                        + Pin
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
+    };
+
+    window.octView = async function(id) {
+        const r = await api(`/octopus/streams/${encodeURIComponent(id)}`);
+        if (!r.ok) { alert('Could not fetch stream details: ' + r.status); return; }
+        const s   = await r.json();
+        const url = _octPlayUrl(s);
+        if (!url) { alert('No playback URL returned by Octopus for this stream.'); return; }
+        const type = _octStreamType(s);
+        stopViewing();
+        activeId = 'oct-' + id;
+        showTopbar(s.name || id, '⏺ OCTOPUS · ' + type.toUpperCase());
+
+        document.querySelectorAll('.oct-card').forEach(c => c.classList.remove('active'));
+        const card = document.getElementById('oct-card-' + id);
+        if (card) card.classList.add('active');
+
+        if (type === 'mjpeg') {
+            extImg.src = url;
+            extImg.style.display = 'block';
+        } else if (type === 'hls') {
+            extVid.style.display = 'block';
+            if (Hls.isSupported()) {
+                activeHls = new Hls();
+                activeHls.loadSource(url);
+                activeHls.attachMedia(extVid);
+                activeHls.on(Hls.Events.MANIFEST_PARSED, () => extVid.play());
+            } else if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
+                extVid.src = url; extVid.play();
+            }
+        } else {
+            extVid.src = url; extVid.style.display = 'block'; extVid.play();
+        }
+    };
+
+    window.octAdd = async function(id) {
+        const s = _octStreams.find(x => (x.id || x.stream_id) == id);
+        if (!s) { alert('Stream not found — refresh the list first.'); return; }
+        const r = await api(`/octopus/streams/${encodeURIComponent(id)}`);
+        if (!r.ok) { alert('Could not fetch stream details: ' + r.status); return; }
+        const detail = await r.json();
+        const url  = _octPlayUrl(detail);
+        if (!url) { alert('No playback URL returned by Octopus.'); return; }
+        const body = {
+            name:        detail.name || s.name || id,
+            url,
+            stream_type: _octStreamType(detail),
+            description: `Octopus stream ${id}`,
+        };
+        const r2 = await api(`/octopus/streams/${encodeURIComponent(id)}/add`, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (r2.ok) { loadExtList(); alert(`"${body.name}" pinned to External Streams.`); }
+        else alert('Failed to pin stream: ' + r2.status);
+    };
+
+    // Auto-join live stream if stream_id in URL
     const pathId = location.pathname.split('/streams/')[1]?.replace(/\/$/, '');
     if (pathId) {
         api('/streams').then(r => r.json()).then(list => {
@@ -217,6 +549,8 @@
     }
 
     loadList();
+    loadExtList();
+    octopusInit();
     setInterval(loadList, 10000);
     connectWS();
 })();

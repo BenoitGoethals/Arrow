@@ -28,4 +28,11 @@
         <multicast_group>239.2.3.1</multicast_group>
         <port>6969</port>
     </cot>
+
+    <octopus>
+        <!-- Octopus streaming server base URL (no trailing slash) -->
+        <url>http://192.168.0.240:8080</url>
+        <!-- API key — override with env var ARROW_OCTOPUS_API_KEY -->
+        <api_key></api_key>
+    </octopus>
 </config>

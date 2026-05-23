@@ -405,6 +405,22 @@ class KmlLayer(Base):
     raw_kml:      Mapped[str]      = mapped_column(Text, default="")      # original XML for re-download
 
 
+class ExternalStream(Base):
+    """Operator-registered external video stream URL.
+
+    Types: ``mjpeg`` (HTTP MJPEG), ``hls`` (HLS .m3u8), ``video`` (direct MP4/WebM URL).
+    """
+    __tablename__ = "external_streams"
+
+    id:          Mapped[int]  = mapped_column(primary_key=True)
+    name:        Mapped[str]  = mapped_column(String(120))
+    url:         Mapped[str]  = mapped_column(String(500))
+    stream_type: Mapped[str]  = mapped_column(String(20))   # mjpeg | hls | video
+    description: Mapped[str]  = mapped_column(String(300), default="")
+    added_by:    Mapped[int]  = mapped_column(ForeignKey("operators.id"))
+    added_at:    Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class StreamRecording(Base):
     """Persisted record of an Android-produced video stream.
 

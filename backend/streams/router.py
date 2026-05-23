@@ -32,11 +32,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSock
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
+from pydantic import BaseModel
+
 from backend.auth.infrastructure import token_service as _token_service  # JWT config read at call-time
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage import database as _db  # SessionLocal accessed at call-time
 from backend.storage.database import get_db
-from backend.storage.models import Operator, StreamRecording
+from backend.storage.models import ExternalStream, Operator, StreamRecording
 from backend.websocket.manager import broadcaster
 
 log = logging.getLogger(__name__)
@@ -306,6 +308,73 @@ def recording_delete(
     except Exception:
         pass
     db.delete(rec); db.commit()
+
+
+# ── External streams ────────────────────────────────────────────────────────
+
+_VALID_TYPES = {"mjpeg", "hls", "video"}
+
+
+class _ExtStreamIn(BaseModel):
+    name:        str
+    url:         str
+    stream_type: str
+    description: str = ""
+
+
+@router.get("/external")
+def list_external_streams(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    rows = db.query(ExternalStream).order_by(ExternalStream.added_at.desc()).all()
+    return [
+        {
+            "id":          r.id,
+            "name":        r.name,
+            "url":         r.url,
+            "stream_type": r.stream_type,
+            "description": r.description,
+            "added_by":    r.added_by,
+            "added_at":    r.added_at.isoformat() if r.added_at else None,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/external", status_code=status.HTTP_201_CREATED)
+def add_external_stream(
+    body: _ExtStreamIn,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> dict:
+    if body.stream_type not in _VALID_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"stream_type must be one of: {', '.join(sorted(_VALID_TYPES))}")
+    row = ExternalStream(
+        name=body.name.strip(),
+        url=body.url.strip(),
+        stream_type=body.stream_type,
+        description=body.description.strip(),
+        added_by=current.id,
+    )
+    db.add(row); db.commit(); db.refresh(row)
+    return {"id": row.id, "name": row.name, "url": row.url,
+            "stream_type": row.stream_type, "description": row.description}
+
+
+@router.delete("/external/{ext_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_external_stream(
+    ext_id: int,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> None:
+    row = db.get(ExternalStream, ext_id)
+    if not row:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if row.added_by != current.id and current.role not in ("ADMIN", "BATTLE_CAPTAIN"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your stream")
+    db.delete(row); db.commit()
 
 
 # ── WebSocket: Android producer ───────────────────────────────────────────────
