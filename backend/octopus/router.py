@@ -116,11 +116,12 @@ async def get_octopus_stream(
     data = r.json()
 
     # Octopus relays every source (including RTSP) as HLS.
-    # If the detail response doesn't include a ready-made playback URL,
-    # construct the standard Octopus HLS path so the browser can play it.
+    # Octopus serves playlists at /static/hls/{id}/live.m3u8 — static files
+    # need no api_key, but appending one is harmless.
     if not any(data.get(f) for f in ("hls_url", "url", "playback_url", "stream_url")):
-        params = f"?api_key={key}" if key else ""
-        data["hls_url"] = f"{url}/hls/{stream_id}/index.m3u8{params}"
+        # Octopus returned no URL (stream not yet active / transcoder starting).
+        # Build the canonical path so HLS.js can poll until segments appear.
+        data["hls_url"] = f"{url}/static/hls/{stream_id}/live.m3u8"
     elif key:
         # Ensure api_key is appended to whichever URL field Octopus returned
         for field in ("hls_url", "url", "playback_url", "stream_url"):
