@@ -508,8 +508,10 @@
     }
 
     function _octPlayUrl(s) {
-        // hls_url is injected by the Arrow proxy if Octopus didn't supply one
-        return s.hls_url || s.url || s.playback_url || s.stream_url || '';
+        const u = s.hls_url || s.url || s.playback_url || s.stream_url || '';
+        // hls_url is a root-relative Arrow proxy path — prepend the backend URL
+        if (u.startsWith('/')) return window.ARROW_BACKEND_URL.replace(/\/$/, '') + u;
+        return u;
     }
 
     let _cfg_octopus_url = '';
