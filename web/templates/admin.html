@@ -101,6 +101,7 @@ main { padding: 0; }
 
     <h4>System</h4>
     <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
+    <button class="nav-btn" onclick="show('octopus',this)"><span class="ico">⏺</span> Octopus</button>
     <button class="nav-btn" onclick="show('alerts',this)"><span class="ico">🚨</span> Alerts</button>
     <button class="nav-btn" onclick="show('snapshots',this)"><span class="ico">🗺</span> Map snapshots</button>
     <button class="nav-btn" onclick="show('visibility',this)"><span class="ico">👁</span> Map visibility</button>
@@ -260,6 +261,7 @@ main { padding: 0; }
             case 'snapshots': main.innerHTML = ''; renderSnapshots(main); break;
             case 'visibility':main.innerHTML = ''; renderVisibility(main); break;
             case 'maps':      main.innerHTML = ''; renderMaps(main); break;
+            case 'octopus':   main.innerHTML = ''; renderOctopus(main); break;
         }
     }
 
@@ -1145,6 +1147,119 @@ main { padding: 0; }
     }
 
     window.openModal  = id => document.getElementById(id).classList.add('open');
+    // ── Octopus server config ──────────────────────────────────────────────
+    async function renderOctopus(el) {
+        el.innerHTML = '<p style="color:#64748b">Loading…</p>';
+        const r = await api('/admin/octopus');
+        if (!r.ok) { el.innerHTML = '<p style="color:#ef4444">Failed to load Octopus config.</p>'; return; }
+        const cfg = await r.json();
+
+        el.innerHTML = `
+        <div class="sec-header"><h2>⏺ Octopus Streaming Server</h2></div>
+        <p style="color:#64748b;font-size:.85rem;margin:0 0 1.4rem">
+            Configure the Octopus server URL and API key. Changes take effect immediately —
+            no restart required. The API key is stored encrypted-at-rest in the database
+            and is never returned in full after saving.
+        </p>
+
+        <div style="background:#0d1117;border:1px solid #2a3142;border-radius:8px;padding:1.4rem;max-width:540px">
+
+            <div style="margin-bottom:1rem">
+                <label style="display:block;font-size:.75rem;color:#94a3b8;margin-bottom:.35rem">
+                    Server URL
+                </label>
+                <div style="display:flex;gap:.5rem">
+                    <input id="oct-url-inp" type="url" value="${esc(cfg.url)}"
+                           placeholder="http://192.168.0.240:8080"
+                           style="flex:1;background:#161b25;border:1px solid #2a3142;border-radius:4px;
+                                  padding:.45rem .6rem;color:#e2e8f0;font:inherit;font-size:.88rem"/>
+                    <button onclick="octSaveUrl()"
+                            style="background:#0ea5e9;color:#fff;border:0;border-radius:4px;
+                                   padding:.4rem 1rem;font:inherit;cursor:pointer;white-space:nowrap">
+                        Save URL
+                    </button>
+                </div>
+            </div>
+
+            <div style="margin-bottom:1.2rem">
+                <label style="display:block;font-size:.75rem;color:#94a3b8;margin-bottom:.35rem">
+                    API Key
+                    ${cfg.api_key_set
+                        ? `<span style="color:#22c55e;margin-left:.5rem">● Set</span>
+                           <span style="font-family:monospace;color:#64748b;margin-left:.5rem">${esc(cfg.api_key_preview)}</span>`
+                        : '<span style="color:#ef4444;margin-left:.5rem">● Not set</span>'}
+                </label>
+                <div style="display:flex;gap:.5rem">
+                    <input id="oct-key-inp" type="password" placeholder="Enter new API key…"
+                           autocomplete="new-password"
+                           style="flex:1;background:#161b25;border:1px solid #2a3142;border-radius:4px;
+                                  padding:.45rem .6rem;color:#e2e8f0;font:inherit;font-size:.88rem"/>
+                    <button onclick="octSaveKey()"
+                            style="background:#0ea5e9;color:#fff;border:0;border-radius:4px;
+                                   padding:.4rem 1rem;font:inherit;cursor:pointer;white-space:nowrap">
+                        Save Key
+                    </button>
+                </div>
+                <div style="font-size:.72rem;color:#475569;margin-top:.3rem">
+                    Leave blank to keep the current key. The key is never shown in full after saving.
+                </div>
+            </div>
+
+            <hr style="border:0;border-top:1px solid #2a3142;margin:.8rem 0 1rem"/>
+
+            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <button onclick="octTest()"
+                        style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44;
+                               border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
+                    ⚡ Test connection
+                </button>
+                <span id="oct-test-result" style="font-size:.82rem;color:#64748b"></span>
+            </div>
+
+            <div style="margin-top:1rem;font-size:.75rem;color:#475569">
+                Source: <code>${esc(cfg.source)}</code>
+                — DB values override config.xml without restart.
+            </div>
+        </div>`;
+
+        window.octSaveUrl = async function() {
+            const url = document.getElementById('oct-url-inp').value.trim();
+            if (!url) { alert('URL cannot be empty.'); return; }
+            const r2 = await api('/admin/octopus', {
+                method: 'PUT',
+                body: JSON.stringify({ url }),
+            });
+            if (r2.ok) renderOctopus(el);
+            else alert('Save failed: ' + r2.status);
+        };
+
+        window.octSaveKey = async function() {
+            const key = document.getElementById('oct-key-inp').value.trim();
+            if (!key) { alert('API key cannot be empty.'); return; }
+            const r2 = await api('/admin/octopus', {
+                method: 'PUT',
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: key }),
+            });
+            if (r2.ok) { document.getElementById('oct-key-inp').value = ''; renderOctopus(el);  }
+            else alert('Save failed: ' + r2.status);
+        };
+
+        window.octTest = async function() {
+            const res = document.getElementById('oct-test-result');
+            res.style.color = '#64748b'; res.textContent = 'Testing…';
+            const r2 = await api('/octopus/streams');
+            if (r2.ok) {
+                const list = await r2.json();
+                res.style.color = '#22c55e';
+                res.textContent = `Connected — ${list.length} stream${list.length !== 1 ? 's' : ''} available`;
+            } else {
+                res.style.color = '#ef4444';
+                res.textContent = `Failed (HTTP ${r2.status})`;
+            }
+        };
+    }
+
     window.closeModal = id => document.getElementById(id).classList.remove('open');
 
     // Click-outside to close modals

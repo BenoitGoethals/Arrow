@@ -24,9 +24,20 @@ _TIMEOUT = 8.0  # seconds
 
 
 def _cfg():
+    """Return (url, api_key) — DB settings win over config.xml."""
     from backend.config.xml_config import load_config
-    c = load_config().octopus
-    return c.url.rstrip("/"), c.api_key
+    from backend.storage.database import SessionLocal
+    from backend.storage.models import SystemSetting
+    db = SessionLocal()
+    try:
+        db_url = db.get(SystemSetting, "octopus.url")
+        db_key = db.get(SystemSetting, "octopus.api_key")
+    finally:
+        db.close()
+    xml = load_config().octopus
+    url = (db_url.value if db_url else None) or xml.url
+    key = (db_key.value if db_key else None) or xml.api_key
+    return url.rstrip("/"), key
 
 
 def _client():
