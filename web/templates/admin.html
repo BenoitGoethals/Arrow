@@ -874,6 +874,9 @@ main { padding: 0; }
           desc: 'TIC, MEDICAL, EVAC, LOST_COMMS, DRONE_SPOTTED toast cards + voice alarms.' },
         { key: 'notif_streams',       icon: '🎥', label: 'Stream toasts',
           desc: 'Live-stream notifications (operator goes live / ends stream).' },
+        { key: 'sound_enabled',       icon: '🔊', label: 'Sound',
+          desc: 'Audio alerts and voice for all events. Mute to silence everything.',
+          onLabel: 'ON', offLabel: 'OFF' },
     ];
     const VIS_CATEGORIES = MAP_CATEGORIES;   // kept for backward-compat refs
 
@@ -935,7 +938,7 @@ main { padding: 0; }
                             ${c.icon} ${safe(c.label)}
                             <span style="font-size:0.72rem; color:${on?'#34d399':'#ef4444'};
                                          font-weight:700; margin-left:0.4rem">
-                                ${on ? 'VISIBLE' : 'HIDDEN'}
+                                ${on ? (c.onLabel || 'VISIBLE') : (c.offLabel || 'HIDDEN')}
                             </span>
                         </div>
                         <div style="color:#94a3b8; font-size:0.78rem; margin-top:0.15rem">

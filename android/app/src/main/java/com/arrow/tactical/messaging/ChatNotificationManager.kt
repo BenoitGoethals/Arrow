@@ -95,6 +95,7 @@ class ChatNotificationManager(
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setSilent(!mapVisibilityRepository.current.soundEnabled)
             .build()
 
         context.getSystemService(NotificationManager::class.java).notify(counter.getAndIncrement(), notification)
