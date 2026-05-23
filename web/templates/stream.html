@@ -132,7 +132,7 @@
             <div id="hls-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,0,0,.7);
                  align-items:center;justify-content:center;flex-direction:column;gap:.6rem;z-index:10;">
                 <div id="hls-overlay-icon" style="font-size:2rem"></div>
-                <div id="hls-overlay-msg" style="color:#e2e8f0;font-size:.9rem;text-align:center;max-width:340px;padding:0 1rem"></div>
+                <div id="hls-overlay-msg" style="color:#e2e8f0;font-size:.85rem;text-align:center;max-width:420px;padding:0 1rem;white-space:pre-wrap;word-break:break-all"></div>
                 <button id="hls-retry-btn" onclick="hlsRetry()" style="display:none;
                     background:#34d399;color:#0d1117;border:0;border-radius:6px;
                     padding:.35rem .9rem;font:inherit;cursor:pointer;font-weight:600">↺ Retry</button>
@@ -225,20 +225,43 @@
         document.getElementById('hls-overlay').style.display = 'none';
     }
 
-    function _playHls(url) {
+    async function _probeUrl(url) {
+        // Check if the manifest is actually reachable before handing to HLS.js.
+        // Returns {ok, status, error}.
+        try {
+            const r = await fetch(url, { method: 'HEAD', mode: 'cors', cache: 'no-store' });
+            return { ok: r.ok, status: r.status };
+        } catch (e) {
+            return { ok: false, status: 0, error: String(e) };
+        }
+    }
+
+    async function _playHls(url) {
         if (activeHls) { activeHls.destroy(); activeHls = null; }
         _hlsRetryUrl = url;
         extVid.style.display = 'block';
-        _hlsOverlayShow('⏳', 'Connecting to stream…', false);
+        _hlsOverlayShow('⏳', 'Checking stream… ' + url, false);
+
+        // Probe first so we get a clear error instead of a silent HLS.js retry loop
+        const probe = await _probeUrl(url);
+        if (!probe.ok) {
+            const detail = probe.error
+                ? 'Network error: ' + probe.error
+                : `HTTP ${probe.status} — ${probe.status === 404 ? 'segments not ready yet (stream may still be starting)' : probe.status === 403 ? 'access denied — check API key' : 'server error'}`;
+            _hlsOverlayShow('📡', 'Cannot reach stream:\n' + detail + '\n\nURL: ' + url, true);
+            return;
+        }
+
+        _hlsOverlayShow('⏳', 'Loading playlist…', false);
 
         if (Hls.isSupported()) {
             activeHls = new Hls({
                 lowLatencyMode: true,
                 maxBufferLength: 10,
-                manifestLoadingMaxRetry: 4,
-                manifestLoadingRetryDelay: 1000,
-                levelLoadingMaxRetry: 4,
-                fragLoadingMaxRetry: 4,
+                manifestLoadingMaxRetry: 1,
+                manifestLoadingRetryDelay: 500,
+                levelLoadingMaxRetry: 2,
+                fragLoadingMaxRetry: 2,
             });
             activeHls.loadSource(url);
             activeHls.attachMedia(extVid);
@@ -249,16 +272,15 @@
             activeHls.on(Hls.Events.ERROR, (_, d) => {
                 if (!d.fatal) return;
                 if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    _hlsOverlayShow('📡', 'Stream not ready — segments not available yet.\n' + (d.details || ''), true);
+                    _hlsOverlayShow('📡', 'Playlist loaded but segments unavailable.\n' + (d.details || '') + '\n\nURL: ' + url, true);
                 } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                    _hlsOverlayShow('⚠', 'Media error — trying to recover…', false);
+                    _hlsOverlayShow('⚠', 'Media decode error — retrying…', false);
                     activeHls.recoverMediaError();
                 } else {
-                    _hlsOverlayShow('✖', 'Fatal error: ' + (d.details || d.type), true);
+                    _hlsOverlayShow('✖', 'Fatal error: ' + (d.details || d.type) + '\n\nURL: ' + url, true);
                 }
             });
         } else if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
-            // Safari native HLS
             _hlsOverlayHide();
             extVid.src = url;
             extVid.play().catch(() => {});
