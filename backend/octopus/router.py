@@ -10,13 +10,23 @@ Config (config.xml <octopus> block, overrideable by env vars):
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import logging
+from datetime import datetime, timezone
+
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.auth.jwt_auth import get_current_operator
 from backend.storage.database import get_db
-from backend.storage.models import ExternalStream, Operator
+from backend.storage.models import ExternalStream, Operator, OctopusDetection
+from backend.websocket.manager import broadcaster
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/octopus", tags=["octopus"])
 
@@ -124,13 +134,6 @@ async def get_octopus_stream(
 
 # ── Add Octopus stream as persistent external stream ─────────────────────────
 
-class _AddIn:
-    pass  # resolved inline below
-
-
-from pydantic import BaseModel
-
-
 class _AddBody(BaseModel):
     name:        str
     url:         str
@@ -159,3 +162,144 @@ async def add_octopus_stream(
     )
     db.add(row); db.commit(); db.refresh(row)
     return {"id": row.id, "name": row.name, "url": row.url, "stream_type": row.stream_type}
+
+
+# ── Webhook receiver (called by Octopus, no JWT auth) ─────────────────────────
+
+def _verify_sig(body: bytes, header: str, key: str) -> bool:
+    expected = "sha256=" + hmac.new(key.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+
+
+@router.post("/webhook", status_code=status.HTTP_200_OK)
+async def octopus_webhook(request: Request) -> dict:
+    body = await request.body()
+    _, key = _cfg()
+
+    sig = request.headers.get("X-Octopus-Signature", "")
+    if key:
+        if not sig:
+            log.warning("Octopus webhook: missing signature — rejected")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Missing signature")
+        if not _verify_sig(body, sig, key):
+            log.warning("Octopus webhook: invalid signature — rejected")
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid signature")
+    else:
+        log.warning("Octopus webhook received but no API key configured — skipping signature check")
+
+    try:
+        det = json.loads(body)
+    except Exception:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON")
+
+    if det.get("event") != "detection":
+        return {"ok": True, "skipped": True}
+
+    event_id    = det.get("id", "")
+    stream_id   = det.get("stream_id", "")
+    label       = det.get("label", "")
+    confidence  = float(det.get("confidence", 0.0))
+    description = det.get("description", "")
+    bbox        = json.dumps(det.get("bbox", []))
+    snapshot    = det.get("snapshot_url", "")
+    ts_raw      = det.get("timestamp", "")
+    try:
+        occurred = datetime.fromisoformat(ts_raw).replace(tzinfo=timezone.utc)
+    except Exception:
+        occurred = datetime.now(timezone.utc)
+
+    db = _db_session()
+    try:
+        # Deduplicate by event_id
+        if db.query(OctopusDetection).filter(OctopusDetection.event_id == event_id).first():
+            return {"ok": True, "duplicate": True}
+
+        row = OctopusDetection(
+            event_id=event_id, stream_id=stream_id, label=label,
+            confidence=confidence, description=description,
+            bbox=bbox, snapshot_url=snapshot, occurred_at=occurred,
+        )
+        db.add(row); db.commit(); db.refresh(row)
+        det_id = row.id
+    finally:
+        db.close()
+
+    await broadcaster.broadcast({
+        "channel": "octopus-detection",
+        "event":   "detection",
+        "data": {
+            "id":           det_id,
+            "event_id":     event_id,
+            "stream_id":    stream_id,
+            "label":        label,
+            "confidence":   confidence,
+            "description":  description,
+            "bbox":         det.get("bbox", []),
+            "snapshot_url": f"/octopus/detections/{det_id}/snapshot",
+            "occurred_at":  occurred.isoformat(),
+        },
+    })
+    log.info("Octopus detection: %s (%.0f%%) on stream %s", label, confidence * 100, stream_id)
+    return {"ok": True}
+
+
+def _db_session():
+    from backend.storage.database import SessionLocal
+    return SessionLocal()
+
+
+# ── Recent detections list ────────────────────────────────────────────────────
+
+@router.get("/detections")
+def list_detections(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    rows = (db.query(OctopusDetection)
+              .order_by(OctopusDetection.occurred_at.desc())
+              .limit(limit).all())
+    return [
+        {
+            "id":           r.id,
+            "stream_id":    r.stream_id,
+            "label":        r.label,
+            "confidence":   r.confidence,
+            "description":  r.description,
+            "bbox":         json.loads(r.bbox or "[]"),
+            "snapshot_url": f"/octopus/detections/{r.id}/snapshot",
+            "occurred_at":  r.occurred_at.isoformat() if r.occurred_at else None,
+        }
+        for r in rows
+    ]
+
+
+# ── Snapshot proxy ────────────────────────────────────────────────────────────
+
+@router.get("/detections/{detection_id}/snapshot")
+async def detection_snapshot(
+    detection_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> Response:
+    row = db.get(OctopusDetection, detection_id)
+    if not row or not row.snapshot_url:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    base_url, key = _cfg()
+    snap = row.snapshot_url
+    if snap.startswith("/"):
+        snap = base_url + snap
+
+    async with _client() as client:
+        try:
+            params = {"api_key": key} if key else {}
+            r = await client.get(snap, params=params)
+            r.raise_for_status()
+        except Exception as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Cannot fetch snapshot: {exc}")
+
+    return Response(
+        content=r.content,
+        media_type=r.headers.get("content-type", "image/jpeg"),
+    )

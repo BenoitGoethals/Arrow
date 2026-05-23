@@ -418,6 +418,22 @@ class SystemSetting(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
+class OctopusDetection(Base):
+    """Detection event received from the Octopus webhook."""
+    __tablename__ = "octopus_detections"
+
+    id:           Mapped[int]   = mapped_column(primary_key=True)
+    event_id:     Mapped[str]   = mapped_column(String(80), unique=True, index=True)
+    stream_id:    Mapped[str]   = mapped_column(String(120), index=True)
+    label:        Mapped[str]   = mapped_column(String(80))
+    confidence:   Mapped[float] = mapped_column(default=0.0)
+    description:  Mapped[str]   = mapped_column(Text, default="")
+    bbox:         Mapped[str]   = mapped_column(Text, default="[]")   # JSON [x1,y1,x2,y2]
+    snapshot_url: Mapped[str]   = mapped_column(Text, default="")
+    occurred_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    received_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class ExternalStream(Base):
     """Operator-registered external video stream URL.
 
