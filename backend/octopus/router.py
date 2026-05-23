@@ -94,7 +94,6 @@ async def list_octopus_streams(
 @router.get("/streams/{stream_id}")
 async def get_octopus_stream(
     stream_id: str,
-    request: Request,
     _: Operator = Depends(get_current_operator),
 ) -> dict:
     url, key = _cfg()
@@ -118,9 +117,8 @@ async def get_octopus_stream(
 
     # Always route HLS through Arrow's own proxy so the browser never needs
     # direct access to the Octopus port (which is often firewalled).
-    # The proxy endpoint handles the api_key server-side.
-    base = str(request.base_url).rstrip("/")
-    data["hls_url"] = f"{base}/octopus/hls/{stream_id}/live.m3u8"
+    # Return a root-relative path; the JS prepends ARROW_BACKEND_URL.
+    data["hls_url"] = f"/octopus/hls/{stream_id}/live.m3u8"
 
     return data
 
