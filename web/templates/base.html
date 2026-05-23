@@ -149,6 +149,7 @@
         notif_fire_missions: true,
         notif_alerts:        true,
         notif_streams:       true,
+        sound_enabled:       true,
     };
     function _applyNotifVis(prefs) {
         if (!prefs) return;
@@ -402,19 +403,21 @@
         const d = evt.data || {};
         console.log('[arrow] stream event', evt);
         if (evt.event === 'started') {
-            try {
-                const ctx  = audioCtx();
-                const now  = ctx.currentTime;
-                const osc  = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(880, now);
-                osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
-                gain.gain.setValueAtTime(0.25, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-                osc.connect(gain); gain.connect(ctx.destination);
-                osc.start(now); osc.stop(now + 0.45);
-            } catch (_) {}
+            if (notifVis.sound_enabled) {
+                try {
+                    const ctx  = audioCtx();
+                    const now  = ctx.currentTime;
+                    const osc  = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, now);
+                    osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.start(now); osc.stop(now + 0.45);
+                } catch (_) {}
+            }
 
             const toast = document.createElement('div');
             toast.className = 'arrow-toast';
@@ -522,6 +525,7 @@
      *   'tic'  → says "Contact" then plays a 5-second alarm (1200 Hz square)
      */
     function triggerAudioAlert(type) {
+        if (!notifVis.sound_enabled) return;
         const isFireMission = type === 'fire';
         const text     = isFireMission ? 'Fire mission, fire mission, fire mission' : 'Contact, contact, contact';
         const freq     = isFireMission ? 880  : 1200;
@@ -675,6 +679,7 @@
 
     // Variant that takes explicit voice text + alert kind for distinct tones.
     function triggerAudioAlertWithText(type, text) {
+        if (!notifVis.sound_enabled) return;
         if ('speechSynthesis' in window) {
             speechSynthesis.cancel();
             const utt = new SpeechSynthesisUtterance(text);

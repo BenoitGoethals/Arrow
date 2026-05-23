@@ -44,6 +44,7 @@ data class MapVisibility(
     @SerialName("notif_fire_missions") val notifFireMissions: Boolean = true,
     @SerialName("notif_alerts")        val notifAlerts:       Boolean = true,
     @SerialName("notif_streams")       val notifStreams:      Boolean = true,
+    @SerialName("sound_enabled")       val soundEnabled:      Boolean = true,
     @SerialName("updated_at")          val updatedAt:         String  = "",
 )
 
@@ -98,6 +99,9 @@ val NOTIF_FLAGS = listOf(
     VisibilityFlag("notif_streams", "Stream notifications",
         "Live-stream toast notifications (operator goes live / ends stream).",
         "🎥", true, { it.notifStreams }, { v, b -> v.copy(notifStreams = b) }),
+    VisibilityFlag("sound_enabled", "Sound",
+        "Play audio for all alerts and notifications. Turn off to silence everything.",
+        "🔊", true, { it.soundEnabled }, { v, b -> v.copy(soundEnabled = b) }),
 )
 
 val ALL_VIS_FLAGS = MAP_FLAGS + NOTIF_FLAGS
