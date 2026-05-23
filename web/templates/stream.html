@@ -226,10 +226,10 @@
     }
 
     async function _probeUrl(url) {
-        // Check if the manifest is actually reachable before handing to HLS.js.
-        // Returns {ok, status, error}.
+        // Check if the manifest is reachable. Uses GET (not HEAD) for
+        // broadest server compatibility; the Arrow proxy is same-origin so no CORS issue.
         try {
-            const r = await fetch(url, { method: 'HEAD', mode: 'cors', cache: 'no-store' });
+            const r = await fetch(url, { method: 'GET', cache: 'no-store', headers });
             return { ok: r.ok, status: r.status };
         } catch (e) {
             return { ok: false, status: 0, error: String(e) };
