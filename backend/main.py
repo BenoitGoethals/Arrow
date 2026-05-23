@@ -88,6 +88,9 @@ def _resolve_jwt_secret(cfg_secret: str) -> str:
 
 def _configure_logging() -> None:
     """Structured JSON logging for log aggregation (Loki / CloudWatch / ELK)."""
+    level_name = os.environ.get("ARROW_LOG_LEVEL", "DEBUG").upper()
+    level = getattr(logging, level_name, logging.DEBUG)
+
     use_json = os.environ.get("ARROW_JSON_LOGS", "1") == "1"
     if use_json:
         from pythonjsonlogger.json import JsonFormatter
@@ -96,11 +99,37 @@ def _configure_logging() -> None:
             fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
             rename_fields={"asctime": "ts", "name": "logger", "levelname": "level"},
         ))
-        root = logging.getLogger()
-        root.handlers.clear()
-        root.addHandler(handler)
-    logging.getLogger("arrow.security").setLevel(logging.INFO)
+    else:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+            datefmt="%H:%M:%S",
+        ))
+
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(level)
+
+    # Arrow domain loggers — all at the configured level
+    for ns in (
+        "backend",
+        "backend.octopus",
+        "backend.streams",
+        "backend.websocket",
+        "backend.tracking",
+        "backend.alerts",
+        "backend.messaging",
+        "backend.auth",
+        "arrow.security",
+    ):
+        logging.getLogger(ns).setLevel(level)
+
+    # Suppress noisy third-party loggers that flood output at DEBUG
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
