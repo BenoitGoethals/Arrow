@@ -1179,18 +1179,19 @@ main { padding: 0; }
                         Save URL
                     </button>
                 </div>
-                <div style="font-size:.72rem;color:#475569;margin-top:.3rem">
+                <div style="font-size:.72rem;color:#475569;margin-top:.3rem;display:flex;gap:.75rem;align-items:center">
                     Base URL only — do not include <code>/api/client/streams</code>
+                    <span id="oct-url-status" style="font-size:.78rem"></span>
                 </div>
             </div>
 
             <div style="margin-bottom:1.2rem">
                 <label style="display:block;font-size:.75rem;color:#94a3b8;margin-bottom:.35rem">
                     API Key
-                    ${cfg.api_key_set
+                    <span id="oct-key-badge">${cfg.api_key_set
                         ? `<span style="color:#22c55e;margin-left:.5rem">● Set</span>
                            <span style="font-family:monospace;color:#64748b;margin-left:.5rem">${esc(cfg.api_key_preview)}</span>`
-                        : '<span style="color:#ef4444;margin-left:.5rem">● Not set</span>'}
+                        : '<span style="color:#ef4444;margin-left:.5rem">● Not set</span>'}</span>
                 </label>
                 <div style="display:flex;gap:.5rem">
                     <input id="oct-key-inp" type="password" placeholder="Enter new API key…"
@@ -1203,8 +1204,9 @@ main { padding: 0; }
                         Save Key
                     </button>
                 </div>
-                <div style="font-size:.72rem;color:#475569;margin-top:.3rem">
+                <div style="font-size:.72rem;color:#475569;margin-top:.3rem;display:flex;gap:.75rem;align-items:center">
                     Leave blank to keep the current key. The key is never shown in full after saving.
+                    <span id="oct-key-status" style="font-size:.78rem"></span>
                 </div>
             </div>
 
@@ -1225,27 +1227,54 @@ main { padding: 0; }
             </div>
         </div>`;
 
+        function _octFeedback(id, ok, msg) {
+            const el2 = document.getElementById(id);
+            if (!el2) return;
+            el2.textContent = msg;
+            el2.style.color = ok ? '#22c55e' : '#ef4444';
+            setTimeout(() => { el2.textContent = ''; }, 4000);
+        }
+
         window.octSaveUrl = async function() {
             const url = document.getElementById('oct-url-inp').value.trim();
-            if (!url) { alert('URL cannot be empty.'); return; }
+            if (!url) { _octFeedback('oct-url-status', false, 'URL cannot be empty.'); return; }
+            const btn = document.querySelector('[onclick="octSaveUrl()"]');
+            btn.disabled = true;
             const r2 = await api('/admin/octopus', {
                 method: 'PUT',
                 body: JSON.stringify({ url }),
             });
-            if (r2.ok) renderOctopus(el);
-            else alert('Save failed: ' + r2.status);
+            btn.disabled = false;
+            if (r2.ok) {
+                const d = await r2.json();
+                document.getElementById('oct-url-inp').value = d.url;
+                _octFeedback('oct-url-status', true, '✓ Saved');
+            } else {
+                _octFeedback('oct-url-status', false, 'Save failed: ' + r2.status);
+            }
         };
 
         window.octSaveKey = async function() {
             const key = document.getElementById('oct-key-inp').value.trim();
-            if (!key) { alert('API key cannot be empty.'); return; }
+            if (!key) { _octFeedback('oct-key-status', false, 'Enter a key first.'); return; }
+            const btn = document.querySelector('[onclick="octSaveKey()"]');
+            btn.disabled = true;
             const r2 = await api('/admin/octopus', {
                 method: 'PUT',
-                headers: { ...authHeaders, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ api_key: key }),
             });
-            if (r2.ok) { document.getElementById('oct-key-inp').value = ''; renderOctopus(el);  }
-            else alert('Save failed: ' + r2.status);
+            btn.disabled = false;
+            if (r2.ok) {
+                const d = await r2.json();
+                document.getElementById('oct-key-inp').value = '';
+                const badge = document.getElementById('oct-key-badge');
+                if (badge) badge.innerHTML =
+                    '<span style="color:#22c55e;margin-left:.5rem">● Set</span>' +
+                    `<span style="font-family:monospace;color:#64748b;margin-left:.5rem">${esc(d.api_key_preview)}</span>`;
+                _octFeedback('oct-key-status', true, '✓ Key saved');
+            } else {
+                _octFeedback('oct-key-status', false, 'Save failed: ' + r2.status);
+            }
         };
 
         window.octTest = async function() {
