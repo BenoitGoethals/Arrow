@@ -409,18 +409,19 @@
     let _octStreams = [];   // cached list from last refresh
 
     function _octStreamType(s) {
-        // Heuristic: detect type from known fields or URL patterns
-        const url = (s.hls_url || s.url || s.playback_url || s.stream_url || '').toLowerCase();
-        if (url.includes('.m3u8') || url.includes('/hls/')) return 'hls';
-        if (url.includes('mjpeg') || url.includes('/mjpeg')) return 'mjpeg';
-        return 'hls';  // default for Octopus (usually serves HLS)
+        // Octopus relays all sources (including RTSP) via HLS — prefer hls_url.
+        if (s.hls_url) return 'hls';
+        const src = (s.type || '').toLowerCase();
+        if (src === 'mjpeg') return 'mjpeg';
+        // hls, rtsp, or any other source → HLS relay
+        const url = (s.url || s.playback_url || s.stream_url || '').toLowerCase();
+        if (url.includes('mjpeg')) return 'mjpeg';
+        return 'hls';
     }
 
     function _octPlayUrl(s) {
-        const base = _cfg_octopus_url || '';
-        // Try fields returned by Octopus in priority order
-        return s.hls_url || s.url || s.playback_url || s.stream_url
-            || (base && s.id ? `${base}/hls/${s.id}/index.m3u8` : '');
+        // hls_url is injected by the Arrow proxy if Octopus didn't supply one
+        return s.hls_url || s.url || s.playback_url || s.stream_url || '';
     }
 
     let _cfg_octopus_url = '';
@@ -457,7 +458,8 @@
         el.innerHTML = _octStreams.map(s => {
             const name    = esc(s.name || s.id || String(s));
             const id      = s.id || s.stream_id || '';
-            const typeTag = _octStreamType(s).toUpperCase();
+            const srcType = (s.type || '').toUpperCase();
+            const typeTag = srcType || _octStreamType(s).toUpperCase();
             const status  = s.status || s.state || '';
             return `
             <div class="stream-card oct-card" id="oct-card-${esc(id)}">
