@@ -34,8 +34,8 @@
     .stream-topbar .meta     { font-size:.8rem; color:#64748b; }
     .stream-topbar .viewers  { margin-left:auto; font-size:.78rem; color:#64748b; }
 
-    #video-wrap { flex:1; display:flex; align-items:center; justify-content:center; background:#000; position:relative; }
-    #stream-img { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+    #video-wrap { flex:1; display:flex; align-items:center; justify-content:center; background:#000; position:relative; overflow:hidden; }
+    #stream-img { width:100%; height:100%; object-fit:contain; display:block; }
     .no-stream  { color:#475569; text-align:center; }
     .no-stream span { font-size:3rem; display:block; margin-bottom:.5rem; }
 
@@ -70,8 +70,8 @@
                       border-radius:4px; padding:.4rem 1rem; font:inherit; cursor:pointer; }
 
     /* External video player */
-    #ext-video { max-width:100%; max-height:100%; display:none; }
-    #ext-img   { max-width:100%; max-height:100%; display:none; object-fit:contain; }
+    #ext-video { width:100%; height:100%; object-fit:contain; display:none; background:#000; }
+    #ext-img   { width:100%; height:100%; object-fit:contain; display:none; }
 </style>
 {% endblock %}
 
