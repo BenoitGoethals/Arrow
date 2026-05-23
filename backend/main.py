@@ -12,6 +12,7 @@ from backend.admin.router import router as admin_api_router
 from backend.alerts.router import router as alerts_router
 from backend.apk.router import router as apk_router
 from backend.streams.router import router as streams_router
+from backend.octopus.router import router as octopus_router
 from backend.fire_missions.router import router as fire_missions_router
 from backend.history.router import router as history_router
 from backend.cot.router import router as cot_router
@@ -172,6 +173,7 @@ def create_app() -> FastAPI:
     app.include_router(fire_missions_router)
     app.include_router(history_router)
     app.include_router(streams_router)
+    app.include_router(octopus_router)
     app.include_router(photos_router)
     app.include_router(ws_router)
 

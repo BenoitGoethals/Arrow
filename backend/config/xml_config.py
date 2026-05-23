@@ -45,6 +45,12 @@ class CotConfig:
 
 
 @dataclass(slots=True)
+class OctopusConfig:
+    url: str = ""           # e.g. http://192.168.0.240:8080
+    api_key: str = ""       # override with ARROW_OCTOPUS_API_KEY env var
+
+
+@dataclass(slots=True)
 class AppConfig:
     server: ServerConfig
     database: DatabaseConfig
@@ -52,6 +58,7 @@ class AppConfig:
     operator: OperatorConfig
     maps: MapsConfig
     cot: CotConfig
+    octopus: OctopusConfig = None  # type: ignore[assignment]
 
 
 def _text(root, xpath: str, default: str) -> str:
@@ -72,6 +79,9 @@ def load_config(path: Path | str | None = None) -> AppConfig:
             operator=OperatorConfig(),
             maps=MapsConfig(),
             cot=CotConfig(),
+            octopus=OctopusConfig(
+                api_key=os.environ.get("ARROW_OCTOPUS_API_KEY", ""),
+            ),
         )
 
     tree = etree.parse(str(p))
@@ -103,5 +113,10 @@ def load_config(path: Path | str | None = None) -> AppConfig:
         cot=CotConfig(
             multicast_group=_text(root, "cot/multicast_group", "239.2.3.1"),
             port=int(_text(root, "cot/port", "6969")),
+        ),
+        octopus=OctopusConfig(
+            url=_text(root, "octopus/url", ""),
+            api_key=os.environ.get("ARROW_OCTOPUS_API_KEY")
+                    or _text(root, "octopus/api_key", ""),
         ),
     )
