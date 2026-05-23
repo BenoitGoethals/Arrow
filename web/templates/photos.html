@@ -28,6 +28,7 @@
     cursor: pointer; text-align: center; text-decoration: none;
 }
 .ph-btn:hover { border-color: #6ee7b7; color: #6ee7b7; }
+.ph-btn-del:hover { border-color: #ef4444; color: #ef4444; }
 .ph-empty { color: #475569; padding: 3rem; text-align: center; grid-column: 1 / -1; }
 
 /* Lightbox */
@@ -102,6 +103,7 @@
                 <div class="ph-actions">
                     <button class="ph-btn" onclick="phOpen(${p.id})">View</button>
                     <a class="ph-btn" href="#" onclick="phSave(event, ${p.id}, '${esc(p.original_name || p.filename)}')">Save</a>
+                    <button class="ph-btn ph-btn-del" onclick="phDelete(${p.id}, this)">Delete</button>
                 </div>
             </div>`;
         }).join('');
@@ -144,6 +146,24 @@
         a.download = fname || `arrow-photo-${id}.jpg`;
         document.body.appendChild(a); a.click();
         setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    };
+
+    window.phDelete = async function(id, btn) {
+        if (!confirm('Delete this photo? This cannot be undone.')) return;
+        btn.disabled = true;
+        const r = await fetch(window.ARROW_BACKEND_URL + `/photos/${id}`, {
+            method: 'DELETE', headers,
+        });
+        if (r.ok) {
+            btn.closest('.ph-card').remove();
+            const remaining = document.querySelectorAll('.ph-card').length;
+            document.getElementById('ph-count').textContent =
+                `${remaining} photo${remaining === 1 ? '' : 's'}`;
+        } else {
+            const msg = r.status === 403 ? 'You can only delete your own photos.' : `Delete failed (${r.status}).`;
+            alert(msg);
+            btn.disabled = false;
+        }
     };
 
     document.addEventListener('keydown', e => { if (e.key === 'Escape') phClose(); });

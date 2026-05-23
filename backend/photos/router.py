@@ -123,6 +123,24 @@ async def upload_photo(
     return PhotoOut(id=photo.id, url=f"/photos/{photo.id}")
 
 
+@router.delete("/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_photo(
+    photo_id: int,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> None:
+    photo = db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if photo.uploaded_by != current.id and current.role not in ("ADMIN", "BATTLE_CAPTAIN"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your photo")
+    path = PHOTO_DIR / photo.filename
+    if path.exists():
+        path.unlink()
+    db.delete(photo)
+    db.commit()
+
+
 @router.get("/{photo_id}")
 def serve_photo(
     photo_id: int,
