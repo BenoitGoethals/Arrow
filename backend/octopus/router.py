@@ -94,6 +94,7 @@ async def list_octopus_streams(
 @router.get("/streams/{stream_id}")
 async def get_octopus_stream(
     stream_id: str,
+    request: Request,
     _: Operator = Depends(get_current_operator),
 ) -> dict:
     url, key = _cfg()
@@ -115,22 +116,54 @@ async def get_octopus_stream(
                                 f"Cannot reach Octopus: {exc}")
     data = r.json()
 
-    # Octopus relays every source (including RTSP) as HLS.
-    # Octopus serves playlists at /static/hls/{id}/live.m3u8 — static files
-    # need no api_key, but appending one is harmless.
-    if not any(data.get(f) for f in ("hls_url", "url", "playback_url", "stream_url")):
-        # Octopus returned no URL (stream not yet active / transcoder starting).
-        # Build the canonical path so HLS.js can poll until segments appear.
-        data["hls_url"] = f"{url}/static/hls/{stream_id}/live.m3u8"
-    elif key:
-        # Ensure api_key is appended to whichever URL field Octopus returned
-        for field in ("hls_url", "url", "playback_url", "stream_url"):
-            if data.get(field) and "api_key" not in data[field]:
-                sep = "&" if "?" in data[field] else "?"
-                data[field] = f"{data[field]}{sep}api_key={key}"
-                break
+    # Always route HLS through Arrow's own proxy so the browser never needs
+    # direct access to the Octopus port (which is often firewalled).
+    # The proxy endpoint handles the api_key server-side.
+    base = str(request.base_url).rstrip("/")
+    data["hls_url"] = f"{base}/octopus/hls/{stream_id}/live.m3u8"
 
     return data
+
+
+# ── HLS proxy ─────────────────────────────────────────────────────────────────
+
+@router.get("/hls/{stream_id}/{filename:path}")
+async def hls_proxy(
+    stream_id: str,
+    filename: str,
+) -> Response:
+    """Proxy Octopus HLS playlists and fMP4 segments through Arrow.
+
+    No JWT auth — stream IDs are UUIDs (unguessable), Octopus enforces its
+    own api_key, and the Octopus port is internal.  Routing here avoids
+    requiring the browser to reach the Octopus port directly.
+    """
+    url, key = _cfg()
+    if not url:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Octopus not configured")
+
+    seg_url = f"{url}/static/hls/{stream_id}/{filename}"
+    async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+        try:
+            params = {"api_key": key} if key else {}
+            r = await client.get(seg_url, params=params)
+        except httpx.RequestError as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                                f"Cannot reach Octopus: {exc}")
+
+    if r.status_code == 404:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{filename} not found")
+    if r.status_code != 200:
+        raise HTTPException(r.status_code, r.text[:200])
+
+    if filename.endswith(".m3u8"):
+        media_type = "application/vnd.apple.mpegurl"
+    elif filename.endswith((".mp4", ".m4s")):
+        media_type = "video/mp4"
+    else:
+        media_type = r.headers.get("content-type", "application/octet-stream")
+
+    return Response(content=r.content, media_type=media_type)
 
 
 # ── Add Octopus stream as persistent external stream ─────────────────────────
