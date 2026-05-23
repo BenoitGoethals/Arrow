@@ -608,6 +608,59 @@ def get_octopus_config(
     }
 
 
+@router.post("/octopus/test-webhook")
+async def test_octopus_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Fire a synthetic detection at the local webhook endpoint.
+
+    Builds a fake Octopus detection payload, signs it with the configured
+    API key (same HMAC-SHA256 the real Octopus server uses), and POSTs it
+    to /octopus/webhook on this server so the full pipeline is exercised:
+    signature check → DB write → WebSocket broadcast.
+    """
+    import hashlib
+    import hmac as _hmac
+    import uuid
+    import httpx as _httpx
+
+    key = _setting(db, "octopus.api_key") or (load_config().octopus.api_key if load_config().octopus else "")
+
+    fake_payload = json.dumps({
+        "event":        "detection",
+        "id":           f"test-{uuid.uuid4()}",
+        "stream_id":    "test-stream",
+        "label":        "person",
+        "confidence":   0.92,
+        "description":  "Webhook test fired from Arrow admin panel",
+        "bbox":         [0.1, 0.2, 0.4, 0.6],
+        "snapshot_url": "",
+        "timestamp":    datetime.now(timezone.utc).isoformat(),
+    }).encode()
+
+    headers = {"Content-Type": "application/json"}
+    if key:
+        sig = "sha256=" + _hmac.new(key.encode(), fake_payload, hashlib.sha256).hexdigest()
+        headers["X-Octopus-Signature"] = sig
+
+    port = load_config().server.port
+    webhook_url = f"http://127.0.0.1:{port}/octopus/webhook"
+
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.post(webhook_url, content=fake_payload, headers=headers)
+        return {
+            "ok":          r.status_code == 200,
+            "status_code": r.status_code,
+            "message":     r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text[:200],
+            "signed":      bool(key),
+        }
+    except Exception as exc:
+        return {"ok": False, "status_code": 0, "message": str(exc), "signed": bool(key)}
+
+
 @router.put("/octopus")
 def update_octopus_config(
     body: OctopusConfigIn,
