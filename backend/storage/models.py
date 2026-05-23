@@ -405,6 +405,19 @@ class KmlLayer(Base):
     raw_kml:      Mapped[str]      = mapped_column(Text, default="")      # original XML for re-download
 
 
+class SystemSetting(Base):
+    """Generic admin-editable key-value store for runtime configuration.
+
+    Keys are namespaced by convention: ``octopus.url``, ``octopus.api_key``, …
+    Values stored in DB always override the same key from config.xml.
+    """
+    __tablename__ = "system_settings"
+
+    key:        Mapped[str]      = mapped_column(String(120), primary_key=True)
+    value:      Mapped[str]      = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class ExternalStream(Base):
     """Operator-registered external video stream URL.
 

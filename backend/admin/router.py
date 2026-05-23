@@ -18,7 +18,7 @@ from backend.storage.database import get_db
 from backend.storage.models import (
     Alert, AuditLog, CotTrack, FireMission, KmlLayer, MapSnapshot,
     MapVisibility, Message, Operator, OperatorPosition, Overlay, Report,
-    TacticalObject,
+    SystemSetting, TacticalObject,
 )
 from backend.websocket.manager import broadcaster
 
@@ -568,3 +568,61 @@ async def set_map_visibility(
     )
     return out
 
+
+
+# ── Octopus server configuration ──────────────────────────────────────────────
+
+def _setting(db: Session, key: str, default: str = "") -> str:
+    row = db.get(SystemSetting, key)
+    return row.value if row else default
+
+
+def _set_setting(db: Session, key: str, value: str) -> None:
+    row = db.get(SystemSetting, key)
+    if row:
+        row.value = value
+    else:
+        row = SystemSetting(key=key, value=value)
+        db.add(row)
+    db.commit()
+
+
+class OctopusConfigIn(BaseModel):
+    url:     str | None = None
+    api_key: str | None = None
+
+
+@router.get("/octopus")
+def get_octopus_config(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    cfg = load_config().octopus
+    url = _setting(db, "octopus.url") or cfg.url
+    key = _setting(db, "octopus.api_key") or cfg.api_key
+    return {
+        "url":          url,
+        "api_key_set":  bool(key),
+        "api_key_preview": (key[:4] + "●" * min(8, max(0, len(key) - 4))) if key else "",
+        "source":       "db" if db.get(SystemSetting, "octopus.url") else "config.xml",
+    }
+
+
+@router.put("/octopus")
+def update_octopus_config(
+    body: OctopusConfigIn,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    if body.url is not None:
+        _set_setting(db, "octopus.url", body.url.rstrip("/"))
+    if body.api_key is not None:
+        _set_setting(db, "octopus.api_key", body.api_key)
+    cfg = load_config().octopus
+    url = _setting(db, "octopus.url") or cfg.url
+    key = _setting(db, "octopus.api_key") or cfg.api_key
+    return {
+        "url":          url,
+        "api_key_set":  bool(key),
+        "api_key_preview": (key[:4] + "●" * min(8, max(0, len(key) - 4))) if key else "",
+    }
