@@ -876,6 +876,8 @@ main { padding: 0; }
           desc: 'TIC, MEDICAL, EVAC, LOST_COMMS, DRONE_SPOTTED toast cards + voice alarms.' },
         { key: 'notif_streams',       icon: '🎥', label: 'Stream toasts',
           desc: 'Live-stream notifications (operator goes live / ends stream).' },
+        { key: 'notif_octopus_detections', icon: '📸', label: 'Octopus detections',
+          desc: 'Toast cards + ping sound when Octopus detects person / drone / vehicle.' },
         { key: 'sound_enabled',       icon: '🔊', label: 'Sound',
           desc: 'Audio alerts and voice for all events. Mute to silence everything.',
           onLabel: 'ON', offLabel: 'OFF' },
@@ -1219,6 +1221,26 @@ main { padding: 0; }
                     ⚡ Test connection
                 </button>
                 <span id="oct-test-result" style="font-size:.82rem;color:#64748b"></span>
+            </div>
+
+            <hr style="border:0;border-top:1px solid #2a3142;margin:.8rem 0 1rem"/>
+
+            <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem;font-weight:600">
+                Webhook URL (paste this into Octopus → Edit client)
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center">
+                <code id="oct-webhook-url" style="flex:1;background:#0d1117;border:1px solid #2a3142;
+                      border-radius:4px;padding:.4rem .6rem;color:#38bdf8;font-size:.8rem;
+                      word-break:break-all">${esc(window.ARROW_BACKEND_URL || '')}/octopus/webhook</code>
+                <button onclick="navigator.clipboard.writeText(document.getElementById('oct-webhook-url').textContent)"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:4px;
+                               padding:.35rem .7rem;font:inherit;font-size:.75rem;cursor:pointer;white-space:nowrap">
+                    Copy
+                </button>
+            </div>
+            <div style="font-size:.72rem;color:#475569;margin-top:.4rem">
+                Octopus will POST detections here. Arrow verifies the HMAC-SHA256 signature
+                using the API key above.
             </div>
 
             <div style="margin-top:1rem;font-size:.75rem;color:#475569">

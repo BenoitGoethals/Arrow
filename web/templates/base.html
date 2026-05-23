@@ -145,11 +145,12 @@
     // to all-on so a missing-key never silences a critical alert.
     const VIS_LS_KEY = 'arrow_visibility_prefs';
     const notifVis = {
-        notif_chat:          true,
-        notif_fire_missions: true,
-        notif_alerts:        true,
-        notif_streams:       true,
-        sound_enabled:       true,
+        notif_chat:               true,
+        notif_fire_missions:      true,
+        notif_alerts:             true,
+        notif_streams:            true,
+        notif_octopus_detections: true,
+        sound_enabled:            true,
     };
     function _applyNotifVis(prefs) {
         if (!prefs) return;
@@ -699,6 +700,117 @@
         playAlarmTone(freq, waveform, 5);
     }
 
+    // ── Octopus detection toasts ───────────────────────────────────────────────
+    const _DET_COLOURS = {
+        person:   { border: '#ef4444', header: '#fca5a5', icon: '🚶' },
+        drone:    { border: '#c084fc', header: '#e9d5ff', icon: '🛸' },
+        vehicle:  { border: '#f59e0b', header: '#fde68a', icon: '🚗' },
+        car:      { border: '#f59e0b', header: '#fde68a', icon: '🚗' },
+        truck:    { border: '#f59e0b', header: '#fde68a', icon: '🚛' },
+        animal:   { border: '#34d399', header: '#a7f3d0', icon: '🐾' },
+    };
+
+    function _detColour(label) {
+        return _DET_COLOURS[(label || '').toLowerCase()] ||
+               { border: '#38bdf8', header: '#bae6fd', icon: '📸' };
+    }
+
+    function playDetectionTone(label) {
+        if (!notifVis.sound_enabled) return;
+        try {
+            const ctx  = audioCtx();
+            const now  = ctx.currentTime;
+            // Two sharp pings — distinct from alarm tones
+            [0, 0.18].forEach(offset => {
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const freq = label === 'drone' ? 1800 : label === 'person' ? 1400 : 1200;
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.35, now + offset);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.start(now + offset); osc.stop(now + offset + 0.15);
+            });
+        } catch (_) {}
+    }
+
+    function handleOctopusDetection(evt) {
+        if (evt.event !== 'detection') return;
+        if (!notifVis.notif_octopus_detections) return;
+        const d   = evt.data || {};
+        const col = _detColour(d.label);
+        const pct = d.confidence != null ? Math.round(d.confidence * 100) : '?';
+        const ts  = d.occurred_at ? new Date(d.occurred_at).toLocaleTimeString() : '';
+
+        playDetectionTone(d.label);
+
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.cssText += `border-left-color:${col.border};border-left-width:4px;max-width:320px`;
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from" style="color:${col.border}">
+                    ${col.icon} DETECTION
+                    <em style="color:${col.header};margin-left:.4rem;font-style:normal;font-weight:700">
+                        ${esc(d.label || '').toUpperCase()}
+                    </em>
+                </span>
+                <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            <div class="arrow-toast-body" style="padding:.35rem .55rem .1rem">
+                <div style="display:flex;gap:.5rem;align-items:flex-start">
+                    <div id="det-snap-${d.id}" style="width:96px;height:72px;flex-shrink:0;
+                         background:#0d1117;border-radius:3px;overflow:hidden;display:flex;
+                         align-items:center;justify-content:center;color:#475569;font-size:.7rem">
+                        Loading…
+                    </div>
+                    <div style="font-size:.78rem;line-height:1.5;min-width:0">
+                        <div style="color:#e2e8f0">${esc(d.description || d.label)}</div>
+                        <div style="color:#94a3b8">
+                            Confidence: <b style="color:${col.header}">${pct}%</b>
+                        </div>
+                        <div style="color:#64748b">Stream: <code>${esc(d.stream_id || '')}</code></div>
+                        ${ts ? `<div style="color:#475569;font-size:.7rem">${esc(ts)}</div>` : ''}
+                    </div>
+                </div>
+                ${Array.isArray(d.bbox) && d.bbox.length === 4
+                    ? `<div style="font-size:.68rem;color:#475569;margin-top:.3rem;font-family:monospace">
+                        bbox [${d.bbox.map(Math.round).join(', ')}]
+                       </div>`
+                    : ''}
+            </div>`;
+
+        document.getElementById('arrow-toast-container').appendChild(toast);
+        autoDismissToast(toast, 30 * 1000);
+
+        // Load snapshot asynchronously after the toast is in the DOM
+        if (d.snapshot_url) {
+            (async () => {
+                try {
+                    const r = await api(d.snapshot_url);
+                    if (!r.ok) return;
+                    const blob = await r.blob();
+                    const url  = URL.createObjectURL(blob);
+                    const box  = document.getElementById(`det-snap-${d.id}`);
+                    if (!box) return;
+                    box.innerHTML = '';
+                    const img = document.createElement('img');
+                    img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+                    img.src = url;
+                    img.onload = () => URL.revokeObjectURL(url);
+                    box.appendChild(img);
+                } catch (_) {}
+            })();
+        }
+
+        // Browser notification when tab is in background
+        if (document.visibilityState !== 'visible' && Notification.permission === 'granted') {
+            new Notification(`${col.icon} ${(d.label || 'Detection').toUpperCase()} — ${pct}%`,
+                { body: d.description || d.stream_id, tag: 'arrow-detection' });
+        }
+    }
+
     function connectWS() {
         const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
@@ -708,14 +820,12 @@
                 if (e.channel === 'chat')         showToast(e);
                 if (e.channel === 'fire-mission') {
                     showFireMissionAlert(e);
-                    // Audio also obeys the FM-notif toggle — no FM toast means
-                    // no FM klaxon either; the BC asked for the radio to shut up.
                     if (notifVis.notif_fire_missions &&
                         (e.data||{}).weapon !== 'L16_81MM') triggerAudioAlert('fire');
                 }
-                if (e.channel === 'alert')        { handleTacAlert(e); }
-                if (e.channel === 'stream')       handleStreamEvent(e);
-                // Visibility prefs are per-device now; no WS subscription.
+                if (e.channel === 'alert')             handleTacAlert(e);
+                if (e.channel === 'stream')            handleStreamEvent(e);
+                if (e.channel === 'octopus-detection') handleOctopusDetection(e);
             } catch (_) {}
         };
         ws.onclose = () => setTimeout(connectWS, 3000);
