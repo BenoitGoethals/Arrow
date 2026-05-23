@@ -1220,6 +1220,11 @@ main { padding: 0; }
                                border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
                     ⚡ Test connection
                 </button>
+                <button onclick="octTestWebhook()"
+                        style="background:#0e7490;color:#e0f2fe;border:1px solid #0891b2;
+                               border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
+                    🔔 Test webhook
+                </button>
                 <span id="oct-test-result" style="font-size:.82rem;color:#64748b"></span>
             </div>
 
@@ -1310,6 +1315,28 @@ main { padding: 0; }
             } else {
                 res.style.color = '#ef4444';
                 res.textContent = `Failed (HTTP ${r2.status})`;
+            }
+        };
+
+        window.octTestWebhook = async function() {
+            const res = document.getElementById('oct-test-result');
+            res.style.color = '#64748b'; res.textContent = 'Firing test detection…';
+            const r2 = await api('/admin/octopus/test-webhook', { method: 'POST' });
+            if (!r2.ok) {
+                res.style.color = '#ef4444';
+                res.textContent = `HTTP ${r2.status} — could not reach test endpoint`;
+                return;
+            }
+            const d = await r2.json();
+            if (d.ok) {
+                res.style.color = '#22c55e';
+                const sig = d.signed ? ' (signed ✓)' : ' (no key — unsigned)';
+                res.textContent = `Webhook OK${sig} — check the notification toast`;
+            } else {
+                res.style.color = '#ef4444';
+                const detail = typeof d.message === 'object'
+                    ? JSON.stringify(d.message) : String(d.message);
+                res.textContent = `Webhook failed (${d.status_code}): ${detail}`;
             }
         };
     }
