@@ -615,7 +615,13 @@ def update_octopus_config(
     _: Operator = Depends(require_role("ADMIN")),
 ) -> dict:
     if body.url is not None:
-        _set_setting(db, "octopus.url", body.url.rstrip("/"))
+        # Strip any accidentally pasted API path so the base URL is stored cleanly.
+        clean = body.url.rstrip("/")
+        for suffix in ("/api/client/streams", "/api/client", "/api"):
+            if clean.endswith(suffix):
+                clean = clean[: -len(suffix)]
+                break
+        _set_setting(db, "octopus.url", clean)
     if body.api_key is not None:
         _set_setting(db, "octopus.api_key", body.api_key)
     cfg = load_config().octopus
