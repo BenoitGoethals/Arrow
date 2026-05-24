@@ -1263,6 +1263,20 @@ main { padding: 0; }
                 Source: <code>${esc(cfg.source)}</code>
                 — DB values override config.xml without restart.
             </div>
+
+            <hr style="border:0;border-top:1px solid #2a3142;margin:1rem 0"/>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+                <div style="font-size:.78rem;color:#94a3b8;font-weight:600">
+                    Incoming webhook log <span style="font-weight:400;color:#475569">(last 20 calls)</span>
+                </div>
+                <button onclick="octRefreshLog()"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:4px;
+                               padding:.2rem .6rem;font:inherit;font-size:.72rem;cursor:pointer">
+                    ↻ Refresh
+                </button>
+            </div>
+            <div id="oct-webhook-log" style="font-size:.75rem;color:#64748b">Loading…</div>
         </div>`;
 
         function _octFeedback(id, ok, msg, warn) {
@@ -1272,6 +1286,47 @@ main { padding: 0; }
             el2.style.color = ok ? '#22c55e' : warn ? '#f59e0b' : '#ef4444';
             setTimeout(() => { el2.textContent = ''; el2.style.color = '#64748b'; }, 6000);
         }
+
+        // ── Webhook call log ──────────────────────────────────────────────
+        const _STATUS_COLOUR = {
+            broadcast: '#22c55e', duplicate: '#94a3b8',
+            skipped:   '#f59e0b', rejected:  '#ef4444', error: '#ef4444',
+        };
+        const _STATUS_ICON = {
+            broadcast: '✓', duplicate: '~', skipped: '⚠', rejected: '✗', error: '✗',
+        };
+
+        window.octRefreshLog = async function() {
+            const box = document.getElementById('oct-webhook-log');
+            if (!box) return;
+            const r = await api('/octopus/webhook/log');
+            if (!r.ok) { box.innerHTML = `<span style="color:#ef4444">Failed to load log (HTTP ${r.status})</span>`; return; }
+            const entries = await r.json();
+            if (!entries.length) {
+                box.innerHTML = '<span style="color:#475569;font-style:italic">No webhook calls received yet.</span>';
+                return;
+            }
+            box.innerHTML = entries.map(e => {
+                const col  = _STATUS_COLOUR[e.status] || '#64748b';
+                const icon = _STATUS_ICON[e.status]   || '?';
+                const pay  = e.payload
+                    ? `<span style="color:#64748b;margin-left:.5rem">`
+                      + (e.payload.label ? `label=<b style="color:#e2e8f0">${esc(e.payload.label)}</b> ` : '')
+                      + (e.payload.stream_id ? `stream=${esc(e.payload.stream_id)} ` : '')
+                      + (e.payload.event != null ? `event=${esc(String(e.payload.event))}` : '')
+                      + `</span>`
+                    : '';
+                return `<div style="display:flex;gap:.5rem;align-items:baseline;padding:.2rem 0;
+                                    border-bottom:1px solid #1e2a3a">
+                    <span style="color:#475569;white-space:nowrap">${esc(e.ts)}</span>
+                    <span style="color:${col};font-weight:600;white-space:nowrap">${icon} ${esc(e.status)}</span>
+                    <span style="color:#94a3b8;white-space:nowrap">${esc(e.remote)}</span>
+                    <span style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.detail)}</span>
+                    ${pay}
+                </div>`;
+            }).join('');
+        };
+        octRefreshLog();
 
         // ── WebSocket status badge ─────────────────────────────────────────
         function _updateWsBadge() {
@@ -1286,6 +1341,14 @@ main { padding: 0; }
         _updateWsBadge();
         document.addEventListener('arrow-ws-open',  _updateWsBadge);
         document.addEventListener('arrow-ws-close', _updateWsBadge);
+
+        // Auto-refresh log whenever a real detection arrives via WebSocket
+        (function _pollDetections() {
+            if (typeof window.arrowWsOnce !== 'function') { setTimeout(_pollDetections, 500); return; }
+            window.arrowWsOnce('octopus-detection', 60000)
+                .then(() => { octRefreshLog(); _pollDetections(); })
+                .catch(() => _pollDetections());
+        })();
 
         window.octSaveUrl = async function() {
             const url = document.getElementById('oct-url-inp').value.trim();
