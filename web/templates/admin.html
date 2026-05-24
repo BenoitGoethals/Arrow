@@ -1236,7 +1236,7 @@ main { padding: 0; }
             <div style="display:flex;gap:.5rem;align-items:center">
                 <code id="oct-webhook-url" style="flex:1;background:#0d1117;border:1px solid #2a3142;
                       border-radius:4px;padding:.4rem .6rem;color:#38bdf8;font-size:.8rem;
-                      word-break:break-all">${esc(window.ARROW_BACKEND_URL || '')}/octopus/webhook</code>
+                      word-break:break-all">${esc(window.location.origin)}/api/octopus/webhook</code>
                 <button onclick="navigator.clipboard.writeText(document.getElementById('oct-webhook-url').textContent)"
                         style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:4px;
                                padding:.35rem .7rem;font:inherit;font-size:.75rem;cursor:pointer;white-space:nowrap">
@@ -1328,10 +1328,16 @@ main { padding: 0; }
                 return;
             }
             const d = await r2.json();
-            if (d.ok) {
+            const sig = d.signed ? ' (signed ✓)' : ' (no key — unsigned)';
+            if (d.broadcast) {
                 res.style.color = '#22c55e';
-                const sig = d.signed ? ' (signed ✓)' : ' (no key — unsigned)';
-                res.textContent = `Webhook OK${sig} — check the notification toast`;
+                res.textContent = `Broadcast OK${sig} — toast should appear now`;
+            } else if (d.duplicate) {
+                res.style.color = '#f59e0b';
+                res.textContent = `Duplicate — detection already in DB (no toast, expected)`;
+            } else if (d.skipped) {
+                res.style.color = '#f59e0b';
+                res.textContent = `Skipped — event type not "detection"`;
             } else {
                 res.style.color = '#ef4444';
                 const detail = typeof d.message === 'object'
