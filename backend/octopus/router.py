@@ -10,6 +10,7 @@ Config (config.xml <octopus> block, overrideable by env vars):
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import hmac
 import json
@@ -31,6 +32,24 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/octopus", tags=["octopus"])
 
 _TIMEOUT = 8.0  # seconds
+
+# Ring buffer — last 20 webhook calls (any outcome)
+_webhook_log: collections.deque[dict] = collections.deque(maxlen=20)
+
+
+def _log_webhook_call(*, remote: str, status: str, detail: str, payload: dict | None) -> None:
+    _webhook_log.appendleft({
+        "ts":      datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "remote":  remote,
+        "status":  status,   # "broadcast" | "skipped" | "duplicate" | "rejected" | "error"
+        "detail":  detail,
+        "payload": {k: payload[k] for k in ("event", "id", "stream_id", "label", "confidence")
+                    if k in payload} if payload else None,
+    })
+
+
+# Octopus may use different field names for the event type; accept all common variants
+_EVENT_ALIASES = ("event", "type", "event_type", "action")
 
 
 def _cfg():
@@ -217,29 +236,40 @@ def _verify_sig(body: bytes, header: str, key: str) -> bool:
 
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def octopus_webhook(request: Request) -> dict:
-    body = await request.body()
+    import uuid as _uuid
+    remote = request.client.host if request.client else "unknown"
+    body   = await request.body()
     _, key = _cfg()
 
     sig = request.headers.get("X-Octopus-Signature", "")
     if key:
         if not sig:
-            log.warning("Octopus webhook: missing signature — rejected")
+            _log_webhook_call(remote=remote, status="rejected",
+                              detail="Missing X-Octopus-Signature header", payload=None)
+            log.warning("Octopus webhook from %s: missing signature — rejected", remote)
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Missing signature")
         if not _verify_sig(body, sig, key):
-            log.warning("Octopus webhook: invalid signature — rejected")
+            _log_webhook_call(remote=remote, status="rejected",
+                              detail="Invalid HMAC signature", payload=None)
+            log.warning("Octopus webhook from %s: invalid signature — rejected", remote)
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid signature")
     else:
-        log.warning("Octopus webhook received but no API key configured — skipping signature check")
+        log.debug("Octopus webhook from %s: no API key — skipping signature check", remote)
 
     try:
         det = json.loads(body)
     except Exception:
+        _log_webhook_call(remote=remote, status="error", detail="Invalid JSON body", payload=None)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON")
 
-    if det.get("event") != "detection":
-        return {"ok": True, "skipped": True}
+    # Accept event type from any common field name Octopus might use
+    event_val = next((det[k] for k in _EVENT_ALIASES if k in det), None)
+    if event_val != "detection":
+        detail = f"event field value={event_val!r} (checked keys: {_EVENT_ALIASES})"
+        _log_webhook_call(remote=remote, status="skipped", detail=detail, payload=det)
+        log.info("Octopus webhook from %s: skipped — %s", remote, detail)
+        return {"ok": True, "skipped": True, "detail": detail}
 
-    import uuid as _uuid
     event_id    = det.get("id") or str(_uuid.uuid4())
     stream_id   = det.get("stream_id", "")
     label       = det.get("label", "")
@@ -259,6 +289,8 @@ async def octopus_webhook(request: Request) -> dict:
         if det.get("id") and db.query(OctopusDetection).filter(
             OctopusDetection.event_id == event_id
         ).first():
+            _log_webhook_call(remote=remote, status="duplicate",
+                              detail=f"event_id={event_id} already in DB", payload=det)
             return {"ok": True, "duplicate": True}
 
         row = OctopusDetection(
@@ -268,6 +300,10 @@ async def octopus_webhook(request: Request) -> dict:
         )
         db.add(row); db.commit(); db.refresh(row)
         det_id = row.id
+    except Exception as exc:
+        _log_webhook_call(remote=remote, status="error", detail=f"DB error: {exc}", payload=det)
+        log.exception("Octopus webhook DB error")
+        raise
     finally:
         db.close()
 
@@ -286,8 +322,16 @@ async def octopus_webhook(request: Request) -> dict:
             "occurred_at":  occurred.isoformat(),
         },
     })
+    _log_webhook_call(remote=remote, status="broadcast",
+                      detail=f"label={label} conf={confidence:.0%} stream={stream_id}", payload=det)
     log.info("Octopus detection: %s (%.0f%%) on stream %s", label, confidence * 100, stream_id)
     return {"ok": True, "broadcast": True}
+
+
+@router.get("/webhook/log")
+def webhook_call_log(_: Operator = Depends(get_current_operator)) -> list[dict]:
+    """Return the last 20 webhook calls for debugging — no auth beyond JWT."""
+    return list(_webhook_log)
 
 
 def _db_session():
