@@ -1214,16 +1214,27 @@ main { padding: 0; }
 
             <hr style="border:0;border-top:1px solid #2a3142;margin:.8rem 0 1rem"/>
 
+            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;font-size:.8rem">
+                <span style="color:#64748b">WebSocket:</span>
+                <span id="oct-ws-badge" style="padding:2px 8px;border-radius:99px;font-size:.75rem;
+                      background:#1f2937;color:#64748b;border:1px solid #2a3142">checking…</span>
+            </div>
+
             <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <button onclick="octTest()"
                         style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44;
                                border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
-                    ⚡ Test connection
+                    ⚡ Test Octopus connection
+                </button>
+                <button onclick="octCheckEndpoint()"
+                        style="background:#06476022;color:#67e8f9;border:1px solid #06476044;
+                               border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
+                    🌐 Check webhook endpoint
                 </button>
                 <button onclick="octTestWebhook()"
                         style="background:#0e7490;color:#e0f2fe;border:1px solid #0891b2;
                                border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
-                    🔔 Test webhook
+                    🔔 Fire test detection
                 </button>
                 <span id="oct-test-result" style="font-size:.82rem;color:#64748b"></span>
             </div>
@@ -1254,13 +1265,27 @@ main { padding: 0; }
             </div>
         </div>`;
 
-        function _octFeedback(id, ok, msg) {
+        function _octFeedback(id, ok, msg, warn) {
             const el2 = document.getElementById(id);
             if (!el2) return;
             el2.textContent = msg;
-            el2.style.color = ok ? '#22c55e' : '#ef4444';
-            setTimeout(() => { el2.textContent = ''; }, 4000);
+            el2.style.color = ok ? '#22c55e' : warn ? '#f59e0b' : '#ef4444';
+            setTimeout(() => { el2.textContent = ''; el2.style.color = '#64748b'; }, 6000);
         }
+
+        // ── WebSocket status badge ─────────────────────────────────────────
+        function _updateWsBadge() {
+            const badge = document.getElementById('oct-ws-badge');
+            if (!badge) return;
+            const connected = window.arrowWsReady === true;
+            badge.textContent  = connected ? '● connected' : '● disconnected';
+            badge.style.color  = connected ? '#22c55e' : '#ef4444';
+            badge.style.border = `1px solid ${connected ? '#22c55e44' : '#ef444444'}`;
+            badge.style.background = connected ? '#052e1622' : '#450a0a22';
+        }
+        _updateWsBadge();
+        document.addEventListener('arrow-ws-open',  _updateWsBadge);
+        document.addEventListener('arrow-ws-close', _updateWsBadge);
 
         window.octSaveUrl = async function() {
             const url = document.getElementById('oct-url-inp').value.trim();
@@ -1318,31 +1343,78 @@ main { padding: 0; }
             }
         };
 
+        // Check webhook endpoint reachability (GET /octopus/webhook)
+        window.octCheckEndpoint = async function() {
+            const res = document.getElementById('oct-test-result');
+            res.style.color = '#64748b'; res.textContent = 'Probing webhook endpoint…';
+
+            // 1. WebSocket state
+            if (!window.arrowWsReady) {
+                _octFeedback('oct-test-result', false,
+                    'WebSocket not connected — toasts will not appear. Check network/auth.');
+                return;
+            }
+
+            // 2. Arrow webhook health (GET /octopus/webhook — no auth needed)
+            try {
+                const r = await fetch(window.location.origin + '/api/octopus/webhook');
+                if (!r.ok) {
+                    _octFeedback('oct-test-result', false,
+                        `Endpoint unreachable (HTTP ${r.status}) — check proxy/firewall`);
+                    return;
+                }
+                const health = await r.json();
+                const sigInfo = health.signature === 'required' ? ' · HMAC signature required' : ' · no API key (unsigned)';
+                _octFeedback('oct-test-result', true,
+                    `Endpoint OK ✓${sigInfo} · WebSocket connected ✓ — ready to receive`);
+            } catch (err) {
+                _octFeedback('oct-test-result', false,
+                    `Cannot reach webhook endpoint: ${err.message}`);
+            }
+        };
+
+        // Fire a real test detection and wait for it to arrive via WebSocket
         window.octTestWebhook = async function() {
             const res = document.getElementById('oct-test-result');
+
+            // Guard: WebSocket must be connected first
+            if (!window.arrowWsReady) {
+                _octFeedback('oct-test-result', false,
+                    'WebSocket not connected — connect first (check badge above)');
+                return;
+            }
+
             res.style.color = '#64748b'; res.textContent = 'Firing test detection…';
+
+            // Register one-shot WS listener BEFORE firing so we don't miss it
+            const wsPromise = window.arrowWsOnce('octopus-detection', 8000);
+
             const r2 = await api('/admin/octopus/test-webhook', { method: 'POST' });
             if (!r2.ok) {
-                res.style.color = '#ef4444';
-                res.textContent = `HTTP ${r2.status} — could not reach test endpoint`;
+                _octFeedback('oct-test-result', false,
+                    `HTTP ${r2.status} — could not reach test endpoint`);
                 return;
             }
             const d = await r2.json();
-            const sig = d.signed ? ' (signed ✓)' : ' (no key — unsigned)';
-            if (d.broadcast) {
-                res.style.color = '#22c55e';
-                res.textContent = `Broadcast OK${sig} — toast should appear now`;
-            } else if (d.duplicate) {
-                res.style.color = '#f59e0b';
-                res.textContent = `Duplicate — detection already in DB (no toast, expected)`;
-            } else if (d.skipped) {
-                res.style.color = '#f59e0b';
-                res.textContent = `Skipped — event type not "detection"`;
-            } else {
-                res.style.color = '#ef4444';
-                const detail = typeof d.message === 'object'
-                    ? JSON.stringify(d.message) : String(d.message);
-                res.textContent = `Webhook failed (${d.status_code}): ${detail}`;
+            const sig = d.signed ? '(signed ✓)' : '(no key)';
+
+            if (!d.broadcast) {
+                const detail = d.duplicate ? 'duplicate' : d.skipped ? 'skipped (event type mismatch)'
+                    : (typeof d.message === 'object' ? JSON.stringify(d.message) : String(d.message));
+                _octFeedback('oct-test-result', false,
+                    `Backend did not broadcast: ${detail}`, d.duplicate || d.skipped);
+                return;
+            }
+
+            // Wait for the WS message to actually arrive in this browser
+            res.style.color = '#64748b'; res.textContent = `Backend broadcast OK ${sig} — waiting for WebSocket…`;
+            try {
+                await wsPromise;
+                _octFeedback('oct-test-result', true,
+                    `End-to-end OK ${sig} — detection received via WebSocket ✓ — toast fired`);
+            } catch (_) {
+                _octFeedback('oct-test-result', false,
+                    `Backend broadcast OK ${sig} but WebSocket message never arrived (8 s timeout) — check WS connection`);
             }
         };
     }
