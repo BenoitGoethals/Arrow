@@ -198,6 +198,18 @@ async def add_octopus_stream(
 
 # ── Webhook receiver (called by Octopus, no JWT auth) ─────────────────────────
 
+@router.get("/webhook")
+async def webhook_health() -> dict:
+    """Reachability probe — Octopus or admin can GET this to confirm the endpoint is alive."""
+    url, key = _cfg()
+    return {
+        "ok":          True,
+        "endpoint":    "ready",
+        "signature":   "required" if key else "disabled",
+        "octopus_url": url or None,
+    }
+
+
 def _verify_sig(body: bytes, header: str, key: str) -> bool:
     expected = "sha256=" + hmac.new(key.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, header)

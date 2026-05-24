@@ -819,12 +819,34 @@
         }
     }
 
+    // One-shot listeners: map channel → array of {resolve, reject, timerId}
+    const _wsOnce = {};
+    window.arrowWsOnce = function(channel, timeoutMs = 8000) {
+        return new Promise((resolve, reject) => {
+            if (!_wsOnce[channel]) _wsOnce[channel] = [];
+            const timerId = setTimeout(() => {
+                _wsOnce[channel] = (_wsOnce[channel] || []).filter(e => e.timerId !== timerId);
+                reject(new Error('timeout'));
+            }, timeoutMs);
+            _wsOnce[channel].push({ resolve, reject, timerId });
+        });
+    };
+
     function connectWS() {
         const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
+        window.arrowWs = ws;
+        ws.onopen  = () => { window.arrowWsReady = true;  document.dispatchEvent(new Event('arrow-ws-open'));  };
+        ws.onclose = () => { window.arrowWsReady = false; document.dispatchEvent(new Event('arrow-ws-close')); setTimeout(connectWS, 3000); };
         ws.onmessage = ev => {
             try {
                 const e = JSON.parse(ev.data);
+                // Fire one-shot listeners first
+                if (_wsOnce[e.channel] && _wsOnce[e.channel].length) {
+                    const entry = _wsOnce[e.channel].shift();
+                    clearTimeout(entry.timerId);
+                    entry.resolve(e);
+                }
                 if (e.channel === 'chat')         showToast(e);
                 if (e.channel === 'fire-mission') {
                     showFireMissionAlert(e);
@@ -836,8 +858,8 @@
                 if (e.channel === 'octopus-detection') handleOctopusDetection(e);
             } catch (_) {}
         };
-        ws.onclose = () => setTimeout(connectWS, 3000);
     }
+    window.arrowWsReady = false;
     connectWS();
 })();
 </script>
