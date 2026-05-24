@@ -37,14 +37,15 @@ _TIMEOUT = 8.0  # seconds
 _webhook_log: collections.deque[dict] = collections.deque(maxlen=20)
 
 
-def _log_webhook_call(*, remote: str, status: str, detail: str, payload: dict | None) -> None:
+def _log_webhook_call(*, remote: str, status: str, detail: str,
+                      payload: dict | None, headers: dict | None = None) -> None:
     _webhook_log.appendleft({
         "ts":      datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "remote":  remote,
         "status":  status,   # "broadcast" | "skipped" | "duplicate" | "rejected" | "error"
         "detail":  detail,
-        "payload": {k: payload[k] for k in ("event", "id", "stream_id", "label", "confidence")
-                    if k in payload} if payload else None,
+        "headers": headers,
+        "payload": payload,
     })
 
 
@@ -245,18 +246,38 @@ async def octopus_webhook(request: Request) -> dict:
 
     sig = request.headers.get("X-Octopus-Signature", "")
     if key:
+        # Dump every header so we can see what Octopus actually sends
+        all_headers = {k: v for k, v in request.headers.items()
+                       if k.lower() not in ("authorization", "cookie")}
+        sig_candidates = {k: v for k, v in request.headers.items()
+                          if "sig" in k.lower() or "hmac" in k.lower() or "token" in k.lower()}
+
         if not sig:
-            _log_webhook_call(remote=remote, status="rejected",
-                              detail="Missing X-Octopus-Signature header", payload=None)
-            log.warning("Octopus webhook from %s: missing signature — rejected", remote)
+            detail = (
+                f"Missing X-Octopus-Signature header. "
+                f"Signature-like headers present: {sig_candidates or 'none'}. "
+                f"All headers: {all_headers}"
+            )
+            _log_webhook_call(remote=remote, status="rejected", detail=detail,
+                              payload=None, headers=all_headers)
+            log.warning(
+                "Octopus webhook from %s: missing signature — rejected\n"
+                "  Signature-like headers: %s\n"
+                "  All request headers:    %s",
+                remote, sig_candidates or "none", all_headers,
+            )
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Missing signature")
         if not _verify_sig(body, sig, key):
-            _log_webhook_call(remote=remote, status="rejected",
-                              detail="Invalid HMAC signature", payload=None)
-            log.warning("Octopus webhook from %s: invalid signature — rejected", remote)
+            detail = f"Invalid HMAC signature. Received: {sig!r}"
+            _log_webhook_call(remote=remote, status="rejected", detail=detail,
+                              payload=None, headers=all_headers)
+            log.warning(
+                "Octopus webhook from %s: invalid HMAC — rejected. Received sig: %s",
+                remote, sig,
+            )
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid signature")
     else:
-        log.debug("Octopus webhook from %s: no API key — skipping signature check", remote)
+        log.debug("Octopus webhook from %s: no API key configured — accepting unsigned", remote)
 
     try:
         det = json.loads(body)
@@ -267,9 +288,21 @@ async def octopus_webhook(request: Request) -> dict:
     # Accept event type from any common field name Octopus might use
     event_val = next((det[k] for k in _EVENT_ALIASES if k in det), None)
     if event_val != "detection":
-        detail = f"event field value={event_val!r} (checked keys: {_EVENT_ALIASES})"
+        payload_keys  = list(det.keys())
+        payload_preview = json.dumps(det, default=str)[:400]
+        detail = (
+            f"event field value={event_val!r} — none of {_EVENT_ALIASES} found. "
+            f"Payload keys: {payload_keys}. "
+            f"Full payload: {payload_preview}"
+        )
         _log_webhook_call(remote=remote, status="skipped", detail=detail, payload=det)
-        log.info("Octopus webhook from %s: skipped — %s", remote, detail)
+        log.info(
+            "Octopus webhook from %s: skipped\n"
+            "  Expected: one of %s == 'detection'\n"
+            "  Payload keys present: %s\n"
+            "  Full payload: %s",
+            remote, _EVENT_ALIASES, payload_keys, payload_preview,
+        )
         return {"ok": True, "skipped": True, "detail": detail}
 
     event_id    = det.get("id") or str(_uuid.uuid4())
