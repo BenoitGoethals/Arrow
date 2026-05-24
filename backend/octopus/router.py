@@ -64,8 +64,10 @@ def _cfg():
     finally:
         db.close()
     xml = load_config().octopus
-    url = (db_url.value if db_url else None) or xml.url
-    key = (db_key.value if db_key else None) or xml.api_key
+    # If a DB row exists (even with empty value), it takes full precedence over
+    # config.xml — an empty DB value means the user explicitly cleared the key.
+    url = db_url.value if db_url is not None else xml.url
+    key = db_key.value if db_key is not None else xml.api_key
     return url.rstrip("/"), key
 
 

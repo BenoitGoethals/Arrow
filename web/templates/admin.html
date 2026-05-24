@@ -1205,9 +1205,16 @@ main { padding: 0; }
                                    padding:.4rem 1rem;font:inherit;cursor:pointer;white-space:nowrap">
                         Save Key
                     </button>
+                    ${cfg.api_key_set ? `
+                    <button onclick="octClearKey()"
+                            style="background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;border-radius:4px;
+                                   padding:.4rem .8rem;font:inherit;cursor:pointer;white-space:nowrap"
+                            title="Remove the API key — webhooks will be accepted unsigned">
+                        Clear Key
+                    </button>` : ''}
                 </div>
                 <div style="font-size:.72rem;color:#475569;margin-top:.3rem;display:flex;gap:.75rem;align-items:center">
-                    Leave blank to keep the current key. The key is never shown in full after saving.
+                    Leave blank to keep the current key. <b style="color:#f59e0b">Clear Key</b> disables HMAC verification — Octopus sends unsigned webhooks.
                     <span id="oct-key-status" style="font-size:.78rem"></span>
                 </div>
             </div>
@@ -1389,6 +1396,24 @@ main { padding: 0; }
                 _octFeedback('oct-key-status', true, '✓ Key saved');
             } else {
                 _octFeedback('oct-key-status', false, 'Save failed: ' + r2.status);
+            }
+        };
+
+        window.octClearKey = async function() {
+            if (!confirm('Remove the API key? Octopus webhooks will be accepted without HMAC signing.')) return;
+            const r2 = await api('/admin/octopus', {
+                method: 'PUT',
+                body: JSON.stringify({ api_key: '' }),
+            });
+            if (r2.ok) {
+                const badge = document.getElementById('oct-key-badge');
+                if (badge) badge.innerHTML = '<span style="color:#ef4444;margin-left:.5rem">● Not set</span>';
+                // Remove the Clear Key button itself
+                const clearBtn = document.querySelector('[onclick="octClearKey()"]');
+                if (clearBtn) clearBtn.remove();
+                _octFeedback('oct-key-status', true, '✓ Key cleared — webhooks accepted unsigned');
+            } else {
+                _octFeedback('oct-key-status', false, 'Clear failed: ' + r2.status);
             }
         };
 
