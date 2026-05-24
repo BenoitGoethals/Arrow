@@ -651,14 +651,21 @@ async def test_octopus_webhook(
     try:
         async with _httpx.AsyncClient(timeout=5.0) as client:
             r = await client.post(webhook_url, content=fake_payload, headers=headers)
+        body_json = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        broadcast = bool(body_json.get("broadcast"))
+        skipped   = bool(body_json.get("skipped"))
+        duplicate = bool(body_json.get("duplicate"))
         return {
-            "ok":          r.status_code == 200,
+            "ok":          r.status_code == 200 and broadcast,
             "status_code": r.status_code,
-            "message":     r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text[:200],
+            "broadcast":   broadcast,
+            "skipped":     skipped,
+            "duplicate":   duplicate,
+            "message":     body_json or r.text[:200],
             "signed":      bool(key),
         }
     except Exception as exc:
-        return {"ok": False, "status_code": 0, "message": str(exc), "signed": bool(key)}
+        return {"ok": False, "status_code": 0, "broadcast": False, "skipped": False, "duplicate": False, "message": str(exc), "signed": bool(key)}
 
 
 @router.put("/octopus")

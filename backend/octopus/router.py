@@ -227,7 +227,8 @@ async def octopus_webhook(request: Request) -> dict:
     if det.get("event") != "detection":
         return {"ok": True, "skipped": True}
 
-    event_id    = det.get("id", "")
+    import uuid as _uuid
+    event_id    = det.get("id") or str(_uuid.uuid4())
     stream_id   = det.get("stream_id", "")
     label       = det.get("label", "")
     confidence  = float(det.get("confidence", 0.0))
@@ -242,8 +243,10 @@ async def octopus_webhook(request: Request) -> dict:
 
     db = _db_session()
     try:
-        # Deduplicate by event_id
-        if db.query(OctopusDetection).filter(OctopusDetection.event_id == event_id).first():
+        # Deduplicate only when the sender supplied an explicit event_id
+        if det.get("id") and db.query(OctopusDetection).filter(
+            OctopusDetection.event_id == event_id
+        ).first():
             return {"ok": True, "duplicate": True}
 
         row = OctopusDetection(
@@ -272,7 +275,7 @@ async def octopus_webhook(request: Request) -> dict:
         },
     })
     log.info("Octopus detection: %s (%.0f%%) on stream %s", label, confidence * 100, stream_id)
-    return {"ok": True}
+    return {"ok": True, "broadcast": True}
 
 
 def _db_session():
