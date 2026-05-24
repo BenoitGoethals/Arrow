@@ -226,6 +226,15 @@ async def api(client: httpx.AsyncClient, method: str, path: str,
         return None
 
 async def login(client: httpx.AsyncClient, callsign: str, password: str) -> Optional[str]:
+    """POST /auth/login.
+
+    On exception we log the *type* of the exception alongside its message —
+    httpx raises ``ConnectTimeout`` / ``ConnectError`` / ``ReadTimeout`` with
+    empty messages, so logging just ``str(exc)`` produces a silent warning
+    that's nearly impossible to diagnose. The type tells the operator at a
+    glance whether it's a wrong host, a closed port, a slow backend, or a
+    genuine 4xx/5xx response.
+    """
     try:
         r = await client.post(_p("/auth/login"),
                               data={"username": callsign, "password": password},
@@ -236,9 +245,22 @@ async def login(client: httpx.AsyncClient, callsign: str, password: str) -> Opti
                 log.error("Account %s has MFA enabled — use a non-MFA admin.", callsign)
                 return None
             return payload.get("access_token")
-        log.warning("login %s → %d %s", callsign, r.status_code, r.text[:120])
+        log.warning("login %s → HTTP %d  %s",
+                    callsign, r.status_code, (r.text or "<empty body>")[:200])
+    except httpx.ConnectError as exc:
+        log.warning("login %s → CONNECT-ERROR: %s (host unreachable / wrong --backend URL?)",
+                    callsign, exc or "no detail")
+    except httpx.ConnectTimeout as exc:
+        log.warning("login %s → CONNECT-TIMEOUT after 15s: %s "
+                    "(port firewalled or wrong --backend URL?)",
+                    callsign, exc or "no detail")
+    except httpx.ReadTimeout as exc:
+        log.warning("login %s → READ-TIMEOUT after 15s: %s "
+                    "(backend reachable but unresponsive)",
+                    callsign, exc or "no detail")
     except Exception as exc:
-        log.warning("login %s → %s", callsign, exc)
+        log.warning("login %s → %s: %s",
+                    callsign, type(exc).__name__, exc or "no detail")
     return None
 
 
@@ -902,11 +924,36 @@ async def reset_world(client: httpx.AsyncClient,
 async def amain() -> None:
     log.info("Backend: %s   (path prefix: %r)", BASE, PATH_PREFIX or "<none>")
     async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0) as client:
+        # Pre-flight reachability check — a quick GET /health (or the prefixed
+        # equivalent) tells us in under 5 seconds whether the host / port is
+        # wrong, before we waste 15s on the auth-form timeout.
+        try:
+            health = await client.get(_p("/health"), timeout=5)
+            log.info("Health check → HTTP %d", health.status_code)
+        except httpx.ConnectError as exc:
+            sys.exit(f"❌  Cannot reach {BASE}\n"
+                     f"   ConnectError: {exc or '(no detail)'}\n"
+                     f"   Check the IP / port — common typo: 78.21.255.21 vs "
+                     f"78.21.255.210. Also confirm the backend is running and "
+                     f"the path prefix is correct (currently '{PATH_PREFIX or '<none>'}').")
+        except httpx.ConnectTimeout:
+            sys.exit(f"❌  Cannot reach {BASE} — connect timed out after 5s.\n"
+                     f"   Port {urlsplit(BASE).netloc.rsplit(':', 1)[-1]} firewalled "
+                     f"or the host is offline.")
+        except httpx.HTTPError as exc:
+            log.warning("Health check failed: %s: %s — continuing anyway.",
+                        type(exc).__name__, exc or "(no detail)")
+
         log.info("Logging in as seed admin %s …", ARGS.admin)
         admin_token = await login(client, ARGS.admin, ARGS.password)
         if not admin_token:
-            sys.exit(f"login failed for {ARGS.admin}. "
-                     "Set --admin / --password to a non-MFA ADMIN account on the backend.")
+            sys.exit(f"❌  login failed for {ARGS.admin}.\n"
+                     f"   Backend URL : {BASE}\n"
+                     f"   Most common causes:\n"
+                     f"     • Wrong --backend URL (typo in IP/port/path prefix)\n"
+                     f"     • Admin password not 'ranger14' (use --password)\n"
+                     f"     • Admin account has MFA enabled — disable it or use "
+                     f"another ADMIN with --admin <callsign>")
         _save_backend(ARGS.backend)
         log.info("Authenticated.")
 
