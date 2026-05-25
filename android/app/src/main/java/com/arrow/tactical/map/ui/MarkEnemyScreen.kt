@@ -31,6 +31,9 @@ fun MarkEnemyScreen(
     val context = LocalContext.current
     val scope   = rememberCoroutineScope()
 
+    val isOnline by container.connectivity.isOnline.collectAsState(initial = false)
+    val isAuth   by container.tokenStore.tokenFlow.collectAsState(initial = null)
+
     var selected   by remember { mutableStateOf(EnemyType.INFANTRY) }
     var notes      by remember { mutableStateOf("") }
     var visibility by remember { mutableStateOf("COMPANY") }
@@ -132,6 +135,19 @@ fun MarkEnemyScreen(
                 color      = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            // Offline / guest hint
+            if (!isOnline || isAuth.isNullOrBlank()) {
+                Text(
+                    text  = when {
+                        isAuth.isNullOrBlank() -> "⚠ Guest mode — mark saved locally only"
+                        !isOnline              -> "📡 Offline — mark saved locally, syncs when connected"
+                        else                   -> ""
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+
             Spacer(Modifier.height(4.dp))
             Button(
                 enabled  = !busy && lat.toDoubleOrNull() != null && lon.toDoubleOrNull() != null,
@@ -153,7 +169,13 @@ fun MarkEnemyScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (busy) "Marking…" else "Mark on map")
+                Text(
+                    when {
+                        busy                   -> "Saving…"
+                        !isOnline && !isAuth.isNullOrBlank() -> "Save offline"
+                        else                   -> "Mark on map"
+                    }
+                )
             }
 
             status?.let { Text(it, color = MaterialTheme.colorScheme.error) }

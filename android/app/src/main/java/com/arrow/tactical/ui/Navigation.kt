@@ -22,13 +22,19 @@ import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -37,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -111,7 +118,7 @@ fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
                 onNavigateToLogin = { rootNav.navigate(Routes.LOGIN) },
                 onLogout = {
                     rootNav.navigate(Routes.MAIN) { popUpTo(0) }
-                },
+                }
             )
         }
     }
@@ -130,13 +137,18 @@ private fun MainShell(
     val currentRoute = backStackEntry?.destination?.route
     val scope = rememberCoroutineScope()
 
-    val role by container.tokenStore.roleFlow.collectAsState(initial = null)
+    val role     by container.tokenStore.roleFlow.collectAsState(initial = null)
+    val callsign by container.settingsRepository.callsign.collectAsState(initial = "")
+    val isOnline by container.connectivity.isOnline.collectAsState(initial = false)
     val tabs = if (role == "ADMIN") TABS_ADMIN else TABS_BASE
+
+    // Map tab renders its own SitawareChrome top bar — don't duplicate the strip there.
+    val onMapTab = currentRoute?.startsWith(Tab.Map.route) == true
 
     // Drawer is opened only from the SitaWare hamburger button; bottom nav
     // bar stays visible on every tab including the map.
-    val drawerState = androidx.compose.material3.rememberDrawerState(
-        initialValue = androidx.compose.material3.DrawerValue.Closed,
+    val drawerState = rememberDrawerState(
+        initialValue = DrawerValue.Closed,
     )
 
     LaunchedEffect(Unit) {
@@ -157,19 +169,19 @@ private fun MainShell(
         }
     }
 
-    androidx.compose.material3.ModalNavigationDrawer(
+    ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = drawerState.isOpen,   // no swipe-to-open from map
         drawerContent = {
-            androidx.compose.material3.ModalDrawerSheet {
+            ModalDrawerSheet {
                 Text(
                     "ARROW",
-                    modifier = androidx.compose.ui.Modifier.padding(16.dp),
-                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.titleLarge,
                 )
-                androidx.compose.material3.HorizontalDivider()
+                HorizontalDivider()
                 tabs.forEach { tab ->
-                    androidx.compose.material3.NavigationDrawerItem(
+                    NavigationDrawerItem(
                         icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) },
                         selected = currentRoute?.startsWith(tab.route) == true,
@@ -177,14 +189,23 @@ private fun MainShell(
                             goTab(tab.route)
                             scope.launch { drawerState.close() }
                         },
-                        modifier = androidx.compose.ui.Modifier.padding(horizontal = 12.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp),
                     )
                 }
             }
         },
     ) {
-    var bottomBarExpanded by remember { mutableStateOf(true) }
+    var bottomBarExpanded by remember { mutableStateOf(value = true) }
     Scaffold(
+        topBar = {
+            if (!onMapTab) {
+                ArrowStatusBar(
+                    callsign = if (isAuthenticated) callsign else "",
+                    role     = if (isAuthenticated) role else null,
+                    isOnline = isOnline,
+                )
+            }
+        },
         bottomBar = {
             Column {
                 // Collapse handle — always visible; tap to toggle the full bar.
@@ -195,7 +216,7 @@ private fun MainShell(
                         .clickable { bottomBarExpanded = !bottomBarExpanded }
                         .padding(vertical = 2.dp),
                     horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
                         if (bottomBarExpanded) Icons.Filled.KeyboardArrowDown
@@ -251,7 +272,7 @@ private fun MainShell(
                     presetLon  = entry.arguments?.getString("lon")?.toDoubleOrNull(),
                     onBack     = { tabNav.popBackStack() },
                     onOpenMortar = { lat, lon ->
-                        if (lat == null || lon == null) tabNav.navigate("mortar")
+                        if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
                         else tabNav.navigate("mortar?lat=$lat&lon=$lon")
                     },
                 )
@@ -261,7 +282,7 @@ private fun MainShell(
                     container = container,
                     onBack    = { tabNav.popBackStack() },
                     onOpenMortar = { lat, lon ->
-                        if (lat == null || lon == null) tabNav.navigate("mortar")
+                        if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
                         else tabNav.navigate("mortar?lat=$lat&lon=$lon")
                     },
                 )
