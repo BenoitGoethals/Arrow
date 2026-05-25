@@ -317,11 +317,14 @@
             if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
             _hlsOverlayShow('⏳', 'Buffering…', false);
             extVid.play().catch(err => {
-                // Autoplay blocked — show a click-to-play prompt
+                // Autoplay blocked — show a click-to-play prompt on the overlay itself
                 console.warn('[Arrow HLS] play() blocked:', err.name);
                 _hlsOverlayShow('▶', 'Click to play', false);
-                extVid.addEventListener('click', function resume() {
-                    extVid.removeEventListener('click', resume);
+                const ov = document.getElementById('hls-overlay');
+                ov.style.cursor = 'pointer';
+                ov.addEventListener('click', function resume() {
+                    ov.removeEventListener('click', resume);
+                    ov.style.cursor = '';
                     extVid.play().catch(() => {});
                     _hlsOverlayShow('⏳', 'Buffering…', false);
                 });
