@@ -207,9 +207,11 @@
     function hideAll() {
         img.style.display    = 'none'; img.src = '';
         extImg.style.display = 'none'; extImg.src = '';
-        extVid.style.display = 'none'; extVid.pause(); extVid.src = '';
+        // Destroy hls BEFORE clearing src — otherwise hls loses the MediaSource reference
         if (activeHls) { activeHls.destroy(); activeHls = null; }
-        if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
+        extVid.style.display = 'none'; extVid.pause(); extVid.removeAttribute('src'); extVid.load();
+        if (_hlsConnectTimer)  { clearTimeout(_hlsConnectTimer);  _hlsConnectTimer  = null; }
+        if (_hlsBufferTimer)   { clearTimeout(_hlsBufferTimer);   _hlsBufferTimer   = null; }
         _detachVidHandlers();
         _hlsOverlayHide();
         _hlsRetryUrl = null;
@@ -233,9 +235,13 @@
     }
 
     let _hlsConnectTimer = null;
+    let _hlsBufferTimer  = null;
 
     // Video element lifecycle handlers — attached/removed with each HLS session
-    function _onVidPlaying()  { _hlsOverlayHide(); }
+    function _onVidPlaying() {
+        if (_hlsBufferTimer) { clearTimeout(_hlsBufferTimer); _hlsBufferTimer = null; }
+        _hlsOverlayHide();
+    }
     function _onVidWaiting()  { if (activeHls) _hlsOverlayShow('⏳', 'Buffering…', false); }
     function _onVidStalled()  { if (activeHls) _hlsOverlayShow('⏳', 'Buffering…', false); }
 
@@ -316,6 +322,10 @@
             console.log('[Arrow HLS] MANIFEST_PARSED, levels:', data.levels.length);
             if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
             _hlsOverlayShow('⏳', 'Buffering…', false);
+            _hlsBufferTimer = setTimeout(() => {
+                _hlsBufferTimer = null;
+                if (activeHls) _hlsOverlayShow('📡', 'Stream not starting — segments may be unavailable.\nCheck the Octopus stream is active.\n\n' + url, true);
+            }, 25000);
             extVid.play().catch(err => {
                 // Autoplay blocked — show a click-to-play prompt on the overlay itself
                 console.warn('[Arrow HLS] play() blocked:', err.name);
