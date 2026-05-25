@@ -67,8 +67,8 @@ def _cfg():
     xml = load_config().octopus
     # If a DB row exists (even with empty value), it takes full precedence over
     # config.xml — an empty DB value means the user explicitly cleared the key.
-    url = db_url.value if db_url is not None else xml.url
-    key = db_key.value if db_key is not None else xml.api_key
+    url = (db_url.value.strip() if db_url is not None else None) or xml.url
+    key = (db_key.value.strip() if db_key is not None else None) or xml.api_key
     return url.rstrip("/"), key
 
 
@@ -282,6 +282,68 @@ async def hls_proxy(path: str) -> Response:
         media_type=media_type,
         headers={"Cache-Control": "no-cache"},
     )
+
+
+# ── HLS connectivity diagnostic ──────────────────────────────────────────────
+
+@router.get("/hls-test")
+async def hls_test(_: Operator = Depends(get_current_operator)) -> Response:
+    """Fetch the first available HLS stream from Octopus and return the raw
+    playlist with diagnostic headers — open in browser to check connectivity."""
+    oct_url, key = _cfg()
+    if not oct_url:
+        return Response("ERROR: Octopus not configured (no URL in config.xml or DB)",
+                        media_type="text/plain", status_code=503)
+    params = {"api_key": key} if key else {}
+    async with _client() as client:
+        # 1. List streams
+        streams = []
+        for ep in (f"{oct_url}/api/client/streams", f"{oct_url}/api/streams"):
+            try:
+                r = await client.get(ep, params=params)
+                if r.status_code == 200:
+                    streams = r.json()
+                    break
+            except Exception:
+                pass
+        if not streams:
+            return Response(f"ERROR: Could not list streams from {oct_url}",
+                            media_type="text/plain", status_code=502)
+
+        # 2. Pick first stream with an HLS URL
+        hls_path = ""
+        for s in (streams if isinstance(streams, list) else []):
+            raw = s.get("hls_url") or s.get("stream_url") or ""
+            if raw:
+                from urllib.parse import urlparse as _up
+                hls_path = _up(raw).path.lstrip("/") if raw.startswith("http") else raw.lstrip("/")
+                break
+        if not hls_path:
+            return Response(f"ERROR: No hls_url found in any stream.\n\nStreams: {streams}",
+                            media_type="text/plain", status_code=404)
+
+        # 3. Fetch the manifest
+        m3u8_url = f"{oct_url}/{hls_path}"
+        try:
+            r = await client.get(m3u8_url, params=params)
+        except Exception as exc:
+            return Response(f"ERROR: Cannot reach {m3u8_url}\n{exc}",
+                            media_type="text/plain", status_code=502)
+        if r.status_code != 200:
+            return Response(f"ERROR: {m3u8_url} returned HTTP {r.status_code}\n{r.text[:500]}",
+                            media_type="text/plain", status_code=r.status_code)
+
+        rewritten = _rewrite_m3u8(r.content, oct_url).decode("utf-8", errors="replace")
+        body = (
+            f"# Arrow HLS connectivity test — OK\n"
+            f"# Octopus URL : {oct_url}\n"
+            f"# Manifest    : {m3u8_url}\n"
+            f"# Proxy path  : /api/octopus/hls/{hls_path}\n"
+            f"# ─────────────────────────────────────\n"
+            f"{rewritten}"
+        )
+        return Response(body, media_type="text/plain",
+                        headers={"Cache-Control": "no-cache"})
 
 
 # ── Add Octopus stream as persistent external stream ─────────────────────────
