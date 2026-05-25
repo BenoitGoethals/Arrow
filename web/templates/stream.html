@@ -513,9 +513,18 @@
     }
 
     function _octPlayUrl(s) {
+        const base = (window.ARROW_BACKEND_URL || '').replace(/\/$/, '');
+        // Best source: extract path from the confirmed Octopus URL (avoids UUID vs name mismatch)
+        const oct = s.octopus_hls_url || '';
+        if (oct) {
+            try {
+                const path = new URL(oct).pathname.replace(/^\//, '');
+                return base + '/octopus/hls/' + path;
+            } catch (_) {}
+        }
+        // Fallback: server-computed hls_url or direct stream URL
         const u = s.hls_url || s.url || s.playback_url || s.stream_url || '';
-        // hls_url is a root-relative Arrow proxy path — prepend the backend URL
-        if (u.startsWith('/')) return window.ARROW_BACKEND_URL.replace(/\/$/, '') + u;
+        if (u.startsWith('/')) return base + u;
         return u;
     }
 
