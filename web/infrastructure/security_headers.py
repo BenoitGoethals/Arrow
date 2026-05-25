@@ -9,6 +9,7 @@ _CSP = (
     "script-src 'self' 'unsafe-inline' https://unpkg.com; "
     "style-src 'self' 'unsafe-inline' https://unpkg.com; "
     "img-src 'self' data: blob: https://*.tile.openstreetmap.org; "
+    "media-src 'self' blob:; "
     "connect-src 'self' ws: wss:; "
     "frame-ancestors 'none'"
 )
