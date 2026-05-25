@@ -137,118 +137,88 @@ async def get_octopus_stream(
                                 f"Cannot reach Octopus: {exc}")
     data = r.json()
 
-    # Log what Octopus itself says the HLS URL is — useful for debugging path issues
+    from urllib.parse import urlparse as _urlparse
     oct_hls = data.get("hls_url") or data.get("stream_url") or data.get("playback_url") or ""
     log.debug("stream detail: id=%s octopus_hls_url=%r", stream_id, oct_hls)
+    data["octopus_hls_url"] = oct_hls
 
-    # Always route HLS through Arrow's own proxy so the browser never needs
-    # direct access to the Octopus port (which is often firewalled).
-    # Return a root-relative path; the JS prepends ARROW_BACKEND_URL.
-    data["hls_url"]         = f"/octopus/hls/{stream_id}/live.m3u8"
-    data["octopus_hls_url"] = oct_hls   # exposed for debug panel in UI
+    if oct_hls:
+        # Use the exact path Octopus reports (contains the real UUID, not the stream name)
+        # e.g. http://192.168.0.240:8080/static/hls/UUID/live.m3u8 → /octopus/hls/static/hls/UUID/live.m3u8
+        oct_path = _urlparse(oct_hls).path.lstrip("/")
+        data["hls_url"] = f"/octopus/hls/{oct_path}"
+    else:
+        data["hls_url"] = f"/octopus/hls/static/hls/{stream_id}/live.m3u8"
 
     return data
 
 
 # ── HLS proxy ─────────────────────────────────────────────────────────────────
 
-# Candidate paths Octopus may use for HLS.  Tried in order; first 200 wins.
-_HLS_PATHS = [
-    "/static/hls/{stream_id}/{filename}",
-    "/hls/{stream_id}/{filename}",
-    "/api/client/streams/{stream_id}/hls/{filename}",
-    "/streams/{stream_id}/{filename}",
-]
+def _rewrite_m3u8(content: bytes, octopus_base: str) -> bytes:
+    """Rewrite absolute Octopus URLs in an HLS playlist to go through Arrow's proxy.
 
-import re as _re
-
-def _rewrite_m3u8(content: bytes, stream_id: str, octopus_base: str) -> bytes:
-    """Rewrite absolute URLs and bare filenames in an HLS playlist.
-
-    hls.js resolves segment URLs relative to the playlist URL
-    (which is Arrow's proxy path).  If Octopus embeds absolute
-    http:// URLs, the browser would try to fetch them directly —
-    bypassing Arrow and failing on private IPs.  We replace every
-    such URL with the Arrow proxy equivalent.
+    hls.js resolves segment URLs relative to the playlist URL (Arrow's proxy).
+    Absolute http:// URLs pointing at Octopus would fail from the browser since
+    the Octopus port is firewalled externally.  We rewrite them to root-relative
+    /api/octopus/hls/... paths so Caddy routes them to the backend.
     """
     text = content.decode("utf-8", errors="replace")
     lines = []
     for line in text.splitlines():
         stripped = line.strip()
-        # Absolute URL pointing at the Octopus server → rewrite via proxy
         if stripped.startswith(octopus_base):
-            # Extract the path after the base and convert to proxy path
             path = stripped[len(octopus_base):].lstrip("/")
-            # Strip known HLS path prefixes to get bare filename
-            for prefix in (
-                f"static/hls/{stream_id}/",
-                f"hls/{stream_id}/",
-                f"api/client/streams/{stream_id}/hls/",
-                f"streams/{stream_id}/",
-            ):
-                if path.startswith(prefix):
-                    path = path[len(prefix):]
-                    break
-            line = f"/octopus/hls/{stream_id}/{path}"
-        # Absolute URL to a different host — leave as-is (sub-playlist, key, etc.)
+            line = f"/api/octopus/hls/{path}"
+        # Different host (CDN keys, sub-playlists elsewhere) — leave as-is
         elif stripped.startswith("http://") or stripped.startswith("https://"):
             pass
         lines.append(line)
     return "\n".join(lines).encode("utf-8")
 
 
-@router.get("/hls/{stream_id}/{filename:path}")
-async def hls_proxy(
-    stream_id: str,
-    filename: str,
-) -> Response:
-    """Proxy Octopus HLS playlists and fMP4/TS segments through Arrow.
+@router.get("/hls/{path:path}")
+async def hls_proxy(path: str) -> Response:
+    """Proxy Octopus HLS playlists and segments through Arrow.
 
-    No JWT auth — stream IDs are UUIDs (unguessable).
-    Rewrites absolute segment URLs in .m3u8 playlists so the browser
-    never needs direct access to the Octopus host.
+    `path` is the exact Octopus URL path (e.g. static/hls/UUID/live.m3u8).
+    No JWT — stream UUIDs are unguessable and short-lived.
+    Absolute segment URLs in .m3u8 playlists are rewritten to Arrow-relative
+    paths so the browser never contacts the Octopus host directly.
     """
     oct_url, key = _cfg()
     if not oct_url:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Octopus not configured")
 
-    params = {"api_key": key} if key else {}
+    candidate = f"{oct_url}/{path}"
+    params    = {"api_key": key} if key else {}
 
     async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
-        r = None
-        tried = []
-        for path_tpl in _HLS_PATHS:
-            candidate = oct_url + "/" + path_tpl.format(
-                stream_id=stream_id, filename=filename
-            ).lstrip("/")
-            tried.append(candidate)
-            try:
-                resp = await client.get(candidate, params=params)
-                if resp.status_code == 200:
-                    r = resp
-                    log.debug("hls_proxy: %s → 200", candidate)
-                    break
-                log.debug("hls_proxy: %s → %d", candidate, resp.status_code)
-            except httpx.RequestError as exc:
-                log.debug("hls_proxy: %s → error: %s", candidate, exc)
+        try:
+            resp = await client.get(candidate, params=params)
+        except httpx.RequestError as exc:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                                f"Cannot reach Octopus: {exc}")
 
-    if r is None or r.status_code != 200:
-        log.warning("hls_proxy: %s/%s not found on Octopus. Tried: %s", stream_id, filename, tried)
-        raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            f"{filename} not found. Tried paths: {tried}")
+    if resp.status_code != 200:
+        log.warning("hls_proxy: %s → %d", candidate, resp.status_code)
+        raise HTTPException(resp.status_code,
+                            f"Octopus returned {resp.status_code} for {candidate}")
 
-    if filename.endswith(".m3u8"):
-        content   = _rewrite_m3u8(r.content, stream_id, oct_url)
+    log.debug("hls_proxy: %s → 200", candidate)
+
+    if path.endswith(".m3u8"):
+        content    = _rewrite_m3u8(resp.content, oct_url)
         media_type = "application/vnd.apple.mpegurl"
-    elif filename.endswith((".mp4", ".m4s")):
-        content    = r.content
+    elif path.endswith((".mp4", ".m4s")):
+        content    = resp.content
         media_type = "video/mp4"
-    elif filename.endswith(".ts"):
-        content    = r.content
+    elif path.endswith(".ts"):
+        content    = resp.content
         media_type = "video/mp2t"
     else:
-        content    = r.content
-        media_type = r.headers.get("content-type", "application/octet-stream")
+        content    = resp.content
+        media_type = resp.headers.get("content-type", "application/octet-stream")
 
     return Response(
         content=content,
