@@ -182,8 +182,8 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- HLS.js for HLS stream support -->
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+<!-- HLS.js for HLS stream support — pinned to a specific build for reliability -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
 <script>
 (function () {
     const token = localStorage.getItem('arrow_token');
@@ -209,6 +209,7 @@
         extImg.style.display = 'none'; extImg.src = '';
         extVid.style.display = 'none'; extVid.pause(); extVid.src = '';
         if (activeHls) { activeHls.destroy(); activeHls = null; }
+        if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
         _hlsOverlayHide();
         _hlsRetryUrl = null;
         document.getElementById('no-stream-msg').style.display  = 'block';
@@ -230,23 +231,21 @@
         document.getElementById('hls-overlay').style.display = 'none';
     }
 
-    async function _probeUrl(url) {
-        // Check if the manifest is reachable. Uses GET (not HEAD) for
-        // broadest server compatibility; the Arrow proxy is same-origin so no CORS issue.
-        try {
-            const r = await fetch(url, { method: 'GET', cache: 'no-store', headers });
-            return { ok: r.ok, status: r.status };
-        } catch (e) {
-            return { ok: false, status: 0, error: String(e) };
-        }
-    }
+    let _hlsConnectTimer = null;
 
     async function _playHls(url) {
         if (activeHls) { activeHls.destroy(); activeHls = null; }
+        if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
         _hlsRetryUrl = url;
         extVid.style.display = 'block';
         _hlsOverlayShow('⏳', 'Connecting…\n' + url, false);
         console.log('[Arrow HLS] loadSource:', url);
+
+        // Guard: hls.js CDN may have failed to load
+        if (typeof Hls === 'undefined') {
+            _hlsOverlayShow('✖', 'HLS player failed to load (check network/CDN).\nURL: ' + url, true);
+            return;
+        }
 
         if (!Hls.isSupported()) {
             if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
@@ -259,12 +258,19 @@
             return;
         }
 
+        // Show an error with a retry button if the stream hasn't connected after 20 s
+        _hlsConnectTimer = setTimeout(() => {
+            _hlsConnectTimer = null;
+            if (activeHls) _hlsOverlayShow('📡', 'Stream is taking too long to connect.\nCheck that the Octopus stream is live.\n\n' + url, true);
+        }, 20000);
+
         activeHls = new Hls({
             lowLatencyMode: false,
             liveSyncDurationCount: 3,
             liveMaxLatencyDurationCount: 8,
             startPosition: -1,
             maxBufferLength: 20,
+            // Use loadPolicy (hls.js v1.5+) for reliable timeouts; keep legacy keys as fallback
             manifestLoadingTimeOut: 8000,
             manifestLoadingMaxRetry: 1,
             manifestLoadingRetryDelay: 1000,
@@ -274,6 +280,14 @@
             fragLoadingTimeOut: 10000,
             fragLoadingMaxRetry: 3,
             fragLoadingRetryDelay: 500,
+            loadPolicy: {
+                default: {
+                    maxTimeToFirstByteMs: 8000,
+                    maxLoadTimeMs: 10000,
+                    timeoutRetry: { maxNumRetry: 2, retryDelayMs: 500, maxRetryDelayMs: 2000 },
+                    errorRetry:   { maxNumRetry: 3, retryDelayMs: 500, maxRetryDelayMs: 2000 },
+                },
+            },
         });
 
         activeHls.loadSource(url);
@@ -281,6 +295,7 @@
 
         activeHls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
             console.log('[Arrow HLS] MANIFEST_PARSED, levels:', data.levels.length);
+            if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
             _hlsOverlayHide();
             extVid.play().catch(() => {});
         });
@@ -288,11 +303,10 @@
         activeHls.on(Hls.Events.ERROR, (_, d) => {
             console.warn('[Arrow HLS] error:', d.type, d.details, 'fatal:', d.fatal, 'url:', d.url);
             if (!d.fatal) {
-                if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    _hlsOverlayShow('⏳', 'Retrying… ' + d.details + (d.url ? '\n' + d.url : ''), false);
-                }
+                _hlsOverlayShow('⏳', 'Retrying… ' + d.details + (d.url ? '\n' + d.url : ''), false);
                 return;
             }
+            if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
             if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
                 _hlsOverlayShow('📡', 'Cannot load stream:\n' + d.details + (d.url ? '\n\n' + d.url : '\n\n' + url), true);
             } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
