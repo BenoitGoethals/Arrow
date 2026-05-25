@@ -11,6 +11,7 @@ import android.util.LruCache
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.core.graphics.drawable.toDrawable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,7 +60,7 @@ class MilsymRenderer(private val context: Context) {
      */
     suspend fun symbol(sidc: String, options: Map<String, Any?> = emptyMap()): Result? {
         val key = cacheKey(sidc, options)
-        cache.get(key)?.let { return it }
+        cache[key]?.let { return it }
 
         // Trigger WebView init on the main thread (also satisfies the
         // "WebView must be created on UI thread" constraint).
@@ -87,15 +88,8 @@ class MilsymRenderer(private val context: Context) {
 
     private fun cacheKey(sidc: String, options: Map<String, Any?>): String =
         if (options.isEmpty()) sidc
-        else sidc + "|" + options.entries.sortedBy { it.key }
+        else "$sidc|" + options.entries.asSequence().sortedBy { it.key }
             .joinToString(",") { "${it.key}=${it.value}" }
-
-    /**
-     * Convenience wrapper that returns the Drawable only — most callers don't
-     * care about the anchor (they pass `Marker.ANCHOR_CENTER`).
-     */
-    suspend fun symbolDrawable(sidc: String, options: Map<String, Any?> = emptyMap()): Drawable? =
-        symbol(sidc, options)?.drawable
 
     private fun complete(token: String, result: Result) {
         val d = synchronized(pending) { pending.remove(token) } ?: return
@@ -124,9 +118,14 @@ class MilsymRenderer(private val context: Context) {
                 ?: run { fail(token, "PNG decode failed"); return }
             val anchorX = (ax / w.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
             val anchorY = (ay / h.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
-            complete(token, Result(
-                BitmapDrawable(context.resources, bmp), anchorX, anchorY,
-            ))
+            complete(
+                token,
+                Result(
+                    bmp.toDrawable(context.resources),
+                    anchorX,
+                    anchorY,
+                ),
+            )
         }
 
         @JavascriptInterface

@@ -7,11 +7,13 @@ import com.arrow.tactical.data.local.entity.CachedAlertEntity
 import com.arrow.tactical.data.local.entity.CachedMessageEntity
 import com.arrow.tactical.data.local.entity.CachedOperatorEntity
 import com.arrow.tactical.data.local.entity.CachedReportEntity
+import com.arrow.tactical.data.local.entity.CachedTacticalObjectEntity
 import com.arrow.tactical.network.AlertDto
 import com.arrow.tactical.network.ApiClient
 import com.arrow.tactical.network.MessageDto
 import com.arrow.tactical.network.OperatorDto
 import com.arrow.tactical.network.ReportDto
+import com.arrow.tactical.network.TacticalObjectDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -97,6 +99,7 @@ class SyncManager(
 
     private suspend fun pullServerData() {
         pullOperators()
+        pullTacticalObjects()
         pullMessages()
         pullReports()
         pullAlerts()
@@ -104,7 +107,7 @@ class SyncManager(
 
     private suspend fun pullOperators() = runCatching {
         val r = api.get("/tracking/live")
-        if (!r.ok) return
+        if (!r.ok) return@runCatching
         val operators = api.json.decodeFromString<List<OperatorDto>>(r.body)
         db.cachedOperatorDao().upsertAll(operators.map { it.toEntity() })
         Log.d(TAG, "Pulled ${operators.size} operators")
@@ -112,7 +115,7 @@ class SyncManager(
 
     private suspend fun pullMessages() = runCatching {
         val r = api.get("/messages")
-        if (!r.ok) return
+        if (!r.ok) return@runCatching
         val messages = api.json.decodeFromString<List<MessageDto>>(r.body)
         db.cachedMessageDao().upsertAll(messages.map { it.toEntity() })
         Log.d(TAG, "Pulled ${messages.size} messages")
@@ -120,7 +123,7 @@ class SyncManager(
 
     private suspend fun pullReports() = runCatching {
         val r = api.get("/reports")
-        if (!r.ok) return
+        if (!r.ok) return@runCatching
         val reports = api.json.decodeFromString<List<ReportDto>>(r.body)
         db.cachedReportDao().upsertAll(reports.map { it.toEntity() })
         Log.d(TAG, "Pulled ${reports.size} reports")
@@ -128,10 +131,20 @@ class SyncManager(
 
     private suspend fun pullAlerts() = runCatching {
         val r = api.get("/alerts")
-        if (!r.ok) return
+        if (!r.ok) return@runCatching
         val alerts = api.json.decodeFromString<List<AlertDto>>(r.body)
         db.cachedAlertDao().upsertAll(alerts.map { it.toEntity() })
         Log.d(TAG, "Pulled ${alerts.size} alerts")
+    }
+
+    private suspend fun pullTacticalObjects() = runCatching {
+        val r = api.get("/tactical-objects")
+        if (!r.ok) return@runCatching
+        val objects = api.json.decodeFromString<List<TacticalObjectDto>>(r.body)
+        db.cachedTacticalObjectDao().upsertAll(objects.map { it.toEntity() })
+        // Remove any delete-pending rows that the server already confirms are gone.
+        db.cachedTacticalObjectDao().purgeConfirmedDeletes()
+        Log.d(TAG, "Pulled ${objects.size} tactical objects")
     }
 }
 
@@ -167,4 +180,20 @@ private fun AlertDto.toEntity() = CachedAlertEntity(
     callsign = operatorId.toString(),
     lat = latitude, lon = longitude,
     syncStatus = "synced",
+)
+
+private fun TacticalObjectDto.toEntity() = CachedTacticalObjectEntity(
+    id          = id.toLong(),
+    type        = type,
+    symbolCode  = symbolCode,
+    latitude    = latitude,
+    longitude   = longitude,
+    notes       = notes,
+    visibility  = visibility,
+    affiliation = affiliation,
+    rotation    = rotation,
+    geometry    = geometry,
+    echelon     = echelon,
+    createdBy   = createdBy,
+    syncStatus  = "synced",
 )

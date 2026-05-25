@@ -8,11 +8,13 @@ import com.arrow.tactical.data.local.dao.CachedAlertDao
 import com.arrow.tactical.data.local.dao.CachedMessageDao
 import com.arrow.tactical.data.local.dao.CachedOperatorDao
 import com.arrow.tactical.data.local.dao.CachedReportDao
+import com.arrow.tactical.data.local.dao.CachedTacticalObjectDao
 import com.arrow.tactical.data.local.dao.PendingActionDao
 import com.arrow.tactical.data.local.entity.CachedAlertEntity
 import com.arrow.tactical.data.local.entity.CachedMessageEntity
 import com.arrow.tactical.data.local.entity.CachedOperatorEntity
 import com.arrow.tactical.data.local.entity.CachedReportEntity
+import com.arrow.tactical.data.local.entity.CachedTacticalObjectEntity
 import com.arrow.tactical.data.local.entity.PendingActionEntity
 
 @Database(
@@ -22,8 +24,9 @@ import com.arrow.tactical.data.local.entity.PendingActionEntity
         CachedMessageEntity::class,
         CachedReportEntity::class,
         CachedAlertEntity::class,
+        CachedTacticalObjectEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cachedMessageDao(): CachedMessageDao
     abstract fun cachedReportDao(): CachedReportDao
     abstract fun cachedAlertDao(): CachedAlertDao
+    abstract fun cachedTacticalObjectDao(): CachedTacticalObjectDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null

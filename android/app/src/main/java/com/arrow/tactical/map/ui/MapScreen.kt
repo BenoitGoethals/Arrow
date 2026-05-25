@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.toColorInt
 import com.arrow.tactical.di.AppContainer
 import com.arrow.tactical.kml.KmlFeature
 import com.arrow.tactical.kml.KmlLayerDto
@@ -105,15 +106,19 @@ fun MapScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var operators    by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
-    var enemies      by remember { mutableStateOf<List<TacticalObjectDto>>(emptyList()) }
+    // Enemies are collected from the local DB — updates instantly on offline mark + on sync.
+    val enemies by container.tacticalRepository.observeObjects().collectAsState(initial = emptyList())
     var fireMissions by remember { mutableStateOf<List<com.arrow.tactical.network.FireMissionDto>>(emptyList()) }
     var selectedObjective by remember { mutableStateOf<TacticalObjectDto?>(null) }
     var meId by remember { mutableStateOf<Int?>(null) }
-    var hasAutocentered by remember { mutableStateOf(false) }
-    var fetchError by remember { mutableStateOf<String?>(null) }
+    var hasAutocentered by remember { mutableStateOf(value = false) }
     var serverUrl by remember { mutableStateOf("") }
-    // null = checking, true = online, false = offline
+    // null = checking, true = online, false = offline.
+    // Seeded from ConnectivityObserver so the indicator is instant even before
+    // the first server poll completes; server polling then overrides it.
+    val connOnline by container.connectivity.isOnline.collectAsState(initial = false)
     var serverOnline by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(connOnline) { if (serverOnline == null) serverOnline = connOnline }
     var overlayMode by remember { mutableStateOf(OverlayMode.ALL) }
     // Independent layer for tactical control graphics — gates lines, polygons
     // and oriented-point graphics regardless of overlayMode.
@@ -144,7 +149,7 @@ fun MapScreen(
     var kmlLocallyHidden by remember { mutableStateOf<Set<Int>>(emptySet()) }
     // Trigger bumped by the shared WS handler when a kml-layer event arrives;
     // a LaunchedEffect below reloads the layer list whenever it changes.
-    val kmlReloadTrigger = remember { mutableStateOf(0) }
+    val kmlReloadTrigger = remember { mutableIntStateOf(0) }
     // Floating panel listing the imported KML layers; opens from the KML chip.
     var kmlPanelOpen by remember { mutableStateOf(false) }
     // Lets the operator collapse the entire SitaWare chrome off to the left
@@ -157,7 +162,7 @@ fun MapScreen(
     // AndroidView factory block.
     var savedOverlays  by remember { mutableStateOf<List<OverlayDto>>(emptyList()) }
     var activeOverlays by remember { mutableStateOf<Set<Int>>(emptySet()) }
-    val overlayReloadTrigger = remember { mutableStateOf(0) }
+    val overlayReloadTrigger = remember { mutableIntStateOf(0) }
     var overlayPanelOpen by remember { mutableStateOf(false) }
 
     // ── Admin map+notification visibility — global filter ──────────────────
@@ -187,7 +192,7 @@ fun MapScreen(
     // Map rotation state — mapOrientation mirrors osmdroid's MapView.mapOrientation
     // so the compass arrow can render the current heading. `northLocked` forces the
     // map to stay north-up and disables the rotation-gesture overlay.
-    var mapOrientation by remember { mutableStateOf(0f) }
+    var mapOrientation by remember { mutableFloatStateOf(0f) }
     var northLocked    by remember { mutableStateOf(true) }
     var goToOpen       by remember { mutableStateOf(false) }
     // Temporary "Go To" pin — shown after the user navigates to a location.
@@ -221,7 +226,7 @@ fun MapScreen(
         }
         val sid = "stream-${me.callsign}-${System.currentTimeMillis() / 1000}"
         android.util.Log.i(tag, "starting stream id=$sid server=$server")
-        val intent = android.content.Intent(
+                val intent = Intent(
             context, com.arrow.tactical.stream.CameraStreamService::class.java
         ).apply {
             putExtra(com.arrow.tactical.stream.CameraStreamService.EXTRA_STREAM_ID,  sid)
@@ -345,26 +350,15 @@ fun MapScreen(
                 val health = container.apiClient.get("/health")
                 if (!health.ok) {
                     serverOnline = false
-                    fetchError   = "Server returned ${health.code}"
                 } else {
                     container.tacticalRepository.listOperators()
                         .onSuccess { ops ->
                             operators    = ops
                             serverOnline = true
-                            fetchError   = if (ops.isEmpty()) "0 operators — run simulator?" else null
                         }
-                        .onFailure { err ->
+                        .onFailure {
                             serverOnline = false
-                            fetchError   = when {
-                                err.message?.contains("401") == true ->
-                                    "Not authenticated — log out and back in"
-                                err.message?.contains("403") == true ->
-                                    "Access denied"
-                                else -> err.message?.take(80)
-                            }
                         }
-                    container.tacticalRepository.listObjects()
-                        .onSuccess { enemies = it }
                     container.fireMissionRepository.list()
                         .onSuccess { fireMissions = it }
                     container.reportRepository.list()
@@ -372,9 +366,8 @@ fun MapScreen(
                             cbrnReports = com.arrow.tactical.cbrn.cbrnReportsFrom(reps)
                         }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 serverOnline = false
-                fetchError   = "Cannot reach ${serverUrl.ifBlank { "server" }}: ${e.message?.take(50)}"
             }
             delay(5_000)
         }
@@ -385,12 +378,10 @@ fun MapScreen(
         while (true) {
             try {
                 container.wsClient.events().collect { evt: JsonObject ->
-                    val channel = evt["channel"]?.toString()?.trim('"')
-                    when (channel) {
+                    when (evt["channel"]?.toString()?.trim('"')) {
                         "tracking"        -> container.tacticalRepository.listOperators()
                             .onSuccess { ops -> operators = ops; serverOnline = true }
-                        "tactical-object" -> container.tacticalRepository.listObjects()
-                            .onSuccess { enemies = it }
+                        "tactical-object" -> container.tacticalRepository.listObjects() // refreshes local cache
                         "fire-mission"    -> container.fireMissionRepository.list()
                             .onSuccess { fireMissions = it }
                         "report"          -> container.reportRepository.list()
@@ -1038,7 +1029,6 @@ fun MapScreen(
                 alertCount = activeAlerts,
                 chatCount  = 0,
                 onMenu       = onOpenDrawer,
-                onReportLayer= { onReport(me?.latitude ?: Double.NaN, me?.longitude ?: Double.NaN) },
                 onAlerts     = { /* TODO: open alerts tab */ },
                 onChat       = { container.signalNavigateToChat() },
                 onStatus     = { /* TODO: status panel */ },
@@ -1547,7 +1537,7 @@ fun MapScreen(
             if (a != null && b != null) {
                 val line = org.osmdroid.views.overlay.Polyline(map).apply {
                     setPoints(listOf(a, b))
-                    outlinePaint.color = android.graphics.Color.parseColor("#FBBF24")
+                    outlinePaint.color = "#FBBF24".toColorInt()
                     outlinePaint.strokeWidth = 6f
                     outlinePaint.isAntiAlias = true
                 }
@@ -1643,7 +1633,7 @@ fun MapScreen(
                                 pendingPoint    = null
                                 pendingPhotoId  = null
                                 pendingPhotoUri = null
-                                container.tacticalRepository.listObjects().onSuccess { enemies = it }
+                                // enemies Flow auto-updates from local DB — no manual refresh needed
                             }.onFailure {
                                 submitError = it.message ?: "Failed"
                             }
@@ -2083,7 +2073,7 @@ private fun DroneDropdown(
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             modifier = Modifier
                 .fillMaxWidth()
-                .menuAnchor(),
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
         )
         ExposedDropdownMenu(
             expanded = expanded,

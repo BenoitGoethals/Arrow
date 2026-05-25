@@ -7,10 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudQueue
@@ -47,10 +47,7 @@ import androidx.compose.ui.unit.sp
  */
 object SitawareChromeColors {
     val BarBg          = Color(0xFF0F2540)
-    val BarBgGradient  = Color(0xFF1B3A5B)
     val Brand          = Color(0xFFE2E8F0)
-    val ReportPillBg   = Color(0xFF2D7FB8)
-    val ReportPillFg   = Color.White
     val LocationLabel  = Color(0xFFA9C3DF)
     val LocationValue  = Color(0xFF9BE0FF)
     val IconTint       = Color(0xFFCBD5E1)
@@ -80,10 +77,10 @@ data class OverlayChip(val key: String, val label: String, val selected: Boolean
 
 @Composable
 fun SitawareTopBar(
+    modifier: Modifier = Modifier,
     brand: String = "ARROW",
     mgrs: String = "—",
     onMenu: () -> Unit = {},
-    onReportLayer: () -> Unit = {},
     alertCount: Int = 0,
     onAlerts: () -> Unit = {},
     chatCount: Int = 0,
@@ -109,7 +106,6 @@ fun SitawareTopBar(
     /** When non-null, renders a chevron-left button at the far right that
      *  collapses the bar. The MapScreen owns the collapse state. */
     onCollapseBar: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val c = SitawareChromeColors
     Row(
@@ -265,7 +261,7 @@ fun SitawareTopBar(
 
         // Chat with badge
         BadgedIcon(
-            icon = Icons.Filled.Chat,
+            icon = Icons.AutoMirrored.Filled.Chat,
             tint = c.IconTint,
             count = chatCount,
             badgeColor = Color(0xFFF97316),
@@ -448,17 +444,16 @@ private fun SideFab(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     contentDescription: String,
 ) {
-    val c = SitawareChromeColors
     Box(
         Modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(c.FabBg)
+            .background(SitawareChromeColors.FabBg)
             .border(1.dp, Color(0xFF1B3A5B), CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = contentDescription,
-             tint = c.FabFg, modifier = Modifier.size(22.dp))
+             tint = SitawareChromeColors.FabFg, modifier = Modifier.size(22.dp))
     }
 }
