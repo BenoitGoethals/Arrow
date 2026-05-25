@@ -390,14 +390,15 @@ def list_detections(
               .limit(limit).all())
     return [
         {
-            "id":           r.id,
-            "stream_id":    r.stream_id,
-            "label":        r.label,
-            "confidence":   r.confidence,
-            "description":  r.description,
-            "bbox":         json.loads(r.bbox or "[]"),
-            "snapshot_url": f"/octopus/detections/{r.id}/snapshot",
-            "occurred_at":  r.occurred_at.isoformat() if r.occurred_at else None,
+            "id":                r.id,
+            "stream_id":         r.stream_id,
+            "label":             r.label,
+            "confidence":        r.confidence,
+            "description":       r.description,
+            "bbox":              json.loads(r.bbox or "[]"),
+            "snapshot_url":      f"/octopus/detections/{r.id}/snapshot",
+            "raw_snapshot_url":  r.snapshot_url,   # what Octopus actually sent
+            "occurred_at":       r.occurred_at.isoformat() if r.occurred_at else None,
         }
         for r in rows
     ]
@@ -418,6 +419,9 @@ async def detection_snapshot(
     base_url, key = _cfg()
     params = {"api_key": key} if key else {}
 
+    log.debug("snapshot: det=%d stored_url=%r stream=%r octopus_base=%r",
+              detection_id, row.snapshot_url, row.stream_id, base_url)
+
     async with _client() as client:
         # 1. Use stored snapshot URL if available
         if row.snapshot_url:
@@ -426,11 +430,12 @@ async def detection_snapshot(
                 snap = base_url + snap
             try:
                 r = await client.get(snap, params=params)
-                if r.status_code == 200:
+                log.debug("snapshot: stored_url=%r → HTTP %d", snap, r.status_code)
+                if r.status_code == 200 and r.content:
                     return Response(content=r.content,
                                     media_type=r.headers.get("content-type", "image/jpeg"))
-            except Exception:
-                pass  # fall through to live-frame fallback
+            except Exception as exc:
+                log.warning("snapshot: stored_url=%r failed: %s", snap, exc)
 
         # 2. Fall back: grab a live frame from the Octopus stream
         if row.stream_id and base_url:
@@ -438,13 +443,19 @@ async def detection_snapshot(
                 f"/api/client/streams/{row.stream_id}/snapshot",
                 f"/api/client/streams/{row.stream_id}/frame",
                 f"/static/snapshots/{row.stream_id}/latest.jpg",
+                f"/static/snapshots/{row.stream_id}.jpg",
             ):
+                full = base_url + frame_path
                 try:
-                    r = await client.get(base_url + frame_path, params=params)
+                    r = await client.get(full, params=params)
+                    log.debug("snapshot: fallback %r → HTTP %d content=%d bytes",
+                              full, r.status_code, len(r.content))
                     if r.status_code == 200 and r.content:
                         return Response(content=r.content,
                                         media_type=r.headers.get("content-type", "image/jpeg"))
-                except Exception:
-                    continue
+                except Exception as exc:
+                    log.warning("snapshot: fallback %r failed: %s", full, exc)
 
+    log.warning("snapshot: det=%d — no image found. stored_url=%r stream=%r base=%r",
+                detection_id, row.snapshot_url, row.stream_id, base_url)
     raise HTTPException(status.HTTP_404_NOT_FOUND, "No snapshot available")
