@@ -133,20 +133,31 @@ async def get_octopus_stream(
         """Return stream detail dict from Octopus.
 
         Strategy:
-        1. Try /api/client/streams/{id} (works with names, needs API key).
-        2. On 401/403 fall back to the admin /api/streams list (no auth)
-           and match by name or UUID.
+        1. Try /api/client/streams/{id} — authenticated, returns absolute hls_url.
+        2. On 401/403/404 try admin /api/streams/{id} directly (no auth).
+        3. Last resort: fetch full admin list and match by name or UUID.
         """
         params = {"api_key": key} if key else {}
+
+        # 1. Client API (needs valid API key + stream access grant)
         try:
             r = await client.get(f"{url}/api/client/streams/{stream_id}", params=params)
-            if r.status_code not in (401, 403):
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code not in (401, 403, 404):
                 r.raise_for_status()
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            pass
+
+        # 2. Admin detail endpoint — fast O(1) lookup, no auth required
+        try:
+            r = await client.get(f"{url}/api/streams/{stream_id}", params=params)
+            if r.status_code == 200:
                 return r.json()
         except (httpx.HTTPStatusError, httpx.RequestError):
             pass
 
-        # Fallback: admin list endpoint (no auth required)
+        # 3. Admin list + match by name (stream_id may be a human name, not UUID)
         try:
             r = await client.get(f"{url}/api/streams", params=params)
             r.raise_for_status()
@@ -158,7 +169,6 @@ async def get_octopus_stream(
                                 f"Cannot reach Octopus: {exc}")
         body = r.json()
         streams = body if isinstance(body, list) else []
-        # Match by name first, then by UUID
         match = next((s for s in streams if s.get("name") == stream_id), None)
         if match is None:
             match = next((s for s in streams if s.get("id") == stream_id), None)
@@ -166,9 +176,9 @@ async def get_octopus_stream(
             raise HTTPException(status.HTTP_404_NOT_FOUND,
                                 f"Stream {stream_id!r} not found in Octopus")
 
-        # Fetch full detail by UUID for richer data
+        # Try to fetch richer detail by UUID if we only have the list entry
         uuid = match.get("id", "")
-        if uuid:
+        if uuid and uuid != stream_id:
             try:
                 r2 = await client.get(f"{url}/api/streams/{uuid}", params=params)
                 if r2.status_code == 200:
@@ -180,9 +190,19 @@ async def get_octopus_stream(
     async with _client() as client:
         data = await _fetch_stream_data(client)
 
-    # Octopus may return hls_url as a relative path ("/static/hls/UUID/live.m3u8")
-    # or an absolute URL.  Normalise both to an Arrow-relative proxy path.
+    # Normalise hls_url to an Arrow-relative proxy path.
+    # Octopus admin API: hls_url is relative ("/static/hls/UUID/live.m3u8") or None.
+    # Octopus client API: hls_url is absolute ("http://host/static/hls/UUID/live.m3u8").
+    # When hls_url is None but the stream is active, synthesise the canonical path —
+    # this matches what Octopus client API does when the transcoder is still starting.
     raw_hls = data.get("hls_url") or data.get("stream_url") or data.get("playback_url") or ""
+    if not raw_hls:
+        stream_uuid = data.get("id", "")
+        is_active   = data.get("is_active") or data.get("active") or data.get("status") == "active"
+        if is_active and stream_uuid:
+            raw_hls = f"/static/hls/{stream_uuid}/live.m3u8"
+            log.debug("stream detail: synthesised canonical hls path for active stream %s", stream_uuid)
+
     if raw_hls:
         if raw_hls.startswith(("http://", "https://")):
             oct_path = _urlparse(raw_hls).path.lstrip("/")
