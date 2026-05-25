@@ -95,20 +95,25 @@ async def list_octopus_streams(
     if not url:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             "Octopus server not configured")
+    params = {"api_key": key} if key else {}
     async with _client() as client:
-        try:
-            r = await client.get(
-                f"{url}/api/client/streams",
-                params={"api_key": key} if key else {},
-            )
-            r.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise HTTPException(exc.response.status_code,
-                                f"Octopus error: {exc.response.text[:200]}")
-        except httpx.RequestError as exc:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                                f"Cannot reach Octopus: {exc}")
-    return r.json()
+        # Try the client API first; fall back to admin list if auth is required
+        for endpoint in (f"{url}/api/client/streams", f"{url}/api/streams"):
+            try:
+                r = await client.get(endpoint, params=params)
+                if r.status_code in (401, 403) and "client" in endpoint:
+                    continue   # no key configured — try admin endpoint
+                r.raise_for_status()
+                return r.json()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code in (401, 403) and "client" in endpoint:
+                    continue
+                raise HTTPException(exc.response.status_code,
+                                    f"Octopus error: {exc.response.text[:200]}")
+            except httpx.RequestError as exc:
+                raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                                    f"Cannot reach Octopus: {exc}")
+    raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Cannot list Octopus streams")
 
 
 # ── Stream detail ─────────────────────────────────────────────────────────────
@@ -122,12 +127,28 @@ async def get_octopus_stream(
     if not url:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             "Octopus server not configured")
-    async with _client() as client:
+    from urllib.parse import urlparse as _urlparse
+
+    async def _fetch_stream_data(client: httpx.AsyncClient) -> dict:
+        """Return stream detail dict from Octopus.
+
+        Strategy:
+        1. Try /api/client/streams/{id} (works with names, needs API key).
+        2. On 401/403 fall back to the admin /api/streams list (no auth)
+           and match by name or UUID.
+        """
+        params = {"api_key": key} if key else {}
         try:
-            r = await client.get(
-                f"{url}/api/client/streams/{stream_id}",
-                params={"api_key": key} if key else {},
-            )
+            r = await client.get(f"{url}/api/client/streams/{stream_id}", params=params)
+            if r.status_code not in (401, 403):
+                r.raise_for_status()
+                return r.json()
+        except (httpx.HTTPStatusError, httpx.RequestError):
+            pass
+
+        # Fallback: admin list endpoint (no auth required)
+        try:
+            r = await client.get(f"{url}/api/streams", params=params)
             r.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise HTTPException(exc.response.status_code,
@@ -135,44 +156,80 @@ async def get_octopus_stream(
         except httpx.RequestError as exc:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                                 f"Cannot reach Octopus: {exc}")
-    data = r.json()
+        body = r.json()
+        streams = body if isinstance(body, list) else []
+        # Match by name first, then by UUID
+        match = next((s for s in streams if s.get("name") == stream_id), None)
+        if match is None:
+            match = next((s for s in streams if s.get("id") == stream_id), None)
+        if match is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                f"Stream {stream_id!r} not found in Octopus")
 
-    from urllib.parse import urlparse as _urlparse
-    oct_hls = data.get("hls_url") or data.get("stream_url") or data.get("playback_url") or ""
-    log.debug("stream detail: id=%s octopus_hls_url=%r", stream_id, oct_hls)
-    data["octopus_hls_url"] = oct_hls
+        # Fetch full detail by UUID for richer data
+        uuid = match.get("id", "")
+        if uuid:
+            try:
+                r2 = await client.get(f"{url}/api/streams/{uuid}", params=params)
+                if r2.status_code == 200:
+                    return r2.json()
+            except (httpx.HTTPStatusError, httpx.RequestError):
+                pass
+        return match
 
-    if oct_hls:
-        # Use the exact path Octopus reports (contains the real UUID, not the stream name)
-        # e.g. http://192.168.0.240:8080/static/hls/UUID/live.m3u8 → /octopus/hls/static/hls/UUID/live.m3u8
-        oct_path = _urlparse(oct_hls).path.lstrip("/")
-        data["hls_url"] = f"/octopus/hls/{oct_path}"
+    async with _client() as client:
+        data = await _fetch_stream_data(client)
+
+    # Octopus may return hls_url as a relative path ("/static/hls/UUID/live.m3u8")
+    # or an absolute URL.  Normalise both to an Arrow-relative proxy path.
+    raw_hls = data.get("hls_url") or data.get("stream_url") or data.get("playback_url") or ""
+    if raw_hls:
+        if raw_hls.startswith(("http://", "https://")):
+            oct_path = _urlparse(raw_hls).path.lstrip("/")
+        else:
+            oct_path = raw_hls.lstrip("/")
+        data["hls_url"]         = f"/octopus/hls/{oct_path}"
+        data["octopus_hls_url"] = f"{url}/{oct_path}"   # absolute for debug bar
     else:
-        data["hls_url"] = f"/octopus/hls/static/hls/{stream_id}/live.m3u8"
+        data["hls_url"]         = ""
+        data["octopus_hls_url"] = ""
 
+    log.debug("stream detail: id=%s hls_url=%r octopus_hls_url=%r",
+              stream_id, data["hls_url"], data["octopus_hls_url"])
     return data
 
 
 # ── HLS proxy ─────────────────────────────────────────────────────────────────
 
-def _rewrite_m3u8(content: bytes, octopus_base: str) -> bytes:
-    """Rewrite absolute Octopus URLs in an HLS playlist to go through Arrow's proxy.
+import re as _re
 
-    hls.js resolves segment URLs relative to the playlist URL (Arrow's proxy).
-    Absolute http:// URLs pointing at Octopus would fail from the browser since
-    the Octopus port is firewalled externally.  We rewrite them to root-relative
-    /api/octopus/hls/... paths so Caddy routes them to the backend.
+def _rewrite_m3u8(content: bytes, octopus_base: str) -> bytes:
+    """Rewrite Octopus URLs in an HLS playlist to route through Arrow's proxy.
+
+    Handles both:
+    - Bare segment lines: http://octopus/static/hls/UUID/seg.m4s
+    - URI= attributes: #EXT-X-MAP:URI="http://octopus/static/hls/UUID/init.mp4"
+    Rewrites to /api/octopus/hls/<path> so Caddy routes to the backend.
+    Relative segment references (the common case) are left unchanged —
+    hls.js resolves them relative to the playlist URL which already goes
+    through Arrow's proxy.
     """
     text = content.decode("utf-8", errors="replace")
+    # Rewrite URI="http://octopus-base/..." attributes (e.g. #EXT-X-MAP)
+    def _rewrite_uri(m: _re.Match) -> str:
+        path = m.group(1)[len(octopus_base):].lstrip("/")
+        return f'URI="/api/octopus/hls/{path}"'
+    text = _re.sub(
+        r'URI="(' + _re.escape(octopus_base) + r'[^"]*)"',
+        _rewrite_uri,
+        text,
+    )
     lines = []
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith(octopus_base):
             path = stripped[len(octopus_base):].lstrip("/")
             line = f"/api/octopus/hls/{path}"
-        # Different host (CDN keys, sub-playlists elsewhere) — leave as-is
-        elif stripped.startswith("http://") or stripped.startswith("https://"):
-            pass
         lines.append(line)
     return "\n".join(lines).encode("utf-8")
 
