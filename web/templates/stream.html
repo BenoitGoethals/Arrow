@@ -245,7 +245,7 @@
         if (activeHls) { activeHls.destroy(); activeHls = null; }
         _hlsRetryUrl = url;
         extVid.style.display = 'block';
-        _hlsOverlayShow('⏳', 'Connecting…', false);
+        _hlsOverlayShow('⏳', 'Connecting…\n' + url, false);
         console.log('[Arrow HLS] loadSource:', url);
 
         if (!Hls.isSupported()) {
@@ -525,7 +525,8 @@
     }
 
     function _octPlayUrl(s) {
-        const base = (window.ARROW_BACKEND_URL || '').replace(/\/$/, '');
+        // Build an absolute URL so hls.js resolves sub-resources correctly.
+        const base = (window.location.origin + (window.ARROW_BACKEND_URL || '/api')).replace(/\/$/, '');
         // Best source: extract path from the confirmed Octopus URL (avoids UUID vs name mismatch)
         const oct = s.octopus_hls_url || '';
         if (oct) {
@@ -536,7 +537,7 @@
         }
         // Fallback: server-computed hls_url or direct stream URL
         const u = s.hls_url || s.url || s.playback_url || s.stream_url || '';
-        if (u.startsWith('/')) return base + u;
+        if (u.startsWith('/')) return window.location.origin + u;
         return u;
     }
 
