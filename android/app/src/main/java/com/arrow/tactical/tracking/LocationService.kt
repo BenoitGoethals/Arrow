@@ -23,34 +23,38 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
+/**
+ * Foreground GPS service.
+ *
+ * Guest mode (no token): position is recorded in the local DB only — the map
+ * shows your position but nothing is sent to the server.
+ *
+ * Authenticated mode: CoT XML → server; falls back to JSON on CoT failure.
+ * Both paths queue the update when the link is down.
+ */
 class LocationService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private lateinit var trackingRepo: TrackingRepository
 
-    // Cached identity — resolved once on service start so every GPS callback
-    // can build a proper CoT event without a network round-trip.
     @Volatile private var callsign: String = ""
-    @Volatile private var role:     String = "OPERATOR"
+    @Volatile private var role: String = "OPERATOR"
+    @Volatile private var localOperatorId: Int = -1
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             val loc = result.lastLocation ?: return
             scope.launch {
                 if (callsign.isNotBlank()) {
-                    // Primary path: CoT XML — MIL-STD-2525C conformant
                     trackingRepo.pushPositionCot(
-                        callsign = callsign,
-                        role     = role,
-                        lat      = loc.latitude,
-                        lon      = loc.longitude,
-                        hae      = loc.altitude,
+                        callsign = callsign, role = role,
+                        lat = loc.latitude, lon = loc.longitude, hae = loc.altitude,
+                        localOperatorId = localOperatorId,
                     ).onFailure {
-                        // Fallback to JSON if CoT endpoint is unavailable
                         trackingRepo.pushPosition(loc.latitude, loc.longitude, loc.altitude)
                     }
                 } else {
-                    // Identity not yet resolved — use JSON fallback
+                    // No identity yet (guest or unresolved) — still record position locally
                     trackingRepo.pushPosition(loc.latitude, loc.longitude, loc.altitude)
                 }
             }
@@ -60,14 +64,19 @@ class LocationService : Service() {
     override fun onCreate() {
         super.onCreate()
         val container = (application as ArrowApp).container
-        trackingRepo  = container.trackingRepository
+        trackingRepo = container.trackingRepository
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // Resolve operator identity for CoT header fields
+        // Try to resolve identity — only succeeds when authenticated + online
         scope.launch {
             container.authRepository.me().onSuccess { op ->
                 callsign = op.callsign
-                role     = op.role
+                role = op.role
+                localOperatorId = op.id
+            }
+            // Fallback: use saved callsign from settings (works in guest/offline)
+            if (callsign.isBlank()) {
+                callsign = container.settingsRepository.currentCallsign()
             }
         }
     }
@@ -96,9 +105,7 @@ class LocationService : Service() {
     private fun buildNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.tracking_channel),
-                NotificationManager.IMPORTANCE_LOW,
+                CHANNEL_ID, getString(R.string.tracking_channel), NotificationManager.IMPORTANCE_LOW,
             )
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
@@ -116,7 +123,7 @@ class LocationService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID     = "arrow.tracking"
+        private const val CHANNEL_ID = "arrow.tracking"
         private const val NOTIFICATION_ID = 1
     }
 }

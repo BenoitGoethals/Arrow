@@ -23,6 +23,7 @@ class SettingsRepository(private val context: Context) {
     val basemap: Flow<String?> = context.dataStore.data.map { it[keyBasemap] }
 
     suspend fun currentServerUrl(): String = serverUrl.first()
+    suspend fun currentCallsign(): String = callsign.first()
     suspend fun currentBasemap(): String? = basemap.first()
 
     suspend fun update(serverUrl: String? = null, callsign: String? = null, team: String? = null) {

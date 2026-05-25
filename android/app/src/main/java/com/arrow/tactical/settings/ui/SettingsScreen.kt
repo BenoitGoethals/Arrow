@@ -3,8 +3,12 @@ package com.arrow.tactical.settings.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.arrow.tactical.settings.SettingsRepository
@@ -14,6 +18,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     repo: SettingsRepository,
+    isAuthenticated: Boolean,
+    onLogin: () -> Unit,
     onLogout: () -> Unit,
     onOpenOfflineMaps: () -> Unit = {},
     onOpenKmlLayers: () -> Unit = {},
@@ -35,14 +41,54 @@ fun SettingsScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())  // scrollable in landscape
-                .imePadding(),                           // scroll above keyboard
+                .verticalScroll(rememberScrollState())
+                .imePadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Spacer(Modifier.height(4.dp))
 
+            // ── Sync status banner ─────────────────────────────────────────
+            if (!isAuthenticated) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(Icons.Filled.CloudOff, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Column {
+                            Text("Guest mode — local only",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Text("Data is saved on this device. Log in to sync with the server and collaborate with your team.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
+                    }
+                }
+
+                Button(
+                    onClick  = onLogin,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(Icons.Filled.CloudSync, contentDescription = null,
+                        modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Login to sync with server")
+                }
+
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            }
+
+            // ── Connection ────────────────────────────────────────────────
             Text("Connection", style = MaterialTheme.typography.labelLarge,
-                 color = MaterialTheme.colorScheme.primary)
+                color = MaterialTheme.colorScheme.primary)
 
             OutlinedTextField(
                 value         = serverDraft,
@@ -53,8 +99,9 @@ fun SettingsScreen(
                 singleLine    = true,
             )
 
+            // ── Identity ──────────────────────────────────────────────────
             Text("Identity", style = MaterialTheme.typography.labelLarge,
-                 color = MaterialTheme.colorScheme.primary)
+                color = MaterialTheme.colorScheme.primary)
 
             OutlinedTextField(
                 value         = callsignDraft,
@@ -76,11 +123,7 @@ fun SettingsScreen(
             Button(
                 onClick  = {
                     scope.launch {
-                        repo.update(
-                            serverUrl = serverDraft,
-                            callsign  = callsignDraft,
-                            team      = teamDraft,
-                        )
+                        repo.update(serverUrl = serverDraft, callsign = callsignDraft, team = teamDraft)
                         saved = true
                     }
                 },
@@ -91,43 +134,38 @@ fun SettingsScreen(
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
+            // ── Offline maps ──────────────────────────────────────────────
             Text("Offline base maps", style = MaterialTheme.typography.labelLarge,
-                 color = MaterialTheme.colorScheme.primary)
-            OutlinedButton(
-                onClick  = onOpenOfflineMaps,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+                color = MaterialTheme.colorScheme.primary)
+            OutlinedButton(onClick = onOpenOfflineMaps, modifier = Modifier.fillMaxWidth()) {
                 Text("Download maps for offline use")
             }
 
             Text("KML overlays", style = MaterialTheme.typography.labelLarge,
-                 color = MaterialTheme.colorScheme.primary)
-            OutlinedButton(
-                onClick  = onOpenKmlLayers,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+                color = MaterialTheme.colorScheme.primary)
+            OutlinedButton(onClick = onOpenKmlLayers, modifier = Modifier.fillMaxWidth()) {
                 Text("Browse imported KML layers")
             }
 
             Text("Visibility", style = MaterialTheme.typography.labelLarge,
-                 color = MaterialTheme.colorScheme.primary)
-            OutlinedButton(
-                onClick  = onOpenVisibility,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
+                color = MaterialTheme.colorScheme.primary)
+            OutlinedButton(onClick = onOpenVisibility, modifier = Modifier.fillMaxWidth()) {
                 Text("Map + notification preferences")
             }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            OutlinedButton(
-                onClick  = onLogout,
-                modifier = Modifier.fillMaxWidth(),
-                colors   = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                ),
-            ) {
-                Text("Sign out")
+            // ── Auth action ───────────────────────────────────────────────
+            if (isAuthenticated) {
+                OutlinedButton(
+                    onClick  = onLogout,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors   = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text("Sign out")
+                }
             }
 
             Spacer(Modifier.height(16.dp))

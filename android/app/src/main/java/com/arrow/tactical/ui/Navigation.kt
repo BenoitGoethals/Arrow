@@ -90,9 +90,9 @@ object Routes {
 @Composable
 fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
     val rootNav = rememberNavController()
-    val start = if (isAuthenticated) Routes.MAIN else Routes.LOGIN
 
-    NavHost(navController = rootNav, startDestination = start) {
+    // Always start on the main shell — login is optional (from Settings).
+    NavHost(navController = rootNav, startDestination = Routes.MAIN) {
         composable(Routes.LOGIN) {
             LoginScreen(
                 authRepository = container.authRepository,
@@ -107,8 +107,10 @@ fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
         composable(Routes.MAIN) {
             MainShell(
                 container = container,
+                isAuthenticated = isAuthenticated,
+                onNavigateToLogin = { rootNav.navigate(Routes.LOGIN) },
                 onLogout = {
-                    rootNav.navigate(Routes.LOGIN) { popUpTo(0) }
+                    rootNav.navigate(Routes.MAIN) { popUpTo(0) }
                 },
             )
         }
@@ -117,7 +119,12 @@ fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
+private fun MainShell(
+    container: AppContainer,
+    isAuthenticated: Boolean,
+    onNavigateToLogin: () -> Unit,
+    onLogout: () -> Unit,
+) {
     val tabNav = rememberNavController()
     val backStackEntry by tabNav.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -331,6 +338,8 @@ private fun MainShell(container: AppContainer, onLogout: () -> Unit) {
             composable(Tab.Settings.route) {
                 SettingsScreen(
                     repo = container.settingsRepository,
+                    isAuthenticated = isAuthenticated,
+                    onLogin = onNavigateToLogin,
                     onLogout = {
                         scope.launch { container.authRepository.logout() }
                         onLogout()
