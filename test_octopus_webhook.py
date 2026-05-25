@@ -67,12 +67,17 @@ def _make_detection(
     label: str | None = None,
     stream_id: str | None = None,
     confidence: float | None = None,
+    octopus_base_url: str = "",
 ) -> dict:
     lbl = label or random.choice(LABELS)
+    sid = stream_id or random.choice(STREAM_IDS)
+    # Point snapshot_url at the Octopus live-frame endpoint if we know the server URL
+    snap = f"{octopus_base_url.rstrip('/')}/api/client/streams/{sid}/snapshot" \
+           if octopus_base_url else ""
     return {
         "event":        "detection",
         "id":           str(uuid.uuid4()),
-        "stream_id":    stream_id or random.choice(STREAM_IDS),
+        "stream_id":    sid,
         "label":        lbl,
         "confidence":   confidence if confidence is not None else round(random.uniform(0.70, 0.99), 2),
         "description":  LABEL_DESCRIPTIONS.get(lbl, f"{lbl} detected"),
@@ -82,7 +87,7 @@ def _make_detection(
             round(random.uniform(0.40, 0.80), 3),
             round(random.uniform(0.40, 0.80), 3),
         ],
-        "snapshot_url": "",
+        "snapshot_url": snap,
         "timestamp":    datetime.now(timezone.utc).isoformat(),
     }
 
@@ -178,17 +183,21 @@ def main() -> int:
                         help="Run indefinitely until Ctrl+C")
     parser.add_argument("--burst",      type=int, default=0,
                         help="Fire N detections as fast as possible (overrides --count/--interval)")
+    parser.add_argument("--octopus-url", default="",
+                        help="Octopus base URL for snapshot links e.g. http://192.168.0.240:8080")
     parser.add_argument("--no-probe",   action="store_true",
                         help="Skip the initial endpoint health check")
     args = parser.parse_args()
 
     count    = args.burst if args.burst else args.count
     interval = 0.0 if args.burst else args.interval
+    oct_url  = args.octopus_url
 
     print(f"\n{BOLD}Arrow Octopus Webhook Tester{RESET}")
-    print(f"  Target  : {CYAN}{args.url}{RESET}")
-    print(f"  API key : {GREEN}set{RESET}" if args.api_key else f"  API key : {YELLOW}none{RESET}")
-    print(f"  Mode    : {'burst x' + str(count) if args.burst else ('loop' if args.loop else f'{count} shot(s)' )}")
+    print(f"  Target      : {CYAN}{args.url}{RESET}")
+    print(f"  API key     : {GREEN}set{RESET}" if args.api_key else f"  API key     : {YELLOW}none{RESET}")
+    print(f"  Snapshot src: {CYAN}{oct_url}{RESET}" if oct_url else f"  Snapshot src: {DIM}none (images will show 'No image'){RESET}")
+    print(f"  Mode        : {'burst x' + str(count) if args.burst else ('loop' if args.loop else f'{count} shot(s)')}")
     print()
 
     with httpx.Client(verify=False) as client:
@@ -211,6 +220,7 @@ def main() -> int:
                         label=args.label or None,
                         stream_id=args.stream or None,
                         confidence=args.confidence,
+                        octopus_base_url=oct_url,
                     )
                     success = _fire(args.url, args.api_key, det, client, idx)
                     if success:
