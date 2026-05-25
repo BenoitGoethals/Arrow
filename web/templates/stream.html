@@ -245,58 +245,63 @@
         if (activeHls) { activeHls.destroy(); activeHls = null; }
         _hlsRetryUrl = url;
         extVid.style.display = 'block';
-        _hlsOverlayShow('⏳', 'Checking stream… ' + url, false);
+        _hlsOverlayShow('⏳', 'Connecting…', false);
+        console.log('[Arrow HLS] loadSource:', url);
 
-        // Probe first so we get a clear error instead of a silent HLS.js retry loop
-        const probe = await _probeUrl(url);
-        if (!probe.ok) {
-            const detail = probe.error
-                ? 'Network error: ' + probe.error
-                : `HTTP ${probe.status} — ${probe.status === 404 ? 'segments not ready yet (stream may still be starting)' : probe.status === 403 ? 'access denied — check API key' : 'server error'}`;
-            _hlsOverlayShow('📡', 'Cannot reach stream:\n' + detail + '\n\nURL: ' + url, true);
+        if (!Hls.isSupported()) {
+            if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
+                _hlsOverlayHide();
+                extVid.src = url;
+                extVid.play().catch(() => {});
+            } else {
+                _hlsOverlayShow('✖', 'HLS not supported in this browser.', false);
+            }
             return;
         }
 
-        _hlsOverlayShow('⏳', 'Loading playlist…', false);
+        activeHls = new Hls({
+            lowLatencyMode: false,
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 8,
+            startPosition: -1,
+            maxBufferLength: 20,
+            manifestLoadingTimeOut: 8000,
+            manifestLoadingMaxRetry: 1,
+            manifestLoadingRetryDelay: 1000,
+            levelLoadingTimeOut: 8000,
+            levelLoadingMaxRetry: 2,
+            levelLoadingRetryDelay: 500,
+            fragLoadingTimeOut: 10000,
+            fragLoadingMaxRetry: 3,
+            fragLoadingRetryDelay: 500,
+        });
 
-        if (Hls.isSupported()) {
-            activeHls = new Hls({
-                lowLatencyMode: false,
-                liveSyncDurationCount: 3,   // stay 3 segments behind live edge
-                liveMaxLatencyDurationCount: 8,
-                startPosition: -1,          // always start at live edge
-                maxBufferLength: 20,
-                manifestLoadingMaxRetry: 6,
-                manifestLoadingRetryDelay: 1000,
-                levelLoadingMaxRetry: 6,
-                levelLoadingRetryDelay: 1000,
-                fragLoadingMaxRetry: 6,
-                fragLoadingRetryDelay: 1000,
-            });
-            activeHls.loadSource(url);
-            activeHls.attachMedia(extVid);
-            activeHls.on(Hls.Events.MANIFEST_PARSED, () => {
-                _hlsOverlayHide();
-                extVid.play().catch(() => {});
-            });
-            activeHls.on(Hls.Events.ERROR, (_, d) => {
-                if (!d.fatal) return;
-                if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    _hlsOverlayShow('📡', 'Playlist loaded but segments unavailable.\n' + (d.details || '') + '\n\nURL: ' + url, true);
-                } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                    _hlsOverlayShow('⚠', 'Media decode error — retrying…', false);
-                    activeHls.recoverMediaError();
-                } else {
-                    _hlsOverlayShow('✖', 'Fatal error: ' + (d.details || d.type) + '\n\nURL: ' + url, true);
-                }
-            });
-        } else if (extVid.canPlayType('application/vnd.apple.mpegurl')) {
+        activeHls.loadSource(url);
+        activeHls.attachMedia(extVid);
+
+        activeHls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+            console.log('[Arrow HLS] MANIFEST_PARSED, levels:', data.levels.length);
             _hlsOverlayHide();
-            extVid.src = url;
             extVid.play().catch(() => {});
-        } else {
-            _hlsOverlayShow('✖', 'HLS not supported in this browser.', false);
-        }
+        });
+
+        activeHls.on(Hls.Events.ERROR, (_, d) => {
+            console.warn('[Arrow HLS] error:', d.type, d.details, 'fatal:', d.fatal, 'url:', d.url);
+            if (!d.fatal) {
+                if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                    _hlsOverlayShow('⏳', 'Retrying… ' + d.details + (d.url ? '\n' + d.url : ''), false);
+                }
+                return;
+            }
+            if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                _hlsOverlayShow('📡', 'Cannot load stream:\n' + d.details + (d.url ? '\n\n' + d.url : '\n\n' + url), true);
+            } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                _hlsOverlayShow('⚠', 'Media decode error — retrying…', false);
+                activeHls.recoverMediaError();
+            } else {
+                _hlsOverlayShow('✖', 'Error: ' + (d.details || d.type) + (d.url ? '\n' + d.url : ''), true);
+            }
+        });
     }
 
     window.hlsRetry = function() {
