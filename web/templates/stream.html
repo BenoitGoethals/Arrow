@@ -210,6 +210,7 @@
         extVid.style.display = 'none'; extVid.pause(); extVid.src = '';
         if (activeHls) { activeHls.destroy(); activeHls = null; }
         if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
+        _detachVidHandlers();
         _hlsOverlayHide();
         _hlsRetryUrl = null;
         document.getElementById('no-stream-msg').style.display  = 'block';
@@ -233,9 +234,26 @@
 
     let _hlsConnectTimer = null;
 
+    // Video element lifecycle handlers — attached/removed with each HLS session
+    function _onVidPlaying()  { _hlsOverlayHide(); }
+    function _onVidWaiting()  { if (activeHls) _hlsOverlayShow('⏳', 'Buffering…', false); }
+    function _onVidStalled()  { if (activeHls) _hlsOverlayShow('⏳', 'Buffering…', false); }
+
+    function _attachVidHandlers() {
+        extVid.addEventListener('playing', _onVidPlaying);
+        extVid.addEventListener('waiting', _onVidWaiting);
+        extVid.addEventListener('stalled', _onVidStalled);
+    }
+    function _detachVidHandlers() {
+        extVid.removeEventListener('playing', _onVidPlaying);
+        extVid.removeEventListener('waiting', _onVidWaiting);
+        extVid.removeEventListener('stalled', _onVidStalled);
+    }
+
     async function _playHls(url) {
         if (activeHls) { activeHls.destroy(); activeHls = null; }
         if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
+        _detachVidHandlers();
         _hlsRetryUrl = url;
         extVid.style.display = 'block';
         _hlsOverlayShow('⏳', 'Connecting…\n' + url, false);
@@ -292,12 +310,22 @@
 
         activeHls.loadSource(url);
         activeHls.attachMedia(extVid);
+        _attachVidHandlers();
 
         activeHls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
             console.log('[Arrow HLS] MANIFEST_PARSED, levels:', data.levels.length);
             if (_hlsConnectTimer) { clearTimeout(_hlsConnectTimer); _hlsConnectTimer = null; }
-            _hlsOverlayHide();
-            extVid.play().catch(() => {});
+            _hlsOverlayShow('⏳', 'Buffering…', false);
+            extVid.play().catch(err => {
+                // Autoplay blocked — show a click-to-play prompt
+                console.warn('[Arrow HLS] play() blocked:', err.name);
+                _hlsOverlayShow('▶', 'Click to play', false);
+                extVid.addEventListener('click', function resume() {
+                    extVid.removeEventListener('click', resume);
+                    extVid.play().catch(() => {});
+                    _hlsOverlayShow('⏳', 'Buffering…', false);
+                });
+            });
         });
 
         activeHls.on(Hls.Events.ERROR, (_, d) => {

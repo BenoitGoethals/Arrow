@@ -226,30 +226,46 @@ import re as _re
 def _rewrite_m3u8(content: bytes, octopus_base: str) -> bytes:
     """Rewrite Octopus URLs in an HLS playlist to route through Arrow's proxy.
 
-    Handles both:
-    - Bare segment lines: http://octopus/static/hls/UUID/seg.m4s
-    - URI= attributes: #EXT-X-MAP:URI="http://octopus/static/hls/UUID/init.mp4"
-    Rewrites to /api/octopus/hls/<path> so Caddy routes to the backend.
-    Relative segment references (the common case) are left unchanged —
-    hls.js resolves them relative to the playlist URL which already goes
-    through Arrow's proxy.
+    Rewrites to /api/octopus/hls/<path> so the Flask reverse-proxy routes to
+    the FastAPI backend.  Three forms are handled:
+
+    1. Full absolute URL segments:  http://octopus/static/hls/UUID/seg.ts
+    2. Absolute-path segments:      /static/hls/UUID/seg.ts
+    3. URI= attributes (both forms): URI="http://octopus/..." or URI="/path/..."
+
+    Relative segment references (e.g. "seg0001.ts") are left unchanged —
+    hls.js resolves them relative to the proxied playlist URL, which is
+    already routed through Arrow.
     """
     text = content.decode("utf-8", errors="replace")
-    # Rewrite URI="http://octopus-base/..." attributes (e.g. #EXT-X-MAP)
-    def _rewrite_uri(m: _re.Match) -> str:
+
+    # 1. Rewrite URI="http://octopus-base/..." attributes
+    def _rewrite_uri_abs(m: _re.Match) -> str:
         path = m.group(1)[len(octopus_base):].lstrip("/")
         return f'URI="/api/octopus/hls/{path}"'
     text = _re.sub(
         r'URI="(' + _re.escape(octopus_base) + r'[^"]*)"',
-        _rewrite_uri,
+        _rewrite_uri_abs,
         text,
     )
+
+    # 2. Rewrite URI="/absolute-path/..." attributes
+    text = _re.sub(
+        r'URI="(/[^"]*)"',
+        lambda m: f'URI="/api/octopus/hls{m.group(1)}"',
+        text,
+    )
+
     lines = []
     for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith(octopus_base):
+            # Full absolute URL segment line
             path = stripped[len(octopus_base):].lstrip("/")
             line = f"/api/octopus/hls/{path}"
+        elif stripped.startswith("/") and not stripped.startswith("#"):
+            # Absolute-path segment line (e.g. /static/hls/UUID/seg.ts)
+            line = f"/api/octopus/hls{stripped}"
         lines.append(line)
     return "\n".join(lines).encode("utf-8")
 
