@@ -137,53 +137,124 @@ async def get_octopus_stream(
                                 f"Cannot reach Octopus: {exc}")
     data = r.json()
 
+    # Log what Octopus itself says the HLS URL is — useful for debugging path issues
+    oct_hls = data.get("hls_url") or data.get("stream_url") or data.get("playback_url") or ""
+    log.debug("stream detail: id=%s octopus_hls_url=%r", stream_id, oct_hls)
+
     # Always route HLS through Arrow's own proxy so the browser never needs
     # direct access to the Octopus port (which is often firewalled).
     # Return a root-relative path; the JS prepends ARROW_BACKEND_URL.
-    data["hls_url"] = f"/octopus/hls/{stream_id}/live.m3u8"
+    data["hls_url"]         = f"/octopus/hls/{stream_id}/live.m3u8"
+    data["octopus_hls_url"] = oct_hls   # exposed for debug panel in UI
 
     return data
 
 
 # ── HLS proxy ─────────────────────────────────────────────────────────────────
 
+# Candidate paths Octopus may use for HLS.  Tried in order; first 200 wins.
+_HLS_PATHS = [
+    "/static/hls/{stream_id}/{filename}",
+    "/hls/{stream_id}/{filename}",
+    "/api/client/streams/{stream_id}/hls/{filename}",
+    "/streams/{stream_id}/{filename}",
+]
+
+import re as _re
+
+def _rewrite_m3u8(content: bytes, stream_id: str, octopus_base: str) -> bytes:
+    """Rewrite absolute URLs and bare filenames in an HLS playlist.
+
+    hls.js resolves segment URLs relative to the playlist URL
+    (which is Arrow's proxy path).  If Octopus embeds absolute
+    http:// URLs, the browser would try to fetch them directly —
+    bypassing Arrow and failing on private IPs.  We replace every
+    such URL with the Arrow proxy equivalent.
+    """
+    text = content.decode("utf-8", errors="replace")
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        # Absolute URL pointing at the Octopus server → rewrite via proxy
+        if stripped.startswith(octopus_base):
+            # Extract the path after the base and convert to proxy path
+            path = stripped[len(octopus_base):].lstrip("/")
+            # Strip known HLS path prefixes to get bare filename
+            for prefix in (
+                f"static/hls/{stream_id}/",
+                f"hls/{stream_id}/",
+                f"api/client/streams/{stream_id}/hls/",
+                f"streams/{stream_id}/",
+            ):
+                if path.startswith(prefix):
+                    path = path[len(prefix):]
+                    break
+            line = f"/octopus/hls/{stream_id}/{path}"
+        # Absolute URL to a different host — leave as-is (sub-playlist, key, etc.)
+        elif stripped.startswith("http://") or stripped.startswith("https://"):
+            pass
+        lines.append(line)
+    return "\n".join(lines).encode("utf-8")
+
+
 @router.get("/hls/{stream_id}/{filename:path}")
 async def hls_proxy(
     stream_id: str,
     filename: str,
 ) -> Response:
-    """Proxy Octopus HLS playlists and fMP4 segments through Arrow.
+    """Proxy Octopus HLS playlists and fMP4/TS segments through Arrow.
 
-    No JWT auth — stream IDs are UUIDs (unguessable), Octopus enforces its
-    own api_key, and the Octopus port is internal.  Routing here avoids
-    requiring the browser to reach the Octopus port directly.
+    No JWT auth — stream IDs are UUIDs (unguessable).
+    Rewrites absolute segment URLs in .m3u8 playlists so the browser
+    never needs direct access to the Octopus host.
     """
-    url, key = _cfg()
-    if not url:
+    oct_url, key = _cfg()
+    if not oct_url:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Octopus not configured")
 
-    seg_url = f"{url}/static/hls/{stream_id}/{filename}"
-    async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
-        try:
-            params = {"api_key": key} if key else {}
-            r = await client.get(seg_url, params=params)
-        except httpx.RequestError as exc:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                                f"Cannot reach Octopus: {exc}")
+    params = {"api_key": key} if key else {}
 
-    if r.status_code == 404:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{filename} not found")
-    if r.status_code != 200:
-        raise HTTPException(r.status_code, r.text[:200])
+    async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+        r = None
+        tried = []
+        for path_tpl in _HLS_PATHS:
+            candidate = oct_url + "/" + path_tpl.format(
+                stream_id=stream_id, filename=filename
+            ).lstrip("/")
+            tried.append(candidate)
+            try:
+                resp = await client.get(candidate, params=params)
+                if resp.status_code == 200:
+                    r = resp
+                    log.debug("hls_proxy: %s → 200", candidate)
+                    break
+                log.debug("hls_proxy: %s → %d", candidate, resp.status_code)
+            except httpx.RequestError as exc:
+                log.debug("hls_proxy: %s → error: %s", candidate, exc)
+
+    if r is None or r.status_code != 200:
+        log.warning("hls_proxy: %s/%s not found on Octopus. Tried: %s", stream_id, filename, tried)
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            f"{filename} not found. Tried paths: {tried}")
 
     if filename.endswith(".m3u8"):
+        content   = _rewrite_m3u8(r.content, stream_id, oct_url)
         media_type = "application/vnd.apple.mpegurl"
     elif filename.endswith((".mp4", ".m4s")):
+        content    = r.content
         media_type = "video/mp4"
+    elif filename.endswith(".ts"):
+        content    = r.content
+        media_type = "video/mp2t"
     else:
+        content    = r.content
         media_type = r.headers.get("content-type", "application/octet-stream")
 
-    return Response(content=r.content, media_type=media_type)
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 # ── Add Octopus stream as persistent external stream ─────────────────────────
