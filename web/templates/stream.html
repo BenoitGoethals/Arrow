@@ -430,6 +430,13 @@
     }
 
     window.joinExtStream = function(id, name, url, type) {
+        // Octopus-pinned streams use octopus://<stream_id> — redirect through live API
+        // so the URL is always fresh (UUID never goes stale).
+        if (url.startsWith('octopus://')) {
+            octView(url.slice(10));
+            return;
+        }
+
         stopViewing();
         activeId = 'ext-' + id;
         showTopbar(name, type.toUpperCase());
@@ -631,15 +638,10 @@
     window.octAdd = async function(id) {
         const s = _octStreams.find(x => (x.id || x.stream_id) == id);
         if (!s) { alert('Stream not found — refresh the list first.'); return; }
-        const r = await api(`/octopus/streams/${encodeURIComponent(id)}`);
-        if (!r.ok) { alert('Could not fetch stream details: ' + r.status); return; }
-        const detail = await r.json();
-        const url  = _octPlayUrl(detail);
-        if (!url) { alert('No playback URL returned by Octopus.'); return; }
         const body = {
-            name:        detail.name || s.name || id,
-            url,
-            stream_type: _octStreamType(detail),
+            name:        s.name || id,
+            url:         `octopus://${id}`,   // re-fetched live on each View click
+            stream_type: 'hls',
             description: `Octopus stream ${id}`,
         };
         const r2 = await api(`/octopus/streams/${encodeURIComponent(id)}/add`, {
