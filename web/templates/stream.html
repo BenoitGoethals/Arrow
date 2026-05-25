@@ -549,10 +549,11 @@
                 return base + '/octopus/hls/' + path;
             } catch (_) {}
         }
-        // Fallback: server-computed hls_url or direct stream URL
-        const u = s.hls_url || s.url || s.playback_url || s.stream_url || '';
-        if (u.startsWith('/')) return window.location.origin + u;
-        return u;
+        // Fallback: Arrow-relative hls_url (starts with /octopus/hls/…) — prepend base.
+        // Never use s.url here — that's the raw source URL (rtsp://, etc.) not an HLS URL.
+        const u = s.hls_url || '';
+        if (u.startsWith('/')) return base + u;
+        return '';
     }
 
     let _cfg_octopus_url = '';
@@ -621,7 +622,6 @@
         if (!r.ok) { alert('Could not fetch stream details: ' + r.status); return; }
         const s   = await r.json();
         const url = _octPlayUrl(s);
-        if (!url) { alert('No playback URL returned by Octopus for this stream.'); return; }
         const type = _octStreamType(s);
         stopViewing();
         activeId = 'oct-' + id;
@@ -640,7 +640,13 @@
             dbg.style.display = 'block';
         }
 
-        if (type === 'mjpeg') {
+        if (!url) {
+            const isActive = s.is_active || s.active || s.status === 'active';
+            _hlsOverlayShow('⏸', isActive
+                ? 'Stream is starting — segments not ready yet.\nClick Retry in a moment.'
+                : 'Stream is stopped.\nStart it in Octopus, then click Retry.', true);
+            extVid.style.display = 'block';
+        } else if (type === 'mjpeg') {
             extImg.src = url;
             extImg.style.display = 'block';
         } else if (type === 'hls') {
