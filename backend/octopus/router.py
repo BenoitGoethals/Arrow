@@ -306,13 +306,16 @@ async def octopus_webhook(request: Request) -> dict:
         return {"ok": True, "skipped": True, "detail": detail}
 
     event_id    = det.get("id") or str(_uuid.uuid4())
-    stream_id   = det.get("stream_id", "")
-    label       = det.get("label", "")
-    confidence  = float(det.get("confidence", 0.0))
-    description = det.get("description", "")
-    bbox        = json.dumps(det.get("bbox", []))
-    snapshot    = det.get("snapshot_url", "")
-    ts_raw      = det.get("timestamp", "")
+    stream_id   = det.get("stream_id", "") or det.get("stream", "") or det.get("camera_id", "")
+    label       = det.get("label", "") or det.get("class", "") or det.get("category", "")
+    confidence  = float(det.get("confidence", 0) or det.get("score", 0) or det.get("prob", 0))
+    description = det.get("description", "") or det.get("message", "")
+    bbox        = json.dumps(det.get("bbox", []) or det.get("bounding_box", []) or det.get("box", []))
+    # Accept snapshot URL under any common field name
+    _SNAP_ALIASES = ("snapshot_url", "snapshot", "image_url", "image", "frame_url",
+                     "frame", "thumbnail_url", "thumbnail", "photo_url", "photo")
+    snapshot    = next((det[k] for k in _SNAP_ALIASES if det.get(k)), "")
+    ts_raw      = det.get("timestamp", "") or det.get("time", "") or det.get("created_at", "")
     try:
         occurred = datetime.fromisoformat(ts_raw).replace(tzinfo=timezone.utc)
     except Exception:
@@ -409,23 +412,39 @@ async def detection_snapshot(
     _: Operator = Depends(get_current_operator),
 ) -> Response:
     row = db.get(OctopusDetection, detection_id)
-    if not row or not row.snapshot_url:
+    if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
     base_url, key = _cfg()
-    snap = row.snapshot_url
-    if snap.startswith("/"):
-        snap = base_url + snap
+    params = {"api_key": key} if key else {}
 
     async with _client() as client:
-        try:
-            params = {"api_key": key} if key else {}
-            r = await client.get(snap, params=params)
-            r.raise_for_status()
-        except Exception as exc:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Cannot fetch snapshot: {exc}")
+        # 1. Use stored snapshot URL if available
+        if row.snapshot_url:
+            snap = row.snapshot_url
+            if snap.startswith("/"):
+                snap = base_url + snap
+            try:
+                r = await client.get(snap, params=params)
+                if r.status_code == 200:
+                    return Response(content=r.content,
+                                    media_type=r.headers.get("content-type", "image/jpeg"))
+            except Exception:
+                pass  # fall through to live-frame fallback
 
-    return Response(
-        content=r.content,
-        media_type=r.headers.get("content-type", "image/jpeg"),
-    )
+        # 2. Fall back: grab a live frame from the Octopus stream
+        if row.stream_id and base_url:
+            for frame_path in (
+                f"/api/client/streams/{row.stream_id}/snapshot",
+                f"/api/client/streams/{row.stream_id}/frame",
+                f"/static/snapshots/{row.stream_id}/latest.jpg",
+            ):
+                try:
+                    r = await client.get(base_url + frame_path, params=params)
+                    if r.status_code == 200 and r.content:
+                        return Response(content=r.content,
+                                        media_type=r.headers.get("content-type", "image/jpeg"))
+                except Exception:
+                    continue
+
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "No snapshot available")
