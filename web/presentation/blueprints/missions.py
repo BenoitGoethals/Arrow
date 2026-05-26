@@ -11,6 +11,6 @@ def build_blueprint(service: PageService, renderer: PageRenderer) -> Blueprint:
 
     @bp.route("/")
     def index():
-        return renderer.render("missions.html")
+        return renderer.render(service.missions())
 
     return bp
