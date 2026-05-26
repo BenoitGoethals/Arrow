@@ -27,11 +27,16 @@
     }
 
     # ── Backend REST + WebSocket (/api/*) ─────────────────────────────────
-    # Caddy preserves WebSocket upgrade headers automatically.
-    handle_path /api/* {
+    @backend {
+        path /api/*
+    }
+    handle @backend {
+        uri strip_prefix /api
         reverse_proxy backend:6001
     }
 
     # ── Flask web app ─────────────────────────────────────────────────────
-    reverse_proxy web:6002
+    handle {
+        reverse_proxy web:6002
+    }
 }
