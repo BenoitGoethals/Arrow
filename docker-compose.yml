@@ -7,8 +7,8 @@ services:
       dockerfile: backend.dockerfile
     image: arrow-backend
     container_name: arrow-backend
-    expose:
-      - "6001"
+    ports:
+      - "6001:6001"
     environment:
       # ARROW_JWT_SECRET: ""    # set a 64-char hex secret here or in .env for production
       #                         # if unset, a random secret is auto-generated on first boot
