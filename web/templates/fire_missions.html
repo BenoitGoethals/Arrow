@@ -278,47 +278,8 @@
         await loadAll();
     };
 
-    // ── MGRS conversion (WGS-84, DMATM 8358.1) ───────────────────────────────
-    const MGRS = (() => {
-        const A=6378137,F=1/298.257223563,E2=2*F-F*F,E4=E2*E2,E6=E4*E2,EP2=E2/(1-E2),K0=0.9996;
-        const LAT_BANDS='CDEFGHJKLMNPQRSTUVWX';
-        const SET_COLS=['ABCDEFGH','JKLMNPQR','STUVWXYZ'];
-        const ROW_ODD='ABCDEFGHJKLMNPQRSTUV', ROW_EVEN='FGHJKLMNPQRSTUVABCDE';
-
-        function zone(lat,lon){
-            if(lat>=56&&lat<64&&lon>=3&&lon<12) return 32;
-            if(lat>=72&&lat<=84){if(lon<9)return 31;if(lon<21)return 33;if(lon<33)return 35;if(lon<42)return 37;}
-            return Math.floor((lon+180)/6)+1;
-        }
-        function band(lat){ return LAT_BANDS[Math.min(19,Math.floor((lat+80)/8))]; }
-
-        function toUtm(lat,lon,z){
-            const lr=lat*Math.PI/180, lo=lon*Math.PI/180, lo0=((z-1)*6-180+3)*Math.PI/180;
-            const N=A/Math.sqrt(1-E2*Math.sin(lr)**2), T=Math.tan(lr)**2, C=EP2*Math.cos(lr)**2;
-            const a=Math.cos(lr)*(lo-lo0);
-            const M=A*((1-E2/4-3*E4/64-5*E6/256)*lr-(3*E2/8+3*E4/32+45*E6/1024)*Math.sin(2*lr)+(15*E4/256+45*E6/1024)*Math.sin(4*lr)-(35*E6/3072)*Math.sin(6*lr));
-            const e=K0*N*(a+(1-T+C)*a**3/6+(5-18*T+T**2+72*C-58*EP2)*a**5/120)+500000;
-            let n=K0*(M+N*Math.tan(lr)*(a**2/2+(5-T+9*C+4*C**2)*a**4/24+(61-58*T+T**2+600*C-330*EP2)*a**6/720));
-            if(lat<0) n+=10000000;
-            return [e,n];
-        }
-
-        function encode(lat,lon,acc=5){
-            const z=zone(lat,lon), b=band(lat), [e,n]=toUtm(lat,lon,z);
-            const set=(z-1)%3;
-            const col=SET_COLS[set][Math.max(0,Math.min(7,Math.floor(e/100000)-1))];
-            const row=(z%2===1?ROW_ODD:ROW_EVEN)[Math.floor(n/100000)%20];
-            const es=String(Math.floor(e%100000)).padStart(5,'0').slice(0,acc);
-            const ns=String(Math.floor(n%100000)).padStart(5,'0').slice(0,acc);
-            return `${z}${b}${col}${row} ${es}${ns}`;
-        }
-
-        return { encode };
-    })();
-
-    function toMgrs(lat, lon) {
-        try { return MGRS.encode(lat, lon, 5); } catch(_) { return `${lat.toFixed(5)}, ${lon.toFixed(5)}`; }
-    }
+    // Delegate to global MGRS utility in base.html
+    const toMgrs = (lat, lon) => window.mgrsEncode(lat, lon);
 
     function esc(s) {
         return String(s||'').replace(/[&<>"']/g, c =>

@@ -833,7 +833,8 @@ async def main() -> None:
         admin_token = await bootstrap(client, all_ops, sections)
         global MISSION_ID
         MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name)
+            client, BASE, admin_token, ARGS.mission_name,
+            map_center_lat=51.3093, map_center_lng=3.3878, map_zoom=14)
         await login_all(client, all_ops)
 
         coros = []

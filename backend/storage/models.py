@@ -24,16 +24,19 @@ class Mission(Base):
     """
     __tablename__ = "missions"
 
-    id:          Mapped[int]           = mapped_column(primary_key=True)
-    name:        Mapped[str]           = mapped_column(String(160))
-    description: Mapped[str]           = mapped_column(Text, default="")
-    status:      Mapped[str]           = mapped_column(String(20), default="PLANNING")
-    created_by:  Mapped[int]           = mapped_column(ForeignKey("operators.id"))
-    created_at:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
-    started_at:  Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
-    ended_at:    Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
-    snapshot:    Mapped[str]           = mapped_column(Text, default="")     # JSON on end/reset
-    snapshot_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    id:             Mapped[int]           = mapped_column(primary_key=True)
+    name:           Mapped[str]           = mapped_column(String(160))
+    description:    Mapped[str]           = mapped_column(Text, default="")
+    status:         Mapped[str]           = mapped_column(String(20), default="PLANNING")
+    created_by:     Mapped[int]           = mapped_column(ForeignKey("operators.id"))
+    created_at:     Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+    started_at:     Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at:       Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snapshot:       Mapped[str]           = mapped_column(Text, default="")
+    snapshot_at:    Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    map_center_lat: Mapped[float|None]    = mapped_column(Float, nullable=True)
+    map_center_lng: Mapped[float|None]    = mapped_column(Float, nullable=True)
+    map_zoom:       Mapped[int]           = mapped_column(Integer, default=13)
 
 
 class Company(Base):

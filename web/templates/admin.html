@@ -662,7 +662,7 @@ main { padding: 0; }
             ${alerts.map(a => `<tr>
                 <td><strong>${esc(a.type)}</strong></td>
                 <td>${esc(opMap[a.operator_id] || '#' + a.operator_id)}</td>
-                <td style="font-size:0.78rem;font-family:monospace">${a.latitude != null ? `${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)}` : '—'}</td>
+                <td style="font-size:0.78rem;font-family:monospace">${window.mgrsOrDash(a.latitude, a.longitude)}</td>
                 <td style="color:#64748b;font-size:0.78rem">${(a.timestamp||'').slice(0,16).replace('T',' ')}</td>
                 <td><span class="badge ${colors[a.status]||'badge-op'}">${a.status}</span></td>
             </tr>`).join('') || '<tr><td colspan="5" style="color:#475569">No alerts</td></tr>'}

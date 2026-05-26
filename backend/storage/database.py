@@ -143,6 +143,9 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE messages         ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
         "ALTER TABLE reports          ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
         "ALTER TABLE operators        ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE missions ADD COLUMN map_center_lat FLOAT",
+        "ALTER TABLE missions ADD COLUMN map_center_lng FLOAT",
+        "ALTER TABLE missions ADD COLUMN map_zoom INTEGER DEFAULT 13",
     ]
     for sql in migrations:
         try:

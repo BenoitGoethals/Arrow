@@ -349,7 +349,7 @@
                         <strong>${esc(o.callsign)}</strong>
                         <span style="color:#64748b;font-size:.7rem"> · ${esc(o.rank||'')} · ${esc(o.role||'')}</span>
                     </div>
-                    <div class="db-row-meta">${o.latitude!=null ? `${o.latitude.toFixed(3)}, ${o.longitude.toFixed(3)}` : 'no GPS'}</div>
+                    <div class="db-row-meta">${o.latitude!=null ? window.mgrsEncode(o.latitude,o.longitude) : 'no GPS'}</div>
                 </div>`).join('')
             : '<div class="db-empty">No operators online</div>';
 

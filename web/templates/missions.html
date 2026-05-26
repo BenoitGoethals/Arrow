@@ -28,7 +28,22 @@
         <textarea id="new-mission-desc" rows="3" placeholder="Description (optional)"
                   style="width:100%;box-sizing:border-box;background:#0f172a;color:#f8fafc;
                          border:1px solid #334155;border-radius:6px;padding:9px 12px;
-                         font-size:.9rem;resize:vertical;margin-bottom:14px"></textarea>
+                         font-size:.9rem;resize:vertical;margin-bottom:10px"></textarea>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+            <div style="flex:1">
+                <label style="font-size:.75rem;color:#94a3b8;display:block;margin-bottom:3px">Map Centre (MGRS)</label>
+                <input id="new-mission-mgrs" type="text" placeholder="e.g. 31UCU 12345 67890"
+                       style="width:100%;box-sizing:border-box;background:#0f172a;color:#f8fafc;
+                              border:1px solid #334155;border-radius:6px;padding:8px 10px;font-size:.88rem;font-family:monospace">
+            </div>
+            <div style="width:80px">
+                <label style="font-size:.75rem;color:#94a3b8;display:block;margin-bottom:3px">Zoom</label>
+                <input id="new-mission-zoom" type="number" min="3" max="19" value="13"
+                       style="width:100%;box-sizing:border-box;background:#0f172a;color:#f8fafc;
+                              border:1px solid #334155;border-radius:6px;padding:8px 10px;font-size:.88rem">
+            </div>
+        </div>
+        <div id="new-mission-mgrs-err" style="font-size:.78rem;color:#ef4444;margin-bottom:8px;display:none"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
             <button onclick="document.getElementById('create-modal').style.display='none'"
                     style="background:#334155;color:#f8fafc;border:0;border-radius:6px;
@@ -109,6 +124,7 @@ async function loadMissions() {
                         ${m.started_at ? ' · Started: ' + new Date(m.started_at).toLocaleString() : ''}
                         ${m.ended_at   ? ' · Ended: '   + new Date(m.ended_at).toLocaleString()   : ''}
                         ${m.snapshot_at ? ' · Snapshot: ' + new Date(m.snapshot_at).toLocaleString() : ''}
+                        ${m.map_center_mgrs ? ` · 📍 ${esc(m.map_center_mgrs)} z${m.map_zoom}` : ''}
                     </div>
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0">
@@ -145,6 +161,9 @@ async function loadMissions() {
 function showCreateModal() {
     document.getElementById('new-mission-name').value = '';
     document.getElementById('new-mission-desc').value = '';
+    document.getElementById('new-mission-mgrs').value = '';
+    document.getElementById('new-mission-zoom').value = '13';
+    document.getElementById('new-mission-mgrs-err').style.display = 'none';
     document.getElementById('create-modal').style.display = 'flex';
     setTimeout(() => document.getElementById('new-mission-name').focus(), 50);
 }
@@ -152,8 +171,27 @@ function showCreateModal() {
 async function createMission() {
     const name = document.getElementById('new-mission-name').value.trim();
     if (!name) { alert('Mission name required'); return; }
-    const desc = document.getElementById('new-mission-desc').value.trim();
-    const r = await api('POST', '/missions', { name, description: desc });
+    const desc     = document.getElementById('new-mission-desc').value.trim();
+    const mgrsStr  = document.getElementById('new-mission-mgrs').value.trim();
+    const zoom     = parseInt(document.getElementById('new-mission-zoom').value) || 13;
+    const errEl    = document.getElementById('new-mission-mgrs-err');
+
+    let map_center_lat = null, map_center_lng = null;
+    if (mgrsStr) {
+        const decoded = window.mgrsDecode(mgrsStr);
+        if (!decoded) {
+            errEl.textContent = 'Invalid MGRS grid — check format (e.g. 31UCU 12345 67890)';
+            errEl.style.display = 'block';
+            return;
+        }
+        [map_center_lat, map_center_lng] = decoded;
+    }
+    errEl.style.display = 'none';
+
+    const r = await api('POST', '/missions', {
+        name, description: desc,
+        map_center_lat, map_center_lng, map_zoom: zoom,
+    });
     if (r.ok) {
         const m = await r.json();
         document.getElementById('create-modal').style.display = 'none';

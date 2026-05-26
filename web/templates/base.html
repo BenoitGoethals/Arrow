@@ -153,6 +153,84 @@
             ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
+    // ── MGRS encode / decode (WGS-84, DMATM 8358.1) ──────────────────────────
+    // window.mgrsEncode(lat, lon [, precision=5]) → "31UCU 12345 67890"
+    // window.mgrsDecode(str) → [lat, lon] or null
+    (function () {
+        const A=6378137,F=1/298.257223563,E2=2*F-F*F,E4=E2*E2,E6=E4*E2,EP2=E2/(1-E2),K0=0.9996;
+        const BANDS='CDEFGHJKLMNPQRSTUVWX';
+        const COLS=['ABCDEFGH','JKLMNPQR','STUVWXYZ'];
+        const RODD='ABCDEFGHJKLMNPQRSTUV', REVEN='FGHJKLMNPQRSTUVABCDE';
+
+        function _zone(lat,lon){
+            if(lat>=56&&lat<64&&lon>=3&&lon<12) return 32;
+            if(lat>=72&&lat<=84){if(lon<9)return 31;if(lon<21)return 33;if(lon<33)return 35;if(lon<42)return 37;}
+            return Math.floor((lon+180)/6)+1;
+        }
+        function _toUtm(lat,lon,z){
+            const lr=lat*Math.PI/180,lo=lon*Math.PI/180,lo0=((z-1)*6-180+3)*Math.PI/180;
+            const N=A/Math.sqrt(1-E2*Math.sin(lr)**2),T=Math.tan(lr)**2,C=EP2*Math.cos(lr)**2,av=Math.cos(lr)*(lo-lo0);
+            const M=A*((1-E2/4-3*E4/64-5*E6/256)*lr-(3*E2/8+3*E4/32+45*E6/1024)*Math.sin(2*lr)+(15*E4/256+45*E6/1024)*Math.sin(4*lr)-(35*E6/3072)*Math.sin(6*lr));
+            let e=K0*N*(av+(1-T+C)*av**3/6+(5-18*T+T**2+72*C-58*EP2)*av**5/120)+500000;
+            let n=K0*(M+N*Math.tan(lr)*(av**2/2+(5-T+9*C+4*C**2)*av**4/24+(61-58*T+T**2+600*C-330*EP2)*av**6/720));
+            if(lat<0) n+=10000000;
+            return [e,n];
+        }
+
+        window.mgrsEncode = function(lat, lon, precision) {
+            precision = precision || 5;
+            try {
+                const z=_zone(lat,lon), b=BANDS[Math.min(19,Math.floor((lat+80)/8))];
+                const [e,n]=_toUtm(lat,lon,z);
+                const col=COLS[(z-1)%3][Math.max(0,Math.min(7,Math.floor(e/100000)-1))];
+                const row=(z%2===1?RODD:REVEN)[Math.floor(n/100000)%20];
+                const es=String(Math.floor(e%100000)).padStart(5,'0').slice(0,precision);
+                const ns=String(Math.floor(n%100000)).padStart(5,'0').slice(0,precision);
+                return `${z}${b}${col}${row} ${es}${ns}`;
+            } catch(_){ return `${lat.toFixed(4)},${lon.toFixed(4)}`; }
+        };
+
+        window.mgrsDecode = function(str) {
+            try {
+                const s=str.replace(/\s/g,'').toUpperCase();
+                let i=0; while(i<s.length&&/\d/.test(s[i]))i++;
+                if(i===0||i>2) return null;
+                const zone=parseInt(s.slice(0,i),10), band=s[i++];
+                if(!BANDS.includes(band)) return null;
+                const sq1=s[i++], sq2=s[i++];
+                const half=Math.floor((s.length-i)/2);
+                if(half<1||half>5) return null;
+                const eStr=s.slice(i,i+half).padEnd(5,'0'), nStr=s.slice(i+half).padEnd(5,'0');
+                const set=(zone-1)%3, colIdx=COLS[set].indexOf(sq1);
+                if(colIdx<0) return null;
+                const e100=(colIdx+1)*100000.0;
+                const rowLetters=(zone%2===1)?RODD:REVEN, rowIdx=rowLetters.indexOf(sq2);
+                if(rowIdx<0) return null;
+                let n100=rowIdx*100000.0;
+                const bandIdx=BANDS.indexOf(band), minLat=bandIdx*8.0-80.0;
+                const approxN=minLat>=0?minLat*110574:minLat*110574+10000000;
+                while(n100<approxN-100000) n100+=2000000.0;
+                if(n100-approxN>1000000) n100-=2000000.0;
+                // UTM → lat/lon
+                const x=e100+parseFloat(eStr)-500000, northern=band>='N';
+                const y=northern?n100+parseFloat(nStr):(n100+parseFloat(nStr))-10000000;
+                const lon0=((zone-1)*6-180+3)*Math.PI/180;
+                const e1=(1-Math.sqrt(1-E2))/(1+Math.sqrt(1-E2));
+                const m=y/K0, mu=m/(A*(1-E2/4-3*E4/64-5*E6/256));
+                const latR=mu+(3*e1/2-27*e1**3/32)*Math.sin(2*mu)+(21*e1**2/16-55*e1**4/32)*Math.sin(4*mu)+(151*e1**3/96)*Math.sin(6*mu)+(1097*e1**4/512)*Math.sin(8*mu);
+                const n1=A/Math.sqrt(1-E2*Math.sin(latR)**2),t1=Math.tan(latR)**2,c1=EP2*Math.cos(latR)**2;
+                const r1=A*(1-E2)/(1-E2*Math.sin(latR)**2)**1.5, d=x/(n1*K0);
+                const lat=(latR-(n1*Math.tan(latR)/r1)*(d**2/2-(5+3*t1+10*c1-4*c1**2-9*EP2)*d**4/24+(61+90*t1+298*c1+45*t1**2-252*EP2-3*c1**2)*d**6/720))*180/Math.PI;
+                const lon=(lon0+(d-(1+2*t1+c1)*d**3/6+(5-2*c1+28*t1-3*c1**2+8*EP2+24*t1**2)*d**5/120)/Math.cos(latR))*180/Math.PI;
+                return [lat, lon];
+            } catch { return null; }
+        };
+    })();
+    // Helper: show as MGRS when coords available, else "—"
+    window.mgrsOrDash = function(lat, lon) {
+        return (lat != null && lon != null) ? window.mgrsEncode(lat, lon) : '—';
+    };
+
     // Populate the nav mission picker
     function _refreshNavMission() {
         const tok = localStorage.getItem('arrow_token');
@@ -560,7 +638,7 @@
         const cs   = d.callsign || 'Unknown';
         const type = (d.mission_type || '').replace(/_/g, ' ');
         const ammo = d.ammunition || '';
-        const grid = d.latitude != null ? `${d.latitude.toFixed(4)}, ${d.longitude.toFixed(4)}` : '—';
+        const grid = window.mgrsOrDash(d.latitude, d.longitude);
 
         // Prominent red banner regardless of tab visibility
         const toast = document.createElement('div');
@@ -735,8 +813,7 @@
             const fmt = v => (v === undefined || v === null || v === '') ? '—' : v;
             const altTxt = (d.altitude_m   != null) ? `${Math.round(d.altitude_m)} m` : '—';
             const dirTxt = (d.direction_deg!= null) ? `${Math.round(d.direction_deg)}°` : '—';
-            const locTxt = (d.latitude     != null && d.longitude != null)
-                ? `${Number(d.latitude).toFixed(4)}, ${Number(d.longitude).toFixed(4)}` : '—';
+            const locTxt = window.mgrsOrDash(d.latitude, d.longitude);
             bodyHtml = `
                 <div class="arrow-toast-body" style="color:#e9d5ff;font-size:13px;line-height:1.45">
                     <div><b>Type:</b> ${esc(fmt(d.drone_type))} &nbsp;·&nbsp; <b>Behavior:</b> ${esc(fmt(d.behavior))}</div>

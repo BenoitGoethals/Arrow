@@ -62,6 +62,9 @@ def create_mission_sync(
     token: str,
     name: str,
     description: str = "",
+    map_center_lat: float | None = None,
+    map_center_lng: float | None = None,
+    map_zoom: int = 13,
 ) -> int | None:
     """Create a mission (or adopt an existing one with the same name) and start it.
 
@@ -72,10 +75,13 @@ def create_mission_sync(
     base = f"{origin}{prefix}"
     hdr  = {"Authorization": f"Bearer {token}"}
 
+    payload: dict = {"name": name, "description": description, "map_zoom": map_zoom}
+    if map_center_lat is not None:
+        payload["map_center_lat"] = map_center_lat
+        payload["map_center_lng"] = map_center_lng
+
     # ── create ────────────────────────────────────────────────────────────────
-    r = client.post(f"{base}/missions",
-                    json={"name": name, "description": description},
-                    headers=hdr, timeout=10)
+    r = client.post(f"{base}/missions", json=payload, headers=hdr, timeout=10)
 
     if r.status_code == 201:
         mission = r.json()
@@ -97,6 +103,14 @@ def create_mission_sync(
 
     mission_id = mission["id"]
 
+    # ── patch map centre if the existing mission has none ─────────────────────
+    if map_center_lat is not None and mission.get("map_center_lat") is None:
+        client.patch(f"{base}/missions/{mission_id}",
+                     json={"map_center_lat": map_center_lat,
+                           "map_center_lng": map_center_lng,
+                           "map_zoom": map_zoom},
+                     headers=hdr, timeout=10)
+
     # ── start if still PLANNING ───────────────────────────────────────────────
     if mission.get("status") == "PLANNING":
         rs = client.post(f"{base}/missions/{mission_id}/start",
@@ -117,6 +131,9 @@ async def create_mission_async(
     token: str,
     name: str,
     description: str = "",
+    map_center_lat: float | None = None,
+    map_center_lng: float | None = None,
+    map_zoom: int = 13,
 ) -> int | None:
     """Async version of :func:`create_mission_sync`.
 
@@ -125,9 +142,12 @@ async def create_mission_async(
     """
     hdr = {"Authorization": f"Bearer {token}"}
 
-    r = await client.post(f"{base}/missions",
-                          json={"name": name, "description": description},
-                          headers=hdr, timeout=10)
+    payload: dict = {"name": name, "description": description, "map_zoom": map_zoom}
+    if map_center_lat is not None:
+        payload["map_center_lat"] = map_center_lat
+        payload["map_center_lng"] = map_center_lng
+
+    r = await client.post(f"{base}/missions", json=payload, headers=hdr, timeout=10)
 
     if r.status_code == 201:
         mission = r.json()
@@ -145,6 +165,14 @@ async def create_mission_async(
                  name, mission["id"], mission.get("status"))
 
     mission_id = mission["id"]
+
+    # ── patch map centre if the existing mission has none ─────────────────────
+    if map_center_lat is not None and mission.get("map_center_lat") is None:
+        await client.patch(f"{base}/missions/{mission_id}",
+                           json={"map_center_lat": map_center_lat,
+                                 "map_center_lng": map_center_lng,
+                                 "map_zoom": map_zoom},
+                           headers=hdr, timeout=10)
 
     if mission.get("status") == "PLANNING":
         rs = await client.post(f"{base}/missions/{mission_id}/start",
@@ -197,8 +225,12 @@ class Api:
             sys.exit(f"{callsign} has MFA enabled — pick a non-MFA admin")
         return p["access_token"]
 
-    def create_mission(self, token: str, name: str, description: str = "") -> int | None:
-        mid = create_mission_sync(self.c, self._base_url, token, name, description)
+    def create_mission(self, token: str, name: str, description: str = "",
+                       map_center_lat: float | None = None,
+                       map_center_lng: float | None = None,
+                       map_zoom: int = 13) -> int | None:
+        mid = create_mission_sync(self.c, self._base_url, token, name, description,
+                                  map_center_lat, map_center_lng, map_zoom)
         if mid:
             self.mission_id = mid
         return mid

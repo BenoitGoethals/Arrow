@@ -229,7 +229,7 @@
     function renderEvent(e) {
         const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '—';
         const coords = (e.latitude != null && e.longitude != null)
-            ? `<span style="color:#475569">· ${e.latitude.toFixed(4)}, ${e.longitude.toFixed(4)}</span>` : '';
+            ? `<span style="color:#475569">· ${window.mgrsEncode(e.latitude, e.longitude)}</span>` : '';
         const detailJson = JSON.stringify(e.detail || {}, null, 2);
         return `
         <div class="h-event" data-cat="${esc(e.category)}">

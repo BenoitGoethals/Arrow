@@ -67,7 +67,7 @@
         if (!o) { body.innerHTML = '<div class="empty">Objective not found.</div>'; return; }
 
         const { title, desc, mgrs } = splitNotes(o.notes);
-        const grid = `${o.latitude.toFixed(5)}, ${o.longitude.toFixed(5)}`;
+        const grid = window.mgrsEncode(o.latitude, o.longitude);
         const photoHtml = o.photo_id
             ? `<img class="det-photo" data-photo-id="${o.photo_id}" alt="photo"
                     style="background:#0d1117"
