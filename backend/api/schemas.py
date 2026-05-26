@@ -63,6 +63,7 @@ class OperatorOut(ORMModel):
     status: str
     role: str
     team_id: int | None
+    mission_id: int | None
     latitude: float | None
     longitude: float | None
     altitude: float | None
@@ -84,6 +85,7 @@ class OperatorUpdate(BaseModel):
     role: str | None = None
     status: str | None = None
     team_id: int | None = None
+    mission_id: int | None = None
 
 
 class PasswordReset(BaseModel):
