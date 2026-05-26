@@ -723,7 +723,7 @@
         }
         // Other operators — NATO mil-symbol
         const sidc = op.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
-        const sym = new ms.Symbol(sidc, { size: 28, uniqueDesignation: op.callsign });
+        const sym = new ms.Symbol(sidc, { size: 28 });
         return L.divIcon({
             className: 'op-icon' + (op.online ? '' : ' offline'),
             html: `<div style="opacity:${op.online ? 1 : 0.45}">${sym.asSVG()}</div>`,
@@ -735,7 +735,7 @@
     function enemyIcon(obj) {
         // Default to hostile ground unit; symbol_code from server takes precedence if set.
         const sidc = obj.symbol_code && obj.symbol_code.length >= 10 ? obj.symbol_code : 'SHGPU-------';
-        const sym = new ms.Symbol(sidc, { size: 30, additionalInformation: obj.notes || '' });
+        const sym = new ms.Symbol(sidc, { size: 30 });
         return L.divIcon({
             className: 'enemy-icon',
             html: sym.asSVG(),
@@ -775,11 +775,7 @@
 
     function cotTrackIcon(track) {
         const sidc = track.sidc || cotTypeToSidc(track.cot_type);
-        const sym  = new ms.Symbol(sidc, {
-            size: 28,
-            uniqueDesignation: track.callsign || track.cot_uid,
-            additionalInformation: track.team || '',
-        });
+        const sym  = new ms.Symbol(sidc, { size: 28 });
         return L.divIcon({
             className: 'cot-track-icon',
             html:      sym.asSVG(),

@@ -593,7 +593,7 @@ async function loadOverlays() {
         if (o.latitude == null || o.longitude == null) return;
         if (!o.online) return;
         const sidc = o.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
-        const icon = milIcon(sidc, { size: 24, uniqueDesignation: o.callsign });
+        const icon = milIcon(sidc, { size: 24 });
         if (icon) {
           L.marker([o.latitude, o.longitude], { icon })
             .bindTooltip(`${o.callsign} (${o.role})`).addTo(snapOverlayLayer);
