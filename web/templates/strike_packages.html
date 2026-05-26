@@ -227,11 +227,12 @@ async function boot() {
 
 async function loadList() {
     // Fetch ALL packages regardless of active mission so nothing is hidden.
+    // No X-Mission-ID header intentionally — we always show the full list.
     const tok = localStorage.getItem('arrow_token') || '';
     const pkgs = await fetch(window.ARROW_BACKEND_URL + '/strike-packages', {
-        headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
-    }).then(r => r.json()).catch(() => []);
-    renderList(pkgs);
+        headers: { 'Authorization': 'Bearer ' + tok },
+    }).then(r => r.ok ? r.json() : []).catch(() => []);
+    renderList(Array.isArray(pkgs) ? pkgs : []);
 }
 
 async function loadMeta() {
@@ -844,6 +845,7 @@ function connectWS() {
 
 window.addEventListener('arrow-mission-changed', () => { loadList(); loadMeta(); });
 
-boot().then(connectWS);
+// Defer until all base-template scripts have run so ARROW_BACKEND_URL is defined.
+document.addEventListener('DOMContentLoaded', () => boot().then(connectWS));
 </script>
 {% endblock %}
