@@ -26,12 +26,21 @@
         -X-Powered-By
     }
 
-    # ── Backend REST + WebSocket (/api/*) ─────────────────────────────────
+    # ── Backend REST + WebSocket — two entry points ───────────────────────
+    # /api/*  : web browser calls (Flask strips /api before forwarding)
+    # /ws     : Android WebSocket direct (no prefix needed)
     @backend {
         path /api/*
     }
     handle @backend {
         uri strip_prefix /api
+        reverse_proxy backend:6001
+    }
+
+    @ws {
+        path /ws
+    }
+    handle @ws {
         reverse_proxy backend:6001
     }
 

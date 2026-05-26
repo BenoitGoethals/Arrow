@@ -400,6 +400,20 @@ fun MapScreen(
                             context = context,
                             visibility = container.mapVisibilityRepository.current,
                         )
+                        "mission"         -> {
+                            val event = evt["event"]?.toString()?.trim('"')
+                            if (event == "reset") {
+                                // Server wiped all map objects for this mission — clear local view
+                                container.tacticalRepository.listObjects()
+                                container.fireMissionRepository.list()
+                                    .onSuccess { fireMissions = it }
+                                container.reportRepository.list()
+                                    .onSuccess { reps ->
+                                        cbrnReports = com.arrow.tactical.cbrn.cbrnReportsFrom(reps)
+                                    }
+                                snackbarHostState.showSnackbar("Mission map reset by admin")
+                            }
+                        }
                         else -> {}
                     }
                 }
