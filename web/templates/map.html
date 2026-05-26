@@ -721,27 +721,36 @@
                 iconAnchor: [30, 24],   // anchor at arrow body centre, not tip
             });
         }
-        // Other operators — NATO mil-symbol
+        // Other operators — NATO mil-symbol (cached)
         const sidc = op.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
-        const sym = new ms.Symbol(sidc, { size: 28 });
+        const s = msSvg(sidc, 28);
         return L.divIcon({
             className: 'op-icon' + (op.online ? '' : ' offline'),
-            html: `<div style="opacity:${op.online ? 1 : 0.45}">${sym.asSVG()}</div>`,
-            iconSize: [sym.getSize().width, sym.getSize().height],
-            iconAnchor: [sym.getAnchor().x, sym.getAnchor().y],
+            html: `<div style="opacity:${op.online ? 1 : 0.45}">${s.svg}</div>`,
+            iconSize: [s.w, s.h], iconAnchor: [s.ax, s.ay],
         });
     }
 
+    // SVG cache — keyed by "sidc|size" so identical symbols are generated once.
+    const _msCache = new Map();
+    function msSvg(sidc, size) {
+        const key = sidc + '|' + size;
+        if (!_msCache.has(key)) {
+            const sym = new ms.Symbol(sidc, { size });
+            _msCache.set(key, {
+                svg: sym.asSVG(),
+                w:  sym.getSize().width,  h:  sym.getSize().height,
+                ax: sym.getAnchor().x,    ay: sym.getAnchor().y,
+            });
+        }
+        return _msCache.get(key);
+    }
+
     function enemyIcon(obj) {
-        // Default to hostile ground unit; symbol_code from server takes precedence if set.
         const sidc = obj.symbol_code && obj.symbol_code.length >= 10 ? obj.symbol_code : 'SHGPU-------';
-        const sym = new ms.Symbol(sidc, { size: 30 });
-        return L.divIcon({
-            className: 'enemy-icon',
-            html: sym.asSVG(),
-            iconSize: [sym.getSize().width, sym.getSize().height],
-            iconAnchor: [sym.getAnchor().x, sym.getAnchor().y],
-        });
+        const s = msSvg(sidc, 30);
+        return L.divIcon({ className: 'enemy-icon', html: s.svg,
+                           iconSize: [s.w, s.h], iconAnchor: [s.ax, s.ay] });
     }
 
     // ── CoT Track rendering ───────────────────────────────────────────────────
@@ -775,20 +784,22 @@
 
     function cotTrackIcon(track) {
         const sidc = track.sidc || cotTypeToSidc(track.cot_type);
-        const sym  = new ms.Symbol(sidc, { size: 28 });
-        return L.divIcon({
-            className: 'cot-track-icon',
-            html:      sym.asSVG(),
-            iconSize:  [sym.getSize().width,  sym.getSize().height],
-            iconAnchor:[sym.getAnchor().x,    sym.getAnchor().y],
-        });
+        const s = msSvg(sidc, 28);
+        return L.divIcon({ className: 'cot-track-icon', html: s.svg,
+                           iconSize: [s.w, s.h], iconAnchor: [s.ax, s.ay] });
     }
 
     function placeCotTrack(track) {
         const key      = `cot-${track.id}`;
         const existing = state.markers.get(key);
-        if (existing) { map.removeLayer(existing); state.markers.delete(key); }
-        if (!enemyLayerVisible()) return;
+        if (!enemyLayerVisible()) {
+            if (existing) { map.removeLayer(existing); state.markers.delete(key); }
+            return;
+        }
+        if (existing) {
+            existing.setLatLng([track.latitude, track.longitude]);
+            return;
+        }
         const icon = cotTrackIcon(track);
         const m = L.marker([track.latitude, track.longitude], { icon }).addTo(map);
         m.bindPopup(
@@ -1033,6 +1044,8 @@
 
     function placeGraphic(obj) {
         const key  = `to-${obj.id}`;
+        // Tactical graphics (lines/polygons) rarely move — skip if already placed.
+        if (state.markers.has(key)) return;
         const spec = TG_SPEC[obj.type];
         const c    = tgColor(obj.affiliation);
         const fill = tgFill(obj.affiliation);
@@ -1075,9 +1088,12 @@
 
     function placeEnemy(obj) {
         const key = `to-${obj.id}`;
-        const existing = state.markers.get(key);
-        if (existing) { map.removeLayer(existing); state.markers.delete(key); }
         if (isTgType(obj.type)) { placeGraphic(obj); return; }
+        const existing = state.markers.get(key);
+        if (existing) {
+            existing.setLatLng([obj.latitude, obj.longitude]);
+            return;
+        }
         const isObjective = obj.type === 'OBJECTIVE';
         const icon = isObjective ? objectiveIcon(obj) : enemyIcon(obj);
         const m = L.marker([obj.latitude, obj.longitude], { icon }).addTo(map);
@@ -1117,25 +1133,23 @@
     }
 
     function refreshAllMarkers() {
-        // Wipe every existing operator marker — admin may have just hidden them.
-        state.markers.forEach((m, key) => {
-            if (key.startsWith('op-')) { map.removeLayer(m); state.markers.delete(key); }
-        });
-        // Only re-paint when the admin-controlled filter allows it.
+        // placeOperator() already handles create-or-update-in-place.
         if (state.visibility.operators) {
             state.operators.forEach((op) => placeOperator(op));
         }
+        // Remove markers for operators no longer in state or when layer is hidden.
+        state.markers.forEach((m, key) => {
+            if (!key.startsWith('op-')) return;
+            const id = parseInt(key.slice(3), 10);
+            if (!state.visibility.operators || !state.operators.has(id)) {
+                map.removeLayer(m); state.markers.delete(key);
+            }
+        });
         const onlineCount = [...state.operators.values()].filter(o => o.online).length;
         document.getElementById('online-count').textContent = `${onlineCount} online · ${state.operators.size} total`;
     }
 
     function refreshEnemies() {
-        // Remove all tactical-object AND cot-track markers first
-        state.markers.forEach((m, key) => {
-            if (key.startsWith('to-') || key.startsWith('cot-')) {
-                map.removeLayer(m); state.markers.delete(key);
-            }
-        });
         const cnt = document.getElementById('enemies-count');
         if (cnt) cnt.textContent = [...state.tacticalObjects.values()]
             .filter(x => !isTgType(x.type)).length;
@@ -1143,8 +1157,7 @@
         if (tgCnt) tgCnt.textContent = [...state.tacticalObjects.values()]
             .filter(x => isTgType(x.type)).length;
 
-        // Sidebar list always reflects everything in state, even when both
-        // map layers are hidden — clicking an item still pans/zooms there.
+        // Sidebar list always reflects everything in state.
         const list = document.getElementById('enemies');
         const items = [...state.tacticalObjects.values()].sort((a, b) => a.id - b.id);
         list.innerHTML = items.length === 0 ? '<small style="color:#94a3b8">none</small>' :
@@ -1154,31 +1167,36 @@
                 <span style="color:#94a3b8;font-size:0.75rem;margin-left:auto">#${o.id}</span>
             </div>`).join('');
 
-        // Two independent layers:
-        //   • hostiles/POI/objective  ← gated by overlay mode (enemyLayerVisible)
-        //   • tactical control graphics ← gated by the standalone Tac Gfx toggle
-        // Plus the saved-overlay filter: when one or more overlays are active,
-        // only objects whose id is in the union are rendered. CoT tracks aren't
-        // members of overlays so they bypass the filter.
-        const showLegacy = enemyLayerVisible();
-        const showTg     = tgLayerVisible();
-        // Admin global filter — when off, skip ALL tactical objects.
+        const showLegacy   = enemyLayerVisible();
+        const showTg       = tgLayerVisible();
         const showTactical = state.visibility.tactical_objects;
-        // Saved-overlay filter only applies when the admin allows overlays.
         const allowedByOverlay = state.visibility.overlays
             ? computeActiveOverlayIds() : null;
+
+        // Track which marker keys should exist after this pass.
+        const wanted = new Set();
         if (showTactical) {
             state.tacticalObjects.forEach(obj => {
                 const isTg = isTgType(obj.type);
                 if (!(isTg ? showTg : showLegacy)) return;
                 if (allowedByOverlay && !allowedByOverlay.has(obj.id)) return;
+                wanted.add(`to-${obj.id}`);
                 placeEnemy(obj);
             });
         }
-        // CoT tracks have their own admin toggle.
         if (showLegacy && state.visibility.cot_tracks) {
-            state.cotTracks.forEach(t => placeCotTrack(t));
+            state.cotTracks.forEach(t => {
+                wanted.add(`cot-${t.id}`);
+                placeCotTrack(t);
+            });
         }
+
+        // Remove markers for objects that were deleted or are no longer visible.
+        state.markers.forEach((m, key) => {
+            if ((key.startsWith('to-') || key.startsWith('cot-')) && !wanted.has(key)) {
+                map.removeLayer(m); state.markers.delete(key);
+            }
+        });
     }
 
     // ── Saved overlays ───────────────────────────────────────────────────────
@@ -3283,6 +3301,14 @@
 
     loadKmlLayers();
 
+    // Debounce rapid tactical-object WS events so a burst of creates/deletes
+    // only triggers one refreshEnemies() after the dust settles.
+    let _refreshEnemiesTimer = null;
+    function schedRefreshEnemies() {
+        clearTimeout(_refreshEnemiesTimer);
+        _refreshEnemiesTimer = setTimeout(refreshEnemies, 100);
+    }
+
     function connectWS() {
         const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
@@ -3298,8 +3324,8 @@
                 state.cotTracks.set(msg.data.id, msg.data);
                 placeCotTrack(msg.data);
             } else if (msg.channel === 'tactical-object') {
-                if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); refreshEnemies(); }
-                else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); refreshEnemies(); }
+                if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); schedRefreshEnemies(); }
+                else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); schedRefreshEnemies(); }
             } else if (msg.channel === 'alert') {
                 if (msg.event === 'triggered') handleAlertTriggered(msg.data);
                 else if (msg.event === 'ack')  removeAlertLayer(msg.data.id);
