@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 from backend.api.schemas import DroneSpotIn, ReportIn, ReportOut, ReportUpdate
 from backend.audit import log_event
 from backend.auth.jwt_auth import get_current_operator, require_role
+from backend.missions.dependencies import get_active_mission
 from backend.reports.cbrn import CbrnParseError, parse_cbrn
 from backend.storage.database import get_db
-from backend.storage.models import Alert, Operator, Report
+from backend.storage.models import Alert, Mission, Operator, Report
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -27,8 +28,12 @@ VALID_STATUSES = {"RECEIVED", "ACKNOWLEDGED", "PROCESSED", "REJECTED"}
 def list_reports(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> list[Report]:
-    return db.query(Report).order_by(Report.timestamp.desc()).limit(200).all()
+    q = db.query(Report).order_by(Report.timestamp.desc())
+    if mission:
+        q = q.filter(Report.mission_id == mission.id)
+    return q.limit(200).all()
 
 
 @router.post("", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
@@ -36,12 +41,14 @@ async def submit_report(
     payload: ReportIn,
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> Report:
     rtype = payload.type.upper()
     if rtype not in VALID_TYPES:
         rtype = "CONTACT"
     rep = Report(type=rtype, operator_id=current.id,
-                 payload=json.dumps(payload.payload), status="RECEIVED")
+                 payload=json.dumps(payload.payload), status="RECEIVED",
+                 mission_id=mission.id if mission else current.mission_id)
     db.add(rep)
     db.commit()
     db.refresh(rep)
@@ -49,6 +56,7 @@ async def submit_report(
     await broadcaster.broadcast({
         "channel": "report",
         "event":   "submitted",
+        "mission_id": rep.mission_id,
         "data": {
             "id":          rep.id,
             "type":        rep.type,

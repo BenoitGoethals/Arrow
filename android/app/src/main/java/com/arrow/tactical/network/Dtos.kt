@@ -5,6 +5,19 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
+data class MissionDto(
+    val id: Int,
+    val name: String,
+    val description: String = "",
+    val status: String = "PLANNING",   // PLANNING | ACTIVE | ENDED
+    @SerialName("created_by")  val createdBy: Int = -1,
+    @SerialName("created_at")  val createdAt: String = "",
+    @SerialName("started_at")  val startedAt: String? = null,
+    @SerialName("ended_at")    val endedAt: String? = null,
+    @SerialName("snapshot_at") val snapshotAt: String? = null,
+)
+
+@Serializable
 data class TokenDto(
     @SerialName("access_token") val accessToken: String? = null,
     @SerialName("token_type")   val tokenType: String = "bearer",

@@ -68,6 +68,7 @@ import com.arrow.tactical.messaging.ui.MessagingScreen
 import com.arrow.tactical.objectives.ui.ObjectivesScreen
 import com.arrow.tactical.opord.ui.OpordDetailScreen
 import com.arrow.tactical.opord.ui.OpordListScreen
+import com.arrow.tactical.mission.ui.MissionSelectionScreen
 import com.arrow.tactical.reports.ui.ReportsScreen
 import com.arrow.tactical.settings.ui.SettingsScreen
 import kotlinx.coroutines.launch
@@ -90,8 +91,9 @@ private val TABS_BASE = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Repo
 private val TABS_ADMIN = TABS_BASE + Tab.Admin
 
 object Routes {
-    const val LOGIN = "login"
-    const val MAIN = "main"
+    const val LOGIN   = "login"
+    const val MAIN    = "main"
+    const val MISSION = "mission_select"
 }
 
 @Composable
@@ -105,8 +107,19 @@ fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
                 authRepository = container.authRepository,
                 settingsRepository = container.settingsRepository,
                 onAuthenticated = {
-                    rootNav.navigate(Routes.MAIN) {
+                    // After login go to mission selection so the operator picks a mission
+                    rootNav.navigate(Routes.MISSION) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(Routes.MISSION) {
+            MissionSelectionScreen(
+                container = container,
+                onMissionSelected = {
+                    rootNav.navigate(Routes.MAIN) {
+                        popUpTo(Routes.MISSION) { inclusive = true }
                     }
                 },
             )

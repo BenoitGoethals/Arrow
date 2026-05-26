@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Missions — Arrow{% endblock %}
+
+{% block content %}
+<div style="padding:24px;max-width:960px;margin:0 auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <h2 style="color:#f8fafc;margin:0;font-size:1.4rem">🎯 Mission Management</h2>
+        <button onclick="showCreateModal()"
+                style="background:#1d4ed8;color:#fff;border:0;border-radius:6px;
+                       padding:8px 18px;cursor:pointer;font-size:.9rem">
+            + New Mission
+        </button>
+    </div>
+
+    <div id="mission-list" style="display:grid;gap:12px"></div>
+</div>
+
+<!-- Create modal -->
+<div id="create-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
+     z-index:2000;align-items:center;justify-content:center">
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
+                padding:28px;width:420px;max-width:95vw">
+        <h3 style="margin:0 0 18px;color:#f8fafc">Create Mission</h3>
+        <input id="new-mission-name" type="text" placeholder="Mission name"
+               style="width:100%;box-sizing:border-box;background:#0f172a;color:#f8fafc;
+                      border:1px solid #334155;border-radius:6px;padding:9px 12px;
+                      font-size:.95rem;margin-bottom:10px">
+        <textarea id="new-mission-desc" rows="3" placeholder="Description (optional)"
+                  style="width:100%;box-sizing:border-box;background:#0f172a;color:#f8fafc;
+                         border:1px solid #334155;border-radius:6px;padding:9px 12px;
+                         font-size:.9rem;resize:vertical;margin-bottom:14px"></textarea>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button onclick="document.getElementById('create-modal').style.display='none'"
+                    style="background:#334155;color:#f8fafc;border:0;border-radius:6px;
+                           padding:8px 16px;cursor:pointer">Cancel</button>
+            <button onclick="createMission()"
+                    style="background:#1d4ed8;color:#fff;border:0;border-radius:6px;
+                           padding:8px 16px;cursor:pointer">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Assign operators modal -->
+<div id="assign-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
+     z-index:2000;align-items:center;justify-content:center">
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
+                padding:28px;width:480px;max-width:95vw;max-height:80vh;overflow-y:auto">
+        <h3 style="margin:0 0 16px;color:#f8fafc">Assign Operators</h3>
+        <div id="assign-op-list" style="margin-bottom:16px;display:grid;gap:6px"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button onclick="document.getElementById('assign-modal').style.display='none'"
+                    style="background:#334155;color:#f8fafc;border:0;border-radius:6px;
+                           padding:8px 16px;cursor:pointer">Close</button>
+            <button onclick="saveAssignments()"
+                    style="background:#1d4ed8;color:#fff;border:0;border-radius:6px;
+                           padding:8px 16px;cursor:pointer">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const tok = localStorage.getItem('arrow_token') || '';
+const be  = window.ARROW_BACKEND_URL;
+let _assignMissionId = null;
+
+function api(method, path, body) {
+    const mid = arrowGetMissionId();
+    return fetch(be + path, {
+        method,
+        headers: {
+            'Authorization': 'Bearer ' + tok,
+            'Content-Type': 'application/json',
+            ...(mid ? { 'X-Mission-ID': String(mid) } : {}),
+        },
+        body: body ? JSON.stringify(body) : undefined,
+    });
+}
+
+const STATUS_COLORS = { PLANNING:'#f59e0b', ACTIVE:'#22c55e', ENDED:'#ef4444' };
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+async function loadMissions() {
+    const r = await api('GET', '/missions');
+    if (!r.ok) return;
+    const missions = await r.json();
+    const cur = arrowGetMissionId();
+    const list = document.getElementById('mission-list');
+    if (!missions.length) {
+        list.innerHTML = '<p style="color:#64748b;text-align:center">No missions yet.</p>';
+        return;
+    }
+    list.innerHTML = missions.map(m => {
+        const sc = STATUS_COLORS[m.status] || '#64748b';
+        const isActive = m.id === cur;
+        return `
+        <div style="background:${isActive ? '#1e3a5f' : '#1e293b'};border:1px solid ${isActive ? '#3b82f6' : '#334155'};
+                    border-radius:8px;padding:16px 20px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                <div style="flex:1">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                        <span style="font-weight:700;color:#f8fafc;font-size:1rem">${esc(m.name)}</span>
+                        <span style="font-size:.72rem;padding:2px 8px;border-radius:12px;
+                                     background:${sc}22;color:${sc}">${m.status}</span>
+                        ${isActive ? '<span style="font-size:.72rem;padding:2px 8px;border-radius:12px;background:#1d4ed844;color:#60a5fa">ACTIVE IN THIS TAB</span>' : ''}
+                    </div>
+                    ${m.description ? `<div style="color:#94a3b8;font-size:.85rem;margin-bottom:8px">${esc(m.description)}</div>` : ''}
+                    <div style="font-size:.75rem;color:#475569">
+                        Created: ${new Date(m.created_at).toLocaleString()}
+                        ${m.started_at ? ' · Started: ' + new Date(m.started_at).toLocaleString() : ''}
+                        ${m.ended_at   ? ' · Ended: '   + new Date(m.ended_at).toLocaleString()   : ''}
+                        ${m.snapshot_at ? ' · Snapshot: ' + new Date(m.snapshot_at).toLocaleString() : ''}
+                    </div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;flex-shrink:0">
+                    <button onclick="arrowSwitchMission(${m.id})"
+                            style="background:${isActive ? '#334155' : '#1d4ed8'};color:#fff;
+                                   border:0;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:.8rem">
+                        ${isActive ? '✓ Selected' : 'Select'}
+                    </button>
+                    ${m.status === 'PLANNING' ? `
+                    <button onclick="startMission(${m.id})"
+                            style="background:#065f46;color:#6ee7b7;border:1px solid #059669;
+                                   border-radius:5px;padding:5px 12px;cursor:pointer;font-size:.8rem">Start</button>` : ''}
+                    ${m.status === 'ACTIVE' ? `
+                    <button onclick="resetMission(${m.id})"
+                            style="background:#451a03;color:#fb923c;border:1px solid #92400e;
+                                   border-radius:5px;padding:5px 10px;cursor:pointer;font-size:.8rem"
+                            title="Save snapshot and wipe all map objects">Reset Map</button>
+                    <button onclick="endMission(${m.id})"
+                            style="background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;
+                                   border-radius:5px;padding:5px 10px;cursor:pointer;font-size:.8rem">End</button>` : ''}
+                    ${m.snapshot_at ? `
+                    <button onclick="viewSnapshot(${m.id})"
+                            style="background:#1e293b;color:#94a3b8;border:1px solid #334155;
+                                   border-radius:5px;padding:5px 10px;cursor:pointer;font-size:.8rem">Snapshot</button>` : ''}
+                    <button onclick="openAssign(${m.id})"
+                            style="background:#1e293b;color:#94a3b8;border:1px solid #334155;
+                                   border-radius:5px;padding:5px 10px;cursor:pointer;font-size:.8rem">Operators</button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function showCreateModal() {
+    document.getElementById('new-mission-name').value = '';
+    document.getElementById('new-mission-desc').value = '';
+    document.getElementById('create-modal').style.display = 'flex';
+    setTimeout(() => document.getElementById('new-mission-name').focus(), 50);
+}
+
+async function createMission() {
+    const name = document.getElementById('new-mission-name').value.trim();
+    if (!name) { alert('Mission name required'); return; }
+    const desc = document.getElementById('new-mission-desc').value.trim();
+    const r = await api('POST', '/missions', { name, description: desc });
+    if (r.ok) {
+        const m = await r.json();
+        document.getElementById('create-modal').style.display = 'none';
+        arrowSwitchMission(m.id);
+        await loadMissions();
+    } else {
+        alert('Failed: ' + await r.text());
+    }
+}
+
+async function startMission(id) {
+    const r = await api('POST', `/missions/${id}/start`);
+    if (r.ok) { await loadMissions(); }
+    else alert('Failed: ' + await r.text());
+}
+
+async function endMission(id) {
+    if (!confirm('End this mission? A snapshot will be saved and the mission will be closed.')) return;
+    const r = await api('POST', `/missions/${id}/end`);
+    if (r.ok) {
+        if (arrowGetMissionId() === id) arrowSetMission(null);
+        await loadMissions();
+    } else alert('Failed: ' + await r.text());
+}
+
+async function resetMission(id) {
+    if (!confirm('Reset mission map? A snapshot will be saved, then ALL tactical objects, alerts, messages, reports and fire missions for this mission will be deleted. The mission stays ACTIVE.')) return;
+    const r = await api('POST', `/missions/${id}/reset`);
+    if (r.ok) await loadMissions();
+    else alert('Failed: ' + await r.text());
+}
+
+async function viewSnapshot(id) {
+    const r = await api('GET', `/missions/${id}/snapshot`);
+    if (!r.ok) { alert('No snapshot'); return; }
+    const m = await r.json();
+    const objs = JSON.parse(m.snapshot || '[]');
+    const w = window.open('', '_blank');
+    w.document.write(`<pre style="background:#0f172a;color:#f8fafc;padding:20px;font-size:12px">${
+        JSON.stringify(objs, null, 2).replace(/</g,'&lt;')
+    }</pre>`);
+}
+
+// Operator assignment
+async function openAssign(missionId) {
+    _assignMissionId = missionId;
+    const modal = document.getElementById('assign-modal');
+    const list  = document.getElementById('assign-op-list');
+    list.innerHTML = '<span style="color:#64748b">Loading…</span>';
+    modal.style.display = 'flex';
+
+    const [rAll, rMission] = await Promise.all([
+        api('GET', '/operators'),
+        api('GET', `/missions/${missionId}/operators`),
+    ]);
+    if (!rAll.ok) { list.innerHTML = '<span style="color:#ef4444">Failed to load operators</span>'; return; }
+    const all     = await rAll.json();
+    const inMission = rMission.ok ? (await rMission.json()).map(o => o.id) : [];
+
+    list.innerHTML = all.map(o => `
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;
+                      padding:6px 8px;border-radius:5px;background:#0f172a">
+            <input type="checkbox" data-op-id="${o.id}"
+                   ${inMission.includes(o.id) ? 'checked' : ''}
+                   style="width:16px;height:16px;cursor:pointer">
+            <span style="color:#f8fafc;font-size:.9rem">${esc(o.callsign)}</span>
+            <span style="color:#64748b;font-size:.8rem">${esc(o.rank || '')} · ${esc(o.role)}</span>
+        </label>`).join('');
+}
+
+async function saveAssignments() {
+    if (!_assignMissionId) return;
+    const checked = [...document.getElementById('assign-op-list')
+        .querySelectorAll('input[data-op-id]:checked')]
+        .map(el => parseInt(el.dataset.opId));
+    const r = await api('POST', `/missions/${_assignMissionId}/operators`,
+                        { operator_ids: checked });
+    if (r.ok) {
+        document.getElementById('assign-modal').style.display = 'none';
+    } else alert('Failed: ' + await r.text());
+}
+
+// Reload when a mission event arrives via WS
+window.addEventListener('arrow-mission-event', () => loadMissions());
+
+loadMissions();
+</script>
+{% endblock %}

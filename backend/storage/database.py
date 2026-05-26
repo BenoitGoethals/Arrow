@@ -124,6 +124,25 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE map_visibility ADD COLUMN notif_fire_missions BOOLEAN DEFAULT 1",
         "ALTER TABLE map_visibility ADD COLUMN notif_alerts        BOOLEAN DEFAULT 1",
         "ALTER TABLE map_visibility ADD COLUMN notif_streams       BOOLEAN DEFAULT 1",
+        # ── Missions ──────────────────────────────────────────────────────────
+        "CREATE TABLE IF NOT EXISTS missions ("
+        "  id INTEGER PRIMARY KEY,"
+        "  name VARCHAR(160) NOT NULL,"
+        "  description TEXT DEFAULT '',"
+        "  status VARCHAR(20) DEFAULT 'PLANNING',"
+        "  created_by INTEGER REFERENCES operators(id),"
+        "  created_at DATETIME,"
+        "  started_at DATETIME,"
+        "  ended_at   DATETIME,"
+        "  snapshot   TEXT DEFAULT '',"
+        "  snapshot_at DATETIME"
+        ")",
+        "ALTER TABLE tactical_objects ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE alerts           ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE fire_missions    ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE messages         ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE reports          ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE operators        ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
     ]
     for sql in migrations:
         try:

@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from backend.api.schemas import FireMissionIn, FireMissionOut, FireMissionUpdate
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.fire_missions.ballistics import solve_mortar_plan
+from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import FireMission, Operator
+from backend.storage.models import FireMission, Mission, Operator
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/fire-missions", tags=["fire-missions"])
@@ -48,8 +49,12 @@ class MortarPlanIn(BaseModel):
 def list_missions(
     db: Session = Depends(get_db),
     _: Operator  = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> list[FireMission]:
-    return db.query(FireMission).order_by(FireMission.timestamp.desc()).limit(200).all()
+    q = db.query(FireMission).order_by(FireMission.timestamp.desc())
+    if mission:
+        q = q.filter(FireMission.mission_id == mission.id)
+    return q.limit(200).all()
 
 
 @router.post("", response_model=FireMissionOut, status_code=status.HTTP_201_CREATED)
@@ -57,6 +62,7 @@ async def submit_mission(
     payload: FireMissionIn,
     db:      Session  = Depends(get_db),
     current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> FireMission:
     mtype = payload.mission_type.upper()
     ammo  = payload.ammunition.upper()
@@ -67,6 +73,7 @@ async def submit_mission(
 
     fm = FireMission(
         operator_id  = current.id,
+        mission_id   = mission.id if mission else current.mission_id,
         latitude     = payload.latitude,
         longitude    = payload.longitude,
         altitude     = payload.altitude,

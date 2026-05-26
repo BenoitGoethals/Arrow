@@ -9,6 +9,7 @@ import com.arrow.tactical.auth.AuthRepository
 import com.arrow.tactical.auth.TokenStore
 import com.arrow.tactical.data.local.AppDatabase
 import com.arrow.tactical.firemission.FireMissionRepository
+import com.arrow.tactical.mission.MissionRepository
 import com.arrow.tactical.kml.KmlLayerRepository
 import com.arrow.tactical.map.MapSourceRepository
 import com.arrow.tactical.map.MilsymRenderer
@@ -64,6 +65,7 @@ class AppContainer(private val context: Context) {
 
     val reportRepository = ReportRepository(apiClient, db, tokenStore, connectivity)
 
+    val missionRepository = MissionRepository(apiClient, settingsRepository)
     val opordRepository = OpordRepository(apiClient) { settingsRepository.currentServerUrl() }
     val tacticalRepository = TacticalRepository(apiClient, db, tokenStore, connectivity)
     val mapSourceRepository = MapSourceRepository(apiClient, context, tokenStore, settingsRepository)
