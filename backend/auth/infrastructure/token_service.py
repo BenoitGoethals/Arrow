@@ -20,13 +20,13 @@ _cfg = load_config().auth
 _MFA_PENDING = "mfa_pending"
 
 
-def create_access_token(subject: str, role: str) -> str:
+def create_access_token(subject: str, role: str, jti: str | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=_cfg.token_expire_minutes)
     payload = {
         "sub": subject,
         "role": role,
         "exp": expire,
-        "jti": str(uuid.uuid4()),
+        "jti": jti or str(uuid.uuid4()),
     }
     return jwt.encode(payload, _cfg.secret, algorithm=_cfg.algorithm)
 

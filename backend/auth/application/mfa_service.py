@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -64,5 +66,8 @@ def verify_second_step(
         log_event(db, "MFA_FAIL", outcome="FAILURE", operator_id=op.id, ip_address=ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid TOTP code")
 
+    jti = str(uuid.uuid4())
+    op.session_jti = jti
+    db.commit()
     log_event(db, "LOGIN_SUCCESS", operator_id=op.id, ip_address=ip, detail="via MFA")
-    return AuthResult(token_service.create_access_token(op.callsign, op.role), op.role)
+    return AuthResult(token_service.create_access_token(op.callsign, op.role, jti=jti), op.role)

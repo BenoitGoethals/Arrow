@@ -107,6 +107,10 @@ class Operator(Base):
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(default=False)
 
+    # Single-device session enforcement — only the token whose jti matches this
+    # field is valid; a new login overwrites it, instantly invalidating all others.
+    session_jti: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
     team: Mapped[Team | None] = relationship(back_populates="operators")
     positions: Mapped[list["OperatorPosition"]] = relationship(
         back_populates="operator", cascade="all, delete-orphan", passive_deletes=True,

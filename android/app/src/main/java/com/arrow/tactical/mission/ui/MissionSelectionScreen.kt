@@ -58,16 +58,26 @@ fun MissionSelectionScreen(
                 error != null -> Text("Error: $error",
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.align(Alignment.Center).padding(16.dp))
-                missions.isEmpty() -> Column(
-                    Modifier.align(Alignment.Center),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("No missions yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(12.dp))
-                    Button(onClick = { showCreate = true }) { Text("Create first mission") }
-                }
                 else -> LazyColumn(contentPadding = PaddingValues(12.dp),
                                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        NoMissionCard(
+                            isActive = activeMission == null,
+                            onSelect = {
+                                container.missionRepository.clearMission()
+                                onMissionSelected()
+                            },
+                        )
+                    }
+                    if (missions.isEmpty()) {
+                        item {
+                            Text(
+                                "No missions yet — tap + to create one",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(8.dp),
+                            )
+                        }
+                    }
                     items(missions, key = { it.id }) { mission ->
                         MissionCard(
                             mission   = mission,
@@ -148,6 +158,44 @@ fun MissionSelectionScreen(
                 }) { Text("Cancel") }
             },
         )
+    }
+}
+
+@Composable
+private fun NoMissionCard(
+    isActive: Boolean,
+    onSelect: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onSelect),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isActive)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            else MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        border = if (isActive) androidx.compose.foundation.BorderStroke(
+            1.5.dp, MaterialTheme.colorScheme.primary
+        ) else null,
+    ) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                if (isActive) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                contentDescription = null,
+                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            )
+            Text(
+                "No mission",
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 

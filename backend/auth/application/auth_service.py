@@ -7,6 +7,7 @@ router stays a pass-through.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -48,14 +49,16 @@ def register_operator(
     _require_password_strength(password)
     _require_callsign_free(db, callsign)
 
+    jti = str(uuid.uuid4())
     op = Operator(
         callsign=callsign, rank=rank, role="OPERATOR",
         team_id=team_id, password_hash=password_hasher.hash_password(password),
+        session_jti=jti,
     )
     db.add(op); db.commit(); db.refresh(op)
     log_event(db, "REGISTER", operator_id=op.id,
               resource=f"callsign:{op.callsign}", ip_address=ip)
-    return AuthResult(token_service.create_access_token(op.callsign, op.role), op.role)
+    return AuthResult(token_service.create_access_token(op.callsign, op.role, jti=jti), op.role)
 
 
 def register_elevated(
@@ -69,14 +72,16 @@ def register_elevated(
         raise HTTPException(422, f"Role must be one of: {', '.join(sorted(VALID_ROLES))}")
     _require_callsign_free(db, callsign)
 
+    jti = str(uuid.uuid4())
     op = Operator(
         callsign=callsign, rank=rank, role=role_upper,
         team_id=team_id, password_hash=password_hasher.hash_password(password),
+        session_jti=jti,
     )
     db.add(op); db.commit(); db.refresh(op)
     log_event(db, "REGISTER_ELEVATED", operator_id=current_id,
               resource=f"callsign:{op.callsign}", detail=f"role:{role_upper}", ip_address=ip)
-    return AuthResult(token_service.create_access_token(op.callsign, op.role), op.role)
+    return AuthResult(token_service.create_access_token(op.callsign, op.role, jti=jti), op.role)
 
 
 def _check_lockout(op: Operator) -> None:
@@ -124,8 +129,11 @@ def login(
         return AuthResult(None, "", mfa_required=True,
                           mfa_session=token_service.create_mfa_session(op.callsign))
 
+    jti = str(uuid.uuid4())
+    op.session_jti = jti
+    db.commit()
     log_event(db, "LOGIN_SUCCESS", operator_id=op.id, ip_address=ip)
-    return AuthResult(token_service.create_access_token(op.callsign, op.role), op.role)
+    return AuthResult(token_service.create_access_token(op.callsign, op.role, jti=jti), op.role)
 
 
 def logout(db: Session, *, token: str, current: Operator) -> None:
@@ -134,4 +142,6 @@ def logout(db: Session, *, token: str, current: Operator) -> None:
     exp = payload.get("exp", 0)
     if jti:
         token_blacklist.revoke(jti, int(exp))
+    current.session_jti = None
+    db.commit()
     log_event(db, "LOGOUT", operator_id=current.id)
