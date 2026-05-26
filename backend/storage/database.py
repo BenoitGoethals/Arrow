@@ -146,6 +146,8 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE missions ADD COLUMN map_center_lat FLOAT",
         "ALTER TABLE missions ADD COLUMN map_center_lng FLOAT",
         "ALTER TABLE missions ADD COLUMN map_zoom INTEGER DEFAULT 13",
+        # Single-device session enforcement
+        "ALTER TABLE operators ADD COLUMN session_jti VARCHAR(36)",
     ]
     for sql in migrations:
         try:
