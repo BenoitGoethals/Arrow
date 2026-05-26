@@ -59,12 +59,12 @@
 </div>
 
 <script>
-const tok = localStorage.getItem('arrow_token') || '';
-const be  = window.ARROW_BACKEND_URL;
 let _assignMissionId = null;
 
 function api(method, path, body) {
-    const mid = arrowGetMissionId();
+    const tok = localStorage.getItem('arrow_token') || '';
+    const be  = window.ARROW_BACKEND_URL || '/api';
+    const mid = (typeof arrowGetMissionId === 'function') ? arrowGetMissionId() : null;
     return fetch(be + path, {
         method,
         headers: {
