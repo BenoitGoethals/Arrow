@@ -483,7 +483,14 @@
     if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
     const role = localStorage.getItem('arrow_role') || 'OPERATOR';
     const headers = { Authorization: `Bearer ${token}` };
-    const api = (p) => fetch(window.ARROW_BACKEND_URL + p, { headers });
+    // Include X-Mission-ID on every request so the backend scopes results to the
+    // active mission. When no mission is selected the header is omitted and the
+    // backend returns everything (no filter).
+    function missionHeaders(extra = {}) {
+        const mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
+        return { ...headers, ...(mid ? { 'X-Mission-ID': String(mid) } : {}), ...extra };
+    }
+    const api = (p) => fetch(window.ARROW_BACKEND_URL + p, { headers: missionHeaders() });
 
     const map = L.map('map').setView([50.85, 4.35], 8);
 
@@ -1429,7 +1436,7 @@
 
     window.__arrowFocus = (lat, lon) => map.setView([lat, lon], 14);
     window.__arrowDeleteEnemy = async (id) => {
-        await fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id, { method: 'DELETE', headers });
+        await fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id, { method: 'DELETE', headers: missionHeaders() });
         state.tacticalObjects.delete(id); refreshEnemies();
     };
 
@@ -1647,7 +1654,7 @@
         try {
             const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
                 method: 'POST',
-                headers: { ...headers, 'Content-Type': 'application/json' },
+                headers: missionHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify(payload),
             });
             if (!r.ok) {
@@ -1864,7 +1871,7 @@
         else if (action === 'poi') {
             const notes = prompt(`POI at ${grid}\nNotes:`, '') ?? '';
             const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
-                method:'POST', headers:{...headers,'Content-Type':'application/json'},
+                method:'POST', headers:missionHeaders({'Content-Type':'application/json'}),
                 body: JSON.stringify({ type:'POI', symbol_code:'SNGPI-------',
                     latitude:lat, longitude:lon, notes:`${notes}  MGRS:${grid}` }),
             });
@@ -1966,7 +1973,7 @@
         const notes = title + (desc ? `\n${desc}` : '') + `\nMGRS:${grid}`;
         const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
             method:  'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: missionHeaders({ 'Content-Type': 'application/json' }),
             body:    JSON.stringify({
                 type: 'OBJECTIVE',
                 symbol_code: 'GFGPGAO---X',  // MIL-STD-2525 friendly objective area
@@ -2161,7 +2168,7 @@
         // Use fetch directly — the map's api() helper is GET-only
         const r = await fetch(window.ARROW_BACKEND_URL + '/fire-missions', {
             method:  'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: missionHeaders({ 'Content-Type': 'application/json' }),
             body:    JSON.stringify(payload),
         });
 
@@ -2184,7 +2191,7 @@
         const notes = (document.getElementById('enemy-notes')?.value || '') + `  MGRS:${grid}`;
         const sidc  = SIDC_MAP[type] || 'SHGPU-------';
         const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
-            method:'POST', headers:{...headers,'Content-Type':'application/json'},
+            method:'POST', headers:missionHeaders({'Content-Type':'application/json'}),
             body: JSON.stringify({ type, symbol_code:sidc, latitude:lat, longitude:lon, notes }),
         });
         if (r.ok) { const o = await r.json(); state.tacticalObjects.set(o.id,o); refreshEnemies(); }
@@ -3316,6 +3323,8 @@
             const msg = JSON.parse(ev.data);
             if (msg.channel === 'tracking' && msg.event === 'position') {
                 const d = msg.data;
+                const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
+                if (_mid && d.mission_id !== _mid) return;
                 const op = state.operators.get(d.operator_id) || { id: d.operator_id, callsign: d.callsign, rank: '', role: 'OPERATOR' };
                 op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
                 state.operators.set(op.id, op);
@@ -3324,6 +3333,8 @@
                 state.cotTracks.set(msg.data.id, msg.data);
                 placeCotTrack(msg.data);
             } else if (msg.channel === 'tactical-object') {
+                const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
+                if (_mid && msg.data.mission_id !== _mid) return;
                 if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); schedRefreshEnemies(); }
                 else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); schedRefreshEnemies(); }
             } else if (msg.channel === 'alert') {
@@ -3363,7 +3374,14 @@
             })
             .catch(() => {});
     }
-    window.addEventListener('arrow-mission-changed', flyToActiveMission);
+    function reloadAllMapData() {
+        loadHierarchy(); loadEnemies(); loadCotTracks();
+        loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
+    }
+    window.addEventListener('arrow-mission-changed', () => {
+        flyToActiveMission();
+        reloadAllMapData();
+    });
     flyToActiveMission();
 
     loadHierarchy(); loadEnemies(); loadCotTracks(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
