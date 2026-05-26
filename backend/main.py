@@ -127,7 +127,7 @@ def _configure_logging() -> None:
         logging.getLogger(ns).setLevel(level)
 
     # Suppress noisy third-party loggers that flood output at DEBUG
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
