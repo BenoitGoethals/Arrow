@@ -226,13 +226,20 @@ async function boot() {
 }
 
 async function loadList() {
-    const pkgs = await api('GET', '/strike-packages').catch(()=>[]);
+    // Fetch ALL packages regardless of active mission so nothing is hidden.
+    const tok = localStorage.getItem('arrow_token') || '';
+    const pkgs = await fetch(window.ARROW_BACKEND_URL + '/strike-packages', {
+        headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+    }).then(r => r.json()).catch(() => []);
     renderList(pkgs);
 }
 
 async function loadMeta() {
+    const mid = window.arrowGetMissionId ? arrowGetMissionId() : null;
+    // When a mission is active, only show operators assigned to that mission.
+    const opsPath = mid ? `/missions/${mid}/operators` : '/operators';
     const [ops, tos, fms, reps] = await Promise.all([
-        api('GET', '/operators').catch(()=>[]),
+        api('GET', opsPath).catch(()=>[]),
         api('GET', '/tactical-objects').catch(()=>[]),
         api('GET', '/fire-missions').catch(()=>[]),
         api('GET', '/reports').catch(()=>[]),

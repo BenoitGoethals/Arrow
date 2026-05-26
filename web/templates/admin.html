@@ -99,6 +99,9 @@ main { padding: 0; }
     <h4>Organisation</h4>
     <button class="nav-btn" onclick="show('hierarchy',this)"><span class="ico">🏛</span> Hierarchy</button>
 
+    <h4>Operations</h4>
+    <button class="nav-btn" onclick="show('strike-packages',this)"><span class="ico">⚡</span> Strike Packages</button>
+
     <h4>System</h4>
     <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
     <button class="nav-btn" onclick="show('octopus',this)"><span class="ico">⏺</span> Octopus</button>
@@ -171,6 +174,9 @@ main { padding: 0; }
       </select>
     </div>
     <div class="field"><label>Team</label><select id="edit-team"><option value="">— unassigned —</option></select></div>
+    <div class="field"><label>Mission <span style="color:#475569">(optional — links operator to a mission)</span></label>
+      <select id="edit-mission"><option value="">— no mission —</option></select>
+    </div>
     <hr style="border-color:#2a3142;margin:1rem 0">
     <div class="field"><label>New password <span style="color:#475569">(leave blank = no change)</span></label>
       <input id="edit-password" type="password" placeholder="new password…"/>
@@ -228,18 +234,19 @@ main { padding: 0; }
     const api  = (p, o = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...o, headers: { ...hdr, ...(o.headers||{}) } });
 
     // ── Global data cache ──────────────────────────────────────────────────
-    let operators = [], teams = [], sections = [], platoons = [], companies = [], alertsList = [];
+    let operators = [], teams = [], sections = [], platoons = [], companies = [], alertsList = [], missions = [];
 
     async function loadAll() {
         // BCs can't hit the operators/hierarchy endpoints; skip them so the
         // Maps tab still loads cleanly without unauthorised noise.
         if (!isAdmin) return;
-        [operators, teams, sections, platoons, companies] = await Promise.all([
+        [operators, teams, sections, platoons, companies, missions] = await Promise.all([
             api('/operators').then(r => r.ok ? r.json() : []),
             api('/teams').then(r => r.ok ? r.json() : []),
             api('/sections').then(r => r.ok ? r.json() : []),
             api('/platoons').then(r => r.ok ? r.json() : []),
             api('/companies').then(r => r.ok ? r.json() : []),
+            api('/missions').then(r => r.ok ? r.json() : []),
         ]);
     }
 
@@ -261,7 +268,8 @@ main { padding: 0; }
             case 'snapshots': main.innerHTML = ''; renderSnapshots(main); break;
             case 'visibility':main.innerHTML = ''; renderVisibility(main); break;
             case 'maps':      main.innerHTML = ''; renderMaps(main); break;
-            case 'octopus':   main.innerHTML = ''; renderOctopus(main); break;
+            case 'octopus':         main.innerHTML = ''; renderOctopus(main); break;
+            case 'strike-packages': main.innerHTML = ''; renderStrikePackages(main); break;
         }
     }
 
@@ -308,6 +316,7 @@ main { padding: 0; }
                 ${unassigned.map(o => `<span style="font-family:monospace">${esc(o.callsign)}</span>`).join(', ')}
                 — edit each operator and assign a team.
                </div>` : '';
+        const missionMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
         el.innerHTML = `
         <div class="sec-header">
             <h2>Operators (${operators.length})</h2>
@@ -317,13 +326,14 @@ main { padding: 0; }
         <table class="adm-table">
             <thead><tr>
                 <th></th><th>Callsign</th><th>Rank</th><th>Role</th>
-                <th>Team</th><th>Status</th><th>Last seen</th><th>Actions</th>
+                <th>Team</th><th>Mission</th><th>Status</th><th>Last seen</th><th>Actions</th>
             </tr></thead>
             <tbody>
             ${operators.map(op => {
                 const badge = op.role === 'ADMIN' ? 'badge-adm' : op.role === 'BATTLE_CAPTAIN' ? 'badge-bc' : 'badge-op';
                 const dot   = op.online ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>';
                 const team  = op.team_id ? teamMap[op.team_id] || `#${op.team_id}` : '—';
+                const mission = op.mission_id ? missionMap[op.mission_id] || `#${op.mission_id}` : '—';
                 const ts    = (op.last_seen || '').slice(0, 16).replace('T', ' ');
                 return `<tr>
                     <td>${dot}</td>
@@ -331,6 +341,7 @@ main { padding: 0; }
                     <td><code style="font-size:0.78rem">${esc(op.rank)}</code></td>
                     <td><span class="badge ${badge}">${op.role}</span></td>
                     <td style="color:#94a3b8">${esc(team)}</td>
+                    <td style="color:#64748b;font-size:0.78rem">${esc(mission)}</td>
                     <td><span class="badge ${op.online?'badge-ok':'badge-warn'}">${op.online?'ONLINE':'OFFLINE'}</span></td>
                     <td style="color:#64748b;font-size:0.78rem">${ts}</td>
                     <td>
@@ -377,6 +388,10 @@ main { padding: 0; }
         document.getElementById('edit-rank').value   = op.rank;
         document.getElementById('edit-role').value   = op.role;
         document.getElementById('edit-status').value = op.status;
+        // Populate mission select
+        const mSel = document.getElementById('edit-mission');
+        mSel.innerHTML = '<option value="">— no mission —</option>' +
+            missions.map(m => `<option value="${m.id}" ${m.id == op.mission_id ? 'selected' : ''}>${esc(m.name)} (${m.status})</option>`).join('');
         document.getElementById('edit-password').value = '';
         document.getElementById('edit-op-err').textContent = '';
         populateTeamSelect('edit-team', op.team_id);
@@ -387,12 +402,14 @@ main { padding: 0; }
         const id  = document.getElementById('edit-op-id').value;
         const pwd = document.getElementById('edit-password').value;
         const errEl = document.getElementById('edit-op-err');
+        const missionVal = document.getElementById('edit-mission').value;
         const body = {
-            rank:    document.getElementById('edit-rank').value,
-            role:    document.getElementById('edit-role').value,
-            status:  document.getElementById('edit-status').value,
-            team_id: document.getElementById('edit-team').value
-                     ? parseInt(document.getElementById('edit-team').value) : null,
+            rank:       document.getElementById('edit-rank').value,
+            role:       document.getElementById('edit-role').value,
+            status:     document.getElementById('edit-status').value,
+            team_id:    document.getElementById('edit-team').value
+                        ? parseInt(document.getElementById('edit-team').value) : null,
+            mission_id: missionVal ? parseInt(missionVal) : null,
         };
         const r = await api(`/operators/${id}`, { method:'PATCH', body: JSON.stringify(body) });
         if (!r.ok) { errEl.textContent = `Save failed: ${r.status}`; return; }
@@ -1528,6 +1545,71 @@ main { padding: 0; }
             }
         };
     }
+
+    // ── Strike Packages ────────────────────────────────────────────────────
+    async function renderStrikePackages(el) {
+        const pkgs = await api('/strike-packages').then(r => r.ok ? r.json() : []);
+        const sMap = {
+            PLANNING: 'badge-warn', ACTIVE: 'badge-err',
+            COMPLETE: 'badge-ok',   ABORTED: 'badge-op',
+        };
+        const fmt = iso => iso ? iso.slice(0, 16).replace('T', ' ') : '—';
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Strike Packages (${pkgs.length})</h2>
+            <a class="btn btn-ghost" href="/strike-packages" target="_blank">Open editor →</a>
+        </div>
+        <table class="adm-table">
+            <thead><tr>
+                <th>#</th><th>Name</th><th>Status</th><th>Mission</th>
+                <th>Ops</th><th>Target</th><th>Created</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${pkgs.length ? pkgs.map(p => `<tr>
+                <td style="color:#64748b;font-size:.78rem">${p.id}</td>
+                <td style="font-weight:600">${esc(p.name)}</td>
+                <td><span class="badge ${sMap[p.status]||'badge-op'}">${p.status}</span></td>
+                <td style="color:#64748b">${p.mission_id ? '#'+p.mission_id : '—'}</td>
+                <td style="color:#94a3b8">${(p.operator_ids||[]).length}</td>
+                <td style="font-family:monospace;font-size:.75rem">
+                    ${p.target_lat != null ? p.target_lat.toFixed(4)+', '+p.target_lon.toFixed(4) : '—'}
+                </td>
+                <td style="color:#64748b;font-size:.78rem">${fmt(p.created_at)}</td>
+                <td>
+                    ${p.status==='PLANNING' ? `<button class="btn btn-ghost btn-sm" onclick="spActivate(${p.id})">Activate</button>` : ''}
+                    ${p.status==='ACTIVE' ? `<button class="btn btn-ghost btn-sm" onclick="spComplete(${p.id})">Complete</button>` : ''}
+                    ${p.status!=='COMPLETE'&&p.status!=='ABORTED'
+                        ? `<button class="btn btn-ghost btn-sm" onclick="spAbort(${p.id})">Abort</button>` : ''}
+                    <button class="btn btn-danger btn-sm" onclick="spDelete(${p.id},'${esc(p.name)}')">Del</button>
+                </td>
+            </tr>`).join('') :
+            '<tr><td colspan="8" style="color:#475569;text-align:center;padding:1rem">No strike packages yet</td></tr>'}
+            </tbody>
+        </table>`;
+    }
+
+    window.spActivate = async function(id) {
+        const r = await api(`/strike-packages/${id}/activate`, { method:'POST' });
+        if (r.ok) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Activate failed (${r.status})`);
+    };
+    window.spComplete = async function(id) {
+        const r = await api(`/strike-packages/${id}/complete`, { method:'POST' });
+        if (r.ok) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Complete failed (${r.status})`);
+    };
+    window.spAbort = async function(id) {
+        if (!confirm('Abort this strike package?')) return;
+        const r = await api(`/strike-packages/${id}/abort`, { method:'POST' });
+        if (r.ok) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Abort failed (${r.status})`);
+    };
+    window.spDelete = async function(id, name) {
+        if (!confirm(`Delete strike package "${name}"? This cannot be undone.`)) return;
+        const r = await api(`/strike-packages/${id}`, { method:'DELETE' });
+        if (r.status === 204) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Delete failed (${r.status})`);
+    };
 
     window.closeModal = id => document.getElementById(id).classList.remove('open');
 

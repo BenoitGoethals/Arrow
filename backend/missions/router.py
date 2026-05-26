@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import TacticalObjectOut
+from backend.api.schemas import OperatorOut, TacticalObjectOut
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.missions.schemas import (
     AssignOperatorsIn, MissionCreate, MissionOut, MissionSnapshotOut,
@@ -235,15 +235,13 @@ def get_snapshot(
 
 # ── Operator assignment ───────────────────────────────────────────────────────
 
-@router.get("/{mission_id}/operators", response_model=list[dict])
+@router.get("/{mission_id}/operators", response_model=list[OperatorOut])
 def list_mission_operators(
     mission_id: int,
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
-) -> list[dict]:
-    ops = db.query(Operator).filter(Operator.mission_id == mission_id).all()
-    return [{"id": o.id, "callsign": o.callsign, "rank": o.rank, "role": o.role}
-            for o in ops]
+) -> list[Operator]:
+    return db.query(Operator).filter(Operator.mission_id == mission_id).all()
 
 
 @router.post("/{mission_id}/operators", status_code=status.HTTP_204_NO_CONTENT)
