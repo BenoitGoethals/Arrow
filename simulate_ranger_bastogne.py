@@ -733,7 +733,8 @@ def main() -> None:
     log.info("OPERATION NUTS — RANGER COY attack on BASTOGNE")
     log.info("backend=%s admin=%s", args.backend, args.admin)
     admin_tok = api.login(args.admin, args.password)
-    api.create_mission(admin_tok, args.mission_name)
+    api.create_mission(admin_tok, args.mission_name,
+                       map_center_lat=50.0028, map_center_lng=5.7178, map_zoom=14)
 
     if args.reset:
         reset_objects(api, admin_tok)

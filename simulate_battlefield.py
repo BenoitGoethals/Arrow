@@ -326,7 +326,8 @@ def main() -> None:
         log.info("Authenticated.")
         sim_utils.save_backend(args.backend)
         MISSION_ID = sim_utils.create_mission_sync(
-            client, args.backend, token, args.mission_name)
+            client, args.backend, token, args.mission_name,
+            map_center_lat=50.12, map_center_lng=5.72, map_zoom=11)
 
         if args.reset:
             n = reset_tactical_graphics(client, token)

@@ -67,6 +67,9 @@ async def create_mission(
         name=payload.name,
         description=payload.description,
         created_by=current.id,
+        map_center_lat=payload.map_center_lat,
+        map_center_lng=payload.map_center_lng,
+        map_zoom=payload.map_zoom,
     )
     db.add(m)
     db.commit()
@@ -102,6 +105,12 @@ async def update_mission(
         m.name = payload.name
     if payload.description is not None:
         m.description = payload.description
+    if payload.map_center_lat is not None:
+        m.map_center_lat = payload.map_center_lat
+    if payload.map_center_lng is not None:
+        m.map_center_lng = payload.map_center_lng
+    if payload.map_zoom is not None:
+        m.map_zoom = payload.map_zoom
     db.commit()
     db.refresh(m)
     await broadcaster.broadcast({"channel": "mission", "event": "updated",

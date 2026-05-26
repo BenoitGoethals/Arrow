@@ -283,7 +283,8 @@ def main() -> None:
         token = login(client, args.admin, args.password)
         sim_utils.save_backend(args.backend)
         MISSION_ID = sim_utils.create_mission_sync(
-            client, args.backend, token, args.mission_name)
+            client, args.backend, token, args.mission_name,
+            map_center_lat=20.0, map_center_lng=10.0, map_zoom=3)
 
         if args.reset:
             n = reset_existing_cbrn(client, token)

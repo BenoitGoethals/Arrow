@@ -942,7 +942,8 @@ async def amain() -> None:
         log.info("Authenticated.")
         global MISSION_ID
         MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name)
+            client, BASE, admin_token, ARGS.mission_name,
+            map_center_lat=52.2, map_center_lng=5.6, map_zoom=8)
 
         if ARGS.reset:
             n_obj, n_op, n_ov, n_users = await reset_world(client, admin_token)

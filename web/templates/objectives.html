@@ -73,7 +73,7 @@
             const thumb = o.photo_id
                 ? `<img class="obj-thumb" data-photo-id="${o.photo_id}" alt="photo" style="background:#0d1117">`
                 : '';
-            const grid = `${o.latitude.toFixed(4)}, ${o.longitude.toFixed(4)}`;
+            const grid = window.mgrsEncode(o.latitude, o.longitude);
             return `
                 <div class="obj-card" onclick="location.href='/objectives/${o.id}'">
                     <div class="title">🚩 ${esc(title)}</div>

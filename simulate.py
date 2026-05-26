@@ -1670,7 +1670,8 @@ async def main() -> None:
         admin_token = await bootstrap(client, all_ops, sections)
         global MISSION_ID
         MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name)
+            client, BASE, admin_token, ARGS.mission_name,
+            map_center_lat=50.08, map_center_lng=5.73, map_zoom=12)
         await login_all(client, all_ops)
 
         # Plant the doctrinal operation graphics + enemy laydown — once.
