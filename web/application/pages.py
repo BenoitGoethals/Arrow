@@ -70,3 +70,6 @@ class PageService:
 
     def logout(self) -> PageView:
         return PageView("logout.html")
+
+    def missions(self) -> PageView:
+        return PageView("missions.html")
