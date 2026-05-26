@@ -6,6 +6,8 @@ import com.arrow.tactical.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class MissionRepository(
     private val api: ApiClient,
@@ -35,8 +37,22 @@ class MissionRepository(
         api.json.decodeFromString<MissionDto>(r.body)
     }
 
-    suspend fun createMission(name: String, description: String = ""): Result<MissionDto> = runCatching {
-        val body = api.json.encodeToString(mapOf("name" to name, "description" to description))
+    suspend fun createMission(
+        name: String,
+        description: String = "",
+        mapCenterLat: Double? = null,
+        mapCenterLng: Double? = null,
+        mapZoom: Int = 13,
+    ): Result<MissionDto> = runCatching {
+        val body = buildJsonObject {
+            put("name", name)
+            put("description", description)
+            put("map_zoom", mapZoom)
+            if (mapCenterLat != null && mapCenterLng != null) {
+                put("map_center_lat", mapCenterLat)
+                put("map_center_lng", mapCenterLng)
+            }
+        }.toString()
         val r = api.postJson("/missions", body)
         require(r.ok) { "HTTP ${r.code}: ${r.body}" }
         api.json.decodeFromString<MissionDto>(r.body)

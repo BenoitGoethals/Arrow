@@ -640,4 +640,28 @@ object MilSymbolRenderer {
 
         return BitmapDrawable(res, bmp)
     }
+
+    // ── Cluster marker (circle with count) ──────────────────────────────────
+
+    fun cluster(res: Resources, count: Int, color: Int): Drawable {
+        val dp = res.displayMetrics.density
+        val size = (32 * dp).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+        }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
+
+        paint.color = Color.WHITE
+        paint.textSize = 13 * dp
+        paint.textAlign = Paint.Align.CENTER
+        paint.isFakeBoldText = true
+        val text = if (count > 99) "99+" else count.toString()
+        val bounds = android.graphics.Rect()
+        paint.getTextBounds(text, 0, text.length, bounds)
+        canvas.drawText(text, size / 2f, size / 2f + bounds.height() / 2f, paint)
+
+        return BitmapDrawable(res, bmp)
+    }
 }

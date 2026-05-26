@@ -58,6 +58,7 @@ import com.arrow.tactical.network.TacticalObjectDto
 import com.arrow.tactical.network.TacticalObjectIn
 import com.arrow.tactical.tactical.EnemyType
 import com.arrow.tactical.tracking.LocationService
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
@@ -155,6 +156,7 @@ fun MapScreen(
     // Lets the operator collapse the entire SitaWare chrome off to the left
     // when they need a clean view. A small handle at top-left brings it back.
     var topBarCollapsed by remember { mutableStateOf(false) }
+    var zoomLevel by remember { mutableFloatStateOf(8f) }
 
     // ── Saved overlays — per-device active set, mirrors web localStorage.
     // Named ``savedOverlays`` (not ``overlays``) so it never shadows the
@@ -272,6 +274,16 @@ fun MapScreen(
             }
     }
 
+    // Fly to the mission's map center whenever the active mission changes
+    val activeMission by container.missionRepository.activeMission.collectAsState()
+    LaunchedEffect(activeMission) {
+        val m = activeMission ?: return@LaunchedEffect
+        if (m.mapCenterLat == null || m.mapCenterLng == null) return@LaunchedEffect
+        val map = mapRef.value ?: return@LaunchedEffect
+        map.controller.setZoom(m.mapZoom.toDouble())
+        map.controller.animateTo(GeoPoint(m.mapCenterLat, m.mapCenterLng))
+    }
+
     // Tap state — written from the OSMdroid tap callback
     val pendingPointState     = remember { mutableStateOf<GeoPoint?>(null) }
     val pendingScreenPosState = remember { mutableStateOf<Offset?>(null) }
@@ -369,7 +381,7 @@ fun MapScreen(
             } catch (_: Exception) {
                 serverOnline = false
             }
-            delay(5_000)
+            delay(15_000)
         }
     }
 
@@ -388,7 +400,7 @@ fun MapScreen(
                             .onSuccess { reps ->
                                 cbrnReports = com.arrow.tactical.cbrn.cbrnReportsFrom(reps)
                             }
-                        "kml-layer"       -> kmlReloadTrigger.value++
+                        "kml-layer"       -> kmlReloadTrigger.intValue++
                         "overlay"         -> overlayReloadTrigger.value++
                         "map-visibility"  -> container.mapVisibilityRepository.applyServerEvent(evt)
                         "alert"           -> com.arrow.tactical.alerts.handleAlertWsEvent(
@@ -425,7 +437,7 @@ fun MapScreen(
     }
 
     // ── KML — fetch the layer list on entry and on every kml-layer WS event ──
-    LaunchedEffect(kmlReloadTrigger.value) {
+    LaunchedEffect(kmlReloadTrigger.intValue) {
         container.kmlLayerRepository.list()
             .onSuccess { kmlLayers = it }
     }
@@ -606,18 +618,13 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, savedOverlays, activeOverlays, visibility) {
+    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, savedOverlays, activeOverlays, visibility, zoomLevel) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
 
         // Wipe ALL transient overlays we own (markers + tactical graphic
-        // polylines/polygons) before rebuilding. The base map-events overlay
-        // sits on a different overlay slot and isn't a Marker/Polyline/Polygon.
-        // KML overlays are tagged via [com.arrow.tactical.kml.isKmlOverlay] so
-        // they survive this wipe — their lifecycle is managed independently.
-        // Alert markers (TIC, MEDICAL, …) are tagged via AlertMarker.isAlertMarker
-        // for the same reason; they live until the alert is acknowledged.
+        // polylines/polygons) before rebuilding.
         map.overlays.removeAll {
             !com.arrow.tactical.kml.isKmlOverlay(it) &&
             !com.arrow.tactical.alerts.AlertMarker.isAlertMarker(it) && (
@@ -626,21 +633,16 @@ fun MapScreen(
             )
         }
 
-        // Admin-axis filter — when ``operators`` is off, no friendly markers
-        // are drawn regardless of the overlayMode chip choice.
+        // Admin-axis filter
         val visibleOps = if (!visibility.operators) emptyList() else when (overlayMode) {
             OverlayMode.ALL         -> operators
             OverlayMode.NONE        -> emptyList()
             OverlayMode.ENEMIES     -> emptyList()
             OverlayMode.OWN_PLATOON -> operators.filter { it.id in myPlatoonIds || it.id == currentMeId }
         }
-        // Two independent layers:
-        //   • legacy hostile/POI/objective markers ← gated by overlayMode
-        //   • tactical control graphics            ← gated by tgVisible
-        // Both ALSO gated by visibility.tacticalObjects (admin global filter).
         val showLegacyHostiles = visibility.tacticalObjects &&
             (overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.ENEMIES)
-        // Saved-overlay filter is gated by the admin's overlays toggle.
+
         val overlayAllowed: Set<Int>? = when {
             !visibility.overlays      -> null
             activeOverlays.isEmpty()  -> null
@@ -659,6 +661,121 @@ fun MapScreen(
                 passesOverlay(it.id)
             }
         else emptyList()
+
+        // ── Clustering logic ────────────────────────────────────────────────
+        val clusterThreshold = 13f
+        val clusteredOps = if (zoomLevel < clusterThreshold) {
+            clusterItems(visibleOps, zoomLevel, { it.latitude }, { it.longitude })
+        } else {
+            visibleOps.map { listOf(it) }
+        }
+        val clusteredEnemies = if (zoomLevel < clusterThreshold) {
+            clusterItems(visibleEnemies, zoomLevel, { it.latitude }, { it.longitude })
+        } else {
+            visibleEnemies.map { listOf(it) }
+        }
+
+        for (cluster in clusteredOps) {
+            if (cluster.isEmpty()) continue
+            val first = cluster[0]
+            val lat = first.latitude ?: continue
+            val lon = first.longitude ?: continue
+
+            if (cluster.size > 1) {
+                // Render a cluster marker for friendlies
+                Marker(map).apply {
+                    position = GeoPoint(lat, lon)
+                    icon = MilSymbolRenderer.cluster(res, cluster.size, Color(0xFF3B82F6).toArgb())
+                    title = "${cluster.size} Friendlies"
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
+                }
+            } else {
+                val isMe = first.id == currentMeId
+                val marker = Marker(map).apply {
+                    position = GeoPoint(lat, lon)
+                    title    = if (isMe) "📍 You — ${first.callsign}" else "${first.callsign}  ·  ${first.rank}"
+                    snippet  = "${first.role}${if (first.online) " · online" else " · offline"}"
+                    icon     = MilSymbolRenderer.friendly(res, first, isMe)
+                    if (isMe) setAnchor(Marker.ANCHOR_CENTER, 0.39f)
+                    else      setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
+                }
+                if (!isMe) {
+                    val sidc = if (first.role.equals("BATTLE_CAPTAIN", true)) "SFGPUCI----E"
+                               else                                       "SFGPUCI-----"
+                    scope.launch {
+                        container.milsymRenderer.symbol(sidc, mapOf("size" to 28, "uniqueDesignation" to first.callsign))?.let { r ->
+                            marker.icon = r.drawable
+                            marker.setAnchor(r.anchorX, r.anchorY)
+                            map.invalidate()
+                        }
+                    }
+                }
+            }
+        }
+
+        for (cluster in clusteredEnemies) {
+            if (cluster.isEmpty()) continue
+            val first = cluster[0]
+            val lat = first.latitude
+            val lon = first.longitude
+
+            if (cluster.size > 1) {
+                // Render a cluster marker for hostiles
+                Marker(map).apply {
+                    position = GeoPoint(lat, lon)
+                    icon = MilSymbolRenderer.cluster(res, cluster.size, Color(0xFFEF4444).toArgb())
+                    title = "${cluster.size} Hostiles"
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
+                }
+            } else {
+                if (first.type == "OBJECTIVE") {
+                    val notes  = first.notes
+                    val nl     = notes.indexOf('\n')
+                    val titleS = if (nl >= 0) notes.substring(0, nl) else notes
+                    val rest   = if (nl >= 0) notes.substring(nl + 1) else ""
+                    val descS  = rest.lineSequence().filterNot { it.startsWith("MGRS:") }
+                                      .joinToString("\n").trim()
+                    Marker(map).apply {
+                        position = GeoPoint(lat, lon)
+                        title    = "🚩 ${titleS.ifBlank { "Objective" }}"
+                        snippet  = descS.ifBlank { "(no description)" }
+                        icon     = MilSymbolRenderer.objective(res)
+                        setAnchor(Marker.ANCHOR_BOTTOM, Marker.ANCHOR_BOTTOM)
+                        setOnMarkerClickListener { m, _ ->
+                            selectedObjective = first
+                            m.showInfoWindow()
+                            true
+                        }
+                        map.overlays.add(this)
+                    }
+                } else {
+                    val type = EnemyType.resolve(first.type, first.symbolCode)
+                    val marker = Marker(map).apply {
+                        position = GeoPoint(lat, lon)
+                        title    = type.label
+                        snippet  = first.notes.ifBlank { "SIDC: ${first.symbolCode}" }
+                        icon     = if (type == EnemyType.POI) MilSymbolRenderer.poi(res)
+                                   else MilSymbolRenderer.hostile(res, type)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        map.overlays.add(this)
+                    }
+                    if (type != EnemyType.POI) {
+                        val sidc = if (first.symbolCode.length >= 10) first.symbolCode else type.sidc
+                        scope.launch {
+                            container.milsymRenderer.symbol(sidc, mapOf("size" to 30))?.let { r ->
+                                marker.icon = r.drawable
+                                marker.setAnchor(r.anchorX, r.anchorY)
+                                map.invalidate()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         val visibleGraphics = if (tgVisible && visibility.tacticalObjects)
             enemies.filter {
                 (MilSymbolRenderer.isTacticalGraphic(it.type) ||
@@ -667,103 +784,10 @@ fun MapScreen(
             }
         else emptyList()
 
-        for (op in visibleOps) {
-            if (op.latitude == null || op.longitude == null) continue
-            val isMe = op.id == currentMeId
-            val marker = Marker(map).apply {
-                position = GeoPoint(op.latitude, op.longitude)
-                title    = if (isMe) "📍 You — ${op.callsign}" else "${op.callsign}  ·  ${op.rank}"
-                snippet  = "${op.role}${if (op.online) " · online" else " · offline"}"
-                // Synchronous placeholder while milsymbol.js renders the proper
-                // MIL-STD-2525 SVG asynchronously. Anchored CENTER/CENTER —
-                // updated below when the real bitmap arrives.
-                icon     = MilSymbolRenderer.friendly(res, op, isMe)
-                if (isMe) setAnchor(Marker.ANCHOR_CENTER, 0.39f)
-                else      setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                map.overlays.add(this)
-            }
-            if (!isMe) {
-                // SIDC for friendly ground combat infantry, with battle-captain
-                // headquarters modifier ("E" at position 11) when applicable.
-                val sidc = if (op.role.equals("BATTLE_CAPTAIN", true)) "SFGPUCI----E"
-                           else                                       "SFGPUCI-----"
-                scope.launch {
-                    val opts = mapOf<String, Any?>(
-                        "size" to 28,
-                        "uniqueDesignation" to op.callsign,
-                        "additionalInformation" to (if (op.online) "" else "OFFLINE"),
-                    )
-                    container.milsymRenderer.symbol(sidc, opts)?.let { r ->
-                        marker.icon = r.drawable
-                        marker.setAnchor(r.anchorX, r.anchorY)
-                        map.invalidate()
-                    }
-                }
-            }
-        }
-
-        for (e in visibleEnemies) {
-            if (e.type == "OBJECTIVE") {
-                // Objectives store "title\ndescription\nMGRS:..." in notes (web format).
-                val notes  = e.notes
-                val nl     = notes.indexOf('\n')
-                val titleS = if (nl >= 0) notes.substring(0, nl) else notes
-                val rest   = if (nl >= 0) notes.substring(nl + 1) else ""
-                val descS  = rest.lineSequence().filterNot { it.startsWith("MGRS:") }
-                                  .joinToString("\n").trim()
-                Marker(map).apply {
-                    position = GeoPoint(e.latitude, e.longitude)
-                    title    = "🚩 ${titleS.ifBlank { "Objective" }}"
-                    snippet  = descS.ifBlank { "(no description)" }
-                    icon     = MilSymbolRenderer.objective(res)
-                    setAnchor(Marker.ANCHOR_BOTTOM, Marker.ANCHOR_BOTTOM)
-                    setOnMarkerClickListener { m, _ ->
-                        selectedObjective = e
-                        m.showInfoWindow()
-                        true
-                    }
-                    map.overlays.add(this)
-                }
-                continue
-            }
-            // Backend often sends type="ENEMY" with the real unit in symbol_code,
-            // so resolve from the SIDC first; fall back to the textual type.
-            val type = EnemyType.resolve(e.type, e.symbolCode)
-            val marker = Marker(map).apply {
-                position = GeoPoint(e.latitude, e.longitude)
-                title    = type.label
-                snippet  = e.notes.ifBlank { "SIDC: ${e.symbolCode}" }
-                // Synchronous placeholder — replaced by the milsymbol-rendered
-                // bitmap when ready (POIs keep the hand-drawn yellow disc).
-                icon     = if (type == EnemyType.POI) MilSymbolRenderer.poi(res)
-                           else MilSymbolRenderer.hostile(res, type)
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                map.overlays.add(this)
-            }
-            if (type != EnemyType.POI) {
-                // Trust the server's SIDC when present; fall back to the
-                // per-type default (which already encodes the right affiliation
-                // and function modifier).
-                val sidc = if (e.symbolCode.length >= 10) e.symbolCode else type.sidc
-                scope.launch {
-                    container.milsymRenderer.symbol(
-                        sidc, mapOf("size" to 30),
-                    )?.let { r ->
-                        marker.icon = r.drawable
-                        marker.setAnchor(r.anchorX, r.anchorY)
-                        map.invalidate()
-                    }
-                }
-            }
-        }
-
-        // ── Tactical control graphics (Phase 2 render-only) ─────────────────
         for (g in visibleGraphics) {
             renderTacticalGraphic(map, res, g)
         }
 
-        // Fire missions — always visible except in NONE mode OR when the
-        // admin has hidden fire missions globally.
         if (overlayMode != OverlayMode.NONE && visibility.fireMissions) {
             for (fm in fireMissions.filter { it.status != "CANCELLED" }) {
                 val mgrsStr = runCatching {
@@ -780,9 +804,6 @@ fun MapScreen(
             }
         }
 
-        // ── CBRN hazard layer ───────────────────────────────────────────────
-        // Gated by the operator's local CBRN toggle AND the admin's reports
-        // flag (CBRN markers are driven entirely by reports of type CBRN_*).
         if (cbrnVisible && visibility.reports) {
             for ((_, payload) in cbrnReports) {
                 for (ov in com.arrow.tactical.cbrn.buildCbrnOverlays(map, res, payload)) {
@@ -810,8 +831,14 @@ fun MapScreen(
                     )
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
-                    controller.setZoom(8.0)
-                    controller.setCenter(GeoPoint(50.85, 4.35))
+                    val mission = container.missionRepository.activeMission.value
+                    if (mission?.mapCenterLat != null && mission.mapCenterLng != null) {
+                        controller.setZoom(mission.mapZoom.toDouble())
+                        controller.setCenter(GeoPoint(mission.mapCenterLat, mission.mapCenterLng))
+                    } else {
+                        controller.setZoom(8.0)
+                        controller.setCenter(GeoPoint(50.85, 4.35))
+                    }
 
                     val events = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
@@ -846,6 +873,13 @@ fun MapScreen(
                     // Explicit ``this.`` so any future outer-scope variable
                     // named ``overlays`` can't shadow MapView's member list.
                     this.overlays.add(0, events)
+                    addMapListener(object : org.osmdroid.events.MapListener {
+                        override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean = false
+                        override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean {
+                            zoomLevel = event?.zoomLevel?.toFloat() ?: zoomLevel
+                            return false
+                        }
+                    })
                 }.also { mapRef.value = it }
             },
             update = { /* markers managed by LaunchedEffect above */ },
@@ -2101,4 +2135,32 @@ private fun DroneDropdown(
             }
         }
     }
+}
+
+private fun <T> clusterItems(
+    items: List<T>,
+    zoom: Float,
+    getLat: (T) -> Double?,
+    getLon: (T) -> Double?
+): List<List<T>> {
+    if (zoom >= 13f) return items.map { listOf(it) }
+    val clusters = mutableListOf<MutableList<T>>()
+    val threshold = 1.0 / (1 shl (zoom.toInt() - 6).coerceAtLeast(1))
+    for (item in items) {
+        val lat = getLat(item) ?: continue
+        val lon = getLon(item) ?: continue
+        var found = false
+        for (cluster in clusters) {
+            val first = cluster[0]
+            val clat = getLat(first)!!
+            val clon = getLon(first)!!
+            if (kotlin.math.abs(lat - clat) < threshold && kotlin.math.abs(lon - clon) < threshold) {
+                cluster.add(item)
+                found = true
+                break
+            }
+        }
+        if (!found) clusters.add(mutableListOf(item))
+    }
+    return clusters
 }
