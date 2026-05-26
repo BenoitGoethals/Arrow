@@ -30,38 +30,14 @@ import random
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from urllib.parse import urlsplit
-
 import httpx
+
+import sim_utils
 
 UTC = timezone.utc
 
-
-# ── Persistent backend URL + path-prefix (shared pattern with other simulators)
-_CONFIG_DIR  = Path.home() / ".config" / "arrow"
-_CONFIG_FILE = _CONFIG_DIR / "simulator.json"
 _path_prefix: str = ""
-
-
-def _load_saved_backend() -> str | None:
-    try:
-        return json.loads(_CONFIG_FILE.read_text()).get("backend") or None
-    except Exception:
-        return None
-
-
-def _save_backend(url: str) -> None:
-    try:
-        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        _CONFIG_FILE.write_text(json.dumps({"backend": url}, indent=2))
-    except Exception as e:
-        log.debug("could not save backend URL: %s", e)
-
-
-def _split_base(url: str) -> tuple[str, str]:
-    p = urlsplit(url)
-    return f"{p.scheme}://{p.netloc}", (p.path or "").rstrip("/")
+MISSION_ID: int | None = None
 
 
 def _p(path: str) -> str:
@@ -244,7 +220,10 @@ def post_strike(client: httpx.Client, token: str, s: Strike, now: datetime) -> b
     if s.yield_kt is not None:
         payload["yield_kt"] = s.yield_kt
     body = {"type": "CBRN_4", "payload": payload}
-    r = client.post(_p("/reports"), json=body, headers={"Authorization": f"Bearer {token}"})
+    h: dict[str, str] = {"Authorization": f"Bearer {token}"}
+    if MISSION_ID:
+        h["X-Mission-ID"] = str(MISSION_ID)
+    r = client.post(_p("/reports"), json=body, headers=h)
     if r.status_code != 201:
         log.warning("POST /reports failed %s: %s", r.status_code, r.text[:200])
         return False
@@ -272,7 +251,7 @@ log = logging.getLogger("global-cbrn")
 def main() -> None:
     default_backend = (
         os.environ.get("ARROW_BACKEND_URL")
-        or _load_saved_backend()
+        or sim_utils.load_saved_backend()
         or "http://localhost:6001"
     )
     parser = argparse.ArgumentParser(
@@ -286,21 +265,25 @@ def main() -> None:
                         help="Deterministic RNG seed (default: random — each run differs)")
     parser.add_argument("--reset",    action="store_true",
                         help="Mark all existing CBRN_* reports as REJECTED before submitting new ones")
+    parser.add_argument("--mission-name", default="Operation Regnum Ignis",
+                        help="Mission name to create or adopt (default: Operation Regnum Ignis)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s  %(levelname)-7s %(message)s",
                         datefmt="%H:%M:%S")
-    global _path_prefix
+    global _path_prefix, MISSION_ID
     rng = random.Random(args.seed)
 
-    origin, _path_prefix = _split_base(args.backend)
+    origin, _path_prefix = sim_utils.split_base(args.backend)
     log.info("OPERATION REGNUM IGNIS — global CBRN exchange (NATO / RU / CN)")
     log.info("backend=%s admin=%s", args.backend, args.admin)
 
     with httpx.Client(base_url=origin, timeout=20.0) as client:
         token = login(client, args.admin, args.password)
-        _save_backend(args.backend)
+        sim_utils.save_backend(args.backend)
+        MISSION_ID = sim_utils.create_mission_sync(
+            client, args.backend, token, args.mission_name)
 
         if args.reset:
             n = reset_existing_cbrn(client, token)

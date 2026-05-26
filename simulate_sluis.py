@@ -37,6 +37,8 @@ from typing import Optional
 
 import httpx
 
+import sim_utils
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Arrow Sluis-attack scenario simulator")
@@ -50,6 +52,8 @@ parser.add_argument("--seed-admin", default="benoit",
                     help="Pre-seeded ADMIN callsign (default: benoit)")
 parser.add_argument("--seed-admin-password", default="ranger14",
                     help="Password for --seed-admin (default: ranger14)")
+parser.add_argument("--mission-name", default="Operation Sluis",
+                    help="Mission name to create or adopt (default: Operation Sluis)")
 ARGS = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO,
@@ -58,6 +62,7 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("sluis")
 
 BASE          = ARGS.backend.rstrip("/")
+MISSION_ID: int | None = None
 SIM_PASSWORD  = "Arrow2525!"
 WALK_MS       = 5000 / 3600
 INFIL_MS      = 1500 / 3600
@@ -287,6 +292,8 @@ ENEMY_LAYDOWN: list[tuple[str, float, float, str]] = [
 async def api(client: httpx.AsyncClient, method: str, path: str,
               token: str = "", **kwargs) -> Optional[dict]:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if MISSION_ID:
+        headers["X-Mission-ID"] = str(MISSION_ID)
     try:
         r = await client.request(method, f"{BASE}{path}", headers=headers,
                                  timeout=10, **kwargs)
@@ -823,7 +830,10 @@ async def main() -> None:
     async with httpx.AsyncClient() as client:
         if ARGS.reset:
             await reset_sim(client, all_ops)
-        await bootstrap(client, all_ops, sections)
+        admin_token = await bootstrap(client, all_ops, sections)
+        global MISSION_ID
+        MISSION_ID = await sim_utils.create_mission_async(
+            client, BASE, admin_token, ARGS.mission_name)
         await login_all(client, all_ops)
 
         coros = []

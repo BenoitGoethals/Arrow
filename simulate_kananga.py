@@ -46,31 +46,16 @@ import os
 import random
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
-from urllib.parse import urlsplit
 
 import httpx
 
+import sim_utils
 
 # ── CLI / persistent config ─────────────────────────────────────────────────
-_CONFIG_DIR  = Path.home() / ".config" / "arrow"
-_CONFIG_FILE = _CONFIG_DIR / "simulator.json"
-
-def _load_saved_backend() -> str | None:
-    try:    return json.loads(_CONFIG_FILE.read_text()).get("backend") or None
-    except Exception: return None
-
-def _save_backend(url: str) -> None:
-    try:
-        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        _CONFIG_FILE.write_text(json.dumps({"backend": url}, indent=2))
-    except Exception:
-        pass
-
 DEFAULT_BACKEND = (
     os.environ.get("ARROW_BACKEND_URL")
-    or _load_saved_backend()
+    or sim_utils.load_saved_backend()
     or "http://78.21.255.210:6200/api"
 )
 
@@ -88,6 +73,8 @@ parser.add_argument("--speed",    type=float, default=2.0,
                          "Use 30 for a quick demo (≈ 3 s/phase).")
 parser.add_argument("--once",     action="store_true",
                     help="Stop after Φ5 (no loop)")
+parser.add_argument("--mission-name", default="Operation Iron Sky",
+                    help="Mission name to create or adopt (default: Operation Iron Sky)")
 ARGS = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO,
@@ -96,14 +83,9 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("ks")
 
 BASE = ARGS.backend.rstrip("/")
+MISSION_ID: int | None = None
 
-
-# ── Path-prefix splitting ────────────────────────────────────────────────────
-def _split_base(url: str) -> tuple[str, str]:
-    p = urlsplit(url)
-    return f"{p.scheme}://{p.netloc}", (p.path or "").rstrip("/")
-
-ORIGIN, PATH_PREFIX = _split_base(BASE)
+ORIGIN, PATH_PREFIX = sim_utils.split_base(BASE)
 
 
 def _p(path: str) -> str:
@@ -229,6 +211,8 @@ async def api(client: httpx.AsyncClient, method: str, path: str, *,
               token: str = "", json: dict | list | None = None,
               timeout: float = 12.0) -> dict | list | None:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if MISSION_ID:
+        headers["X-Mission-ID"] = str(MISSION_ID)
     try:
         r = await client.request(method, _p(path),
                                  headers=headers, json=json, timeout=timeout)
@@ -1193,8 +1177,11 @@ async def amain() -> None:
         admin_token = await login(client, ARGS.admin, ARGS.password)
         if not admin_token:
             sys.exit(f"❌  Login failed for {ARGS.admin} @ {BASE}")
-        _save_backend(ARGS.backend)
+        sim_utils.save_backend(ARGS.backend)
         log.info("Authenticated as %s.", ARGS.admin)
+        global MISSION_ID
+        MISSION_ID = await sim_utils.create_mission_async(
+            client, BASE, admin_token, ARGS.mission_name)
 
         if ARGS.reset:
             n_obj, n_op, n_users = await reset_world(client, admin_token)
