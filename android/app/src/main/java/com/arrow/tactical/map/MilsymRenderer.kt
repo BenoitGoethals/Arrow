@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class MilsymRenderer(private val context: Context) {
 
-    private val cache = LruCache<String, Result>(256)
+    private val cache = LruCache<String, Result>(1024)
     private val ready = CompletableDeferred<Unit>()
     private val pending = HashMap<String, CompletableDeferred<Result>>()
     private val tokens = AtomicLong(0)

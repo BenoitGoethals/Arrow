@@ -15,6 +15,10 @@ data class MissionDto(
     @SerialName("started_at")  val startedAt: String? = null,
     @SerialName("ended_at")    val endedAt: String? = null,
     @SerialName("snapshot_at") val snapshotAt: String? = null,
+    @SerialName("map_center_lat")  val mapCenterLat: Double? = null,
+    @SerialName("map_center_lng")  val mapCenterLng: Double? = null,
+    @SerialName("map_zoom")        val mapZoom: Int = 13,
+    @SerialName("map_center_mgrs") val mapCenterMgrs: String? = null,
 )
 
 @Serializable

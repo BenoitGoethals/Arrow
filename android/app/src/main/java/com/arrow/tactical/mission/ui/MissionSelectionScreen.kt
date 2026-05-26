@@ -30,9 +30,11 @@ fun MissionSelectionScreen(
     var missions by remember { mutableStateOf<List<MissionDto>>(emptyList()) }
     var loading  by remember { mutableStateOf(true) }
     var error    by remember { mutableStateOf<String?>(null) }
-    var showCreate by remember { mutableStateOf(false) }
-    var newName  by remember { mutableStateOf("") }
-    var creating by remember { mutableStateOf(false) }
+    var showCreate  by remember { mutableStateOf(false) }
+    var newName     by remember { mutableStateOf("") }
+    var newMgrs     by remember { mutableStateOf("") }
+    var newZoom     by remember { mutableStateOf("13") }
+    var creating    by remember { mutableStateOf(false) }
 
     val activeMission by container.missionRepository.activeMission.collectAsState()
 
@@ -83,16 +85,33 @@ fun MissionSelectionScreen(
 
     if (showCreate) {
         AlertDialog(
-            onDismissRequest = { showCreate = false; newName = "" },
+            onDismissRequest = { showCreate = false; newName = ""; newMgrs = ""; newZoom = "13" },
             title   = { Text("New Mission") },
             text    = {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    label = { Text("Mission name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("Mission name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = newMgrs,
+                        onValueChange = { newMgrs = it },
+                        label = { Text("Map center (MGRS, optional)") },
+                        placeholder = { Text("e.g. 31UCU 12345 67890") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = newZoom,
+                        onValueChange = { newZoom = it },
+                        label = { Text("Zoom (3–19)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             },
             confirmButton = {
                 Button(
@@ -100,11 +119,20 @@ fun MissionSelectionScreen(
                     onClick = {
                         creating = true
                         scope.launch {
-                            container.missionRepository.createMission(newName.trim())
+                            val zoom = newZoom.trim().toIntOrNull()?.coerceIn(3, 19) ?: 13
+                            val center = if (newMgrs.isNotBlank())
+                                com.arrow.tactical.network.MgrsConverter.decode(newMgrs.trim())
+                            else null
+                            container.missionRepository.createMission(
+                                name         = newName.trim(),
+                                mapCenterLat = center?.first,
+                                mapCenterLng = center?.second,
+                                mapZoom      = zoom,
+                            )
                                 .onSuccess { m ->
                                     missions = missions + m
                                     showCreate = false
-                                    newName = ""
+                                    newName = ""; newMgrs = ""; newZoom = "13"
                                     container.missionRepository.selectMission(m)
                                     onMissionSelected()
                                 }
@@ -115,7 +143,9 @@ fun MissionSelectionScreen(
                 ) { Text(if (creating) "Creating…" else "Create") }
             },
             dismissButton = {
-                TextButton(onClick = { showCreate = false; newName = "" }) { Text("Cancel") }
+                TextButton(onClick = {
+                    showCreate = false; newName = ""; newMgrs = ""; newZoom = "13"
+                }) { Text("Cancel") }
             },
         )
     }
@@ -164,6 +194,13 @@ private fun MissionCard(
                     Text(mission.description, fontSize = 12.sp,
                          color = MaterialTheme.colorScheme.onSurfaceVariant,
                          maxLines = 2)
+                }
+                if (mission.mapCenterMgrs != null) {
+                    Text(
+                        "📍 ${mission.mapCenterMgrs} z${mission.mapZoom}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             Surface(
