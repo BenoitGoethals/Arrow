@@ -641,6 +641,202 @@ object MilSymbolRenderer {
         return BitmapDrawable(res, bmp)
     }
 
+    // ── Strike Package asset symbols ─────────────────────────────────────────
+
+    /** Red hostile diamond with "TGT" label — primary target marker. */
+    fun strikeTarget(res: Resources, label: String = "TGT"): Drawable {
+        val dp   = res.displayMetrics.density
+        val size = (52 * dp).toInt()
+        val bmp  = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+        val cx = size / 2f
+        val cy = size / 2f
+        val r  = cx - 4 * dp
+
+        val diamond = Path().apply {
+            moveTo(cx,     cy - r)
+            lineTo(cx + r, cy)
+            lineTo(cx,     cy + r)
+            lineTo(cx - r, cy)
+            close()
+        }
+        paint.color = Color.rgb(220, 38, 38); paint.style = Paint.Style.FILL
+        canvas.drawPath(diamond, paint)
+        paint.color = Color.BLACK; paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f * dp
+        canvas.drawPath(diamond, paint)
+
+        // Diagonal cross inside
+        paint.strokeWidth = 2.5f * dp; paint.strokeCap = Paint.Cap.ROUND
+        canvas.drawLine(cx - r * 0.45f, cy - r * 0.45f, cx + r * 0.45f, cy + r * 0.45f, paint)
+        canvas.drawLine(cx + r * 0.45f, cy - r * 0.45f, cx - r * 0.45f, cy + r * 0.45f, paint)
+
+        // Label below
+        paint.style = Paint.Style.FILL; paint.color = Color.rgb(220, 38, 38)
+        paint.textSize = 8.5f * dp; paint.textAlign = Paint.Align.CENTER; paint.isFakeBoldText = true
+        canvas.drawText(label.take(8), cx, size - 1.5f * dp, paint)
+        return BitmapDrawable(res, bmp)
+    }
+
+    /** Cyan rotary-wing silhouette — friendly UAS / drone. */
+    fun drone(res: Resources, callsign: String = ""): Drawable {
+        val dp   = res.displayMetrics.density
+        val size = (44 * dp).toInt()
+        val bmp  = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+        val cx = size / 2f; val cy = size * 0.42f
+
+        // Body ellipse
+        paint.color = Color.rgb(0x80, 0xE0, 0xFF); paint.style = Paint.Style.FILL
+        canvas.drawOval(cx - 6 * dp, cy - 3 * dp, cx + 6 * dp, cy + 3 * dp, paint)
+        paint.color = Color.BLACK; paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.4f * dp
+        canvas.drawOval(cx - 6 * dp, cy - 3 * dp, cx + 6 * dp, cy + 3 * dp, paint)
+
+        // Four arms + rotor discs
+        val armLen = 10 * dp; val rDisk = 4 * dp
+        paint.strokeWidth = 1.8f * dp; paint.strokeCap = Paint.Cap.ROUND
+        for ((dx, dy) in listOf(-1f to -1f, 1f to -1f, -1f to 1f, 1f to 1f)) {
+            val ax = cx + dx * armLen * 0.7f; val ay = cy + dy * armLen * 0.7f
+            canvas.drawLine(cx, cy, ax, ay, paint)
+            paint.style = Paint.Style.STROKE
+            canvas.drawCircle(ax, ay, rDisk, paint)
+        }
+
+        if (callsign.isNotEmpty()) {
+            paint.style = Paint.Style.FILL; paint.color = Color.rgb(0x00, 0x60, 0x80)
+            paint.textSize = 7.5f * dp; paint.textAlign = Paint.Align.CENTER; paint.isFakeBoldText = true
+            canvas.drawText(callsign.take(6), cx, size - 1.5f * dp, paint)
+        }
+        return BitmapDrawable(res, bmp)
+    }
+
+    /** Blue fixed-wing silhouette — friendly air support / CAS. */
+    fun cas(res: Resources, callsign: String = ""): Drawable {
+        val dp   = res.displayMetrics.density
+        val size = (48 * dp).toInt()
+        val bmp  = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+        val cx = size / 2f; val cy = size * 0.40f
+
+        // Fuselage
+        paint.color = Color.rgb(37, 99, 235); paint.style = Paint.Style.FILL
+        canvas.drawRect(cx - 2.5f * dp, cy - 14 * dp, cx + 2.5f * dp, cy + 6 * dp, paint)
+
+        // Wings
+        val wing = Path().apply {
+            moveTo(cx, cy - 4 * dp)
+            lineTo(cx - 15 * dp, cy + 4 * dp)
+            lineTo(cx - 5 * dp, cy + 4 * dp)
+            lineTo(cx + 5 * dp, cy + 4 * dp)
+            lineTo(cx + 15 * dp, cy + 4 * dp)
+            close()
+        }
+        canvas.drawPath(wing, paint)
+
+        // Tail fins
+        val tail = Path().apply {
+            moveTo(cx, cy + 5 * dp)
+            lineTo(cx - 7 * dp, cy + 10 * dp)
+            lineTo(cx + 7 * dp, cy + 10 * dp)
+            close()
+        }
+        canvas.drawPath(tail, paint)
+
+        // Outline
+        paint.color = Color.BLACK; paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.2f * dp
+        canvas.drawRect(cx - 2.5f * dp, cy - 14 * dp, cx + 2.5f * dp, cy + 6 * dp, paint)
+        canvas.drawPath(wing, paint); canvas.drawPath(tail, paint)
+
+        if (callsign.isNotEmpty()) {
+            paint.style = Paint.Style.FILL; paint.color = Color.rgb(37, 99, 235)
+            paint.textSize = 8f * dp; paint.textAlign = Paint.Align.CENTER; paint.isFakeBoldText = true
+            canvas.drawText(callsign.take(6), cx, size - 1.5f * dp, paint)
+        }
+        return BitmapDrawable(res, bmp)
+    }
+
+    /** Dark-green friendly rectangle with sniper scope — sniper overwatch position. */
+    fun sniperHide(res: Resources, callsign: String = ""): Drawable {
+        val dp   = res.displayMetrics.density
+        val frameH = 20 * dp; val frameW = 28 * dp; val pad = 2f * dp
+        val textH  = if (callsign.isNotEmpty()) 12 * dp else 0f
+        val w = (pad + frameW + pad).toInt()
+        val h = (pad + frameH + textH + pad).toInt()
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+        val left = pad; val top = pad; val right = left + frameW; val bottom = top + frameH
+
+        // Friendly rectangle (dark green fill)
+        paint.color = Color.rgb(22, 101, 52); paint.style = Paint.Style.FILL
+        canvas.drawRect(left, top, right, bottom, paint)
+        paint.color = Color.BLACK; paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.6f * dp
+        canvas.drawRect(left, top, right, bottom, paint)
+
+        // Scope cross-hair glyph
+        val inset = 4 * dp
+        val il = left + inset; val it = top + inset; val ir = right - inset; val ib = bottom - inset
+        val icx = (il + ir) / 2f; val icy = (it + ib) / 2f; val iR = (ir - il) * 0.32f
+        paint.color = Color.rgb(134, 239, 172); paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.4f * dp
+        canvas.drawCircle(icx, icy, iR, paint)
+        canvas.drawLine(il, icy, icx - iR, icy, paint)
+        canvas.drawLine(icx + iR, icy, ir, icy, paint)
+        canvas.drawLine(icx, it, icx, icy - iR, paint)
+        canvas.drawLine(icx, icy + iR, icx, ib, paint)
+
+        if (callsign.isNotEmpty()) {
+            paint.style = Paint.Style.FILL; paint.color = Color.rgb(134, 239, 172)
+            paint.textSize = 8f * dp; paint.textAlign = Paint.Align.CENTER; paint.isFakeBoldText = true
+            canvas.drawText(callsign.take(8), (w / 2f), bottom + 10 * dp, paint)
+        }
+        return BitmapDrawable(res, bmp)
+    }
+
+    /** Yellow friendly rectangle with lightning-bolt — electronic warfare asset. */
+    fun ewAsset(res: Resources, callsign: String = ""): Drawable {
+        val dp   = res.displayMetrics.density
+        val frameH = 20 * dp; val frameW = 28 * dp; val pad = 2f * dp
+        val textH  = if (callsign.isNotEmpty()) 12 * dp else 0f
+        val w = (pad + frameW + pad).toInt()
+        val h = (pad + frameH + textH + pad).toInt()
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint  = Paint(Paint.ANTI_ALIAS_FLAG)
+        val left = pad; val top = pad; val right = left + frameW; val bottom = top + frameH
+
+        // Frame (amber fill)
+        paint.color = Color.rgb(146, 64, 14); paint.style = Paint.Style.FILL
+        canvas.drawRect(left, top, right, bottom, paint)
+        paint.color = Color.rgb(245, 158, 11); paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.6f * dp
+        canvas.drawRect(left, top, right, bottom, paint)
+
+        // Lightning bolt
+        val cx = (left + right) / 2f; val bolt = Path().apply {
+            moveTo(cx + 3 * dp, top + 3 * dp)
+            lineTo(cx - 1 * dp, top + frameH * 0.48f)
+            lineTo(cx + 2 * dp, top + frameH * 0.48f)
+            lineTo(cx - 3 * dp, bottom - 3 * dp)
+            lineTo(cx + 1 * dp, top + frameH * 0.60f)
+            lineTo(cx - 2 * dp, top + frameH * 0.60f)
+            close()
+        }
+        paint.color = Color.rgb(253, 224, 71); paint.style = Paint.Style.FILL
+        canvas.drawPath(bolt, paint)
+        paint.color = Color.rgb(146, 64, 14); paint.style = Paint.Style.STROKE; paint.strokeWidth = 1f * dp
+        canvas.drawPath(bolt, paint)
+
+        if (callsign.isNotEmpty()) {
+            paint.style = Paint.Style.FILL; paint.color = Color.rgb(253, 224, 71)
+            paint.textSize = 8f * dp; paint.textAlign = Paint.Align.CENTER; paint.isFakeBoldText = true
+            canvas.drawText(callsign.take(8), (w / 2f), bottom + 10 * dp, paint)
+        }
+        return BitmapDrawable(res, bmp)
+    }
+
     // ── Cluster marker (circle with count) ──────────────────────────────────
 
     fun cluster(res: Resources, count: Int, color: Int): Drawable {

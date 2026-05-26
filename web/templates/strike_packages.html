@@ -1,0 +1,842 @@
+{% extends "base.html" %}
+{% block title %}Strike Packages — Arrow{% endblock %}
+{% block head %}
+<style>
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+.sp-shell { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 60px); }
+main { padding: 0; }
+
+/* ── Left sidebar ────────────────────────────────────────────────────────── */
+.sp-sidebar { background: #0d1117; border-right: 1px solid #1e2736; overflow-y: auto;
+              display: flex; flex-direction: column; }
+.sp-sidebar-hdr { padding: 12px 14px; border-bottom: 1px solid #1e2736;
+                  display: flex; align-items: center; justify-content: space-between; }
+.sp-sidebar-hdr h3 { margin: 0; font-size: .8rem; text-transform: uppercase;
+                     letter-spacing: .12em; color: #64748b; }
+.btn-new { background: #1d4ed8; color: #fff; border: 0; border-radius: 5px;
+           padding: 4px 10px; font: inherit; font-size: .78rem; cursor: pointer; }
+.btn-new:hover { background: #2563eb; }
+.sp-list { flex: 1; padding: 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+.sp-card { padding: 9px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent;
+           background: #131920; transition: border-color .15s; }
+.sp-card:hover  { border-color: #334155; }
+.sp-card.active { border-color: #f97316; background: #1a1208; }
+.sp-card-name   { font-size: .85rem; font-weight: 600; color: #f1f5f9; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; }
+.sp-card-meta   { font-size: .7rem; color: #64748b; margin-top: 2px;
+                  display: flex; align-items: center; gap: 6px; }
+.status-badge { display: inline-block; font-size: .62rem; font-weight: 700; padding: 1px 6px;
+                border-radius: 3px; letter-spacing: .04em; }
+.s-PLANNING { background: rgba(100,116,139,.2); color: #94a3b8; border: 1px solid #475569; }
+.s-ACTIVE   { background: rgba(249,115,22,.15);  color: #f97316; border: 1px solid #c2410c; }
+.s-COMPLETE { background: rgba(34,197,94,.15);   color: #22c55e; border: 1px solid #16a34a; }
+.s-ABORTED  { background: rgba(239,68,68,.15);   color: #ef4444; border: 1px solid #dc2626; }
+
+/* ── Main panel ──────────────────────────────────────────────────────────── */
+.sp-main { overflow-y: auto; background: #0d1117; }
+.sp-empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; color: #334155; gap: 12px; }
+.sp-empty .big { font-size: 2.5rem; }
+.sp-empty p { font-size: .85rem; }
+
+/* ── Detail / editor ─────────────────────────────────────────────────────── */
+.sp-detail { padding: 20px 28px; max-width: 900px; }
+.sp-detail-hdr { display: flex; align-items: flex-start; justify-content: space-between;
+                 margin-bottom: 18px; gap: 12px; }
+.sp-detail-hdr h2 { margin: 0; font-size: 1.2rem; color: #f1f5f9; }
+.sp-detail-hdr .sub { font-size: .75rem; color: #64748b; margin-top: 3px; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn { padding: 5px 14px; border-radius: 5px; font: inherit; font-size: .82rem; cursor: pointer;
+       border: 1px solid; font-weight: 600; transition: filter .15s; }
+.btn:hover { filter: brightness(1.15); }
+.btn-activate { color: #f97316; border-color: #f97316; background: rgba(249,115,22,.1); }
+.btn-complete { color: #22c55e; border-color: #22c55e; background: rgba(34,197,94,.1); }
+.btn-abort    { color: #ef4444; border-color: #ef4444; background: rgba(239,68,68,.1); }
+.btn-export   { color: #a78bfa; border-color: #a78bfa; background: rgba(167,139,250,.1); }
+.btn-save     { color: #60a5fa; border-color: #60a5fa; background: rgba(96,165,250,.1); }
+.btn-delete   { color: #f43f5e; border-color: #f43f5e; background: rgba(244,63,94,.08); }
+
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
+.sp-tabs { display: flex; gap: 0; border-bottom: 1px solid #1e2736; margin-bottom: 18px; }
+.sp-tab  { padding: 7px 14px; font-size: .8rem; color: #64748b; cursor: pointer; border: 0;
+           background: none; font: inherit; border-bottom: 2px solid transparent; }
+.sp-tab:hover  { color: #94a3b8; }
+.sp-tab.active { color: #f97316; border-bottom-color: #f97316; font-weight: 600; }
+.sp-tab-panel  { display: none; }
+.sp-tab-panel.active { display: block; }
+
+/* ── Form elements ───────────────────────────────────────────────────────── */
+.field  { margin-bottom: 12px; }
+.field label { display: block; font-size: .72rem; color: #94a3b8; text-transform: uppercase;
+               letter-spacing: .07em; margin-bottom: 4px; }
+.field input, .field select, .field textarea {
+    width: 100%; box-sizing: border-box; background: #131920;
+    color: #e2e8f0; border: 1px solid #1e2736; border-radius: 5px;
+    padding: 7px 10px; font: inherit; font-size: .88rem; outline: none;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #f97316; }
+.field select option { background: #131920; }
+.field textarea { resize: vertical; min-height: 56px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+
+/* ── Section headers ─────────────────────────────────────────────────────── */
+.sec-hdr { display: flex; align-items: center; justify-content: space-between;
+           margin: 18px 0 8px; }
+.sec-hdr h4 { margin: 0; font-size: .75rem; text-transform: uppercase; letter-spacing: .12em;
+              color: #64748b; }
+.btn-add-row { background: none; border: 1px dashed #334155; color: #64748b; border-radius: 5px;
+               padding: 3px 10px; font: inherit; font-size: .75rem; cursor: pointer; }
+.btn-add-row:hover { border-color: #f97316; color: #f97316; }
+
+/* ── Asset rows ──────────────────────────────────────────────────────────── */
+.asset-row { background: #131920; border: 1px solid #1e2736; border-radius: 6px;
+             padding: 10px 12px; margin-bottom: 8px; position: relative; }
+.btn-remove-row { position: absolute; top: 8px; right: 8px; background: none; border: 0;
+                  color: #475569; font-size: .9rem; cursor: pointer; padding: 0 4px; }
+.btn-remove-row:hover { color: #ef4444; }
+
+/* ── Operator / object picker ────────────────────────────────────────────── */
+.pick-list { display: grid; gap: 5px; max-height: 220px; overflow-y: auto;
+             border: 1px solid #1e2736; border-radius: 5px; padding: 6px; background: #0d1117; }
+.pick-item { display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+             border-radius: 4px; cursor: pointer; font-size: .82rem; }
+.pick-item:hover { background: #1e2736; }
+.pick-item input[type=checkbox] { accent-color: #f97316; }
+
+/* ── Overview tab table ──────────────────────────────────────────────────── */
+.ov-table { width: 100%; border-collapse: collapse; font-size: .82rem; margin-top: 8px; }
+.ov-table th { text-align: left; color: #64748b; font-size: .7rem; text-transform: uppercase;
+               letter-spacing: .08em; padding: 5px 8px; border-bottom: 1px solid #1e2736; }
+.ov-table td { padding: 5px 8px; border-bottom: 1px solid #0f1419; vertical-align: top; }
+.ov-table tr:hover td { background: #131920; }
+.ov-tag { display: inline-block; font-size: .68rem; font-weight: 700; padding: 1px 5px;
+          border-radius: 3px; margin: 1px; }
+.tag-drone { background: rgba(96,165,250,.15); color: #60a5fa; border: 1px solid #1d4ed8; }
+.tag-isr   { background: rgba(167,139,250,.15); color: #a78bfa; border: 1px solid #7c3aed; }
+.tag-cas   { background: rgba(239,68,68,.15);  color: #ef4444; border: 1px solid #dc2626; }
+.tag-sniper{ background: rgba(34,197,94,.15);  color: #22c55e; border: 1px solid #16a34a; }
+.tag-ew    { background: rgba(245,158,11,.15); color: #f59e0b; border: 1px solid #b45309; }
+.tag-medevac{background:rgba(249,115,22,.15);  color: #f97316; border: 1px solid #c2410c; }
+.tag-op    { background: rgba(100,116,139,.2); color: #94a3b8; border: 1px solid #475569; }
+
+.sp-status-bar { padding: 6px 12px; background: #0d1117; border-top: 1px solid #1e2736;
+                 font-size: .75rem; color: #475569; text-align: right; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sp-shell">
+    <!-- Sidebar -->
+    <div class="sp-sidebar">
+        <div class="sp-sidebar-hdr">
+            <h3>Strike Packages</h3>
+            <button class="btn-new" onclick="showNew()">+ New</button>
+        </div>
+        <div class="sp-list" id="sp-list">
+            <div style="color:#475569;font-size:.78rem;padding:12px 4px">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Main panel -->
+    <div class="sp-main" id="sp-main">
+        <div class="sp-empty" id="sp-empty">
+            <div class="big">⚡</div>
+            <p>Select a Strike Package or create a new one</p>
+        </div>
+        <!-- Detail / editor injected here -->
+    </div>
+</div>
+
+<!-- ── New package modal ─────────────────────────────────────────────────── -->
+<div id="new-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+     z-index:3000;align-items:center;justify-content:center">
+    <div style="background:#161d2b;border:1px solid #334155;border-radius:10px;
+                padding:26px;width:440px;max-width:95vw">
+        <h3 style="margin:0 0 16px;color:#f1f5f9;font-size:1rem">New Strike Package</h3>
+        <div class="field"><label>Package Name</label>
+            <input id="nm-name" type="text" placeholder="e.g. NEPTUNE SPEAR"></div>
+        <div class="row2">
+            <div class="field"><label>Target Lat</label>
+                <input id="nm-lat" type="number" step="0.000001" placeholder="33.456789"></div>
+            <div class="field"><label>Target Lon</label>
+                <input id="nm-lon" type="number" step="0.000001" placeholder="44.123456"></div>
+        </div>
+        <div class="field"><label>Target Description</label>
+            <input id="nm-target" type="text" placeholder="HVT compound, grid sector 4"></div>
+        <div id="nm-err" style="color:#ef4444;font-size:.78rem;margin-bottom:8px;display:none"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+            <button onclick="document.getElementById('new-modal').style.display='none'"
+                    style="background:#334155;color:#f8fafc;border:0;border-radius:6px;
+                           padding:7px 14px;cursor:pointer;font:inherit">Cancel</button>
+            <button onclick="createPackage()"
+                    style="background:#f97316;color:#fff;border:0;border-radius:6px;
+                           padding:7px 16px;cursor:pointer;font:inherit;font-weight:600">Create</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let _pkg = null;         // currently viewed package
+let _allOps = [];        // operators from hierarchy
+let _allTOs = [];        // tactical objects
+let _allFMs = [];        // fire missions
+let _allReps = [];       // reports
+
+// ── Fetch helpers ──────────────────────────────────────────────────────────
+function api(method, path, body) {
+    const tok = localStorage.getItem('arrow_token') || '';
+    const mid = window.arrowGetMissionId ? arrowGetMissionId() : null;
+    const hdrs = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + tok,
+        ...(mid ? {'X-Mission-ID': String(mid)} : {}),
+    };
+    return fetch(window.ARROW_BACKEND_URL + path, {
+        method, headers: hdrs,
+        body: body ? JSON.stringify(body) : undefined,
+    }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
+}
+
+function apiRaw(path) {
+    const tok = localStorage.getItem('arrow_token') || '';
+    const mid = window.arrowGetMissionId ? arrowGetMissionId() : null;
+    const hdrs = {
+        'Authorization': 'Bearer ' + tok,
+        ...(mid ? {'X-Mission-ID': String(mid)} : {}),
+    };
+    return fetch(window.ARROW_BACKEND_URL + path, {headers: hdrs});
+}
+
+function esc(s) {
+    return String(s||'').replace(/[&<>"']/g,
+        c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmt(iso) {
+    if(!iso) return '—';
+    const d = new Date(iso);
+    return d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+// ── Bootstrap ──────────────────────────────────────────────────────────────
+async function boot() {
+    await Promise.all([loadList(), loadMeta()]);
+}
+
+async function loadList() {
+    const pkgs = await api('GET', '/strike-packages').catch(()=>[]);
+    renderList(pkgs);
+}
+
+async function loadMeta() {
+    const [ops, tos, fms, reps] = await Promise.all([
+        api('GET', '/operators').catch(()=>[]),
+        api('GET', '/tactical-objects').catch(()=>[]),
+        api('GET', '/fire-missions').catch(()=>[]),
+        api('GET', '/reports').catch(()=>[]),
+    ]);
+    _allOps  = ops;
+    _allTOs  = tos;
+    _allFMs  = fms;
+    _allReps = reps;
+}
+
+// ── Sidebar list ──────────────────────────────────────────────────────────
+function renderList(pkgs) {
+    const el = document.getElementById('sp-list');
+    if (!pkgs.length) {
+        el.innerHTML = '<div style="color:#475569;font-size:.78rem;padding:12px 4px">No packages yet</div>';
+        return;
+    }
+    el.innerHTML = pkgs.map(p => `
+        <div class="sp-card ${_pkg && _pkg.id===p.id ? 'active' : ''}"
+             onclick="selectPkg(${p.id})" data-id="${p.id}">
+            <div class="sp-card-name">${esc(p.name)}</div>
+            <div class="sp-card-meta">
+                <span class="status-badge s-${p.status}">${p.status}</span>
+                ${p.target_lat ? `<span style="font-family:monospace">${p.target_lat.toFixed(4)}, ${p.target_lon.toFixed(4)}</span>` : ''}
+            </div>
+        </div>`).join('');
+}
+
+// ── Select + render detail ─────────────────────────────────────────────────
+async function selectPkg(id) {
+    _pkg = await api('GET', `/strike-packages/${id}`);
+    document.querySelectorAll('.sp-card').forEach(c =>
+        c.classList.toggle('active', +c.dataset.id === id));
+    renderDetail();
+}
+
+function renderDetail() {
+    document.getElementById('sp-empty').style.display = 'none';
+    const p = _pkg;
+    const assets = p.assets || {};
+
+    document.getElementById('sp-main').innerHTML = `
+<div class="sp-detail">
+  <div class="sp-detail-hdr">
+    <div>
+      <h2>${esc(p.name)} <span class="status-badge s-${p.status}" style="font-size:.75rem">${p.status}</span></h2>
+      <div class="sub">Created ${fmt(p.created_at)} · Mission ${p.mission_id||'—'}</div>
+      ${p.target_lat ? `<div class="sub" style="font-family:monospace;margin-top:3px">
+        Target: ${p.target_lat.toFixed(6)}, ${p.target_lon.toFixed(6)}
+        ${p.target_description ? ' · '+esc(p.target_description) : ''}
+      </div>` : ''}
+    </div>
+    <div class="actions">
+      ${p.status==='PLANNING' ? `<button class="btn btn-activate" onclick="lifecycle('activate')">Activate</button>` : ''}
+      ${p.status==='ACTIVE'   ? `<button class="btn btn-complete" onclick="lifecycle('complete')">Complete</button>` : ''}
+      ${p.status!=='COMPLETE' && p.status!=='ABORTED'
+        ? `<button class="btn btn-abort" onclick="lifecycle('abort')">Abort</button>` : ''}
+      <button class="btn btn-export" onclick="exportCoT()">⬇ TAK Export</button>
+      <button class="btn btn-save" onclick="saveEdits()">Save</button>
+      <button class="btn btn-delete" onclick="deletePkg()">Delete</button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="sp-tabs">
+    <button class="sp-tab active" onclick="showTab(this,'tab-overview')">Overview</button>
+    <button class="sp-tab" onclick="showTab(this,'tab-personnel')">Personnel</button>
+    <button class="sp-tab" onclick="showTab(this,'tab-air')">Air Assets</button>
+    <button class="sp-tab" onclick="showTab(this,'tab-isr')">ISR / EW</button>
+    <button class="sp-tab" onclick="showTab(this,'tab-ground')">Ground</button>
+    <button class="sp-tab" onclick="showTab(this,'tab-plan')">Assault Plan</button>
+    <button class="sp-tab" onclick="showTab(this,'tab-comms')">Comms</button>
+    <button class="sp-tab" onclick="showTab(this,'tab-objects')">Objects & FM</button>
+  </div>
+
+  <!-- Overview -->
+  <div class="sp-tab-panel active" id="tab-overview">
+    ${renderOverview(p, assets)}
+  </div>
+
+  <!-- Personnel -->
+  <div class="sp-tab-panel" id="tab-personnel">
+    <div class="sec-hdr"><h4>Assault Operators</h4></div>
+    <div class="pick-list" id="ops-pick">
+      ${_allOps.map(op => `
+        <label class="pick-item">
+          <input type="checkbox" value="${op.id}"
+            ${(p.operator_ids||[]).includes(op.id) ? 'checked' : ''}>
+          <span>${esc(op.callsign)}</span>
+          <span style="color:#64748b;font-size:.72rem">${op.rank} · ${op.status}</span>
+        </label>`).join('')}
+    </div>
+  </div>
+
+  <!-- Air Assets -->
+  <div class="sp-tab-panel" id="tab-air">
+    <div class="sec-hdr"><h4>Drones / UAS</h4>
+      <button class="btn-add-row" onclick="addAssetRow('drones-container', droneRowTpl)">+ Add Drone</button>
+    </div>
+    <div id="drones-container">
+      ${(assets.drones||[]).map((d,i) => droneRowHtml(d, i)).join('')}
+    </div>
+
+    <div class="sec-hdr"><h4>Air Support / CAS</h4>
+      <button class="btn-add-row" onclick="addAssetRow('cas-container', casRowTpl)">+ Add Aircraft</button>
+    </div>
+    <div id="cas-container">
+      ${(assets.air_support||[]).map((c,i) => casRowHtml(c, i)).join('')}
+    </div>
+  </div>
+
+  <!-- ISR / EW -->
+  <div class="sp-tab-panel" id="tab-isr">
+    <div class="sec-hdr"><h4>ISR Assets</h4>
+      <button class="btn-add-row" onclick="addAssetRow('isr-container', isrRowTpl)">+ Add ISR</button>
+    </div>
+    <div id="isr-container">
+      ${(assets.isr||[]).map((s,i) => isrRowHtml(s, i)).join('')}
+    </div>
+
+    <div class="sec-hdr"><h4>Electronic Warfare</h4>
+      <button class="btn-add-row" onclick="addAssetRow('ew-container', ewRowTpl)">+ Add EW</button>
+    </div>
+    <div id="ew-container">
+      ${(assets.electronic_warfare||[]).map((e,i) => ewRowHtml(e, i)).join('')}
+    </div>
+  </div>
+
+  <!-- Ground -->
+  <div class="sp-tab-panel" id="tab-ground">
+    <div class="sec-hdr"><h4>Sniper Overwatch</h4>
+      <button class="btn-add-row" onclick="addAssetRow('sniper-container', sniperRowTpl)">+ Add Position</button>
+    </div>
+    <div id="sniper-container">
+      ${(assets.sniper_overwatch||[]).map((s,i) => sniperRowHtml(s, i)).join('')}
+    </div>
+
+    <div class="sec-hdr"><h4>MEDEVAC — Linked Reports</h4></div>
+    <div class="pick-list" id="reps-pick">
+      ${_allReps.filter(r=>['MEDEVAC','CASEVAC','CAS'].includes(r.type)).map(r => `
+        <label class="pick-item">
+          <input type="checkbox" value="${r.id}"
+            ${(p.report_ids||[]).includes(r.id) ? 'checked' : ''}>
+          <span class="status-badge" style="font-size:.62rem;background:rgba(249,115,22,.15);
+            color:#f97316;border:1px solid #c2410c">${r.type}</span>
+          <span>#${r.id} · ${fmt(r.timestamp)}</span>
+        </label>`).join('') || '<span style="color:#475569;font-size:.78rem">No MEDEVAC/CAS reports in this mission</span>'}
+    </div>
+  </div>
+
+  <!-- Assault Plan -->
+  <div class="sp-tab-panel" id="tab-plan">
+    <div class="sec-hdr"><h4>Phases</h4>
+      <button class="btn-add-row" onclick="addPhase()">+ Add Phase</button>
+    </div>
+    <div id="phases-container">
+      ${((assets.assault_plan||{}).phases||[]).map((ph,i) => phaseHtml(ph, i)).join('')}
+    </div>
+    <div class="sec-hdr"><h4>Actions on Objective</h4></div>
+    <div class="field"><label>Actions on Objective</label>
+      <textarea id="aao" rows="3">${esc((assets.assault_plan||{}).actions_on_objective||'')}</textarea>
+    </div>
+    <div class="field"><label>Consolidation Plan</label>
+      <textarea id="consolidation" rows="3">${esc((assets.assault_plan||{}).consolidation||'')}</textarea>
+    </div>
+
+    <div class="sec-hdr"><h4>Exfil Routes</h4>
+      <button class="btn-add-row" onclick="addAssetRow('exfil-container', exfilRowTpl)">+ Add Route</button>
+    </div>
+    <div id="exfil-container">
+      ${((assets.assault_plan||{}).exfil_routes||assets.exfil_routes||[]).map((r,i) => exfilRowHtml(r, i)).join('')}
+    </div>
+  </div>
+
+  <!-- Comms -->
+  <div class="sp-tab-panel" id="tab-comms">
+    <div class="sec-hdr"><h4>PACE Plan</h4></div>
+    <div class="row2">
+      <div class="field"><label>Primary Freq</label>
+        <input id="comms-primary" type="text" value="${esc((assets.comms||{}).primary_freq||'')}"
+               placeholder="e.g. 143.250 MHz FM"></div>
+      <div class="field"><label>Alternate Freq</label>
+        <input id="comms-alternate" type="text" value="${esc((assets.comms||{}).alternate_freq||'')}"
+               placeholder="e.g. 225.100 MHz UHF"></div>
+    </div>
+    <div class="field"><label>Waveform / Net</label>
+      <input id="comms-waveform" type="text" value="${esc((assets.comms||{}).waveform||'')}"
+             placeholder="e.g. SINCGARS, HF BLOS, MUOS"></div>
+    <div class="field"><label>Contingency / Emergency (PACE summary)</label>
+      <textarea id="comms-pace" rows="4">${esc((assets.comms||{}).pace_plan||'')}</textarea>
+    </div>
+  </div>
+
+  <!-- Objects & Fire Missions -->
+  <div class="sp-tab-panel" id="tab-objects">
+    <div class="sec-hdr"><h4>Tactical Objects (Routes, Objectives, Zones)</h4></div>
+    <div class="pick-list" id="to-pick">
+      ${_allTOs.map(t => `
+        <label class="pick-item">
+          <input type="checkbox" value="${t.id}"
+            ${(p.tactical_object_ids||[]).includes(t.id) ? 'checked' : ''}>
+          <span style="font-size:.7rem;color:#64748b;font-family:monospace">[${t.type}]</span>
+          <span>${esc(t.notes||t.type)} <span style="color:#475569;font-size:.7rem">${t.latitude.toFixed(4)}, ${t.longitude.toFixed(4)}</span></span>
+        </label>`).join('') || '<span style="color:#475569;font-size:.78rem">No tactical objects in this mission</span>'}
+    </div>
+
+    <div class="sec-hdr"><h4>Fire Missions</h4></div>
+    <div class="pick-list" id="fm-pick">
+      ${_allFMs.map(f => `
+        <label class="pick-item">
+          <input type="checkbox" value="${f.id}"
+            ${(p.fire_mission_ids||[]).includes(f.id) ? 'checked' : ''}>
+          <span>${f.mission_type}</span>
+          <span style="color:#64748b;font-size:.72rem">${f.ammunition} · ${f.status} · ${f.latitude.toFixed(4)}, ${f.longitude.toFixed(4)}</span>
+        </label>`).join('') || '<span style="color:#475569;font-size:.78rem">No fire missions in this mission</span>'}
+    </div>
+  </div>
+</div>`;
+}
+
+// ── Overview tab ──────────────────────────────────────────────────────────
+function renderOverview(p, assets) {
+    const ops = (p.operator_ids||[]).map(id => {
+        const op = _allOps.find(o=>o.id===id);
+        return op ? `<span class="ov-tag tag-op">${esc(op.callsign)}</span>` : '';
+    }).join('');
+    const drones = (assets.drones||[]).map(d =>
+        `<span class="ov-tag tag-drone">${esc(d.callsign||d.platform||'Drone')}</span>`).join('');
+    const isr = (assets.isr||[]).map(s =>
+        `<span class="ov-tag tag-isr">${esc(s.sensor||s.platform||'ISR')}</span>`).join('');
+    const cas = (assets.air_support||[]).map(c =>
+        `<span class="ov-tag tag-cas">${esc(c.callsign||c.aircraft||'CAS')}</span>`).join('');
+    const snipers = (assets.sniper_overwatch||[]).map(s =>
+        `<span class="ov-tag tag-sniper">${esc(s.callsign||'SNIPER')}</span>`).join('');
+    const ew = (assets.electronic_warfare||[]).map(e =>
+        `<span class="ov-tag tag-ew">${esc(e.callsign||e.system||'EW')}</span>`).join('');
+    const fms = (p.fire_mission_ids||[]).length;
+    const reps = (p.report_ids||[]).length;
+    const tos  = (p.tactical_object_ids||[]).length;
+
+    return `
+    <table class="ov-table">
+      <thead><tr><th>Element</th><th>Assets</th><th>Count</th></tr></thead>
+      <tbody>
+        <tr><td>Personnel</td><td>${ops||'<span style="color:#334155">—</span>'}</td><td>${(p.operator_ids||[]).length}</td></tr>
+        <tr><td>Drones / UAS</td><td>${drones||'<span style="color:#334155">—</span>'}</td><td>${(assets.drones||[]).length}</td></tr>
+        <tr><td>ISR</td><td>${isr||'<span style="color:#334155">—</span>'}</td><td>${(assets.isr||[]).length}</td></tr>
+        <tr><td>Air Support</td><td>${cas||'<span style="color:#334155">—</span>'}</td><td>${(assets.air_support||[]).length}</td></tr>
+        <tr><td>Sniper OW</td><td>${snipers||'<span style="color:#334155">—</span>'}</td><td>${(assets.sniper_overwatch||[]).length}</td></tr>
+        <tr><td>EW</td><td>${ew||'<span style="color:#334155">—</span>'}</td><td>${(assets.electronic_warfare||[]).length}</td></tr>
+        <tr><td>Tactical Objects</td><td></td><td>${tos}</td></tr>
+        <tr><td>Fire Missions</td><td></td><td>${fms}</td></tr>
+        <tr><td>Reports (MEDEVAC/CAS)</td><td></td><td>${reps}</td></tr>
+        <tr><td>Comms</td><td>${esc((assets.comms||{}).primary_freq||'—')}</td><td></td></tr>
+        <tr><td>Assault phases</td><td></td><td>${((assets.assault_plan||{}).phases||[]).length}</td></tr>
+        <tr><td>Exfil routes</td><td></td><td>${(assets.exfil_routes||[]).length}</td></tr>
+      </tbody>
+    </table>`;
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+function showTab(btn, panelId) {
+    document.querySelectorAll('.sp-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.sp-tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(panelId).classList.add('active');
+}
+
+// ── Asset row templates ────────────────────────────────────────────────────
+function droneRowHtml(d={}, i=Date.now()) {
+    return `<div class="asset-row" data-type="drone">
+      <button class="btn-remove-row" onclick="this.closest('.asset-row').remove()">✕</button>
+      <div class="row4">
+        <div class="field"><label>Callsign</label>
+          <input type="text" name="dr-callsign" value="${esc(d.callsign||'')}"></div>
+        <div class="field"><label>Platform</label>
+          <input type="text" name="dr-platform" value="${esc(d.platform||'')}" placeholder="MQ-9, TB2, Mavic…"></div>
+        <div class="field"><label>Loiter Lat</label>
+          <input type="number" step="0.000001" name="dr-lat" value="${d.loiter_lat||''}"></div>
+        <div class="field"><label>Loiter Lon</label>
+          <input type="number" step="0.000001" name="dr-lon" value="${d.loiter_lon||''}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Feed URL</label>
+          <input type="text" name="dr-feed" value="${esc(d.feed_url||'')}"></div>
+        <div class="field"><label>Notes</label>
+          <input type="text" name="dr-notes" value="${esc(d.notes||'')}"></div>
+      </div>
+    </div>`;
+}
+function droneRowTpl() { return droneRowHtml(); }
+
+function casRowHtml(c={}, i=Date.now()) {
+    return `<div class="asset-row" data-type="cas">
+      <button class="btn-remove-row" onclick="this.closest('.asset-row').remove()">✕</button>
+      <div class="row3">
+        <div class="field"><label>Callsign</label>
+          <input type="text" name="cas-callsign" value="${esc(c.callsign||'')}"></div>
+        <div class="field"><label>Aircraft</label>
+          <input type="text" name="cas-aircraft" value="${esc(c.aircraft||'')}" placeholder="F-18, AH-64, AC-130…"></div>
+        <div class="field"><label>Ordnance</label>
+          <input type="text" name="cas-ordnance" value="${esc(c.ordnance||'')}" placeholder="GBU-12, Hellfire…"></div>
+      </div>
+      <div class="row3">
+        <div class="field"><label>Station Time (min)</label>
+          <input type="number" name="cas-time" value="${c.station_time_min||''}"></div>
+        <div class="field"><label>Frequency</label>
+          <input type="text" name="cas-freq" value="${esc(c.frequency||'')}"></div>
+        <div class="field"><label>Notes</label>
+          <input type="text" name="cas-notes" value="${esc(c.notes||'')}"></div>
+      </div>
+    </div>`;
+}
+function casRowTpl() { return casRowHtml(); }
+
+function isrRowHtml(s={}, i=Date.now()) {
+    return `<div class="asset-row" data-type="isr">
+      <button class="btn-remove-row" onclick="this.closest('.asset-row').remove()">✕</button>
+      <div class="row3">
+        <div class="field"><label>Sensor Type</label>
+          <select name="isr-sensor">
+            ${['SIGINT','IMINT','HUMINT','MASINT','OSINT','EO/IR','SAR','LIDAR'].map(s2 =>
+              `<option ${s.sensor===s2?'selected':''}>${s2}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>Platform</label>
+          <input type="text" name="isr-platform" value="${esc(s.platform||'')}"></div>
+        <div class="field"><label>Priority</label>
+          <select name="isr-priority">
+            ${['HIGH','MEDIUM','LOW'].map(p2 =>
+              `<option ${s.collection_priority===p2?'selected':''}>${p2}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="field"><label>Notes</label>
+        <input type="text" name="isr-notes" value="${esc(s.notes||'')}"></div>
+    </div>`;
+}
+function isrRowTpl() { return isrRowHtml(); }
+
+function ewRowHtml(e={}, i=Date.now()) {
+    return `<div class="asset-row" data-type="ew">
+      <button class="btn-remove-row" onclick="this.closest('.asset-row').remove()">✕</button>
+      <div class="row4">
+        <div class="field"><label>System</label>
+          <input type="text" name="ew-system" value="${esc(e.system||'')}" placeholder="DUKE, CREW, JAMMER…"></div>
+        <div class="field"><label>Callsign</label>
+          <input type="text" name="ew-callsign" value="${esc(e.callsign||'')}"></div>
+        <div class="field"><label>Freq Bands</label>
+          <input type="text" name="ew-bands" value="${esc(e.frequency_bands||'')}"></div>
+        <div class="field"><label>Objective</label>
+          <select name="ew-objective">
+            ${['JAM','SIGINT','EW_ATTACK','DECEPTION'].map(o =>
+              `<option ${e.objective===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="field"><label>Notes</label>
+        <input type="text" name="ew-notes" value="${esc(e.notes||'')}"></div>
+    </div>`;
+}
+function ewRowTpl() { return ewRowHtml(); }
+
+function sniperRowHtml(s={}, i=Date.now()) {
+    return `<div class="asset-row" data-type="sniper">
+      <button class="btn-remove-row" onclick="this.closest('.asset-row').remove()">✕</button>
+      <div class="row4">
+        <div class="field"><label>Callsign</label>
+          <input type="text" name="sn-callsign" value="${esc(s.callsign||'')}"></div>
+        <div class="field"><label>Hide Lat</label>
+          <input type="number" step="0.000001" name="sn-lat" value="${s.position_lat||''}"></div>
+        <div class="field"><label>Hide Lon</label>
+          <input type="number" step="0.000001" name="sn-lon" value="${s.position_lon||''}"></div>
+        <div class="field"><label>Sector of Fire</label>
+          <input type="text" name="sn-sector" value="${esc(s.sector_of_fire||'')}" placeholder="N 000–090°"></div>
+      </div>
+      <div class="field"><label>Engagement Criteria</label>
+        <input type="text" name="sn-criteria" value="${esc(s.engagement_criteria||'')}"></div>
+    </div>`;
+}
+function sniperRowTpl() { return sniperRowHtml(); }
+
+function phaseHtml(ph={}, i=Date.now()) {
+    return `<div class="asset-row" data-type="phase">
+      <button class="btn-remove-row" onclick="this.closest('.asset-row').remove()">✕</button>
+      <div class="row2">
+        <div class="field"><label>Phase Name</label>
+          <input type="text" name="ph-name" value="${esc(ph.name||'')}"></div>
+        <div class="field"><label>Description</label>
+          <input type="text" name="ph-desc" value="${esc(ph.description||'')}"></div>
+      </div>
+      <div class="field"><label>Actions</label>
+        <textarea name="ph-actions" rows="2">${esc(ph.actions||'')}</textarea>
+      </div>
+    </div>`;
+}
+
+function exfilRowHtml(r={}, i=Date.now()) {
+    return `<div class="asset-row" data-type="exfil">
+      <button class="btn-remove-row" onclick="this.closest('.asset-row').remove()">✕</button>
+      <div class="row3">
+        <div class="field"><label>Route Name</label>
+          <select name="exf-name">
+            ${['PRIMARY','ALTERNATE','EMERGENCY','CONTINGENCY'].map(n =>
+              `<option ${r.name===n?'selected':''}>${n}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>Type</label>
+          <select name="exf-type">
+            ${['GROUND','AIR','WATER'].map(t =>
+              `<option ${r.type===t?'selected':''}>${t}</option>`).join('')}
+          </select></div>
+        <div class="field"><label>Tactical Object ID (ROUTE)</label>
+          <input type="number" name="exf-to-id" value="${r.tactical_object_id||''}"></div>
+      </div>
+      <div class="field"><label>Description</label>
+        <input type="text" name="exf-desc" value="${esc(r.description||'')}"></div>
+    </div>`;
+}
+function exfilRowTpl() { return exfilRowHtml(); }
+
+function addAssetRow(containerId, tplFn) {
+    document.getElementById(containerId).insertAdjacentHTML('beforeend', tplFn());
+}
+function addPhase() {
+    document.getElementById('phases-container').insertAdjacentHTML('beforeend', phaseHtml());
+}
+
+// ── Read editor state into payload ─────────────────────────────────────────
+function collectRows(containerId, type) {
+    const rows = document.querySelectorAll(`#${containerId} .asset-row`);
+    return Array.from(rows).map(row => {
+        const g = name => { const el = row.querySelector(`[name="${name}"]`); return el ? el.value : ''; };
+        const gf = name => { const v = parseFloat(g(name)); return isNaN(v) ? null : v; };
+        const gi = name => { const v = parseInt(g(name)); return isNaN(v) ? null : v; };
+        if (type==='drone') return {callsign:g('dr-callsign'),platform:g('dr-platform'),
+          loiter_lat:gf('dr-lat'),loiter_lon:gf('dr-lon'),feed_url:g('dr-feed'),notes:g('dr-notes')};
+        if (type==='cas') return {callsign:g('cas-callsign'),aircraft:g('cas-aircraft'),
+          ordnance:g('cas-ordnance'),station_time_min:gi('cas-time')||0,
+          frequency:g('cas-freq'),notes:g('cas-notes')};
+        if (type==='isr') return {sensor:g('isr-sensor'),platform:g('isr-platform'),
+          collection_priority:g('isr-priority'),notes:g('isr-notes')};
+        if (type==='ew') return {system:g('ew-system'),callsign:g('ew-callsign'),
+          frequency_bands:g('ew-bands'),objective:g('ew-objective'),notes:g('ew-notes')};
+        if (type==='sniper') return {callsign:g('sn-callsign'),position_lat:gf('sn-lat'),
+          position_lon:gf('sn-lon'),sector_of_fire:g('sn-sector'),
+          engagement_criteria:g('sn-criteria')};
+        if (type==='phase') return {name:g('ph-name'),description:g('ph-desc'),actions:g('ph-actions')};
+        if (type==='exfil') return {name:g('exf-name'),type:g('exf-type'),
+          tactical_object_id:gi('exf-to-id'),description:g('exf-desc')};
+        return {};
+    });
+}
+
+function collectChecked(pickId) {
+    return Array.from(document.querySelectorAll(`#${pickId} input[type=checkbox]:checked`))
+        .map(cb => parseInt(cb.value));
+}
+
+function buildPatchPayload() {
+    return {
+        operator_ids: collectChecked('ops-pick'),
+        tactical_object_ids: collectChecked('to-pick'),
+        fire_mission_ids: collectChecked('fm-pick'),
+        report_ids: collectChecked('reps-pick'),
+        assets: {
+            drones: collectRows('drones-container', 'drone'),
+            isr: collectRows('isr-container', 'isr'),
+            air_support: collectRows('cas-container', 'cas'),
+            sniper_overwatch: collectRows('sniper-container', 'sniper'),
+            electronic_warfare: collectRows('ew-container', 'ew'),
+            comms: {
+                primary_freq: document.getElementById('comms-primary')?.value||'',
+                alternate_freq: document.getElementById('comms-alternate')?.value||'',
+                waveform: document.getElementById('comms-waveform')?.value||'',
+                pace_plan: document.getElementById('comms-pace')?.value||'',
+            },
+            assault_plan: {
+                phases: collectRows('phases-container', 'phase'),
+                breach_points: [],
+                actions_on_objective: document.getElementById('aao')?.value||'',
+                consolidation: document.getElementById('consolidation')?.value||'',
+            },
+            exfil_routes: collectRows('exfil-container', 'exfil'),
+        },
+    };
+}
+
+// ── Actions ────────────────────────────────────────────────────────────────
+async function saveEdits() {
+    const body = buildPatchPayload();
+    _pkg = await api('PATCH', `/strike-packages/${_pkg.id}`, body);
+    showToast('Saved', 'ok');
+    refreshSidebarCard(_pkg);
+}
+
+async function lifecycle(action) {
+    _pkg = await api('POST', `/strike-packages/${_pkg.id}/${action}`);
+    renderDetail();
+    refreshSidebarCard(_pkg);
+    showToast(`Package ${action}d`, 'ok');
+}
+
+async function deletePkg() {
+    if (!confirm(`Delete "${_pkg.name}"?`)) return;
+    await fetch(window.ARROW_BACKEND_URL + `/strike-packages/${_pkg.id}`, {
+        method: 'DELETE',
+        headers: {'Authorization': 'Bearer '+(localStorage.getItem('arrow_token')||'')},
+    });
+    _pkg = null;
+    document.getElementById('sp-main').innerHTML =
+        '<div class="sp-empty" id="sp-empty"><div class="big">⚡</div><p>Select a Strike Package or create a new one</p></div>';
+    loadList();
+}
+
+async function exportCoT() {
+    const tok = localStorage.getItem('arrow_token') || '';
+    const a = document.createElement('a');
+    a.href = window.ARROW_BACKEND_URL + `/strike-packages/${_pkg.id}/cot-export`;
+    // Attach token via URL is not ideal, but the endpoint uses header auth;
+    // trigger download via an AJAX fetch to maintain the auth header.
+    const resp = await fetch(a.href, {headers: {'Authorization': 'Bearer ' + tok}});
+    if (!resp.ok) { showToast('Export failed', 'err'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const lnk = document.createElement('a');
+    lnk.href = url;
+    const safeName = _pkg.name.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_-]/g,'');
+    lnk.download = `SP_${safeName}.zip`;
+    lnk.click();
+    URL.revokeObjectURL(url);
+    showToast('TAK package downloaded', 'ok');
+}
+
+// ── Create new ─────────────────────────────────────────────────────────────
+function showNew() {
+    document.getElementById('nm-name').value = '';
+    document.getElementById('nm-lat').value = '';
+    document.getElementById('nm-lon').value = '';
+    document.getElementById('nm-target').value = '';
+    document.getElementById('nm-err').style.display = 'none';
+    document.getElementById('new-modal').style.display = 'flex';
+}
+
+async function createPackage() {
+    const name = document.getElementById('nm-name').value.trim();
+    if (!name) { showNmErr('Name required'); return; }
+    const lat = parseFloat(document.getElementById('nm-lat').value) || null;
+    const lon = parseFloat(document.getElementById('nm-lon').value) || null;
+    const desc = document.getElementById('nm-target').value.trim();
+    try {
+        const pkg = await api('POST', '/strike-packages', {
+            name, target_lat: lat, target_lon: lon, target_description: desc,
+        });
+        document.getElementById('new-modal').style.display = 'none';
+        await loadList();
+        selectPkg(pkg.id);
+    } catch(e) {
+        showNmErr(e.detail || 'Create failed');
+    }
+}
+function showNmErr(msg) {
+    const el = document.getElementById('nm-err');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+// ── Sidebar card refresh ───────────────────────────────────────────────────
+function refreshSidebarCard(pkg) {
+    const card = document.querySelector(`.sp-card[data-id="${pkg.id}"]`);
+    if (!card) { loadList(); return; }
+    card.querySelector('.sp-card-name').textContent = pkg.name;
+    card.querySelector('.status-badge').className = `status-badge s-${pkg.status}`;
+    card.querySelector('.status-badge').textContent = pkg.status;
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function showToast(msg, type='ok') {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = `position:fixed;bottom:24px;right:24px;padding:8px 16px;
+        border-radius:6px;font-size:.85rem;font-weight:600;z-index:9999;
+        background:${type==='ok'?'#16a34a':'#dc2626'};color:#fff;
+        box-shadow:0 4px 12px rgba(0,0,0,.5);`;
+    document.body.appendChild(t);
+    setTimeout(()=>t.remove(), 2800);
+}
+
+// ── WebSocket real-time updates ────────────────────────────────────────────
+function connectWS() {
+    const tok = localStorage.getItem('arrow_token') || '';
+    const ws = new WebSocket(window.ARROW_WS_URL + '?token=' + tok);
+    ws.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.channel !== 'strike-package') return;
+        const ev = msg.event;
+        if (ev === 'deleted' && _pkg && msg.data.id === _pkg.id) {
+            _pkg = null;
+            document.getElementById('sp-main').innerHTML =
+                '<div class="sp-empty"><div class="big">⚡</div><p>Package deleted remotely</p></div>';
+        }
+        loadList();
+    };
+    ws.onclose = () => setTimeout(connectWS, 3000);
+}
+
+window.addEventListener('arrow-mission-changed', () => { loadList(); loadMeta(); });
+
+boot().then(connectWS);
+</script>
+{% endblock %}

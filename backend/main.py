@@ -26,6 +26,7 @@ from backend.api.tactical_objects import router as tactical_objects_router
 from backend.api.teams import router as teams_router
 from backend.auth.router import router as auth_router
 from backend.battle_management.router import router as battles_router
+from backend.strike_packages.router import router as strike_packages_router
 from backend.config.xml_config import load_config
 from backend.limiter import limiter
 from backend.kml.router import router as kml_router
@@ -196,6 +197,7 @@ def create_app() -> FastAPI:
     app.include_router(messaging_router)
     app.include_router(tracking_router)
     app.include_router(battles_router)
+    app.include_router(strike_packages_router)
     app.include_router(map_router)
     app.include_router(kml_router)
     app.include_router(overlays_router)

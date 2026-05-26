@@ -37,9 +37,14 @@ SIDC_TO_COT: dict[str, str] = {
     "SFGPUCI----E": "a-f-G-U-C-O",    # friendly infantry / commander
     "SFGPUCA-----": "a-f-G-U-C-A",    # friendly armour
     "SFGPUCR-----": "a-f-G-U-C-R",    # friendly recon
+    "SFGPUCIS----": "a-f-G-U-C-S",    # friendly sniper
+    # Friendly ground equipment / support
+    "SFGPEW------": "a-f-G-E-W",      # friendly electronic warfare
     # Friendly air
     "SFAPMH------": "a-f-A-M-H",      # friendly helicopter
     "SFAPMFF-----": "a-f-A-M-F",      # friendly fixed-wing
+    "SFAPMFQ-----": "a-f-A-M-F-Q",    # friendly UAS fixed-wing (drone)
+    "SFAPMHQ-----": "a-f-A-M-H-Q",    # friendly UAS rotary-wing (drone)
     # Hostile ground
     "SHGPUCI-----": "a-h-G-U-C-I",    # hostile infantry
     "SHGPUCA-----": "a-h-G-U-C-A",    # hostile armour

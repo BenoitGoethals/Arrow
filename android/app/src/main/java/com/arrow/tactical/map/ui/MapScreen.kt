@@ -109,6 +109,8 @@ fun MapScreen(
     var operators    by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
     // Enemies are collected from the local DB — updates instantly on offline mark + on sync.
     val enemies by container.tacticalRepository.observeObjects().collectAsState(initial = emptyList())
+    val strikePkgEntities by container.strikePackageRepository.observeActive()
+        .collectAsState(initial = emptyList())
     var fireMissions by remember { mutableStateOf<List<com.arrow.tactical.network.FireMissionDto>>(emptyList()) }
     var selectedObjective by remember { mutableStateOf<TacticalObjectDto?>(null) }
     var meId by remember { mutableStateOf<Int?>(null) }
@@ -420,6 +422,11 @@ fun MapScreen(
                             context = context,
                             visibility = container.mapVisibilityRepository.current,
                         )
+                        "strike-package"  -> {
+                            val event = evt["event"]?.toString()?.trim('"') ?: ""
+                            val pkgId = evt["data"]?.jsonObject?.get("id")?.jsonPrimitive?.int ?: -1
+                            if (pkgId > 0) container.strikePackageRepository.handleWsEvent(pkgId, event)
+                        }
                         "mission"         -> {
                             val event = evt["event"]?.toString()?.trim('"')
                             if (event == "reset") {
@@ -626,7 +633,7 @@ fun MapScreen(
         hasAutocentered = true
     }
 
-    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, savedOverlays, activeOverlays, visibility, zoomLevel) {
+    LaunchedEffect(operators, enemies, fireMissions, cbrnReports, cbrnVisible, meId, overlayMode, tgVisible, myPlatoonIds, savedOverlays, activeOverlays, visibility, zoomLevel, strikePkgEntities) {
         val map = mapRef.value ?: return@LaunchedEffect
         val res = map.resources
         val currentMeId = meId
@@ -816,6 +823,103 @@ fun MapScreen(
             for ((_, payload) in cbrnReports) {
                 for (ov in com.arrow.tactical.cbrn.buildCbrnOverlays(map, res, payload)) {
                     map.overlays.add(ov)
+                }
+            }
+        }
+
+        // ── Strike Package map layer ──────────────────────────────────────────
+        for (entity in strikePkgEntities) {
+            val bundle = container.strikePackageRepository.parseBundleJson(entity.bundleJson)
+                ?: continue
+            val pkgLabel = bundle.name.take(12)
+            val assets   = bundle.assets
+
+            // Primary target
+            if (bundle.targetLat != null && bundle.targetLon != null) {
+                Marker(map).apply {
+                    position = GeoPoint(bundle.targetLat, bundle.targetLon)
+                    title    = "TARGET — ${bundle.name}"
+                    snippet  = bundle.targetDescription.ifBlank { "Strike package target" }
+                    icon     = MilSymbolRenderer.strikeTarget(res, "TGT")
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
+                }
+            }
+
+            // Drone loiter areas
+            for (drone in assets.drones) {
+                val lat = drone.loiterLat ?: continue
+                val lon = drone.loiterLon ?: continue
+                Marker(map).apply {
+                    position = GeoPoint(lat, lon)
+                    title    = "UAS — ${drone.callsign.ifBlank { drone.platform }}"
+                    snippet  = "Loiter area · $pkgLabel${if (drone.feedUrl.isNotEmpty()) " · feed available" else ""}"
+                    icon     = MilSymbolRenderer.drone(res, drone.callsign)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
+                }
+            }
+
+            // CAS / air support (placed at target; offset slightly per aircraft)
+            val targetLat = bundle.targetLat
+            val targetLon = bundle.targetLon
+            if (targetLat != null && targetLon != null) {
+                for ((i, cas) in assets.airSupport.withIndex()) {
+                    val latOff = targetLat + i * 0.0004
+                    Marker(map).apply {
+                        position = GeoPoint(latOff, targetLon)
+                        title    = "CAS — ${cas.callsign.ifBlank { cas.aircraft }}"
+                        snippet  = "${cas.ordnance} · ${cas.stationTimeMin} min on station · $pkgLabel"
+                        icon     = MilSymbolRenderer.cas(res, cas.callsign)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        map.overlays.add(this)
+                    }
+                }
+
+                // EW assets (placed at target; offset slightly per asset)
+                for ((i, ew) in assets.electronicWarfare.withIndex()) {
+                    val lonOff = targetLon + i * 0.0004
+                    Marker(map).apply {
+                        position = GeoPoint(targetLat, lonOff)
+                        title    = "EW — ${ew.callsign.ifBlank { ew.system }}"
+                        snippet  = "${ew.objective} · ${ew.frequencyBands} · $pkgLabel"
+                        icon     = MilSymbolRenderer.ewAsset(res, ew.callsign)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        map.overlays.add(this)
+                    }
+                }
+            }
+
+            // Sniper hides
+            for (sn in assets.sniperOverwatch) {
+                val lat = sn.positionLat ?: continue
+                val lon = sn.positionLon ?: continue
+                Marker(map).apply {
+                    position = GeoPoint(lat, lon)
+                    title    = "SNIPER — ${sn.callsign}"
+                    snippet  = "Sector: ${sn.sectorOfFire} · ${sn.engagementCriteria} · $pkgLabel"
+                    icon     = MilSymbolRenderer.sniperHide(res, sn.callsign)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
+                }
+            }
+
+            // Assigned operators (highlight with role/callsign if they have a position)
+            for (op in bundle.operators) {
+                val lat = op.latitude ?: continue
+                val lon = op.longitude ?: continue
+                val fakeDto = com.arrow.tactical.network.OperatorDto(
+                    id = op.id, callsign = op.callsign, rank = op.rank,
+                    status = op.status, role = op.role, online = op.status == "ONLINE",
+                    latitude = lat, longitude = lon,
+                )
+                Marker(map).apply {
+                    position = GeoPoint(lat, lon)
+                    title    = "${op.callsign} · ${op.rank}"
+                    snippet  = "Strike package: $pkgLabel · ${op.role}"
+                    icon     = MilSymbolRenderer.friendly(res, fakeDto)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    map.overlays.add(this)
                 }
             }
         }

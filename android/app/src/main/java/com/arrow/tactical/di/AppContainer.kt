@@ -22,6 +22,7 @@ import com.arrow.tactical.overlays.OverlayRepository
 import com.arrow.tactical.photos.PhotoRepository
 import com.arrow.tactical.reports.ReportRepository
 import com.arrow.tactical.settings.SettingsRepository
+import com.arrow.tactical.strike.StrikePackageRepository
 import com.arrow.tactical.sync.ConnectivityObserver
 import com.arrow.tactical.sync.SyncManager
 import com.arrow.tactical.tactical.TacticalRepository
@@ -76,10 +77,11 @@ class AppContainer(private val context: Context) {
     val fireMissionRepository = FireMissionRepository(apiClient)
     val logRepository = LogRepository()
     val milsymRenderer = MilsymRenderer(context)
+    val strikePackageRepository = StrikePackageRepository(apiClient, db)
 
     // ── Sync engine ────────────────────────────────────────────────────────
 
-    val syncManager = SyncManager(db, apiClient, tokenStore, connectivity)
+    val syncManager = SyncManager(db, apiClient, tokenStore, connectivity, strikePackageRepository)
 
     // ── Notifications ──────────────────────────────────────────────────────
 

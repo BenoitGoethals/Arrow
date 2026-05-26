@@ -506,3 +506,36 @@ class StreamRecording(Base):
     frame_count: Mapped[int]      = mapped_column(Integer, default=0)
     byte_size:   Mapped[int]      = mapped_column(Integer, default=0)
     file_path:   Mapped[str]      = mapped_column(String(255))
+
+
+class StrikePackage(Base):
+    """Composite tactical plan bundling all assets for a kinetic operation.
+
+    Assets (drones, ISR, air support, sniper overwatch, EW, comms, assault plan,
+    exfil routes) are stored as a single JSON blob in ``assets`` so the schema
+    can evolve without migrations. Links to existing Arrow objects (operators,
+    tactical objects, fire missions, reports) are stored as JSON id lists.
+
+    Lifecycle: PLANNING → ACTIVE → COMPLETE (or ABORTED).
+    """
+    __tablename__ = "strike_packages"
+
+    id:                 Mapped[int]           = mapped_column(primary_key=True)
+    name:               Mapped[str]           = mapped_column(String(160))
+    status:             Mapped[str]           = mapped_column(String(20), default="PLANNING")
+    mission_id:         Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
+    created_by:         Mapped[int]           = mapped_column(ForeignKey("operators.id"))
+    created_at:         Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at:         Mapped[datetime]      = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    )
+    target_lat:         Mapped[float | None]  = mapped_column(Float, nullable=True)
+    target_lon:         Mapped[float | None]  = mapped_column(Float, nullable=True)
+    target_description: Mapped[str]           = mapped_column(Text, default="")
+    # JSON id lists — links to existing Arrow objects in the same mission
+    operator_ids:        Mapped[str]          = mapped_column(Text, default="[]")
+    tactical_object_ids: Mapped[str]          = mapped_column(Text, default="[]")
+    fire_mission_ids:    Mapped[str]          = mapped_column(Text, default="[]")
+    report_ids:          Mapped[str]          = mapped_column(Text, default="[]")
+    # Full asset manifest — JSON-encoded PackageAssets structure
+    assets:             Mapped[str]           = mapped_column(Text, default="{}")
