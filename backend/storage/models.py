@@ -12,6 +12,30 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class Mission(Base):
+    """Top-level container for a tactical operation.
+
+    Every map element (tactical objects, alerts, fire missions, messages,
+    reports) is scoped to one Mission. Overlays and KML layers are global
+    (shared across missions).
+
+    Lifecycle: PLANNING → ACTIVE → ENDED.
+    On end or reset a full JSON snapshot of all mission objects is saved.
+    """
+    __tablename__ = "missions"
+
+    id:          Mapped[int]           = mapped_column(primary_key=True)
+    name:        Mapped[str]           = mapped_column(String(160))
+    description: Mapped[str]           = mapped_column(Text, default="")
+    status:      Mapped[str]           = mapped_column(String(20), default="PLANNING")
+    created_by:  Mapped[int]           = mapped_column(ForeignKey("operators.id"))
+    created_at:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+    started_at:  Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at:    Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snapshot:    Mapped[str]           = mapped_column(Text, default="")     # JSON on end/reset
+    snapshot_at: Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -64,7 +88,8 @@ class Operator(Base):
     role: Mapped[str] = mapped_column(String(20), default="OPERATOR")  # ADMIN, BATTLE_CAPTAIN, OPERATOR
     password_hash: Mapped[str] = mapped_column(String(255))
 
-    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    team_id:    Mapped[int | None] = mapped_column(ForeignKey("teams.id"),    nullable=True)
+    mission_id: Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
 
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -182,7 +207,8 @@ class TacticalObject(Base):
     echelon: Mapped[str] = mapped_column(String(8), default="")
     # NATO affiliation for tactical control graphics colour rule.
     # FRIENDLY (blue), ENEMY (red), UNKNOWN (yellow). Default FRIENDLY.
-    affiliation: Mapped[str] = mapped_column(String(12), default="FRIENDLY")
+    affiliation: Mapped[str]           = mapped_column(String(12), default="FRIENDLY")
+    mission_id:  Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
 
 
 class CotTrack(Base):
@@ -216,7 +242,8 @@ class Alert(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")  # ACTIVE, ACKNOWLEDGED, CLOSED
+    status:     Mapped[str]         = mapped_column(String(20), default="ACTIVE")
+    mission_id: Mapped[int | None]  = mapped_column(ForeignKey("missions.id"), nullable=True)
 
 
 class Message(Base):
@@ -228,8 +255,9 @@ class Message(Base):
     group_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
     content: Mapped[str] = mapped_column(Text)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    message_type: Mapped[str] = mapped_column(String(30), default="DIRECT")  # DIRECT, GROUP, BROADCAST
-    photo_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("photos.id"), nullable=True)
+    message_type: Mapped[str]         = mapped_column(String(30), default="DIRECT")
+    photo_id:     Mapped[int | None]  = mapped_column(Integer, ForeignKey("photos.id"), nullable=True)
+    mission_id:   Mapped[int | None]  = mapped_column(ForeignKey("missions.id"), nullable=True)
 
 
 class Battle(Base):
@@ -261,6 +289,7 @@ class FireMission(Base):
     fdc_operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
     timestamp:      Mapped[datetime]    = mapped_column(DateTime(timezone=True), default=_utcnow)
     notes:          Mapped[str]         = mapped_column(Text, default="")
+    mission_id:     Mapped[int | None]  = mapped_column(ForeignKey("missions.id"), nullable=True)
 
 
 class Report(Base):
@@ -273,7 +302,8 @@ class Report(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     # Status lifecycle managed by BC/ADMIN; sent back to originating operator via WS
     status: Mapped[str] = mapped_column(String(20), default="RECEIVED")
-    reviewer_note: Mapped[str] = mapped_column(Text, default="")
+    reviewer_note: Mapped[str]        = mapped_column(Text, default="")
+    mission_id:    Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
 
 
 class AuditLog(Base):

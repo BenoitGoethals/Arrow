@@ -3,8 +3,9 @@ from sqlalchemy.orm import Session
 
 from backend.api.schemas import TacticalObjectIn, TacticalObjectOut
 from backend.auth.jwt_auth import get_current_operator
+from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import Operator, TacticalObject
+from backend.storage.models import Mission, Operator, TacticalObject
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/tactical-objects", tags=["tactical"])
@@ -14,8 +15,12 @@ router = APIRouter(prefix="/tactical-objects", tags=["tactical"])
 def list_objects(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> list[TacticalObject]:
-    return db.query(TacticalObject).all()
+    q = db.query(TacticalObject)
+    if mission:
+        q = q.filter(TacticalObject.mission_id == mission.id)
+    return q.all()
 
 
 @router.post("", response_model=TacticalObjectOut, status_code=status.HTTP_201_CREATED)
@@ -23,19 +28,23 @@ async def create_object(
     payload: TacticalObjectIn,
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> TacticalObject:
-    obj = TacticalObject(created_by=current.id, **payload.model_dump())
+    obj = TacticalObject(
+        created_by=current.id,
+        mission_id=mission.id if mission else None,
+        **payload.model_dump(),
+    )
     db.add(obj)
     db.commit()
     db.refresh(obj)
 
-    await broadcaster.broadcast(
-        {
-            "channel": "tactical-object",
-            "event": "created",
-            "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
-        }
-    )
+    await broadcaster.broadcast({
+        "channel": "tactical-object",
+        "event": "created",
+        "mission_id": mission.id if mission else None,
+        "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
+    })
     return obj
 
 
@@ -50,8 +59,12 @@ async def delete_object(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if obj.created_by != current.id and current.role not in {"ADMIN", "BATTLE_CAPTAIN"}:
         raise HTTPException(status.HTTP_403_FORBIDDEN)
+    mid = obj.mission_id
     db.delete(obj)
     db.commit()
-    await broadcaster.broadcast(
-        {"channel": "tactical-object", "event": "deleted", "data": {"id": object_id}}
-    )
+    await broadcaster.broadcast({
+        "channel": "tactical-object",
+        "event": "deleted",
+        "mission_id": mid,
+        "data": {"id": object_id},
+    })

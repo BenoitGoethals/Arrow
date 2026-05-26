@@ -31,9 +31,9 @@ class ApiClient(
         coerceInputValues = true
     }
 
-    // Token cache — updated via a long-lived coroutine so the OkHttp interceptor
-    // never needs runBlocking (which can deadlock on main thread or starve IO pool).
+    // Token + mission caches — kept in sync by long-lived coroutines.
     @Volatile private var cachedToken: String? = null
+    @Volatile var activeMissionId: Int? = null   // set by MissionRepository after selection
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
@@ -50,11 +50,11 @@ class ApiClient(
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .addInterceptor { chain ->
             val token = cachedToken
-            val req = if (token.isNullOrBlank()) chain.request()
-            else chain.request().newBuilder().header("Authorization", "Bearer $token").build()
-            val response = chain.proceed(req)
-            // Token was sent but backend rejected it — expired or revoked. Clear it so
-            // the nav graph detects the missing token and redirects to login automatically.
+            val mid   = activeMissionId
+            val builder = chain.request().newBuilder()
+            if (!token.isNullOrBlank()) builder.header("Authorization", "Bearer $token")
+            if (mid != null)            builder.header("X-Mission-ID", mid.toString())
+            val response = chain.proceed(builder.build())
             if (response.code == 401 && !token.isNullOrBlank()) {
                 CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { tokenStore.clear() }
             }
