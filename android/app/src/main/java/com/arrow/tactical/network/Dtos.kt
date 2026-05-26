@@ -274,3 +274,150 @@ data class RegisterIn(
     val rank: String = "OR-1",
     val role: String = "OPERATOR",
 )
+
+// ── Strike Package DTOs ────────────────────────────────────────────────────
+
+@Serializable
+data class StrikePackageListDto(
+    val id: Int,
+    val name: String,
+    val status: String,
+    @SerialName("mission_id") val missionId: Int? = null,
+)
+
+@Serializable
+data class SpOperator(
+    val id: Int,
+    val callsign: String,
+    val rank: String = "",
+    val role: String = "OPERATOR",
+    val status: String = "OFFLINE",
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+@Serializable
+data class SpFireMission(
+    val id: Int,
+    val latitude: Double,
+    val longitude: Double,
+    @SerialName("mission_type") val missionType: String,
+    val ammunition: String,
+    val status: String,
+    val quantity: Int = 1,
+)
+
+@Serializable
+data class SpReport(
+    val id: Int,
+    val type: String,
+    val status: String,
+    val payload: JsonObject = JsonObject(emptyMap()),
+)
+
+@Serializable
+data class SpDrone(
+    val callsign: String = "",
+    val platform: String = "",
+    @SerialName("loiter_lat") val loiterLat: Double? = null,
+    @SerialName("loiter_lon") val loiterLon: Double? = null,
+    @SerialName("feed_url") val feedUrl: String = "",
+    val notes: String = "",
+)
+
+@Serializable
+data class SpIsr(
+    val sensor: String = "",
+    val platform: String = "",
+    @SerialName("collection_priority") val collectionPriority: String = "MEDIUM",
+    val notes: String = "",
+)
+
+@Serializable
+data class SpCas(
+    val aircraft: String = "",
+    val callsign: String = "",
+    val ordnance: String = "",
+    @SerialName("station_time_min") val stationTimeMin: Int = 0,
+    val frequency: String = "",
+    val notes: String = "",
+)
+
+@Serializable
+data class SpSniper(
+    val callsign: String = "",
+    @SerialName("position_lat") val positionLat: Double? = null,
+    @SerialName("position_lon") val positionLon: Double? = null,
+    @SerialName("sector_of_fire") val sectorOfFire: String = "",
+    @SerialName("engagement_criteria") val engagementCriteria: String = "",
+)
+
+@Serializable
+data class SpEw(
+    val system: String = "",
+    val callsign: String = "",
+    @SerialName("frequency_bands") val frequencyBands: String = "",
+    val objective: String = "JAM",
+    val notes: String = "",
+)
+
+@Serializable
+data class SpComms(
+    @SerialName("primary_freq") val primaryFreq: String = "",
+    @SerialName("alternate_freq") val alternateFreq: String = "",
+    val waveform: String = "",
+    @SerialName("pace_plan") val pacePlan: String = "",
+)
+
+@Serializable
+data class SpAssaultPlan(
+    val phases: List<SpPhase> = emptyList(),
+    @SerialName("breach_points") val breachPoints: List<String> = emptyList(),
+    @SerialName("actions_on_objective") val actionsOnObjective: String = "",
+    val consolidation: String = "",
+)
+
+@Serializable
+data class SpPhase(
+    val name: String = "",
+    val description: String = "",
+    val actions: String = "",
+)
+
+@Serializable
+data class SpExfilRoute(
+    val name: String = "",
+    val type: String = "GROUND",
+    val description: String = "",
+    @SerialName("tactical_object_id") val tacticalObjectId: Int? = null,
+)
+
+@Serializable
+data class SpAssets(
+    val drones: List<SpDrone> = emptyList(),
+    val isr: List<SpIsr> = emptyList(),
+    @SerialName("air_support") val airSupport: List<SpCas> = emptyList(),
+    @SerialName("sniper_overwatch") val sniperOverwatch: List<SpSniper> = emptyList(),
+    @SerialName("electronic_warfare") val electronicWarfare: List<SpEw> = emptyList(),
+    val comms: SpComms = SpComms(),
+    @SerialName("assault_plan") val assaultPlan: SpAssaultPlan = SpAssaultPlan(),
+    @SerialName("exfil_routes") val exfilRoutes: List<SpExfilRoute> = emptyList(),
+)
+
+@Serializable
+data class StrikePackageBundleDto(
+    val id: Int,
+    val name: String,
+    val status: String,
+    @SerialName("mission_id") val missionId: Int? = null,
+    @SerialName("created_at") val createdAt: String = "",
+    @SerialName("updated_at") val updatedAt: String = "",
+    @SerialName("target_lat") val targetLat: Double? = null,
+    @SerialName("target_lon") val targetLon: Double? = null,
+    @SerialName("target_description") val targetDescription: String = "",
+    val assets: SpAssets = SpAssets(),
+    val operators: List<SpOperator> = emptyList(),
+    @SerialName("tactical_objects") val tacticalObjects: List<TacticalObjectDto> = emptyList(),
+    @SerialName("fire_missions") val fireMissions: List<SpFireMission> = emptyList(),
+    val reports: List<SpReport> = emptyList(),
+)

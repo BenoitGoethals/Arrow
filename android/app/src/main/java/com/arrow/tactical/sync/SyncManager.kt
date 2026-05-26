@@ -14,6 +14,7 @@ import com.arrow.tactical.network.MessageDto
 import com.arrow.tactical.network.OperatorDto
 import com.arrow.tactical.network.ReportDto
 import com.arrow.tactical.network.TacticalObjectDto
+import com.arrow.tactical.strike.StrikePackageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,6 +38,7 @@ class SyncManager(
     private val api: ApiClient,
     private val tokenStore: TokenStore,
     private val connectivity: ConnectivityObserver,
+    private val strikePackageRepository: StrikePackageRepository? = null,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -103,6 +105,12 @@ class SyncManager(
         pullMessages()
         pullReports()
         pullAlerts()
+        pullStrikePackages()
+    }
+
+    private suspend fun pullStrikePackages() = runCatching {
+        strikePackageRepository?.syncAll()
+        Log.d(TAG, "Pulled strike packages")
     }
 
     private suspend fun pullOperators() = runCatching {
