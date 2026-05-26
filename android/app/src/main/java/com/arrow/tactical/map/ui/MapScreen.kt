@@ -274,9 +274,17 @@ fun MapScreen(
             }
     }
 
-    // Fly to the mission's map center whenever the active mission changes
+    // Reload all map data and fly to center whenever the active mission changes
     val activeMission by container.missionRepository.activeMission.collectAsState()
     LaunchedEffect(activeMission) {
+        // Clear stale cached objects then re-fetch scoped to the new (or cleared) mission.
+        // API client injects X-Mission-ID on every request automatically.
+        container.tacticalRepository.clearAndReload()
+        container.trackingRepository.liveOperators()
+            .onSuccess { ops -> operators = ops }
+        container.fireMissionRepository.list()
+            .onSuccess { fireMissions = it }
+        // Fly to mission center if set
         val m = activeMission ?: return@LaunchedEffect
         if (m.mapCenterLat == null || m.mapCenterLng == null) return@LaunchedEffect
         val map = mapRef.value ?: return@LaunchedEffect
@@ -391,7 +399,7 @@ fun MapScreen(
             try {
                 container.wsClient.events().collect { evt: JsonObject ->
                     when (evt["channel"]?.toString()?.trim('"')) {
-                        "tracking"        -> container.tacticalRepository.listOperators()
+                        "tracking"        -> container.trackingRepository.liveOperators()
                             .onSuccess { ops -> operators = ops; serverOnline = true }
                         "tactical-object" -> container.tacticalRepository.listObjects() // refreshes local cache
                         "fire-mission"    -> container.fireMissionRepository.list()

@@ -127,6 +127,12 @@ class TacticalRepository(
         )
     }
 
+    /** Clear stale synced objects then fetch fresh data for the current mission. */
+    suspend fun clearAndReload(): Result<List<TacticalObjectDto>> {
+        db.cachedTacticalObjectDao().clearSynced()
+        return listObjects()
+    }
+
     // ── Misc ──────────────────────────────────────────────────────────────────
 
     suspend fun listOperators(): Result<List<OperatorDto>> = runCatching {

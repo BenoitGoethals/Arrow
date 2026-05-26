@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from backend.api.schemas import OperatorOut, PositionHistoryOut, PositionIn
 from backend.auth.jwt_auth import get_current_operator
 from backend.cot.cot import CotEvent, role_to_cot_type
+from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import Operator, OperatorPosition
+from backend.storage.models import Mission, Operator, OperatorPosition
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/tracking", tags=["tracking"])
@@ -59,6 +60,7 @@ async def update_position(
                 "longitude":   current.longitude,
                 "altitude":    current.altitude,
                 "team_id":     current.team_id,
+                "mission_id":  current.mission_id,
                 "cot_type":    cot_type,
             },
         }
@@ -70,12 +72,14 @@ async def update_position(
 def live_operators(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> list[Operator]:
-    return (
-        db.query(Operator)
-        .filter(Operator.latitude.is_not(None), Operator.longitude.is_not(None))
-        .all()
+    q = db.query(Operator).filter(
+        Operator.latitude.is_not(None), Operator.longitude.is_not(None)
     )
+    if mission:
+        q = q.filter(Operator.mission_id == mission.id)
+    return q.all()
 
 
 @router.get("/{operator_id}/history", response_model=list[PositionHistoryOut])

@@ -42,4 +42,8 @@ interface CachedTacticalObjectDao {
 
     @Query("DELETE FROM cached_tactical_objects WHERE deletePending = 1 AND syncStatus = 'synced'")
     suspend fun purgeConfirmedDeletes()
+
+    /** Remove all synced rows — called on mission switch so stale objects don't bleed across missions. */
+    @Query("DELETE FROM cached_tactical_objects WHERE syncStatus = 'synced'")
+    suspend fun clearSynced()
 }

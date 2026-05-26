@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, selectinload
 
 from backend.auth.jwt_auth import get_current_operator
+from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import Company, Operator
+from backend.storage.models import Company, Mission, Operator
 
 router = APIRouter(prefix="/hierarchy", tags=["hierarchy"])
 
@@ -40,6 +41,7 @@ def _operator_dict(op: Operator, online: bool) -> dict:
 def get_hierarchy(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> dict:
     """Return the full Company → Platoon → Section → Team → Operator tree.
 
@@ -57,7 +59,10 @@ def get_hierarchy(
         .all()
     )
 
-    operators = db.query(Operator).all()
+    q = db.query(Operator)
+    if mission:
+        q = q.filter(Operator.mission_id == mission.id)
+    operators = q.all()
     by_team: dict[int, list[Operator]] = {}
     unassigned: list[Operator] = []
     for op in operators:
