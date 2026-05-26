@@ -46,21 +46,62 @@
 <body>
 <nav class="nav">
     <span class="brand">ARROW</span>
-    <a class="nav-internal" href="{{ url_for('dashboard.index') }}">Dashboard</a>
-    <a class="nav-internal" href="{{ url_for('tactical_map.index') }}">Tactical Map</a>
-    <a class="nav-internal" href="{{ url_for('messaging.index') }}">Messaging</a>
-    <a class="nav-internal" href="{{ url_for('reports.index') }}">Reports</a>
-    <a class="nav-internal" href="{{ url_for('opord.index') }}" style="color:#60a5fa;font-weight:600">📋 OPORDs</a>
-    <a class="nav-internal" href="{{ url_for('objectives.index') }}" style="color:#22c55e;font-weight:600">🚩 Objectives</a>
-    <a class="nav-internal" href="{{ url_for('history.index') }}">📜 History</a>
-    <a class="nav-internal" href="{{ url_for('tracks.index') }}" style="color:#6ee7b7;font-weight:600">🗺 Tracks</a>
-    <a class="nav-internal" href="{{ url_for('history.photos') }}">📷 Photos</a>
-    <a class="nav-internal" href="{{ url_for('fire_missions.index') }}" style="color:#ef4444;font-weight:600">🎯 Fire Missions</a>
-    <a class="nav-internal" href="{{ url_for('streams.index') }}" style="color:#a78bfa;font-weight:600">📡 Live Streams</a>
-    <a class="nav-internal" href="{{ url_for('streams.recordings') }}" style="color:#a78bfa;font-weight:600">⏺ Recordings</a>
-    <a class="nav-internal" href="{{ url_for('admin.index') }}">Admin</a>
-    <a class="nav-internal" href="/missions/" style="color:#f59e0b;font-weight:600">🎯 Missions</a>
-    <a href="{{ url_for('apk.index') }}" style="color:#34d399;font-weight:600">📱 APK</a>
+
+    <!-- Dashboard -->
+    <div class="nav-item">
+        <a class="nav-link nav-internal" href="{{ url_for('dashboard.index') }}">Dashboard</a>
+    </div>
+
+    <!-- Tactical Map -->
+    <div class="nav-item">
+        <a class="nav-link nav-internal" href="{{ url_for('tactical_map.index') }}">🗺 Map</a>
+    </div>
+
+    <!-- Messaging -->
+    <div class="nav-item">
+        <a class="nav-link nav-internal" href="{{ url_for('messaging.index') }}">💬 Messaging</a>
+    </div>
+
+    <!-- Ops dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">Ops ▾</span>
+        <div class="nav-dropdown">
+            <a href="/missions/" style="color:#f59e0b">🎯 Missions</a>
+            <a href="{{ url_for('fire_missions.index') }}" style="color:#ef4444">🎯 Fire Missions</a>
+            <a href="{{ url_for('objectives.index') }}" style="color:#22c55e">🚩 Objectives</a>
+            <a href="{{ url_for('opord.index') }}" style="color:#60a5fa">📋 OPORDs</a>
+        </div>
+    </div>
+
+    <!-- Intel dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">Intel ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('reports.index') }}">📝 Reports</a>
+            <a href="{{ url_for('history.index') }}">📜 History</a>
+            <a href="{{ url_for('tracks.index') }}" style="color:#6ee7b7">🗺 Tracks</a>
+            <a href="{{ url_for('history.photos') }}">📷 Photos</a>
+        </div>
+    </div>
+
+    <!-- ISR dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">ISR ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('streams.index') }}" style="color:#a78bfa">📡 Live Streams</a>
+            <a href="{{ url_for('streams.recordings') }}" style="color:#a78bfa">⏺ Recordings</a>
+        </div>
+    </div>
+
+    <!-- Admin dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">Admin ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('admin.index') }}">⚙ Admin</a>
+            <a href="{{ url_for('apk.index') }}" style="color:#34d399">📱 APK</a>
+        </div>
+    </div>
+
     <span class="spacer"></span>
     <!-- Mission selector -->
     <span id="nav-mission-wrap" style="display:none;align-items:center;gap:6px;margin-right:10px">
@@ -96,7 +137,7 @@
         // Plain OPERATORs only see the APK download page. Hide all internal
         // links and bounce them to /download if they land elsewhere.
         if (token && role === 'OPERATOR') {
-            document.querySelectorAll('.nav-internal').forEach(a => a.style.display = 'none');
+            document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'none');
             const path = location.pathname;
             const allowed = path.startsWith('/download') || path === '/logout' || path === '/login';
             if (!allowed) location.replace('/download/');
