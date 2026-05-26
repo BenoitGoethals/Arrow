@@ -50,33 +50,18 @@ import os
 import random
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit
-
 import httpx
 
+import sim_utils
 
 # ── CLI / persistent config ─────────────────────────────────────────────────
-_CONFIG_DIR  = Path.home() / ".config" / "arrow"
-_CONFIG_FILE = _CONFIG_DIR / "simulator.json"
-
-def _load_saved_backend() -> str | None:
-    try:    return json.loads(_CONFIG_FILE.read_text()).get("backend") or None
-    except Exception: return None
-
-def _save_backend(url: str) -> None:
-    try:
-        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        _CONFIG_FILE.write_text(json.dumps({"backend": url}, indent=2))
-    except Exception:
-        pass
-
 # simulate.py-compatible default — points at the production server so just
 # running the script with no args drops the brigade onto everyone's map.
 DEFAULT_BACKEND = (
     os.environ.get("ARROW_BACKEND_URL")
-    or _load_saved_backend()
+    or sim_utils.load_saved_backend()
     or "http://78.21.255.210:6200/api"
 )
 
@@ -98,6 +83,8 @@ parser.add_argument("--loop",     action="store_true", default=True,
                     help="After Φ8, loop back to Φ1 so the demo keeps running (default on)")
 parser.add_argument("--once",     dest="loop", action="store_false",
                     help="Stop after Φ8 instead of looping")
+parser.add_argument("--mission-name", default="Operation North Wind",
+                    help="Mission name to create or adopt (default: Operation North Wind)")
 ARGS = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO,
@@ -106,14 +93,9 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("nw")
 
 BASE = ARGS.backend.rstrip("/")
+MISSION_ID: int | None = None
 
-
-# ── Path-prefix splitting — supports /api-mounted deployments ───────────────
-def _split_base(url: str) -> tuple[str, str]:
-    p = urlsplit(url)
-    return f"{p.scheme}://{p.netloc}", (p.path or "").rstrip("/")
-
-ORIGIN, PATH_PREFIX = _split_base(BASE)
+ORIGIN, PATH_PREFIX = sim_utils.split_base(BASE)
 
 
 # ── Tactical-graphic & object types ─────────────────────────────────────────
@@ -212,6 +194,8 @@ async def api(client: httpx.AsyncClient, method: str, path: str,
     """
     global _API_FAIL_COUNT
     headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if MISSION_ID:
+        headers["X-Mission-ID"] = str(MISSION_ID)
     try:
         r = await client.request(method, _p(path), headers=headers, timeout=20, **kwargs)
         if 200 <= r.status_code < 300:
@@ -954,8 +938,11 @@ async def amain() -> None:
                      f"     • Admin password not 'ranger14' (use --password)\n"
                      f"     • Admin account has MFA enabled — disable it or use "
                      f"another ADMIN with --admin <callsign>")
-        _save_backend(ARGS.backend)
+        sim_utils.save_backend(ARGS.backend)
         log.info("Authenticated.")
+        global MISSION_ID
+        MISSION_ID = await sim_utils.create_mission_async(
+            client, BASE, admin_token, ARGS.mission_name)
 
         if ARGS.reset:
             n_obj, n_op, n_ov, n_users = await reset_world(client, admin_token)

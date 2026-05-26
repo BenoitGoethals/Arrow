@@ -41,9 +41,10 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Any
 
 import httpx
+
+import sim_utils
 
 log = logging.getLogger("nuts")
 
@@ -81,56 +82,7 @@ def lerp(a: LL, b: LL, t: float) -> LL:
 
 # ── HTTP plumbing ────────────────────────────────────────────────────────────
 
-class Api:
-    """HTTP client that honours a path prefix on the base URL.
-
-    Pass any of these as ``base_url`` and the leading-slash paths in the
-    rest of the script keep working unchanged:
-        http://host:6001                  (direct backend)
-        http://host:6200/api              (Caddy with /api prefix)
-        https://arrow.example/v1          (custom mount)
-    """
-
-    def __init__(self, base_url: str) -> None:
-        from urllib.parse import urlsplit
-        parts = urlsplit(base_url)
-        self._prefix = (parts.path or "").rstrip("/")          # "" or "/api"
-        origin = f"{parts.scheme}://{parts.netloc}"
-        self.c = httpx.Client(base_url=origin, timeout=30.0)
-
-    def _p(self, path: str) -> str:
-        """Prepend the path prefix if the request path doesn't already have it."""
-        if not self._prefix or path.startswith(self._prefix + "/") or path == self._prefix:
-            return path
-        return self._prefix + path
-
-    def login(self, callsign: str, password: str) -> str:
-        r = self.c.post(self._p("/auth/login"), data={"username": callsign, "password": password})
-        if r.status_code != 200:
-            sys.exit(f"login failed for {callsign} ({r.status_code}): {r.text}")
-        p = r.json()
-        if p.get("mfa_required"):
-            sys.exit(f"{callsign} has MFA enabled — pick a non-MFA admin")
-        return p["access_token"]
-
-    def _hdr(self, tok: str) -> dict[str, str]:
-        return {"Authorization": f"Bearer {tok}"}
-
-    def get(self, path: str, tok: str) -> Any:
-        r = self.c.get(self._p(path), headers=self._hdr(tok))
-        r.raise_for_status()
-        return r.json()
-
-    def post(self, path: str, tok: str, body: dict) -> Any:
-        r = self.c.post(self._p(path), json=body, headers=self._hdr(tok))
-        if r.status_code >= 400:
-            log.warning("POST %s -> %d: %s", path, r.status_code, r.text[:200])
-            r.raise_for_status()
-        return r.json() if r.content else {}
-
-    def delete(self, path: str, tok: str) -> int:
-        r = self.c.delete(self._p(path), headers=self._hdr(tok))
-        return r.status_code
+Api = sim_utils.Api
 
 
 # ── Org structure & roster ───────────────────────────────────────────────────
@@ -769,6 +721,8 @@ def main() -> None:
                         help="Set up the plan only — skip the movement loop")
     parser.add_argument("--steps",    type=int, default=80, help="Movement steps")
     parser.add_argument("--dt",       type=float, default=2.0, help="Seconds between steps")
+    parser.add_argument("--mission-name", default="Operation NUTS",
+                        help="Mission name to create or adopt (default: Operation NUTS)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
@@ -779,6 +733,7 @@ def main() -> None:
     log.info("OPERATION NUTS — RANGER COY attack on BASTOGNE")
     log.info("backend=%s admin=%s", args.backend, args.admin)
     admin_tok = api.login(args.admin, args.password)
+    api.create_mission(admin_tok, args.mission_name)
 
     if args.reset:
         reset_objects(api, admin_tok)

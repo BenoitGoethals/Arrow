@@ -31,49 +31,16 @@ import math
 import os
 import sys
 from dataclasses import dataclass
-from pathlib import Path
-from urllib.parse import urlsplit
-
 import httpx
 
-
-# ── Persistent backend URL ───────────────────────────────────────────────────
-# Remember the last successfully-used URL so re-running the simulator without
-# --backend keeps hitting the same server.
-_CONFIG_DIR  = Path.home() / ".config" / "arrow"
-_CONFIG_FILE = _CONFIG_DIR / "simulator.json"
-
-
-def _load_saved_backend() -> str | None:
-    try:
-        return json.loads(_CONFIG_FILE.read_text()).get("backend") or None
-    except Exception:
-        return None
-
-
-def _save_backend(url: str) -> None:
-    try:
-        _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        _CONFIG_FILE.write_text(json.dumps({"backend": url}, indent=2))
-    except Exception as e:  # non-fatal — log and continue
-        log.debug("could not save backend URL to %s: %s", _CONFIG_FILE, e)
-
+import sim_utils
 
 # ── Path-prefix handling ─────────────────────────────────────────────────────
-# Backends mounted under a sub-path (e.g. behind Caddy as /api) need that
-# prefix preserved on every request — httpx's default URL-joining strips it
-# when relative request paths start with "/".
 _path_prefix: str = ""
-
-
-def _split_base(url: str) -> tuple[str, str]:
-    """Return (origin, prefix) — origin is scheme://host[:port], prefix is the path."""
-    p = urlsplit(url)
-    return f"{p.scheme}://{p.netloc}", (p.path or "").rstrip("/")
+MISSION_ID: int | None = None
 
 
 def _p(path: str) -> str:
-    """Prepend the saved path prefix to a request path unless it's already there."""
     if not _path_prefix or path.startswith(_path_prefix + "/") or path == _path_prefix:
         return path
     return _path_prefix + path
@@ -131,10 +98,10 @@ def login(client: httpx.Client, callsign: str, password: str) -> str:
 
 
 def post_object(client: httpx.Client, token: str, obj: dict) -> int:
-    r = client.post(
-        _p("/tactical-objects"), json=obj,
-        headers={"Authorization": f"Bearer {token}"},
-    )
+    h: dict[str, str] = {"Authorization": f"Bearer {token}"}
+    if MISSION_ID:
+        h["X-Mission-ID"] = str(MISSION_ID)
+    r = client.post(_p("/tactical-objects"), json=obj, headers=h)
     if r.status_code != 201:
         log.warning("POST failed %s: %s", r.status_code, r.text[:200])
         return -1
@@ -328,11 +295,9 @@ def build_company_plan(coy: str, obj_name: str, village: str,
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
-    # Priority: explicit ARROW_BACKEND_URL env var → last successful saved URL
-    # → localhost. --backend on the CLI always wins.
     default_backend = (
         os.environ.get("ARROW_BACKEND_URL")
-        or _load_saved_backend()
+        or sim_utils.load_saved_backend()
         or "http://localhost:6001"
     )
     parser = argparse.ArgumentParser(description="Arrow battlefield — Operation IRON ARDENNES")
@@ -344,20 +309,24 @@ def main() -> None:
     parser.add_argument("--password", default="ranger14", help="ADMIN password")
     parser.add_argument("--reset",    action="store_true",
                         help="Delete every existing tactical-graphic/enemy/POI before planting")
+    parser.add_argument("--mission-name", default="Operation Iron Ardennes",
+                        help="Mission name to create or adopt (default: Operation Iron Ardennes)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s  %(levelname)-7s %(message)s",
                         datefmt="%H:%M:%S")
-    global log, _path_prefix
+    global log, _path_prefix, MISSION_ID
     log = logging.getLogger("battlefield")
 
-    origin, _path_prefix = _split_base(args.backend)
+    origin, _path_prefix = sim_utils.split_base(args.backend)
     with httpx.Client(base_url=origin, timeout=15.0) as client:
         log.info("Logging in as %s @ %s …", args.admin, args.backend)
         token = login(client, args.admin, args.password)
         log.info("Authenticated.")
-        _save_backend(args.backend)  # remember for next run
+        sim_utils.save_backend(args.backend)
+        MISSION_ID = sim_utils.create_mission_sync(
+            client, args.backend, token, args.mission_name)
 
         if args.reset:
             n = reset_tactical_graphics(client, token)

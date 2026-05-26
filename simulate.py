@@ -39,6 +39,8 @@ from typing import Optional
 
 import httpx
 
+import sim_utils
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Arrow tactical simulator")
@@ -51,6 +53,8 @@ parser.add_argument("--seed-admin", default="benoit",
                     help="Callsign of the pre-seeded ADMIN used to bootstrap (default: benoit)")
 parser.add_argument("--seed-admin-password", default="ranger14",
                     help="Password for --seed-admin (default: ranger14)")
+parser.add_argument("--mission-name", default="Operation Dendermonde",
+                    help="Mission name to create or adopt (default: Operation Dendermonde)")
 ARGS = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO,
@@ -109,6 +113,7 @@ def mgrs(lat: float, lon: float, acc: int = 5) -> str:
 # ── Simulation constants ──────────────────────────────────────────────────────
 
 BASE = ARGS.backend.rstrip("/")
+MISSION_ID: int | None = None
 SIM_PASSWORD   = "Arrow2525!"
 WALK_MS        = 5000 / 3600          # 5 km/h in m/s
 INFIL_MS       = 1500 / 3600          # 1.5 km/h in m/s
@@ -320,6 +325,8 @@ async def api(client: httpx.AsyncClient, method: str, path: str,
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    if MISSION_ID:
+        headers["X-Mission-ID"] = str(MISSION_ID)
     try:
         r = await client.request(method, f"{BASE}{path}",
                                  headers=headers, timeout=10, **kwargs)
@@ -1660,7 +1667,10 @@ async def main() -> None:
         if ARGS.reset:
             await reset_sim(client, all_ops)
 
-        await bootstrap(client, all_ops, sections)
+        admin_token = await bootstrap(client, all_ops, sections)
+        global MISSION_ID
+        MISSION_ID = await sim_utils.create_mission_async(
+            client, BASE, admin_token, ARGS.mission_name)
         await login_all(client, all_ops)
 
         # Plant the doctrinal operation graphics + enemy laydown — once.

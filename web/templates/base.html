@@ -148,6 +148,11 @@
         window.dispatchEvent(new Event('arrow-mission-changed'));
     };
 
+    function _esc(s) {
+        return String(s).replace(/[&<>"']/g, c =>
+            ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
     // Populate the nav mission picker
     function _refreshNavMission() {
         const tok = localStorage.getItem('arrow_token');
@@ -162,7 +167,7 @@
             sel.innerHTML = '<option value="">— none —</option>' +
                 missions.map(m =>
                     `<option value="${m.id}" ${m.id === cur ? 'selected' : ''}>
-                        ${esc(m.name)} [${m.status}]
+                        ${_esc(m.name)} [${m.status}]
                     </option>`
                 ).join('');
             wrap.style.display = missions.length ? 'flex' : 'none';
