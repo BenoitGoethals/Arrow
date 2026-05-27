@@ -61,6 +61,7 @@ import com.arrow.tactical.tracking.LocationService
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
@@ -82,7 +83,7 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.TilesOverlay
 
 // CATEGORY is gone — replaced by RadialMenu; ENEMY_TYPE and NOTES are direct bottom sheets
-private enum class MenuStep { ENEMY_TYPE, NOTES, DRONE_SPOT }
+private enum class MenuStep { ENEMY_TYPE, NOTES, DRONE_SPOT, CAS_NINE_LINER }
 private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
 
 // Drone types + behaviours the operator can pick from in the radial bottom sheet.
@@ -327,6 +328,32 @@ fun MapScreen(
     var droneSpeed     by remember { mutableStateOf("") }
     var droneBehavior  by remember { mutableStateOf("UNKNOWN") }
     var droneNotes     by remember { mutableStateOf("") }
+
+    // ── CAS 9-liner form state ─────────────────────────────────────────────
+    var casLine1   by remember { mutableStateOf("") }  // IP
+    var casLine2   by remember { mutableStateOf("") }  // Heading/Distance
+    var casLine3   by remember { mutableStateOf("") }  // Target elevation
+    var casLine4   by remember { mutableStateOf("") }  // Target description
+    var casLine5Lat by remember { mutableStateOf("") } // Target lat (from map tap)
+    var casLine5Lon by remember { mutableStateOf("") } // Target lon (from map tap)
+    var casLine6   by remember { mutableStateOf("Laser") } // Type of mark
+    var casLine7   by remember { mutableStateOf("") }  // Friendly location
+    var casLine8   by remember { mutableStateOf("") }  // Egress
+    var casLine9   by remember { mutableStateOf("") }  // Remarks/threats
+    var casTic     by remember { mutableStateOf(false) }
+    var casFoId    by remember { mutableStateOf<Int?>(null) }
+    var casAssetId by remember { mutableStateOf<Int?>(null) }
+    var casAssets  by remember { mutableStateOf<List<com.arrow.tactical.network.CasAssetDto>>(emptyList()) }
+
+    // Fetch CAS assets when the composable enters composition
+    LaunchedEffect(Unit) {
+        val r = container.apiClient.get("/cas/assets")
+        if (r.ok) {
+            runCatching {
+                casAssets = container.apiClient.json.decodeFromString(r.body)
+            }
+        }
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -1553,6 +1580,39 @@ fun MapScreen(
             Text("🛸", fontSize = 18.sp)
         }
 
+        // ── CAS FAB — opens CAS 9-liner form anchored on current map centre ──
+        SmallFloatingActionButton(
+            onClick        = {
+                val map    = mapRef.value
+                val centre = map?.mapCenter as? GeoPoint ?: GeoPoint(50.85, 4.35)
+                pendingPoint     = centre
+                pendingScreenPos = null
+                // Pre-fill lat/lon from map centre
+                casLine5Lat = "%.6f".format(centre.latitude)
+                casLine5Lon = "%.6f".format(centre.longitude)
+                casLine1 = ""; casLine2 = ""; casLine3 = ""; casLine4 = ""
+                casLine6 = "Laser"; casLine7 = ""; casLine8 = ""; casLine9 = ""
+                casTic = false; casFoId = null; casAssetId = null
+                submitError = null
+                menuStep = MenuStep.CAS_NINE_LINER
+                // Refresh CAS assets
+                scope.launch {
+                    val r = container.apiClient.get("/cas/assets")
+                    if (r.ok) runCatching {
+                        casAssets = container.apiClient.json.decodeFromString(r.body)
+                    }
+                }
+            },
+            containerColor = Color(0xFFB45309),   // amber-700 — distinct from TIC red
+            contentColor   = Color.White,
+            modifier       = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 156.dp)
+                .size(40.dp),
+        ) {
+            Text("✈", fontSize = 18.sp)
+        }
+
         // ── Measure result panel — compact bottom-left chip; uses outer Box for align ──
         if (measureMode) {
             val cardMaxWidth = com.arrow.tactical.ui.byWindowDp(
@@ -1754,6 +1814,62 @@ fun MapScreen(
                                 pendingPoint = null
                             }.onFailure {
                                 submitError = it.message ?: "Failed"
+                            }
+                            submitting = false
+                        }
+                    },
+                )
+
+                MenuStep.CAS_NINE_LINER -> CasNineLinerMenu(
+                    line1         = casLine1,  onLine1Change  = { casLine1 = it },
+                    line2         = casLine2,  onLine2Change  = { casLine2 = it },
+                    line3         = casLine3,  onLine3Change  = { casLine3 = it },
+                    line4         = casLine4,  onLine4Change  = { casLine4 = it },
+                    lat           = casLine5Lat, onLatChange  = { casLine5Lat = it },
+                    lon           = casLine5Lon, onLonChange  = { casLine5Lon = it },
+                    line6         = casLine6,  onLine6Change  = { casLine6 = it },
+                    line7         = casLine7,  onLine7Change  = { casLine7 = it },
+                    line8         = casLine8,  onLine8Change  = { casLine8 = it },
+                    line9         = casLine9,  onLine9Change  = { casLine9 = it },
+                    tic           = casTic,    onTicChange    = { casTic = it },
+                    foOperatorId  = casFoId,   onFoChange     = { casFoId = it },
+                    assetId       = casAssetId, onAssetChange = { casAssetId = it },
+                    operators     = operators,
+                    casAssets     = casAssets,
+                    submitting    = submitting,
+                    error         = submitError,
+                    onBack        = { pendingPoint = null },
+                    onSubmit      = {
+                        submitting  = true
+                        submitError = null
+                        scope.launch {
+                            val lat = casLine5Lat.toDoubleOrNull()
+                            val lon = casLine5Lon.toDoubleOrNull()
+                            val mgrs = if (lat != null && lon != null) {
+                                runCatching { MgrsConverter.encode(lat, lon) }.getOrElse { "" }
+                            } else ""
+                            val body = com.arrow.tactical.network.CasNineLinerIn(
+                                line1     = casLine1,
+                                line2     = casLine2,
+                                line3     = casLine3,
+                                line4     = casLine4,
+                                line5Mgrs = mgrs,
+                                line5Lat  = lat,
+                                line5Lon  = lon,
+                                line6     = casLine6,
+                                line7     = casLine7,
+                                line8     = casLine8,
+                                line9     = casLine9,
+                                tic       = casTic,
+                                foOperatorId = casFoId,
+                                assetId      = casAssetId,
+                            )
+                            val bodyJson = container.apiClient.json.encodeToString(body)
+                            val r = container.api.postJson("/cas/requests", bodyJson)
+                            if (r.ok) {
+                                pendingPoint = null
+                            } else {
+                                submitError = "CAS request failed (${r.code})"
                             }
                             submitting = false
                         }
@@ -2247,6 +2363,307 @@ private fun DroneDropdown(
             }
         }
     }
+}
+
+private val CAS_MARK_TYPES = listOf("Laser", "Smoke", "IR pointer", "Mark-63", "WP", "None")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CasNineLinerMenu(
+    line1: String, onLine1Change: (String) -> Unit,
+    line2: String, onLine2Change: (String) -> Unit,
+    line3: String, onLine3Change: (String) -> Unit,
+    line4: String, onLine4Change: (String) -> Unit,
+    lat:   String, onLatChange:   (String) -> Unit,
+    lon:   String, onLonChange:   (String) -> Unit,
+    line6: String, onLine6Change: (String) -> Unit,
+    line7: String, onLine7Change: (String) -> Unit,
+    line8: String, onLine8Change: (String) -> Unit,
+    line9: String, onLine9Change: (String) -> Unit,
+    tic:   Boolean, onTicChange:  (Boolean) -> Unit,
+    foOperatorId: Int?,  onFoChange:    (Int?) -> Unit,
+    assetId:      Int?,  onAssetChange: (Int?) -> Unit,
+    operators:    List<com.arrow.tactical.network.OperatorDto>,
+    casAssets:    List<com.arrow.tactical.network.CasAssetDto>,
+    submitting:   Boolean,
+    error:        String?,
+    onBack:       () -> Unit,
+    onSubmit:     () -> Unit,
+) {
+    val casColor = Color(0xFFB45309)
+
+    // Derive MGRS from lat/lon for live display
+    val mgrsDisplay = remember(lat, lon) {
+        val la = lat.toDoubleOrNull()
+        val lo = lon.toDoubleOrNull()
+        if (la != null && lo != null && la in -80.0..84.0)
+            runCatching { MgrsConverter.encode(la, lo) }.getOrElse { "$la, $lo" }
+        else "—"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(top = 8.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // Header
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("✈  CAS 9-Liner",
+                 style = MaterialTheme.typography.titleSmall,
+                 color = casColor)
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = onBack,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+            ) { Text("Cancel") }
+        }
+
+        // TIC toggle — prominent at top
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (tic) Color(0x33EF4444) else Color(0x22151E2D),
+                    RoundedCornerShape(6.dp),
+                )
+                .border(
+                    1.dp,
+                    if (tic) Color(0xFFDC2626) else Color(0xFF2A3142),
+                    RoundedCornerShape(6.dp),
+                )
+                .clickable { onTicChange(!tic) }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.material3.Switch(
+                checked = tic,
+                onCheckedChange = onTicChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor  = Color.White,
+                    checkedTrackColor  = Color(0xFFDC2626),
+                ),
+            )
+            Column {
+                Text(
+                    "⚡ TROOPS IN CONTACT (TIC)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (tic) Color(0xFFEF4444) else Color(0xFF94A3B8),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    "Triggers priority alarm on all Battle Captain screens",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF64748B),
+                )
+            }
+        }
+
+        // Line 1 – IP
+        CasLineField(n = 1, label = "IP (Initial Point)", value = line1,
+                     placeholder = "Name or grid of Initial Point",
+                     color = casColor, onChange = onLine1Change)
+
+        // Line 2 – Heading/Distance
+        CasLineField(n = 2, label = "Heading / Distance", value = line2,
+                     placeholder = "e.g. 270° / 5 km from IP",
+                     color = casColor, onChange = onLine2Change)
+
+        // Line 3 – Target elevation
+        CasLineField(n = 3, label = "Target elevation (m MSL)", value = line3,
+                     placeholder = "e.g. 312",
+                     color = casColor, onChange = onLine3Change,
+                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+
+        // Line 4 – Target description
+        CasLineField(n = 4, label = "Target description", value = line4,
+                     placeholder = "e.g. 4-man group, T-72, bunker",
+                     color = casColor, onChange = onLine4Change)
+
+        // Line 5 – Target location: lat/lon + MGRS
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0x220E1217), RoundedCornerShape(4.dp))
+                .border(1.dp, Color(0xFF2A3142), RoundedCornerShape(4.dp))
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                "5",
+                modifier = Modifier.width(22.dp),
+                color = casColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("TARGET LOCATION", fontSize = 10.sp, color = Color(0xFF94A3B8),
+                     fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                        value = lat, onValueChange = onLatChange,
+                        label = { Text("Lat") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    )
+                    OutlinedTextField(
+                        value = lon, onValueChange = onLonChange,
+                        label = { Text("Lon") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    )
+                }
+                // Live MGRS display
+                Text(
+                    "MGRS: $mgrsDisplay",
+                    fontSize = 12.sp,
+                    color = Color(0xFFFBBF24),
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x220E1217), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+        }
+
+        // Line 6 – Type of mark (dropdown)
+        DroneDropdown(
+            label = "6 — Type of mark",
+            value = line6,
+            options = CAS_MARK_TYPES,
+            onSelect = onLine6Change,
+        )
+
+        // Line 7 – Friendly location
+        CasLineField(n = 7, label = "Friendly location", value = line7,
+                     placeholder = "e.g. N 600m from target",
+                     color = casColor, onChange = onLine7Change)
+
+        // Line 8 – Egress
+        CasLineField(n = 8, label = "Egress direction", value = line8,
+                     placeholder = "e.g. 270° West after attack",
+                     color = casColor, onChange = onLine8Change)
+
+        // Line 9 – Remarks/Threats (multiline)
+        OutlinedTextField(
+            value = line9, onValueChange = onLine9Change,
+            label = { Text("9 — Remarks / Threats / TOT") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = false, minLines = 2, maxLines = 4,
+            placeholder = { Text("Restrictions, threats, authentication…",
+                                  color = Color(0xFF64748B)) },
+        )
+
+        // FO dropdown
+        if (operators.isNotEmpty()) {
+            var foExpanded by remember { mutableStateOf(false) }
+            val foLabel = operators.find { it.id == foOperatorId }?.callsign ?: "— no FO assigned —"
+            ExposedDropdownMenuBox(expanded = foExpanded, onExpandedChange = { foExpanded = !foExpanded }) {
+                OutlinedTextField(
+                    value = foLabel, onValueChange = {}, readOnly = true,
+                    label = { Text("Forward Observer (FO)") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = foExpanded) },
+                    modifier = Modifier.fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(expanded = foExpanded, onDismissRequest = { foExpanded = false }) {
+                    DropdownMenuItem(text = { Text("— none —") },
+                                     onClick = { onFoChange(null); foExpanded = false })
+                    operators.forEach { op ->
+                        DropdownMenuItem(
+                            text = { Text("${op.callsign} (${op.rank})") },
+                            onClick = { onFoChange(op.id); foExpanded = false },
+                        )
+                    }
+                }
+            }
+        }
+
+        // CAS asset dropdown
+        val availableAssets = casAssets.filter { it.status == "AVAILABLE" || it.status == "ON_STATION" }
+        if (availableAssets.isNotEmpty()) {
+            var assetExpanded by remember { mutableStateOf(false) }
+            val assetLabel = availableAssets.find { it.id == assetId }
+                ?.let { "${it.callsign} [${it.aircraftType.ifBlank { "?" }}] ${it.status}" }
+                ?: "— no asset nominated —"
+            ExposedDropdownMenuBox(expanded = assetExpanded, onExpandedChange = { assetExpanded = !assetExpanded }) {
+                OutlinedTextField(
+                    value = assetLabel, onValueChange = {}, readOnly = true,
+                    label = { Text("CAS asset") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = assetExpanded) },
+                    modifier = Modifier.fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                )
+                ExposedDropdownMenu(expanded = assetExpanded, onDismissRequest = { assetExpanded = false }) {
+                    DropdownMenuItem(text = { Text("— none —") },
+                                     onClick = { onAssetChange(null); assetExpanded = false })
+                    availableAssets.forEach { a ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text("${a.callsign}  [${a.aircraftType.ifBlank { "?" }}]",
+                                         fontWeight = FontWeight.SemiBold)
+                                    if (a.ordnance.isNotBlank())
+                                        Text(a.ordnance, fontSize = 11.sp, color = Color(0xFF94A3B8))
+                                }
+                            },
+                            onClick = { onAssetChange(a.id); assetExpanded = false },
+                        )
+                    }
+                }
+            }
+        } else {
+            Text("No CAS assets available", fontSize = 12.sp, color = Color(0xFF64748B))
+        }
+
+        error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error,
+                 style = MaterialTheme.typography.bodySmall)
+        }
+
+        Button(
+            onClick  = onSubmit,
+            enabled  = !submitting,
+            modifier = Modifier.fillMaxWidth(),
+            colors   = ButtonDefaults.buttonColors(containerColor = casColor),
+        ) {
+            Text(if (submitting) "Submitting…" else if (tic) "⚡ Submit TIC CAS Request" else "✈ Submit CAS Request")
+        }
+    }
+}
+
+@Composable
+private fun CasLineField(
+    n:           Int,
+    label:       String,
+    value:       String,
+    placeholder: String,
+    color:       Color,
+    onChange:    (String) -> Unit,
+    keyboardType: androidx.compose.ui.text.input.KeyboardType =
+        androidx.compose.ui.text.input.KeyboardType.Text,
+) {
+    OutlinedTextField(
+        value = value, onValueChange = onChange,
+        label = { Text("$n — $label") },
+        placeholder = { Text(placeholder, color = Color(0xFF64748B)) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = color,
+            focusedLabelColor  = color,
+        ),
+    )
 }
 
 private fun <T> clusterItems(

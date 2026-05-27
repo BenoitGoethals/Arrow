@@ -311,6 +311,36 @@ class Report(Base):
     status: Mapped[str] = mapped_column(String(20), default="RECEIVED")
     reviewer_note: Mapped[str]        = mapped_column(Text, default="")
     mission_id:    Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
+    # CAS-specific: Forward Observer assignment and Troops-In-Contact priority flag
+    fo_operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    tic: Mapped[bool] = mapped_column(default=False)
+
+
+class CasAsset(Base):
+    """CAS platform available in the battlespace — timeslot-based capacity management.
+
+    Status lifecycle: AVAILABLE → ON_STATION → TASKED → RTB → UNAVAILABLE.
+    BC/ADMIN creates and updates assets; operators read the list to pick an asset
+    when submitting a CAS 9-liner request.
+    """
+    __tablename__ = "cas_assets"
+
+    id:            Mapped[int]           = mapped_column(primary_key=True)
+    callsign:      Mapped[str]           = mapped_column(String(60))
+    aircraft_type: Mapped[str]           = mapped_column(String(60), default="")   # A-10, F-16, AH-64 …
+    ordnance:      Mapped[str]           = mapped_column(Text, default="")          # e.g. "2×GBU-12, 20mm×500"
+    frequency:     Mapped[str]           = mapped_column(String(40), default="")   # primary radio freq
+    status:        Mapped[str]           = mapped_column(String(20), default="AVAILABLE")
+    # Availability window — both nullable (open-ended slot)
+    available_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_to:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes:         Mapped[str]           = mapped_column(Text, default="")
+    mission_id:    Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
+    created_by:    Mapped[int]           = mapped_column(ForeignKey("operators.id"))
+    created_at:    Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at:    Mapped[datetime]      = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    )
 
 
 class AuditLog(Base):

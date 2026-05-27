@@ -148,6 +148,25 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE missions ADD COLUMN map_zoom INTEGER DEFAULT 13",
         # Single-device session enforcement
         "ALTER TABLE operators ADD COLUMN session_jti VARCHAR(36)",
+        # CAS 9-liner: Forward Observer assignment and Troops-In-Contact flag on reports
+        "ALTER TABLE reports ADD COLUMN fo_operator_id INTEGER REFERENCES operators(id)",
+        "ALTER TABLE reports ADD COLUMN tic BOOLEAN DEFAULT 0",
+        # CAS asset capacity table — timeslot-based availability tracking
+        "CREATE TABLE IF NOT EXISTS cas_assets ("
+        "  id INTEGER PRIMARY KEY,"
+        "  callsign VARCHAR(60) NOT NULL,"
+        "  aircraft_type VARCHAR(60) DEFAULT '',"
+        "  ordnance TEXT DEFAULT '',"
+        "  frequency VARCHAR(40) DEFAULT '',"
+        "  status VARCHAR(20) DEFAULT 'AVAILABLE',"
+        "  available_from DATETIME,"
+        "  available_to DATETIME,"
+        "  notes TEXT DEFAULT '',"
+        "  mission_id INTEGER REFERENCES missions(id),"
+        "  created_by INTEGER REFERENCES operators(id),"
+        "  created_at DATETIME,"
+        "  updated_at DATETIME"
+        ")",
     ]
     for sql in migrations:
         try:
