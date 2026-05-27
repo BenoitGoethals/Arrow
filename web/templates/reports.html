@@ -202,6 +202,16 @@
         <div class="divider"></div>
         <h3>Recent</h3>
         <div id="recent-list"><small style="color:#475569">Loading…</small></div>
+
+        <div class="divider"></div>
+        <h3 style="display:flex;align-items:center;justify-content:space-between">
+            ✈ CAS Assets
+            <span id="cas-sb-count" style="font-weight:400;color:#64748b"></span>
+        </h3>
+        <div id="cas-sidebar-list"><small style="color:#475569">Loading…</small></div>
+        <a href="/cas/" style="font-size:.72rem;color:#f97316;padding:.35rem .5rem .1rem;display:block;text-align:right;text-decoration:none">
+            Manage ↗
+        </a>
     </aside>
 
     <!-- ── Main ───────────────────────────────────────────────────── -->
@@ -223,59 +233,6 @@
             </tbody>
         </table>
 
-        <!-- ── CAS Capacity Panel ──────────────────────────────────── -->
-        <div class="cas-capacity" id="cas-capacity">
-            <h3>
-                ✈ CAS Capacity
-                <span id="cas-available-count" style="font-size:0.72rem;color:#64748b;font-weight:400"></span>
-            </h3>
-            <div class="cas-assets-grid" id="cas-assets-grid">
-                <small style="color:#475569">Loading…</small>
-            </div>
-
-            <!-- Add asset form (BC/ADMIN only — server enforces) -->
-            <div class="cas-add-form" id="cas-add-form">
-                <div class="field">
-                    <label>Callsign</label>
-                    <input id="ca-callsign" placeholder="VIPER-1" style="width:90px">
-                </div>
-                <div class="field">
-                    <label>Aircraft</label>
-                    <input id="ca-type" placeholder="F-16C" style="width:75px">
-                </div>
-                <div class="field">
-                    <label>Ordnance</label>
-                    <input id="ca-ordnance" placeholder="2×GBU-12, 20mm" style="width:160px">
-                </div>
-                <div class="field">
-                    <label>Freq</label>
-                    <input id="ca-freq" placeholder="264.000" style="width:80px">
-                </div>
-                <div class="field">
-                    <label>Status</label>
-                    <select id="ca-status">
-                        <option value="AVAILABLE">AVAILABLE</option>
-                        <option value="ON_STATION">ON STATION</option>
-                        <option value="RTB">RTB</option>
-                        <option value="UNAVAILABLE">UNAVAILABLE</option>
-                    </select>
-                </div>
-                <div class="field">
-                    <label>From (local)</label>
-                    <input id="ca-from" type="datetime-local" style="width:155px">
-                </div>
-                <div class="field">
-                    <label>To (local)</label>
-                    <input id="ca-to" type="datetime-local" style="width:155px">
-                </div>
-                <div class="field">
-                    <label>Notes</label>
-                    <input id="ca-notes" placeholder="optional" style="width:120px">
-                </div>
-                <button class="btn-cas-add" onclick="addCasAsset()">+ Add asset</button>
-                <span id="ca-add-status" style="font-size:0.78rem;color:#64748b"></span>
-            </div>
-        </div>
     </section>
 
 </div>
@@ -773,104 +730,54 @@
         document.getElementById('cbrn-file').value = '';
     };
 
-    // ── CAS capacity panel ──────────────────────────────────────────
+    // ── CAS capacity — sidebar compact view ────────────────────────
     async function loadCasAssets() {
         const r = await api('/cas/assets');
         if (!r.ok) return;
         casAssetsList = await r.json();
-        renderCasAssets();
+        renderCasSidebar();
     }
     window.loadCasAssets = loadCasAssets;
 
-    function renderCasAssets() {
-        const grid   = document.getElementById('cas-assets-grid');
-        const count  = document.getElementById('cas-available-count');
-        if (!grid) return;
+    const STATUS_COLORS = {
+        AVAILABLE:  '#22c55e', ON_STATION: '#60a5fa',
+        TASKED:     '#f87171', RTB:        '#fb923c',
+        UNAVAILABLE:'#64748b',
+    };
+
+    function renderCasSidebar() {
+        const list  = document.getElementById('cas-sidebar-list');
+        const count = document.getElementById('cas-sb-count');
+        if (!list) return;
         const avail = casAssetsList.filter(a => a.status === 'AVAILABLE' || a.status === 'ON_STATION').length;
-        if (count) count.textContent = `(${avail} available)`;
+        if (count) count.textContent = `${avail} avail`;
 
         if (!casAssetsList.length) {
-            grid.innerHTML = '<small style="color:#475569">No CAS assets configured</small>';
+            list.innerHTML = '<small style="color:#475569">No assets</small>';
             return;
         }
-        grid.innerHTML = casAssetsList.map(a => {
-            const fromStr = a.available_from ? new Date(a.available_from).toLocaleString() : '—';
-            const toStr   = a.available_to   ? new Date(a.available_to).toLocaleString()   : '—';
-            const statusOpts = ['AVAILABLE','ON_STATION','TASKED','RTB','UNAVAILABLE']
-                .map(s => `<option value="${s}"${s===a.status?' selected':''}>${s.replace('_',' ')}</option>`)
-                .join('');
-            return `<div class="cas-asset-card" id="ca-card-${a.id}">
-                <div class="ca-header">
-                    <span class="ca-callsign">${escHtml(a.callsign)}</span>
-                    <span class="ca-status-badge ca-${a.status}">${a.status.replace('_',' ')}</span>
+        // Sort: available/on-station first
+        const sorted = [...casAssetsList].sort((a, b) => {
+            const rank = s => s === 'AVAILABLE' ? 0 : s === 'ON_STATION' ? 1 : 2;
+            return rank(a.status) - rank(b.status);
+        });
+        list.innerHTML = sorted.map(a => {
+            const col   = STATUS_COLORS[a.status] || '#64748b';
+            const dim   = (a.status === 'UNAVAILABLE' || a.status === 'TASKED') ? 'opacity:.5;' : '';
+            const fromStr = a.available_from ? new Date(a.available_from).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : null;
+            const toStr   = a.available_to   ? new Date(a.available_to).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})   : null;
+            const slot = (fromStr && toStr) ? `<div style="font-size:.67rem;color:#475569;margin-top:2px">🕐 ${escHtml(fromStr)}–${escHtml(toStr)}</div>` : '';
+            return `<div style="padding:.35rem .5rem;border-left:3px solid ${col};margin-bottom:3px;
+                                border-radius:0 4px 4px 0;background:#0e1217;${dim}">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-weight:700;font-size:.8rem;color:#e2e8f0">${escHtml(a.callsign)}</span>
+                    <span style="font-size:.62rem;font-weight:700;color:${col}">${a.status.replace('_',' ')}</span>
                 </div>
-                ${a.aircraft_type ? `<div class="ca-type">${escHtml(a.aircraft_type)}</div>` : ''}
-                ${a.ordnance ? `<div class="ca-row">Ordnance: <span>${escHtml(a.ordnance)}</span></div>` : ''}
-                ${a.frequency ? `<div class="ca-row">Freq: <span>${escHtml(a.frequency)}</span></div>` : ''}
-                <div class="ca-slot">🕐 ${escHtml(fromStr)} → ${escHtml(toStr)}</div>
-                ${a.notes ? `<div class="ca-row" style="margin-top:.25rem">${escHtml(a.notes)}</div>` : ''}
-                <div class="ca-actions">
-                    <select style="background:#161b25;color:#94a3b8;border:1px solid #2a3142;border-radius:4px;
-                                   padding:0.15rem 0.3rem;font:inherit;font-size:0.72rem"
-                            id="ca-status-sel-${a.id}">${statusOpts}</select>
-                    <button class="btn-ca-status"
-                            onclick="setCasAssetStatus(${a.id})">Set</button>
-                    <button class="btn-ca-del"
-                            onclick="deleteCasAsset(${a.id})">✕</button>
-                </div>
+                ${a.aircraft_type ? `<div style="font-size:.72rem;color:#64748b">${escHtml(a.aircraft_type)}</div>` : ''}
+                ${slot}
             </div>`;
         }).join('');
     }
-
-    window.setCasAssetStatus = async function(id) {
-        const sel = document.getElementById(`ca-status-sel-${id}`);
-        if (!sel) return;
-        const r = await api(`/cas/assets/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: sel.value }),
-        });
-        if (r.ok) loadCasAssets();
-    };
-
-    window.deleteCasAsset = async function(id) {
-        if (!confirm('Delete this CAS asset?')) return;
-        await api(`/cas/assets/${id}`, { method: 'DELETE' });
-        loadCasAssets();
-    };
-
-    window.addCasAsset = async function() {
-        const val = id => document.getElementById(id)?.value?.trim() || '';
-        const st  = document.getElementById('ca-add-status');
-        if (!val('ca-callsign')) { st.textContent = 'Callsign required'; return; }
-        const fromVal = val('ca-from');
-        const toVal   = val('ca-to');
-        const body = {
-            callsign:      val('ca-callsign'),
-            aircraft_type: val('ca-type'),
-            ordnance:      val('ca-ordnance'),
-            frequency:     val('ca-freq'),
-            status:        val('ca-status') || 'AVAILABLE',
-            available_from: fromVal ? new Date(fromVal).toISOString() : null,
-            available_to:   toVal   ? new Date(toVal).toISOString()   : null,
-            notes:          val('ca-notes'),
-        };
-        st.textContent = 'Saving…';
-        const r = await api('/cas/assets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        if (r.ok) {
-            ['ca-callsign','ca-type','ca-ordnance','ca-freq','ca-from','ca-to','ca-notes']
-                .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-            st.textContent = '✓ Asset added';
-            loadCasAssets();
-        } else {
-            const err = await r.json().catch(() => ({}));
-            st.textContent = `✗ ${err.detail || r.status}`;
-        }
-    };
 
     // ── Operators list — for FO dropdown ───────────────────────────
     async function loadOperators() {
@@ -927,7 +834,6 @@
                 if (msg.channel === 'cas') {
                     loadReports();
                     loadCasAssets();
-                    // Refresh FO/asset dropdowns if CAS form is open
                     if (currentType === 'CAS') renderCasForm();
                 }
             } catch (_) {}
