@@ -266,7 +266,7 @@
                         stroke="#6ee7b7" stroke-width="1.5"/>
             </svg>
 
-            <div class="r-item r-enemy"     id="ri-enemy"     onclick="radialAction('enemy')">⚠<div class="r-label">ENEMY</div></div>
+            <div class="r-item r-enemy"     id="ri-enemy"     onclick="radialAction('enemy')">📌<div class="r-label">SYMBOL</div></div>
             <div class="r-item r-fire"      id="ri-fire"      onclick="radialAction('fire')">🎯<div class="r-label">FIRE</div></div>
             <div class="r-item r-objective" id="ri-objective" onclick="radialAction('objective')">🚩<div class="r-label">OBJECTIVE</div></div>
             <div class="r-item r-poi"       id="ri-poi"       onclick="radialAction('poi')">📍<div class="r-label">POI</div></div>
@@ -1849,12 +1849,12 @@
         document.getElementById('r-spokes').innerHTML = '';
     };
 
+    // Legacy SIDC map kept for backward compat (CoT / API consumers that post these types).
     const SIDC_MAP = {
         INFANTRY:'SHGPUCI-----', ARMOR:'SHGPUCA-----', MECHANIZED:'SHGPUCIZ----',
         ARTILLERY:'SHGPUCF-----', AIR_DEFENSE:'SHGPUCD-----', RECON:'SHGPUCR-----',
         VEHICLE:'SHGPEV------', SNIPER:'SHGPUCIS----', UNKNOWN:'SUGPU-------',
     };
-    const ENEMY_TYPES = Object.keys(SIDC_MAP);
 
     window.radialAction = async function(action) {
         closeRadial();
@@ -1862,8 +1862,7 @@
         const grid = toMgrs(lat, lon);
 
         if (action === 'enemy') {
-            // Quick enemy type picker — small modal
-            showEnemyPicker(lat, lon, grid);
+            showSymbolPicker(lat, lon, grid);
         }
         else if (action === 'fire') {
             showFireMissionForm(lat, lon, grid);
@@ -1994,31 +1993,230 @@
         }
     };
 
-    function showEnemyPicker(lat, lon, grid) {
-        // Build a small inline picker modal
-        const existing = document.getElementById('enemy-picker');
-        if (existing) existing.remove();
+    // ── MIL-STD-2525C / APP-6 symbol picker ─────────────────────────────────
+    let _sp = null;   // symbol picker state — lives only while modal is open
+
+    function showSymbolPicker(lat, lon, grid) {
+        document.getElementById('symbol-picker')?.remove();
+
+        const AFFILIATIONS = [
+            { code:'F', label:'Friendly',       color:'#1d4ed8', bg:'rgba(29,78,216,.18)' },
+            { code:'H', label:'Hostile',         color:'#dc2626', bg:'rgba(220,38,38,.18)' },
+            { code:'N', label:'Neutral',         color:'#16a34a', bg:'rgba(22,163,74,.18)' },
+            { code:'U', label:'Unknown',         color:'#ca8a04', bg:'rgba(202,138,4,.18)'  },
+            { code:'A', label:'Assumed Friend',  color:'#7c3aed', bg:'rgba(124,58,237,.18)' },
+        ];
+
+        // Catalog: each entry has label + 12-char SIDC template where pos 1 = '_' (affiliation)
+        const CATALOG = [
+            { group: 'Ground — Combat', items: [
+                { label:'Infantry',    t:'S_GPUCI-----' },
+                { label:'Armor',       t:'S_GPUCA-----' },
+                { label:'Mechanized',  t:'S_GPUCIZ----' },
+                { label:'Artillery',   t:'S_GPUCF-----' },
+                { label:'Air Defense', t:'S_GPUCM-----' },
+                { label:'Anti-Armor',  t:'S_GPUCAA----' },
+                { label:'Recon',       t:'S_GPUCR-----' },
+                { label:'Engineer',    t:'S_GPUCE-----' },
+                { label:'Aviation',    t:'S_GPUCX-----' },
+                { label:'Sniper',      t:'S_GPUCIS----' },
+            ]},
+            { group: 'Ground — Support / HQ', items: [
+                { label:'Command Post',  t:'S_GPUCC-----' },
+                { label:'HQ Unit',       t:'S_GPU-------' },
+                { label:'Medical',       t:'S_GPUSFM----' },
+                { label:'Supply',        t:'S_GPUSL-----' },
+                { label:'Maintenance',   t:'S_GPUSM-----' },
+                { label:'Signal',        t:'S_GPUSS-----' },
+                { label:'Vehicle',       t:'S_GPEV------' },
+                { label:'Unknown Gnd',   t:'S_GPU-------' },
+            ]},
+            { group: 'Air', items: [
+                { label:'Fighter',       t:'S_APMFF-----' },
+                { label:'Bomber',        t:'S_APMFB-----' },
+                { label:'Attack Helo',   t:'S_APMHH-----' },
+                { label:'Utility Helo',  t:'S_APMHU-----' },
+                { label:'UAV / Drone',   t:'S_APMFQ-----' },
+                { label:'Transport',     t:'S_APMFT-----' },
+            ]},
+        ];
+
+        _sp = { lat, lon, grid, aff: 'H', sym: null, affiliations: AFFILIATIONS, catalog: CATALOG };
+
+        _sp.sidc = function(tmpl) {
+            return tmpl[0] + _sp.aff + tmpl.slice(2);
+        };
 
         const modal = document.createElement('div');
-        modal.id = 'enemy-picker';
-        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:900;display:flex;align-items:center;justify-content:center';
-        modal.innerHTML = `
-            <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;padding:1.25rem;width:360px;max-width:95vw">
-                <div style="font-size:0.9rem;font-weight:700;color:#ef4444;margin-bottom:0.2rem">⚠ Enemy Contact</div>
-                <div style="font-size:0.75rem;color:#64748b;font-family:monospace;margin-bottom:0.9rem">${escHtml(grid)}</div>
-                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:0.75rem">
-                    ${ENEMY_TYPES.map(t => `<button onclick="markEnemy('${t}',${lat},${lon},'${grid}')"
-                        style="background:#dc262622;color:#ef4444;border:1px solid #dc262644;border-radius:5px;
-                               padding:0.35rem;font:inherit;font-size:0.78rem;cursor:pointer">${t}</button>`).join('')}
-                </div>
-                <input id="enemy-notes" placeholder="Notes (optional)" style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;padding:0.4rem 0.6rem;font:inherit;font-size:0.83rem;box-sizing:border-box">
-                <div style="text-align:right;margin-top:0.6rem">
-                    <button onclick="document.getElementById('enemy-picker').remove()"
-                        style="background:#1f2937;color:#94a3b8;border:0;border-radius:5px;padding:0.35rem 0.8rem;cursor:pointer;font:inherit;font-size:0.82rem">Cancel</button>
-                </div>
-            </div>`;
+        modal.id = 'symbol-picker';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:900;display:flex;align-items:center;justify-content:center;padding:1rem';
+
+        _sp.render = function() {
+            const affObj = _sp.affiliations.find(a => a.code === _sp.aff);
+
+            const affBtns = _sp.affiliations.map(a => {
+                const active = a.code === _sp.aff;
+                return `<button onclick="window._sp.setAff('${a.code}')"
+                            style="flex:1;padding:.3rem .25rem;border-radius:5px;
+                                   border:1px solid ${active ? a.color : '#2a3142'};
+                                   background:${active ? a.bg : '#0e1217'};
+                                   color:${active ? a.color : '#475569'};
+                                   cursor:pointer;font:inherit;font-size:.7rem;
+                                   font-weight:${active?700:400};line-height:1.3;
+                                   white-space:nowrap">
+                            ${escHtml(a.label)}
+                        </button>`;
+            }).join('');
+
+            const catalogHtml = _sp.catalog.map(group => {
+                const btns = group.items.map(sym => {
+                    const sidc   = _sp.sidc(sym.t);
+                    const s      = msSvg(sidc, 32);
+                    const active = _sp.sym?.t === sym.t;
+                    return `<button onclick="window._sp.selectSym('${sym.t}','${escHtml(sym.label)}')"
+                                title="${escHtml(sym.label)}"
+                                style="display:flex;flex-direction:column;align-items:center;
+                                       justify-content:flex-start;gap:4px;
+                                       padding:.45rem .3rem .35rem;border-radius:6px;cursor:pointer;
+                                       border:1.5px solid ${active ? affObj.color : '#2a3142'};
+                                       background:${active ? affObj.bg : '#0e1217'};
+                                       color:${active ? affObj.color : '#64748b'};
+                                       font:inherit;width:70px;min-height:72px;
+                                       font-size:.62rem;font-weight:600;transition:border-color .12s">
+                                <div style="width:36px;height:36px;display:flex;align-items:center;
+                                            justify-content:center;overflow:visible;flex-shrink:0">
+                                    ${s.svg}
+                                </div>
+                                <span style="text-align:center;line-height:1.25;
+                                             word-break:break-word;max-width:64px">
+                                    ${escHtml(sym.label)}
+                                </span>
+                            </button>`;
+                }).join('');
+                return `<div style="margin-bottom:.8rem">
+                    <div style="font-size:.65rem;color:#475569;text-transform:uppercase;
+                                letter-spacing:.12em;margin-bottom:.4rem">
+                        ${escHtml(group.group)}
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:5px">${btns}</div>
+                </div>`;
+            }).join('');
+
+            const placeColor = affObj.color;
+            modal.innerHTML = `
+                <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;
+                            width:580px;max-width:95vw;max-height:90vh;
+                            display:flex;flex-direction:column;overflow:hidden">
+
+                    <!-- Header -->
+                    <div style="padding:1rem 1.25rem .75rem;border-bottom:1px solid #2a3142;flex-shrink:0">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+                            <div>
+                                <div style="font-size:.95rem;font-weight:700;color:#e2e8f0">
+                                    📌 Place MIL Symbol
+                                </div>
+                                <div style="font-size:.72rem;color:#64748b;font-family:monospace">
+                                    ${escHtml(grid)}
+                                </div>
+                            </div>
+                            <button onclick="document.getElementById('symbol-picker').remove()"
+                                    style="background:none;border:0;color:#64748b;cursor:pointer;font-size:1.2rem;line-height:1">✕</button>
+                        </div>
+
+                        <!-- Affiliation row -->
+                        <div style="font-size:.65rem;color:#475569;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.3rem">
+                            Affiliation
+                        </div>
+                        <div style="display:flex;gap:5px">${affBtns}</div>
+                    </div>
+
+                    <!-- Symbol catalog (scrollable) -->
+                    <div style="overflow-y:auto;padding:1rem 1.25rem;flex:1">
+                        ${catalogHtml}
+                    </div>
+
+                    <!-- Footer: designation + submit -->
+                    <div style="padding:.75rem 1.25rem;border-top:1px solid #2a3142;flex-shrink:0">
+                        <div style="margin-bottom:.5rem">
+                            <label style="font-size:.65rem;color:#475569;text-transform:uppercase;
+                                          letter-spacing:.1em;display:block;margin-bottom:3px">
+                                Designation / Unit name (optional)
+                            </label>
+                            <input id="sp-desig" placeholder="e.g.  2nd Plt · VIPER-2 · 3 MBT"
+                                   style="width:100%;background:#0d1117;color:#e2e8f0;
+                                          border:1px solid #2a3142;border-radius:5px;
+                                          padding:.4rem .6rem;font:inherit;font-size:.83rem;
+                                          box-sizing:border-box">
+                        </div>
+                        <div id="sp-error" style="font-size:.75rem;color:#ef4444;min-height:1em;margin-bottom:.4rem"></div>
+                        <div style="display:flex;gap:.5rem;justify-content:flex-end">
+                            <button onclick="document.getElementById('symbol-picker').remove()"
+                                    style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;
+                                           border-radius:6px;padding:.4rem 1rem;cursor:pointer;
+                                           font:inherit;font-size:.83rem">Cancel</button>
+                            <button onclick="window._sp.place()"
+                                    style="background:${placeColor};color:#fff;border:0;
+                                           border-radius:6px;padding:.4rem 1.25rem;
+                                           font:inherit;font-size:.83rem;font-weight:700;cursor:pointer">
+                                Place Symbol
+                            </button>
+                        </div>
+                    </div>
+                </div>`;
+        };
+
+        _sp.setAff = function(code) { _sp.aff = code; _sp.render(); };
+
+        _sp.selectSym = function(tmpl, label) {
+            _sp.sym = { t: tmpl, label };
+            _sp.render();
+        };
+
+        _sp.place = async function() {
+            const errEl = document.getElementById('sp-error');
+            if (!_sp.sym) {
+                if (errEl) errEl.textContent = 'Select a symbol type first.';
+                return;
+            }
+            const desig = (document.getElementById('sp-desig')?.value || '').trim();
+            const sidc  = _sp.sidc(_sp.sym.t);
+            const affLabel = { F:'FRIENDLY', H:'HOSTILE', N:'NEUTRAL',
+                               U:'UNKNOWN',  A:'ASSUMED_FRIEND' }[_sp.aff] || 'UNKNOWN';
+            const typeName = _sp.sym.label.toUpperCase().replace(/[\s/]+/g, '_');
+            const notes = desig
+                ? `${desig}  MGRS:${_sp.grid}`
+                : `MGRS:${_sp.grid}`;
+
+            if (errEl) errEl.textContent = 'Placing…';
+
+            const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
+                method:  'POST',
+                headers: missionHeaders({ 'Content-Type': 'application/json' }),
+                body:    JSON.stringify({
+                    type:        typeName,
+                    symbol_code: sidc,
+                    latitude:    _sp.lat,
+                    longitude:   _sp.lon,
+                    notes,
+                    affiliation: affLabel,
+                }),
+            });
+
+            if (r.ok) {
+                const o = await r.json();
+                state.tacticalObjects.set(o.id, o);
+                refreshEnemies();
+                document.getElementById('symbol-picker')?.remove();
+                _sp = null;
+            } else {
+                const txt = await r.text().catch(() => String(r.status));
+                if (errEl) errEl.textContent = `✗ Failed (${r.status}): ${txt}`;
+            }
+        };
+
         document.body.appendChild(modal);
-        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); _sp = null; } });
+        _sp.render();
     }
 
     // ── Fire Mission inline form (mirrors Android FireMissionScreen) ───────────

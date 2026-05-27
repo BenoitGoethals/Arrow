@@ -58,6 +58,7 @@ import com.arrow.tactical.network.OperatorDto
 import com.arrow.tactical.network.TacticalObjectDto
 import com.arrow.tactical.network.TacticalObjectIn
 import com.arrow.tactical.tactical.EnemyType
+import com.arrow.tactical.tactical.FriendlyType
 import com.arrow.tactical.tracking.LocationService
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.delay
@@ -84,7 +85,7 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.TilesOverlay
 
 // CATEGORY is gone — replaced by RadialMenu; ENEMY_TYPE and NOTES are direct bottom sheets
-private enum class MenuStep { ENEMY_TYPE, NOTES, DRONE_SPOT, CAS_NINE_LINER }
+private enum class MenuStep { ENEMY_TYPE, NOTES, FRIENDLY_TYPE, FRIENDLY_NOTES, DRONE_SPOT, CAS_NINE_LINER }
 private enum class OverlayMode { ALL, NONE, ENEMIES, OWN_PLATOON }
 
 // Drone types + behaviours the operator can pick from in the radial bottom sheet.
@@ -314,8 +315,10 @@ fun MapScreen(
     val measureMarkersRef  = remember { mutableStateOf<List<Marker>>(emptyList()) }
     // null screenPos = bottom-sheet showing; non-null = radial menu showing
     var menuStep     by remember { mutableStateOf(MenuStep.ENEMY_TYPE) }
-    var selectedType by remember { mutableStateOf(EnemyType.INFANTRY) }
-    var notes by remember { mutableStateOf("") }
+    var selectedType         by remember { mutableStateOf(EnemyType.INFANTRY) }
+    var selectedFriendlyType by remember { mutableStateOf(FriendlyType.INFANTRY) }
+    var notes         by remember { mutableStateOf("") }
+    var friendlyNotes by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
     var submitError by remember { mutableStateOf<String?>(null) }
     var pendingPhotoId  by remember { mutableStateOf<Int?>(null) }
@@ -1694,8 +1697,13 @@ fun MapScreen(
             items = listOf(
                 RadialItem("⚠", "Enemy",    Color(if (isLoggedIn) 0xFFDC2626 else 0xFF666666)) {
                     if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
-                    pendingScreenPos = null          // dismiss radial, show enemy picker
+                    pendingScreenPos = null
                     menuStep = MenuStep.ENEMY_TYPE
+                },
+                RadialItem("🟦", "Friendly", Color(if (isLoggedIn) 0xFF1D4ED8 else 0xFF666666)) {
+                    if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
+                    pendingScreenPos = null
+                    menuStep = MenuStep.FRIENDLY_TYPE
                 },
                 RadialItem("🎯", "Fire\nMission", Color(if (isLoggedIn) 0xFFB91C1C else 0xFF666666)) {
                     if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
@@ -1799,6 +1807,46 @@ fun MapScreen(
                         menuStep = MenuStep.NOTES
                     },
                     onBack = { pendingPoint = null },
+                )
+
+                MenuStep.FRIENDLY_TYPE -> FriendlyTypeMenu(
+                    onSelect = { type ->
+                        selectedFriendlyType = type
+                        friendlyNotes = ""
+                        menuStep = MenuStep.FRIENDLY_NOTES
+                    },
+                    onBack = { pendingPoint = null },
+                )
+
+                MenuStep.FRIENDLY_NOTES -> FriendlyNotesMenu(
+                    type          = selectedFriendlyType,
+                    notes         = friendlyNotes,
+                    onNotesChange = { friendlyNotes = it },
+                    submitting    = submitting,
+                    error         = submitError,
+                    onBack        = { menuStep = MenuStep.FRIENDLY_TYPE },
+                    onSubmit      = {
+                        submitting  = true
+                        submitError = null
+                        scope.launch {
+                            container.tacticalRepository.mark(
+                                TacticalObjectIn(
+                                    type         = selectedFriendlyType.name,
+                                    symbolCode   = selectedFriendlyType.sidc,
+                                    latitude     = point.latitude,
+                                    longitude    = point.longitude,
+                                    notes        = friendlyNotes,
+                                    affiliation  = "FRIENDLY",
+                                ),
+                            ).onSuccess {
+                                pendingPoint  = null
+                                friendlyNotes = ""
+                            }.onFailure {
+                                submitError = it.message ?: "Failed"
+                            }
+                            submitting = false
+                        }
+                    },
                 )
 
                 MenuStep.DRONE_SPOT -> DroneSpotMenu(
@@ -2095,6 +2143,108 @@ private fun parsePlatoonIds(json: String, myId: Int): Set<Int> {
         }
     } catch (_: Exception) { /* return at least own id */ }
     return result
+}
+
+@Composable
+private fun FriendlyTypeMenu(onSelect: (FriendlyType) -> Unit, onBack: () -> Unit) {
+    val friendlyBlue = Color(0xFF1D4ED8)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 4.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                "Select friendly unit type",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement   = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.heightIn(max = 260.dp),
+        ) {
+            items(FriendlyType.entries) { type ->
+                OutlinedButton(
+                    onClick = { onSelect(type) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = friendlyBlue,
+                    ),
+                ) {
+                    Text(type.label, maxLines = 2, fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FriendlyNotesMenu(
+    type:          FriendlyType,
+    notes:         String,
+    onNotesChange: (String) -> Unit,
+    submitting:    Boolean,
+    error:         String?,
+    onBack:        () -> Unit,
+    onSubmit:      () -> Unit,
+) {
+    val friendlyBlue = Color(0xFF1D4ED8)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 4.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Column {
+                Text(
+                    type.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "SIDC: ${type.sidc}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        OutlinedTextField(
+            value         = notes,
+            onValueChange = onNotesChange,
+            label         = { Text("Unit / notes") },
+            placeholder   = { Text("e.g. 2nd Plt, moving to OBJ EAGLE") },
+            modifier      = Modifier.fillMaxWidth(),
+            singleLine    = false,
+            minLines      = 1,
+            maxLines      = 3,
+        )
+        error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error,
+                 style = MaterialTheme.typography.bodySmall)
+        }
+        Button(
+            onClick  = onSubmit,
+            enabled  = !submitting,
+            modifier = Modifier.fillMaxWidth(),
+            colors   = ButtonDefaults.buttonColors(containerColor = friendlyBlue),
+        ) {
+            Text(if (submitting) "Marking…" else "Mark on map")
+        }
+    }
 }
 
 @Composable
