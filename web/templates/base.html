@@ -887,6 +887,106 @@
         }
     }
 
+    // ── CAS request events ────────────────────────────────────────────────────
+    function handleCasEvent(evt) {
+        if (!notifVis.notif_alerts) return;
+        const d = evt.data || {};
+
+        // Asset status changes (asset_created/updated/deleted) — silent, no toast needed.
+        if (evt.event !== 'request') return;
+
+        const isTic        = !!d.tic;
+        const reportId     = d.id;
+        const callsign     = d.operator_callsign || `op #${d.operator_id}`;
+        const targetLoc    = d.target_location || d.target_desc || '—';
+        const foCallsign   = d.fo_callsign || null;
+        const locText      = window.mgrsOrDash ? window.mgrsOrDash(d.target_lat, d.target_lon) : targetLoc;
+
+        // TIC = max priority: full alarm + speech + auto-navigate toast
+        if (isTic) {
+            triggerAudioAlertWithText('tic', 'Troops in contact! CAS request inbound!');
+            if (Notification.permission === 'granted') {
+                new Notification('⚡ TIC — CAS REQUEST', {
+                    body: `${callsign} → ${targetLoc}`,
+                    tag:  'arrow-cas-tic',
+                });
+            }
+        }
+
+        const borderColor = isTic ? '#ef4444' : '#f97316';
+        const headerColor = isTic ? '#fca5a5' : '#fdba74';
+        const icon        = isTic ? '⚡' : '✈';
+        const headerLabel = isTic ? 'TIC — CAS REQUEST' : 'CAS REQUEST';
+
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.cssText += `border-left-color:${borderColor};border-left-width:4px;`;
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from" style="color:${borderColor}">
+                    ${icon} ${esc(headerLabel)}
+                </span>
+                <button class="arrow-toast-close"
+                        onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            <div class="arrow-toast-body" style="color:${headerColor};font-size:13px;line-height:1.5">
+                <div><b>From:</b> ${esc(callsign)}</div>
+                <div><b>Target:</b> ${esc(locText)}</div>
+                ${foCallsign ? `<div><b>FO:</b> ${esc(foCallsign)}</div>` : ''}
+            </div>
+            <div style="padding:4px 10px 8px">
+                <button onclick="openCasReport(${reportId}, this)"
+                        style="padding:3px 12px;background:#1e3a5f;color:#60a5fa;
+                               border:1px solid #2563eb;border-radius:5px;
+                               font:inherit;font-size:12px;cursor:pointer;width:100%">
+                    Open CAS request ↗
+                </button>
+            </div>`;
+        document.getElementById('arrow-toast-container').appendChild(toast);
+        // TIC stays until dismissed; non-TIC auto-dismisses
+        if (!isTic) autoDismissToast(toast, 60 * 1000);
+    }
+
+    window.openCasReport = function(reportId, btn) {
+        // Navigate to /reports and highlight the row
+        const reportsUrl = '/reports';
+        if (location.pathname !== reportsUrl) {
+            sessionStorage.setItem('arrow_highlight_report', String(reportId));
+            location.href = reportsUrl;
+        } else {
+            highlightReport(reportId);
+            btn?.closest('.arrow-toast')?.remove();
+        }
+    };
+
+    // Called on /reports page load — scroll to and open the highlighted report
+    (function applyHighlightFromSession() {
+        const id = sessionStorage.getItem('arrow_highlight_report');
+        if (!id) return;
+        sessionStorage.removeItem('arrow_highlight_report');
+        // Wait for the reports table to render (it loads async)
+        let tries = 0;
+        const poll = setInterval(() => {
+            if (highlightReport(parseInt(id)) || ++tries > 20) clearInterval(poll);
+        }, 300);
+    })();
+
+    function highlightReport(id) {
+        const row = document.getElementById(`rep-row-${id}`);
+        if (!row) return false;
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Open the detail panel
+        const btn = row.querySelector('button[onclick^="toggleDetail"]');
+        const detail = row.querySelector('.rep-detail');
+        if (detail && detail.style.display !== 'block') {
+            if (btn) btn.click();
+        }
+        row.style.transition = 'background .3s';
+        row.style.background = 'rgba(239,68,68,.15)';
+        setTimeout(() => { row.style.background = ''; }, 2500);
+        return true;
+    }
+
     // Variant that takes explicit voice text + alert kind for distinct tones.
     function triggerAudioAlertWithText(type, text) {
         if (!notifVis.sound_enabled) return;
@@ -1088,6 +1188,7 @@
                         (e.data||{}).weapon !== 'L16_81MM') triggerAudioAlert('fire');
                 }
                 if (e.channel === 'alert')             handleTacAlert(e);
+                if (e.channel === 'cas')               handleCasEvent(e);
                 if (e.channel === 'stream')            handleStreamEvent(e);
                 if (e.channel === 'octopus-detection') handleOctopusDetection(e);
             } catch (_) {}

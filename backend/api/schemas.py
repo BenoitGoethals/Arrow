@@ -233,6 +233,72 @@ class ReportOut(ORMModel):
     timestamp: datetime
     status: str = "RECEIVED"
     reviewer_note: str = ""
+    fo_operator_id: int | None = None
+    tic: bool = False
+
+
+class CasNineLinerIn(BaseModel):
+    """Structured CAS 9-liner request.
+
+    Line 5 carries both the human-readable MGRS string and the exact WGS-84
+    coordinates so the backend can geocode and broadcast a map marker.
+    """
+    # Standard 9-liner lines
+    line_1: str = ""   # IP (Initial Point)
+    line_2: str = ""   # Heading / Distance from IP to target
+    line_3: str = ""   # Target elevation MSL
+    line_4: str = ""   # Target description
+    # Line 5: target location — provided as MGRS + optional precise lat/lon
+    line_5_mgrs: str = ""
+    line_5_lat:  float | None = None
+    line_5_lon:  float | None = None
+    line_6: str = ""   # Type of mark (Laser / Smoke / IR pointer / Mark-63 / None)
+    line_7: str = ""   # Friendly location relative to target
+    line_8: str = ""   # Egress direction
+    line_9: str = ""   # Remarks / Threats / TOT
+    # CAS request metadata
+    tic: bool = False               # Troops In Contact — triggers priority WS event
+    fo_operator_id: int | None = None   # Forward Observer assigned to this request
+    asset_id: int | None = None         # CAS asset nominated for the mission
+
+
+class CasAssetIn(BaseModel):
+    callsign:      str
+    aircraft_type: str = ""
+    ordnance:      str = ""
+    frequency:     str = ""
+    status:        str = "AVAILABLE"
+    available_from: datetime | None = None
+    available_to:   datetime | None = None
+    notes:          str = ""
+    mission_id:     int | None = None
+
+
+class CasAssetUpdate(BaseModel):
+    callsign:      str | None = None
+    aircraft_type: str | None = None
+    ordnance:      str | None = None
+    frequency:     str | None = None
+    status:        str | None = None
+    available_from: datetime | None = None
+    available_to:   datetime | None = None
+    notes:          str | None = None
+
+
+class CasAssetOut(ORMModel):
+    id:            int
+    callsign:      str
+    aircraft_type: str
+    ordnance:      str
+    frequency:     str
+    status:        str
+    available_from: datetime | None
+    available_to:   datetime | None
+    notes:          str
+    mission_id:     int | None
+    created_by:     int
+    created_at:     datetime
+    updated_at:     datetime
 
 
 class FireMissionIn(BaseModel):

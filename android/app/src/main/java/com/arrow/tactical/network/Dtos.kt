@@ -275,6 +275,42 @@ data class RegisterIn(
     val role: String = "OPERATOR",
 )
 
+// ── CAS DTOs ──────────────────────────────────────────────────────────────
+
+@Serializable
+data class CasAssetDto(
+    val id: Int,
+    val callsign: String,
+    @SerialName("aircraft_type") val aircraftType: String = "",
+    val ordnance: String = "",
+    val frequency: String = "",
+    val status: String = "AVAILABLE",   // AVAILABLE | ON_STATION | TASKED | RTB | UNAVAILABLE
+    @SerialName("available_from") val availableFrom: String? = null,
+    @SerialName("available_to")   val availableTo: String? = null,
+    val notes: String = "",
+    @SerialName("mission_id") val missionId: Int? = null,
+)
+
+@Serializable
+data class CasNineLinerIn(
+    // 9-liner lines
+    @SerialName("line_1") val line1: String = "",
+    @SerialName("line_2") val line2: String = "",
+    @SerialName("line_3") val line3: String = "",
+    @SerialName("line_4") val line4: String = "",
+    @SerialName("line_5_mgrs") val line5Mgrs: String = "",
+    @SerialName("line_5_lat")  val line5Lat: Double? = null,
+    @SerialName("line_5_lon")  val line5Lon: Double? = null,
+    @SerialName("line_6") val line6: String = "",
+    @SerialName("line_7") val line7: String = "",
+    @SerialName("line_8") val line8: String = "",
+    @SerialName("line_9") val line9: String = "",
+    // CAS metadata
+    val tic: Boolean = false,
+    @SerialName("fo_operator_id") val foOperatorId: Int? = null,
+    @SerialName("asset_id") val assetId: Int? = null,
+)
+
 // ── Strike Package DTOs ────────────────────────────────────────────────────
 
 @Serializable
