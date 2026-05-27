@@ -951,6 +951,8 @@ fun MapScreen(
         map.invalidate()
     }
 
+    val isLoggedIn = meId != null
+
     // AndroidView (OSMdroid) must come FIRST so it renders at the Android-View layer.
     // All Compose content placed after it in the Box renders on the Compose canvas
     // layer which always sits on top of embedded Android Views.
@@ -1521,7 +1523,6 @@ fun MapScreen(
         }
 
         // ── Call for Fire button — icon-only, compact ────────────────────
-        val isLoggedIn = meId != null
         SmallFloatingActionButton(
             onClick        = {
                 if (!isLoggedIn) scope.launch { snackbarHostState.showSnackbar("Please log in first") }
