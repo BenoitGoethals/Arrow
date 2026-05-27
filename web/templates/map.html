@@ -173,7 +173,7 @@
         <h3>Hierarchy</h3>
         <div id="tree" class="tree">Loading…</div>
         <details class="sb-section" style="margin-top:1rem">
-            <summary><h3 style="display:inline">Enemies / Tactical objects</h3>
+            <summary><h3 style="display:inline">Tactical Objects</h3>
                 <span id="enemies-count" class="sb-count">0</span>
             </summary>
             <div id="enemies"></div>
@@ -288,6 +288,7 @@
                 <button class="overlay-btn active" data-overlay="all">🌐 All</button>
                 <button class="overlay-btn" data-overlay="none">— None</button>
                 <button class="overlay-btn" data-overlay="enemies">⚠ Enemy</button>
+                <button class="overlay-btn" data-overlay="friendly">🟦 Friendly</button>
                 <button class="overlay-btn" data-overlay="platoon">🪖 Own Plt</button>
                 <button class="overlay-btn active" id="cbrn-toggle">☢ CBRN</button>
                 <button class="overlay-btn active" id="tg-toggle" title="Tactical control graphics">📐 Tac Gfx</button>
@@ -820,8 +821,9 @@
     }
 
     function markerVisible(op) {
-        if (state.overlayMode === 'none')    return false;
+        if (state.overlayMode === 'none')     return false;
         if (state.overlayMode === 'enemies') return false;   // enemy-only: hide operators
+        if (state.overlayMode === 'friendly') return false;  // friendly-only: hide operators
         if (state.overlayMode === 'platoon' && !state.myPlatoonOpIds.has(op.id)) return false;
         if (state.onlineOnly && !op.online) return false;
         if (state.selection.size > 0 && !state.selection.has(op.id)) return false;
@@ -829,8 +831,8 @@
     }
 
     function enemyLayerVisible() {
-        // Hostiles / POI / Objective markers — gated by overlay mode.
-        return state.overlayMode === 'all' || state.overlayMode === 'enemies';
+        // Tactical object markers — gated by overlay mode.
+        return state.overlayMode === 'all' || state.overlayMode === 'enemies' || state.overlayMode === 'friendly';
     }
     function tgLayerVisible() {
         // Tactical control graphics — INDEPENDENT toggle, default on.
@@ -1128,12 +1130,18 @@
                     : '')
             );
         } else {
+            const AFF_COLORS = { FRIENDLY:'#3b82f6', ASSUMED_FRIEND:'#7c3aed',
+                                 HOSTILE:'#ef4444', ENEMY:'#ef4444',
+                                 NEUTRAL:'#16a34a', UNKNOWN:'#ca8a04' };
+            const affLabel = obj.affiliation || 'HOSTILE';
+            const affColor = AFF_COLORS[affLabel] || '#ef4444';
             m.bindPopup(
-                `<b>${obj.type}</b><br/>${obj.notes || '<i>no notes</i>'}<br/>` +
-                `<small>SIDC: ${obj.symbol_code || '—'}</small>` +
+                `<b>${escHtml(obj.type)}</b> <em style="color:${affColor};font-style:normal;font-size:.85em">${escHtml(affLabel)}</em><br/>` +
+                `${escHtml(obj.notes || '') || '<i>no notes</i>'}<br/>` +
+                `<small style="color:#64748b">SIDC: ${escHtml(obj.symbol_code || '—')}</small>` +
                 photoHtml + `<br/>` +
                 ((role === 'ADMIN' || role === 'BATTLE_CAPTAIN') ?
-                    `<button onclick="window.__arrowDeleteEnemy(${obj.id})">Delete</button>` : '')
+                    `<a href="#" onclick="window.__arrowDeleteEnemy(${obj.id});return false" style="color:#ef4444">Delete</a>` : '')
             );
         }
         state.markers.set(key, m);
@@ -1166,13 +1174,26 @@
 
         // Sidebar list always reflects everything in state.
         const list = document.getElementById('enemies');
+        const AFF_COLOR = { FRIENDLY:'#3b82f6', ASSUMED_FRIEND:'#7c3aed',
+                            HOSTILE:'#ef4444', ENEMY:'#ef4444',
+                            NEUTRAL:'#16a34a', UNKNOWN:'#ca8a04' };
         const items = [...state.tacticalObjects.values()].sort((a, b) => a.id - b.id);
         list.innerHTML = items.length === 0 ? '<small style="color:#94a3b8">none</small>' :
-            items.map(o => `<div class="op" onclick="__arrowFocus(${o.latitude},${o.longitude})">
-                <span class="dot offline" style="background:#ef4444"></span>
-                <span>${o.type}</span>
-                <span style="color:#94a3b8;font-size:0.75rem;margin-left:auto">#${o.id}</span>
-            </div>`).join('');
+            items.map(o => {
+                const dotColor = AFF_COLOR[o.affiliation] || '#ef4444';
+                const affShort = o.affiliation === 'FRIENDLY' ? 'F'
+                               : o.affiliation === 'HOSTILE'  ? 'H'
+                               : o.affiliation === 'NEUTRAL'  ? 'N'
+                               : o.affiliation === 'UNKNOWN'  ? 'U'
+                               : o.affiliation === 'ASSUMED_FRIEND' ? 'A'
+                               : 'H';
+                return `<div class="op" onclick="__arrowFocus(${o.latitude},${o.longitude})">
+                    <span class="dot offline" style="background:${dotColor}"></span>
+                    <span>${o.type}</span>
+                    <span style="color:${dotColor};font-size:0.7rem;font-weight:600;margin-left:4px">${affShort}</span>
+                    <span style="color:#94a3b8;font-size:0.75rem;margin-left:auto">#${o.id}</span>
+                </div>`;
+            }).join('');
 
         const showLegacy   = enemyLayerVisible();
         const showTg       = tgLayerVisible();
@@ -1186,6 +1207,14 @@
             state.tacticalObjects.forEach(obj => {
                 const isTg = isTgType(obj.type);
                 if (!(isTg ? showTg : showLegacy)) return;
+                // Affiliation filter: enemy mode → hostiles only; friendly mode → friendlies only
+                if (!isTg) {
+                    const aff = obj.affiliation || 'HOSTILE';
+                    if (state.overlayMode === 'enemies' &&
+                        aff !== 'HOSTILE' && aff !== 'ENEMY') return;
+                    if (state.overlayMode === 'friendly' &&
+                        aff !== 'FRIENDLY' && aff !== 'ASSUMED_FRIEND') return;
+                }
                 if (allowedByOverlay && !allowedByOverlay.has(obj.id)) return;
                 wanted.add(`to-${obj.id}`);
                 placeEnemy(obj);
