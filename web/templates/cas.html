@@ -1,0 +1,524 @@
+{% extends "base.html" %}
+{% block title %}CAS Capacity — Arrow{% endblock %}
+{% block head %}
+<style>
+.cas-mgmt-shell {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 0;
+    height: calc(100vh - 60px);
+}
+
+/* ── Add form panel (left) ──────────────────────────────────────────── */
+.cas-add-panel {
+    background: #161b25;
+    border-right: 1px solid #2a3142;
+    overflow-y: auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+}
+.cas-add-panel h2 {
+    margin: 0 0 .5rem;
+    font-size: 1rem;
+    color: #fb923c;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+.cas-field { display: flex; flex-direction: column; gap: 3px; }
+.cas-field label { font-size: .72rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em; }
+.cas-field input, .cas-field select, .cas-field textarea {
+    background: #0e1217;
+    color: #e2e8f0;
+    border: 1px solid #2a3142;
+    border-radius: 4px;
+    padding: .3rem .45rem;
+    font: inherit;
+    font-size: .84rem;
+}
+.cas-field input:focus, .cas-field select:focus, .cas-field textarea:focus {
+    outline: none;
+    border-color: #fb923c;
+}
+.cas-field select option { background: #161b25; }
+.cas-field textarea { resize: vertical; min-height: 52px; }
+.btn-add-asset {
+    padding: .45rem 1rem;
+    background: #7c2d12;
+    color: #fb923c;
+    border: 1px solid #c2410c;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 700;
+    font-size: .88rem;
+    cursor: pointer;
+    margin-top: .25rem;
+}
+.btn-add-asset:hover { background: #9a3412; color: #fff; }
+.add-status { font-size: .78rem; min-height: 1.2em; }
+
+/* ── Main grid (right) ──────────────────────────────────────────────── */
+.cas-main {
+    overflow-y: auto;
+    padding: 1.5rem 2rem;
+}
+.cas-main-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+}
+.cas-main-header h2 { margin: 0; font-size: 1.1rem; }
+.cas-filter-btns { display: flex; gap: .4rem; flex-wrap: wrap; }
+.flt-btn {
+    padding: .2rem .7rem;
+    border: 1px solid #2a3142;
+    border-radius: 99px;
+    background: none;
+    color: #64748b;
+    font: inherit;
+    font-size: .75rem;
+    cursor: pointer;
+}
+.flt-btn.active { border-color: currentColor; font-weight: 700; }
+.flt-btn.flt-ALL         { color: #94a3b8; }
+.flt-btn.flt-AVAILABLE   { color: #22c55e; }
+.flt-btn.flt-ON_STATION  { color: #60a5fa; }
+.flt-btn.flt-TASKED      { color: #f87171; }
+.flt-btn.flt-RTB         { color: #fb923c; }
+.flt-btn.flt-UNAVAILABLE { color: #64748b; }
+
+/* ── Asset cards ────────────────────────────────────────────────────── */
+.cas-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: .75rem;
+}
+.cas-card {
+    background: #0e1217;
+    border: 1px solid #2a3142;
+    border-radius: 8px;
+    padding: .75rem .9rem;
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+.cas-card .cc-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: .5rem;
+}
+.cas-card .cc-callsign { font-weight: 700; font-size: .95rem; color: #e2e8f0; }
+.cas-card .cc-type { font-size: .75rem; color: #64748b; margin-top: 2px; }
+.cas-card .cc-row { font-size: .78rem; color: #94a3b8; }
+.cas-card .cc-row span { color: #e2e8f0; font-family: monospace; }
+.cas-card .cc-slot { font-size: .72rem; color: #64748b; }
+.cas-card .cc-notes { font-size: .75rem; color: #64748b; font-style: italic; }
+.cc-status-badge {
+    font-size: .62rem; font-weight: 700; padding: 2px 7px;
+    border-radius: 3px; white-space: nowrap; flex-shrink: 0;
+}
+.cc-AVAILABLE    { background: rgba(34,197,94,.15);  color: #22c55e;  border: 1px solid #16a34a; }
+.cc-ON_STATION   { background: rgba(59,130,246,.15); color: #60a5fa;  border: 1px solid #2563eb; }
+.cc-TASKED       { background: rgba(239,68,68,.15);  color: #f87171;  border: 1px solid #dc2626; }
+.cc-RTB          { background: rgba(251,146,60,.15); color: #fb923c;  border: 1px solid #ea580c; }
+.cc-UNAVAILABLE  { background: rgba(100,116,139,.15);color: #94a3b8;  border: 1px solid #475569; }
+
+/* Status quick-change bar */
+.cc-actions { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; margin-top: .25rem; }
+.btn-cc-status {
+    padding: .18rem .55rem;
+    border: 1px solid #2a3142;
+    border-radius: 4px;
+    background: none;
+    color: #94a3b8;
+    font: inherit;
+    font-size: .72rem;
+    cursor: pointer;
+}
+.btn-cc-status:hover { background: #1f2937; color: #e2e8f0; }
+.btn-cc-edit {
+    padding: .18rem .55rem;
+    border: 1px solid #1e3a5f;
+    border-radius: 4px;
+    background: none;
+    color: #60a5fa;
+    font: inherit;
+    font-size: .72rem;
+    cursor: pointer;
+}
+.btn-cc-edit:hover { background: #1e3a5f; }
+.btn-cc-del {
+    padding: .18rem .55rem;
+    border: 1px solid #3f1515;
+    border-radius: 4px;
+    background: none;
+    color: #ef4444;
+    font: inherit;
+    font-size: .72rem;
+    cursor: pointer;
+    margin-left: auto;
+}
+.btn-cc-del:hover { background: #3f1515; }
+
+/* Inline edit form */
+.cc-edit-form {
+    display: none;
+    flex-direction: column;
+    gap: .4rem;
+    margin-top: .5rem;
+    padding-top: .5rem;
+    border-top: 1px solid #2a3142;
+}
+.cc-edit-form.open { display: flex; }
+.cc-edit-row { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.cc-edit-form input, .cc-edit-form select, .cc-edit-form textarea {
+    background: #161b25;
+    color: #e2e8f0;
+    border: 1px solid #2a3142;
+    border-radius: 4px;
+    padding: .25rem .4rem;
+    font: inherit;
+    font-size: .8rem;
+    width: 100%;
+    box-sizing: border-box;
+}
+.cc-edit-form input:focus, .cc-edit-form select:focus { outline: none; border-color: #fb923c; }
+.cc-edit-form label { font-size: .68rem; color: #64748b; display: block; margin-bottom: 2px; }
+.btn-cc-save {
+    padding: .25rem .8rem;
+    background: #1e3a5f;
+    color: #60a5fa;
+    border: 1px solid #2563eb;
+    border-radius: 5px;
+    font: inherit;
+    font-size: .78rem;
+    cursor: pointer;
+}
+.btn-cc-save:hover { background: #1d4ed8; color: #fff; }
+.btn-cc-cancel {
+    padding: .25rem .6rem;
+    background: none;
+    color: #64748b;
+    border: 1px solid #2a3142;
+    border-radius: 5px;
+    font: inherit;
+    font-size: .78rem;
+    cursor: pointer;
+}
+
+main { padding: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cas-mgmt-shell">
+
+    <!-- ── Left: Add asset form ──────────────────────────────────── -->
+    <aside class="cas-add-panel">
+        <h2>✈ Add CAS Asset</h2>
+        <p style="font-size:.75rem;color:#64748b;margin:0 0 .25rem">
+            BC/ADMIN only. Asset will be available to operators for nomination in CAS requests.
+        </p>
+
+        <div class="cas-field">
+            <label>Callsign *</label>
+            <input id="nca-callsign" placeholder="VIPER-1">
+        </div>
+        <div class="cas-field">
+            <label>Aircraft type</label>
+            <input id="nca-type" placeholder="F-16C / A-10C / AH-64D">
+        </div>
+        <div class="cas-field">
+            <label>Ordnance</label>
+            <input id="nca-ordnance" placeholder="2×GBU-12, 2×AIM-9, 20mm">
+        </div>
+        <div class="cas-field">
+            <label>Frequency (MHz)</label>
+            <input id="nca-freq" placeholder="264.000">
+        </div>
+        <div class="cas-field">
+            <label>Initial status</label>
+            <select id="nca-status">
+                <option value="AVAILABLE">AVAILABLE</option>
+                <option value="ON_STATION">ON STATION</option>
+                <option value="RTB">RTB</option>
+                <option value="UNAVAILABLE">UNAVAILABLE</option>
+            </select>
+        </div>
+        <div class="cas-field">
+            <label>Available from (local)</label>
+            <input id="nca-from" type="datetime-local">
+        </div>
+        <div class="cas-field">
+            <label>Available to (local)</label>
+            <input id="nca-to" type="datetime-local">
+        </div>
+        <div class="cas-field">
+            <label>Notes</label>
+            <textarea id="nca-notes" placeholder="Tasking authority, TOT, ROE notes…"></textarea>
+        </div>
+
+        <button class="btn-add-asset" onclick="addAsset()">+ Add asset</button>
+        <div id="add-status" class="add-status"></div>
+    </aside>
+
+    <!-- ── Right: Asset grid ─────────────────────────────────────── -->
+    <section class="cas-main">
+        <div class="cas-main-header">
+            <h2>✈ CAS Capacity</h2>
+            <div class="cas-filter-btns" id="filter-btns">
+                <button class="flt-btn flt-ALL active" onclick="setFilter('ALL',this)">All</button>
+                <button class="flt-btn flt-AVAILABLE"   onclick="setFilter('AVAILABLE',this)">Available</button>
+                <button class="flt-btn flt-ON_STATION"  onclick="setFilter('ON_STATION',this)">On Station</button>
+                <button class="flt-btn flt-TASKED"      onclick="setFilter('TASKED',this)">Tasked</button>
+                <button class="flt-btn flt-RTB"         onclick="setFilter('RTB',this)">RTB</button>
+                <button class="flt-btn flt-UNAVAILABLE" onclick="setFilter('UNAVAILABLE',this)">Unavailable</button>
+            </div>
+            <span id="asset-count" style="margin-left:auto;font-size:.78rem;color:#64748b"></span>
+        </div>
+
+        <div class="cas-grid" id="cas-grid">
+            <small style="color:#475569">Loading…</small>
+        </div>
+    </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p, {
+        ...opts,
+        headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+    });
+
+    let allAssets = [];
+    let activeFilter = 'ALL';
+
+    // ── Load ────────────────────────────────────────────────────────
+    async function loadAssets() {
+        const r = await api('/cas/assets');
+        if (!r.ok) return;
+        allAssets = await r.json();
+        renderGrid();
+    }
+
+    // ── Filter ──────────────────────────────────────────────────────
+    window.setFilter = function(status, btn) {
+        activeFilter = status;
+        document.querySelectorAll('.flt-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderGrid();
+    };
+
+    // ── Render ──────────────────────────────────────────────────────
+    function renderGrid() {
+        const grid  = document.getElementById('cas-grid');
+        const cntEl = document.getElementById('asset-count');
+        const shown = activeFilter === 'ALL'
+            ? allAssets
+            : allAssets.filter(a => a.status === activeFilter);
+        const avail = allAssets.filter(a => a.status === 'AVAILABLE' || a.status === 'ON_STATION').length;
+        if (cntEl) cntEl.textContent = `${avail} available · ${allAssets.length} total`;
+
+        if (!shown.length) {
+            grid.innerHTML = `<small style="color:#475569">${allAssets.length ? 'No assets match filter' : 'No CAS assets configured — add one on the left.'}</small>`;
+            return;
+        }
+
+        grid.innerHTML = shown.map(a => cardHtml(a)).join('');
+    }
+
+    function cardHtml(a) {
+        const fromStr = a.available_from ? new Date(a.available_from).toLocaleString() : '—';
+        const toStr   = a.available_to   ? new Date(a.available_to).toLocaleString()   : '—';
+        const statusOpts = ['AVAILABLE','ON_STATION','TASKED','RTB','UNAVAILABLE']
+            .map(s => `<option value="${s}"${s===a.status?' selected':''}>${s.replace('_',' ')}</option>`)
+            .join('');
+
+        return `<div class="cas-card" id="cc-${a.id}">
+            <div class="cc-head">
+                <div>
+                    <div class="cc-callsign">${esc(a.callsign)}</div>
+                    ${a.aircraft_type ? `<div class="cc-type">${esc(a.aircraft_type)}</div>` : ''}
+                </div>
+                <span class="cc-status-badge cc-${a.status}">${a.status.replace('_',' ')}</span>
+            </div>
+            ${a.ordnance  ? `<div class="cc-row">Ordnance: <span>${esc(a.ordnance)}</span></div>`  : ''}
+            ${a.frequency ? `<div class="cc-row">Freq: <span>${esc(a.frequency)} MHz</span></div>` : ''}
+            <div class="cc-slot">🕐 ${esc(fromStr)} → ${esc(toStr)}</div>
+            ${a.notes ? `<div class="cc-notes">${esc(a.notes)}</div>` : ''}
+
+            <div class="cc-actions">
+                <select id="cc-sel-${a.id}" style="background:#161b25;color:#94a3b8;
+                        border:1px solid #2a3142;border-radius:4px;
+                        padding:.15rem .3rem;font:inherit;font-size:.72rem">${statusOpts}</select>
+                <button class="btn-cc-status" onclick="quickStatus(${a.id})">Set</button>
+                <button class="btn-cc-edit"   onclick="toggleEdit(${a.id})">Edit</button>
+                <button class="btn-cc-del"    onclick="deleteAsset(${a.id})">✕</button>
+            </div>
+
+            <!-- Inline edit form -->
+            <div class="cc-edit-form" id="cc-edit-${a.id}">
+                <div class="cc-edit-row">
+                    <div><label>Callsign</label>
+                        <input id="ce-callsign-${a.id}" value="${esc(a.callsign)}"></div>
+                    <div><label>Aircraft</label>
+                        <input id="ce-type-${a.id}" value="${esc(a.aircraft_type||'')}"></div>
+                </div>
+                <div><label>Ordnance</label>
+                    <input id="ce-ordnance-${a.id}" value="${esc(a.ordnance||'')}"></div>
+                <div class="cc-edit-row">
+                    <div><label>Frequency</label>
+                        <input id="ce-freq-${a.id}" value="${esc(a.frequency||'')}"></div>
+                    <div><label>Status</label>
+                        <select id="ce-status-${a.id}">${statusOpts}</select>
+                    </div>
+                </div>
+                <div class="cc-edit-row">
+                    <div><label>Available from</label>
+                        <input type="datetime-local" id="ce-from-${a.id}"
+                               value="${a.available_from ? toLocalInput(a.available_from) : ''}"></div>
+                    <div><label>Available to</label>
+                        <input type="datetime-local" id="ce-to-${a.id}"
+                               value="${a.available_to ? toLocalInput(a.available_to) : ''}"></div>
+                </div>
+                <div><label>Notes</label>
+                    <textarea id="ce-notes-${a.id}">${esc(a.notes||'')}</textarea></div>
+                <div style="display:flex;gap:.4rem">
+                    <button class="btn-cc-save"   onclick="saveEdit(${a.id})">Save</button>
+                    <button class="btn-cc-cancel" onclick="toggleEdit(${a.id})">Cancel</button>
+                    <span id="ce-status-msg-${a.id}" style="font-size:.75rem;color:#64748b;align-self:center"></span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // ── Actions ─────────────────────────────────────────────────────
+    window.quickStatus = async function(id) {
+        const sel = document.getElementById(`cc-sel-${id}`);
+        if (!sel) return;
+        await api(`/cas/assets/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: sel.value }),
+        });
+        loadAssets();
+    };
+
+    window.toggleEdit = function(id) {
+        const form = document.getElementById(`cc-edit-${id}`);
+        if (form) form.classList.toggle('open');
+    };
+
+    window.saveEdit = async function(id) {
+        const v   = suffix => document.getElementById(`ce-${suffix}-${id}`)?.value?.trim() || '';
+        const msg = document.getElementById(`ce-status-msg-${id}`);
+        const fromVal = document.getElementById(`ce-from-${id}`)?.value;
+        const toVal   = document.getElementById(`ce-to-${id}`)?.value;
+        const body = {
+            callsign:       v('callsign') || undefined,
+            aircraft_type:  v('type'),
+            ordnance:       v('ordnance'),
+            frequency:      v('freq'),
+            status:         document.getElementById(`ce-status-${id}`)?.value,
+            available_from: fromVal ? new Date(fromVal).toISOString() : null,
+            available_to:   toVal   ? new Date(toVal).toISOString()   : null,
+            notes:          v('notes'),
+        };
+        if (msg) msg.textContent = 'Saving…';
+        const r = await api(`/cas/assets/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (r.ok) {
+            loadAssets();
+        } else {
+            const err = await r.json().catch(() => ({}));
+            if (msg) msg.textContent = `✗ ${err.detail || r.status}`;
+        }
+    };
+
+    window.deleteAsset = async function(id) {
+        if (!confirm('Delete this CAS asset?')) return;
+        await api(`/cas/assets/${id}`, { method: 'DELETE' });
+        loadAssets();
+    };
+
+    // ── Add new asset ────────────────────────────────────────────────
+    window.addAsset = async function() {
+        const v  = id => document.getElementById(id)?.value?.trim() || '';
+        const st = document.getElementById('add-status');
+        if (!v('nca-callsign')) { st.textContent = '✗ Callsign is required'; st.style.color = '#ef4444'; return; }
+        const fromVal = document.getElementById('nca-from')?.value;
+        const toVal   = document.getElementById('nca-to')?.value;
+        const body = {
+            callsign:       v('nca-callsign'),
+            aircraft_type:  v('nca-type'),
+            ordnance:       v('nca-ordnance'),
+            frequency:      v('nca-freq'),
+            status:         v('nca-status') || 'AVAILABLE',
+            available_from: fromVal ? new Date(fromVal).toISOString() : null,
+            available_to:   toVal   ? new Date(toVal).toISOString()   : null,
+            notes:          v('nca-notes'),
+        };
+        st.textContent = 'Saving…'; st.style.color = '#64748b';
+        const r = await api('/cas/assets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (r.ok) {
+            st.textContent = '✓ Asset added'; st.style.color = '#22c55e';
+            ['nca-callsign','nca-type','nca-ordnance','nca-freq','nca-from','nca-to','nca-notes']
+                .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+            document.getElementById('nca-status').value = 'AVAILABLE';
+            loadAssets();
+        } else {
+            const err = await r.json().catch(() => ({}));
+            st.textContent = `✗ ${err.detail || r.status}`; st.style.color = '#ef4444';
+        }
+    };
+
+    // ── WebSocket live refresh ───────────────────────────────────────
+    function connectWS() {
+        const ws = new WebSocket(window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
+        ws.onmessage = ev => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.channel === 'cas') loadAssets();
+            } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+    connectWS();
+
+    // ── Helpers ──────────────────────────────────────────────────────
+    function esc(s) {
+        return String(s||'').replace(/[&<>"']/g,
+            c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // ISO timestamp → value for datetime-local input (no seconds)
+    function toLocalInput(iso) {
+        try {
+            const d = new Date(iso);
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        } catch (_) { return ''; }
+    }
+
+    loadAssets();
+    setInterval(loadAssets, 30000);
+})();
+</script>
+{% endblock %}
