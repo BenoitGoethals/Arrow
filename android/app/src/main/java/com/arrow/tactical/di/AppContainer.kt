@@ -20,6 +20,7 @@ import com.arrow.tactical.network.WsClient
 import com.arrow.tactical.opord.OpordRepository
 import com.arrow.tactical.overlays.OverlayRepository
 import com.arrow.tactical.photos.PhotoRepository
+import com.arrow.tactical.cas.CasRepository
 import com.arrow.tactical.reports.ReportRepository
 import com.arrow.tactical.settings.SettingsRepository
 import com.arrow.tactical.strike.StrikePackageRepository
@@ -65,6 +66,7 @@ class AppContainer(private val context: Context) {
     val messageRepository = MessageRepository(apiClient, db, tokenStore, connectivity)
 
     val reportRepository = ReportRepository(apiClient, db, tokenStore, connectivity)
+    val casRepository = CasRepository(apiClient, tokenStore, connectivity)
 
     val missionRepository = MissionRepository(apiClient, settingsRepository)
     val opordRepository = OpordRepository(apiClient) { settingsRepository.currentServerUrl() }

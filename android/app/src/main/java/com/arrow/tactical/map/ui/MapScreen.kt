@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Path
 import androidx.compose.foundation.rememberScrollState
@@ -61,7 +62,7 @@ import com.arrow.tactical.tracking.LocationService
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
+import com.arrow.tactical.network.MgrsConverter
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
@@ -347,12 +348,8 @@ fun MapScreen(
 
     // Fetch CAS assets when the composable enters composition
     LaunchedEffect(Unit) {
-        val r = container.apiClient.get("/cas/assets")
-        if (r.ok) {
-            runCatching {
-                casAssets = container.apiClient.json.decodeFromString(r.body)
-            }
-        }
+        container.casRepository.listAssets()
+            .onSuccess { casAssets = it }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -1524,14 +1521,19 @@ fun MapScreen(
         }
 
         // ── Call for Fire button — icon-only, compact ────────────────────
+        val isLoggedIn = meId != null
         SmallFloatingActionButton(
-            onClick        = { onCallFire(Double.NaN, Double.NaN) },
+            onClick        = {
+                if (!isLoggedIn) scope.launch { snackbarHostState.showSnackbar("Please log in first") }
+                else onCallFire(Double.NaN, Double.NaN)
+            },
             containerColor = Color(0xFFB91C1C),
             contentColor   = Color.White,
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 12.dp, bottom = 60.dp)
-                .size(40.dp),
+                .size(40.dp)
+                .alpha(if (isLoggedIn) 1f else 0.4f),
         ) {
             Icon(Icons.Filled.GpsFixed, contentDescription = "Call for Fire",
                  modifier = Modifier.size(20.dp))
@@ -1539,13 +1541,17 @@ fun MapScreen(
 
         // ── TIC FAB — icon-only, compact ─────────────────────────────────
         SmallFloatingActionButton(
-            onClick        = { scope.launch { container.alertRepository.trigger("TIC") } },
+            onClick        = {
+                if (!isLoggedIn) scope.launch { snackbarHostState.showSnackbar("Please log in first") }
+                else scope.launch { container.alertRepository.trigger("TIC") }
+            },
             containerColor = MaterialTheme.colorScheme.error,
             contentColor   = Color.White,
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 12.dp, bottom = 12.dp)
-                .size(40.dp),
+                .size(40.dp)
+                .alpha(if (isLoggedIn) 1f else 0.4f),
         ) {
             Icon(Icons.Filled.Warning, contentDescription = "TIC",
                  modifier = Modifier.size(20.dp))
@@ -1556,6 +1562,7 @@ fun MapScreen(
         //    a drone appears overhead — no need to first tap the map.
         SmallFloatingActionButton(
             onClick        = {
+                if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@SmallFloatingActionButton }
                 val map = mapRef.value
                 val centre = map?.mapCenter as? GeoPoint
                     ?: GeoPoint(50.85, 4.35)  // fallback if map not ready
@@ -1575,7 +1582,8 @@ fun MapScreen(
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 12.dp, bottom = 108.dp)
-                .size(40.dp),
+                .size(40.dp)
+                .alpha(if (isLoggedIn) 1f else 0.4f),
         ) {
             Text("🛸", fontSize = 18.sp)
         }
@@ -1583,6 +1591,7 @@ fun MapScreen(
         // ── CAS FAB — opens CAS 9-liner form anchored on current map centre ──
         SmallFloatingActionButton(
             onClick        = {
+                if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@SmallFloatingActionButton }
                 val map    = mapRef.value
                 val centre = map?.mapCenter as? GeoPoint ?: GeoPoint(50.85, 4.35)
                 pendingPoint     = centre
@@ -1597,10 +1606,8 @@ fun MapScreen(
                 menuStep = MenuStep.CAS_NINE_LINER
                 // Refresh CAS assets
                 scope.launch {
-                    val r = container.apiClient.get("/cas/assets")
-                    if (r.ok) runCatching {
-                        casAssets = container.apiClient.json.decodeFromString(r.body)
-                    }
+                    container.casRepository.listAssets()
+                        .onSuccess { casAssets = it }
                 }
             },
             containerColor = Color(0xFFB45309),   // amber-700 — distinct from TIC red
@@ -1608,7 +1615,8 @@ fun MapScreen(
             modifier       = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 12.dp, bottom = 156.dp)
-                .size(40.dp),
+                .size(40.dp)
+                .alpha(if (isLoggedIn) 1f else 0.4f),
         ) {
             Text("✈", fontSize = 18.sp)
         }
@@ -1683,21 +1691,25 @@ fun MapScreen(
         RadialMenu(
             tapOffset = pendingScreenPos!!,
             items = listOf(
-                RadialItem("⚠", "Enemy",    Color(0xFFDC2626)) {
+                RadialItem("⚠", "Enemy",    Color(if (isLoggedIn) 0xFFDC2626 else 0xFF666666)) {
+                    if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
                     pendingScreenPos = null          // dismiss radial, show enemy picker
                     menuStep = MenuStep.ENEMY_TYPE
                 },
-                RadialItem("🎯", "Fire\nMission", Color(0xFFB91C1C)) {
+                RadialItem("🎯", "Fire\nMission", Color(if (isLoggedIn) 0xFFB91C1C else 0xFF666666)) {
+                    if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
                     val lat = point.latitude; val lon = point.longitude
                     pendingPoint = null; pendingScreenPos = null
                     onCallFire(lat, lon)
                 },
-                RadialItem("📋", "Report",  Color(0xFF2563EB)) {
+                RadialItem("📋", "Report",  Color(if (isLoggedIn) 0xFF2563EB else 0xFF666666)) {
+                    if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
                     val lat = point.latitude; val lon = point.longitude
                     pendingPoint = null; pendingScreenPos = null
                     onReport(lat, lon)
                 },
-                RadialItem("💣", "Mortar\nFDC", Color(0xFFD97706)) {
+                RadialItem("💣", "Mortar\nFDC", Color(if (isLoggedIn) 0xFFD97706 else 0xFF666666)) {
+                    if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
                     val lat = point.latitude; val lon = point.longitude
                     pendingPoint = null; pendingScreenPos = null
                     onOpenMortar(lat, lon)
@@ -1715,7 +1727,8 @@ fun MapScreen(
                     pendingPoint     = null
                     pendingScreenPos = null
                 },
-                RadialItem("🛸", "Drone\nSpot", Color(0xFF9333EA)) {
+                RadialItem("🛸", "Drone\nSpot", Color(if (isLoggedIn) 0xFF9333EA else 0xFF666666)) {
+                    if (!isLoggedIn) { scope.launch { snackbarHostState.showSnackbar("Please log in first") }; return@RadialItem }
                     // Reset the drone form, then open the dedicated bottom sheet.
                     droneType      = "UNKNOWN"
                     droneAltitude  = ""
@@ -1845,32 +1858,28 @@ fun MapScreen(
                         scope.launch {
                             val lat = casLine5Lat.toDoubleOrNull()
                             val lon = casLine5Lon.toDoubleOrNull()
-                            val mgrs = if (lat != null && lon != null) {
-                                runCatching { MgrsConverter.encode(lat, lon) }.getOrElse { _: Throwable -> "" }
+                            val mgrs: String = if (lat != null && lon != null) {
+                                try { MgrsConverter.encode(lat, lon) } catch (_: Exception) { "" }
                             } else ""
                             val body = com.arrow.tactical.network.CasNineLinerIn(
-                                line1     = casLine1,
-                                line2     = casLine2,
-                                line3     = casLine3,
-                                line4     = casLine4,
-                                line5Mgrs = mgrs,
-                                line5Lat  = lat,
-                                line5Lon  = lon,
-                                line6     = casLine6,
-                                line7     = casLine7,
-                                line8     = casLine8,
-                                line9     = casLine9,
-                                tic       = casTic,
+                                line1        = casLine1,
+                                line2        = casLine2,
+                                line3        = casLine3,
+                                line4        = casLine4,
+                                line5Mgrs    = mgrs,
+                                line5Lat     = lat,
+                                line5Lon     = lon,
+                                line6        = casLine6,
+                                line7        = casLine7,
+                                line8        = casLine8,
+                                line9        = casLine9,
+                                tic          = casTic,
                                 foOperatorId = casFoId,
                                 assetId      = casAssetId,
                             )
-                            val bodyJson = container.apiClient.json.encodeToString(body)
-                            val r = container.api.postJson("/cas/requests", bodyJson)
-                            if (r.ok) {
-                                pendingPoint = null
-                            } else {
-                                submitError = "CAS request failed (${r.code})"
-                            }
+                            container.casRepository.submitRequest(body)
+                                .onSuccess { pendingPoint = null }
+                                .onFailure { submitError = it.message ?: "Submission failed" }
                             submitting = false
                         }
                     },
