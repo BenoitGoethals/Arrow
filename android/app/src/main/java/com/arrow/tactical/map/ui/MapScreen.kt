@@ -1846,7 +1846,7 @@ fun MapScreen(
                             val lat = casLine5Lat.toDoubleOrNull()
                             val lon = casLine5Lon.toDoubleOrNull()
                             val mgrs = if (lat != null && lon != null) {
-                                runCatching { MgrsConverter.encode(lat, lon) }.getOrElse { "" }
+                                runCatching { MgrsConverter.encode(lat, lon) }.getOrElse { _: Throwable -> "" }
                             } else ""
                             val body = com.arrow.tactical.network.CasNineLinerIn(
                                 line1     = casLine1,
