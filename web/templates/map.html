@@ -741,12 +741,16 @@
         });
     }
 
-    // SVG cache — keyed by "sidc|size" so identical symbols are generated once.
+    // SVG cache — keyed by "sidc|size|opts" so identical symbols are generated once.
     const _msCache = new Map();
-    function msSvg(sidc, size) {
-        const key = sidc + '|' + size;
+    // Echelon char (position 10, 0-indexed in SIDC) → milsymbol named echelon option
+    const MS_ECH = { A:'team', B:'squad', C:'section', D:'platoon', E:'company',
+                     F:'battalion', G:'regiment', H:'brigade', I:'division',
+                     J:'corps', K:'army' };
+    function msSvg(sidc, size, extraOpts = {}) {
+        const key = sidc + '|' + size + '|' + JSON.stringify(extraOpts);
         if (!_msCache.has(key)) {
-            const sym = new ms.Symbol(sidc, { size });
+            const sym = new ms.Symbol(sidc, { size, ...extraOpts });
             _msCache.set(key, {
                 svg: sym.asSVG(),
                 w:  sym.getSize().width,  h:  sym.getSize().height,
@@ -758,7 +762,10 @@
 
     function enemyIcon(obj) {
         const sidc = obj.symbol_code && obj.symbol_code.length >= 10 ? obj.symbol_code : 'SHGPU-------';
-        const s = msSvg(sidc, 30);
+        // milsymbol.js 2.x reads echelon from charAt(11) — 0-indexed position 11
+        const echCode = sidc.length >= 12 ? sidc[11] : '-';
+        const opts = MS_ECH[echCode] ? { echelon: MS_ECH[echCode] } : {};
+        const s = msSvg(sidc, 30, opts);
         return L.divIcon({ className: 'enemy-icon', html: s.svg,
                            iconSize: [s.w, s.h], iconAnchor: [s.ax, s.ay] });
     }
@@ -2118,9 +2125,10 @@
                 affiliations: AFFILIATIONS, echelons: ECHELONS, catalog: CATALOG };
         _sp.sidc = function(tmpl) {
             let s = tmpl[0] + _sp.aff + tmpl.slice(2);
-            if (_sp.ech && _sp.ech !== '-' && s.length >= 11)
-                s = s.slice(0, 10) + _sp.ech + s.slice(11);
-            return s;
+            // milsymbol.js 2.x reads echelon from charAt(11) — 0-indexed position 11
+            if (_sp.ech && _sp.ech !== '-')
+                s = s.padEnd(12, '-').slice(0, 11) + _sp.ech + s.slice(12);
+            return s.padEnd(15, '-');
         };
 
         const modal = document.createElement('div');
@@ -2158,10 +2166,11 @@
                         </button>`;
             }).join('');
 
+            const _echOpts = MS_ECH[_sp.ech] ? { echelon: MS_ECH[_sp.ech] } : {};
             const catalogHtml = _sp.catalog.map(group => {
                 const btns = group.items.map(sym => {
                     const sidc   = _sp.sidc(sym.t);
-                    const s      = msSvg(sidc, 32);
+                    const s      = msSvg(sidc, 32, _echOpts);
                     const active = _sp.sym?.t === sym.t;
                     return `<button data-sp-sym="${sym.t}" data-sp-label="${escHtml(sym.label)}"
                                 title="${escHtml(sym.label)}"
