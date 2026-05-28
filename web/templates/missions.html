@@ -59,9 +59,13 @@
 <div id="assign-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
      z-index:2000;align-items:center;justify-content:center">
     <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;
-                padding:28px;width:480px;max-width:95vw;max-height:80vh;overflow-y:auto">
-        <h3 style="margin:0 0 16px;color:#f8fafc">Assign Operators</h3>
-        <div id="assign-op-list" style="margin-bottom:16px;display:grid;gap:6px"></div>
+                padding:28px;width:520px;max-width:95vw;max-height:80vh;overflow-y:auto">
+        <h3 style="margin:0 0 4px;color:#f8fafc">Assign Operators</h3>
+        <p style="margin:0 0 14px;color:#64748b;font-size:.8rem">
+            Operators greyed out are already in another mission — remove them from that mission first.
+        </p>
+        <div id="assign-op-list" style="margin-bottom:10px;display:grid;gap:6px"></div>
+        <div id="assign-err" style="color:#ef4444;font-size:.82rem;margin-bottom:8px;min-height:1em"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
             <button onclick="document.getElementById('assign-modal').style.display='none'"
                     style="background:#334155;color:#f8fafc;border:0;border-radius:6px;
@@ -236,42 +240,90 @@ async function viewSnapshot(id) {
 }
 
 // Operator assignment
+let _originalInMission = new Set();
+let _missionNames = {};
+
 async function openAssign(missionId) {
     _assignMissionId = missionId;
-    const modal = document.getElementById('assign-modal');
-    const list  = document.getElementById('assign-op-list');
+    const modal  = document.getElementById('assign-modal');
+    const list   = document.getElementById('assign-op-list');
+    const errEl  = document.getElementById('assign-err');
     list.innerHTML = '<span style="color:#64748b">Loading…</span>';
+    if (errEl) errEl.textContent = '';
     modal.style.display = 'flex';
 
-    const [rAll, rMission] = await Promise.all([
+    const [rAll, rMission, rMissions] = await Promise.all([
         api('GET', '/operators'),
         api('GET', `/missions/${missionId}/operators`),
+        api('GET', '/missions'),
     ]);
     if (!rAll.ok) { list.innerHTML = '<span style="color:#ef4444">Failed to load operators</span>'; return; }
-    const all     = await rAll.json();
-    const inMission = rMission.ok ? (await rMission.json()).map(o => o.id) : [];
 
-    list.innerHTML = all.map(o => `
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;
-                      padding:6px 8px;border-radius:5px;background:#0f172a">
+    const all      = await rAll.json();
+    const inMission = rMission.ok ? (await rMission.json()).map(o => o.id) : [];
+    _originalInMission = new Set(inMission);
+
+    if (rMissions.ok) {
+        const ms = await rMissions.json();
+        _missionNames = Object.fromEntries(ms.map(m => [m.id, m.name]));
+    }
+
+    list.innerHTML = all.map(o => {
+        const inThis   = inMission.includes(o.id);
+        const inOther  = !inThis && o.mission_id != null;
+        const otherName = inOther ? esc(_missionNames[o.mission_id] || `Mission #${o.mission_id}`) : '';
+        return `
+        <label style="display:flex;align-items:center;gap:10px;
+                      padding:6px 8px;border-radius:5px;background:#0f172a;
+                      cursor:${inOther ? 'not-allowed' : 'pointer'};opacity:${inOther ? '.5' : '1'}">
             <input type="checkbox" data-op-id="${o.id}"
-                   ${inMission.includes(o.id) ? 'checked' : ''}
-                   style="width:16px;height:16px;cursor:pointer">
+                   ${inThis ? 'checked' : ''} ${inOther ? 'disabled title="Remove from current mission first"' : ''}
+                   style="width:16px;height:16px;cursor:${inOther ? 'not-allowed' : 'pointer'}">
             <span style="color:#f8fafc;font-size:.9rem">${esc(o.callsign)}</span>
             <span style="color:#64748b;font-size:.8rem">${esc(o.rank || '')} · ${esc(o.role)}</span>
-        </label>`).join('');
+            ${inOther ? `<span style="margin-left:auto;font-size:.72rem;padding:1px 6px;border-radius:10px;
+                               background:#78350f;color:#fde68a;white-space:nowrap">
+                               In: ${otherName}</span>` : ''}
+        </label>`;
+    }).join('');
 }
 
 async function saveAssignments() {
     if (!_assignMissionId) return;
-    const checked = [...document.getElementById('assign-op-list')
-        .querySelectorAll('input[data-op-id]:checked')]
-        .map(el => parseInt(el.dataset.opId));
-    const r = await api('POST', `/missions/${_assignMissionId}/operators`,
-                        { operator_ids: checked });
-    if (r.ok) {
-        document.getElementById('assign-modal').style.display = 'none';
-    } else alert('Failed: ' + await r.text());
+    const allInputs = [...document.getElementById('assign-op-list')
+        .querySelectorAll('input[data-op-id]:not([disabled])')];
+
+    const toAdd    = allInputs.filter(el => el.checked  && !_originalInMission.has(parseInt(el.dataset.opId))).map(el => parseInt(el.dataset.opId));
+    const toRemove = allInputs.filter(el => !el.checked &&  _originalInMission.has(parseInt(el.dataset.opId))).map(el => parseInt(el.dataset.opId));
+
+    const errEl = document.getElementById('assign-err');
+
+    // Remove unchecked operators first
+    for (const opId of toRemove) {
+        const r = await api('DELETE', `/missions/${_assignMissionId}/operators/${opId}`);
+        if (!r.ok && errEl) errEl.textContent = `Remove failed (${r.status})`;
+    }
+
+    // Add newly-checked operators
+    if (toAdd.length) {
+        const r = await api('POST', `/missions/${_assignMissionId}/operators`, { operator_ids: toAdd });
+        if (!r.ok) {
+            let msg = `Failed (${r.status})`;
+            try {
+                const body = await r.json();
+                if (body.detail?.conflicts) {
+                    msg = body.detail.conflicts
+                        .map(c => `${c.callsign} is already in "${c.mission_name}"`)
+                        .join('; ');
+                }
+            } catch (_) {}
+            if (errEl) { errEl.textContent = msg; return; }
+            else { alert(msg); return; }
+        }
+    }
+
+    document.getElementById('assign-modal').style.display = 'none';
+    await loadMissions();
 }
 
 // Reload when a mission event arrives via WS

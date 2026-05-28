@@ -254,6 +254,27 @@ async def assign_operators(
     m = db.get(Mission, mission_id)
     if not m:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    # Reject if any operator is already assigned to a different mission
+    conflicts = []
+    for op_id in payload.operator_ids:
+        op = db.get(Operator, op_id)
+        if op and op.mission_id is not None and op.mission_id != mission_id:
+            other = db.get(Mission, op.mission_id)
+            conflicts.append({
+                "callsign": op.callsign,
+                "mission_id": op.mission_id,
+                "mission_name": other.name if other else f"#{op.mission_id}",
+            })
+    if conflicts:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Operators already assigned to another mission",
+                "conflicts": conflicts,
+            },
+        )
+
     for op_id in payload.operator_ids:
         op = db.get(Operator, op_id)
         if op:

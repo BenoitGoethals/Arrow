@@ -92,6 +92,7 @@ class Operator(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
 
     team_id:    Mapped[int | None] = mapped_column(ForeignKey("teams.id"),    nullable=True)
+    team_role:  Mapped[str | None] = mapped_column(String(40), nullable=True)
     mission_id: Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
 
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
