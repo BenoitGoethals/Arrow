@@ -288,15 +288,20 @@
             const wrap = document.getElementById('nav-mission-wrap');
             if (!sel) return;
             const cur = arrowGetMissionId();
+            const activeMissions = missions.filter(m => m.status !== 'ENDED');
+            // If the currently selected mission ended, deselect it
+            if (cur && missions.find(m => m.id === cur)?.status === 'ENDED') {
+                arrowSetMissionId(null);
+            }
             sel.innerHTML = '<option value="">— none —</option>' +
-                missions.map(m =>
+                activeMissions.map(m =>
                     `<option value="${m.id}" ${m.id === cur ? 'selected' : ''}>
                         ${_esc(m.name)} [${m.status}]
                     </option>`
                 ).join('');
-            wrap.style.display = missions.length ? 'flex' : 'none';
+            wrap.style.display = activeMissions.length ? 'flex' : 'none';
             // Status badge
-            const active = missions.find(m => m.id === cur);
+            const active = activeMissions.find(m => m.id === arrowGetMissionId());
             const badge  = document.getElementById('nav-mission-status');
             if (badge && active) {
                 const colors = { ACTIVE:'#22c55e', PLANNING:'#f59e0b', ENDED:'#ef4444' };
