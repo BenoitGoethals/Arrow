@@ -45,14 +45,13 @@
     function storeAndRedirect(data) {
         localStorage.setItem('arrow_token', data.access_token);
         localStorage.setItem('arrow_role',  data.role);
-        // Plain OPERATORs are limited to the APK download page on the web UI.
         const role = (data.role || '').toUpperCase();
         const explicitNext = new URLSearchParams(location.search).get('next');
-        if (role === 'OPERATOR' && !explicitNext) {
-            location.href = '/download/';
-        } else {
-            location.href = next;
+        if (!explicitNext) {
+            if (role === 'OPERATOR')            { location.href = '/download/'; return; }
+            if (['LOG','CBRN','MED'].includes(role)) { location.href = '/map/'; return; }
         }
+        location.href = next;
     }
 
     function showMfa() {

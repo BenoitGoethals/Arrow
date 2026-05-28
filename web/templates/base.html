@@ -139,13 +139,36 @@
             auth.textContent = 'Sign out';
             auth.href = '/logout';
         }
-        // Plain OPERATORs only see the APK download page. Hide all internal
-        // links and bounce them to /download if they land elsewhere.
-        if (token && role === 'OPERATOR') {
-            document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'none');
+        // Role-based nav restrictions.
+        const ROLE_ACCESS = {
+            OPERATOR: { home: '/download/', allowed: ['/download', '/logout', '/login'] },
+            LOG:      { home: '/map/',      allowed: ['/map', '/logrep', '/logout', '/login'] },
+            CBRN:     { home: '/map/',      allowed: ['/map', '/cbrn',   '/logout', '/login'] },
+            MED:      { home: '/map/',      allowed: ['/map', '/reports','/logout', '/login'] },
+        };
+        const access = ROLE_ACCESS[role];
+        if (token && access) {
+            document.querySelectorAll('.nav-item').forEach(navItem => {
+                if (role === 'OPERATOR') { navItem.style.display = 'none'; return; }
+                // For dropdown nav-items: hide individual links that aren't permitted.
+                const dropdown = navItem.querySelector('.nav-dropdown');
+                if (dropdown) {
+                    let visible = 0;
+                    dropdown.querySelectorAll('a[href]').forEach(a => {
+                        const href = a.getAttribute('href') || '';
+                        if (access.allowed.some(p => href.startsWith(p))) { visible++; }
+                        else { a.style.display = 'none'; }
+                    });
+                    if (visible === 0) navItem.style.display = 'none';
+                } else {
+                    // Direct-link nav-item.
+                    const a = navItem.querySelector('a[href]');
+                    const href = a ? (a.getAttribute('href') || '') : '';
+                    if (!access.allowed.some(p => href.startsWith(p))) navItem.style.display = 'none';
+                }
+            });
             const path = location.pathname;
-            const allowed = path.startsWith('/download') || path === '/logout' || path === '/login';
-            if (!allowed) location.replace('/download/');
+            if (!access.allowed.some(p => path.startsWith(p))) location.replace(access.home);
         }
     })();
 </script>
