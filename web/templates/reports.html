@@ -389,6 +389,10 @@
     // CAS metadata (populated asynchronously)
     let operatorsList = [];
     let casAssetsList = [];
+    // Dashboard state
+    let allReports        = [];
+    let activeStatusFilter = '';
+    let activeTypeFilters  = new Set();
 
     function selectType(type, color, btn) {
         currentType  = type;
@@ -745,68 +749,99 @@
         CBRN_4:'#fbbf24', CBRN_5:'#ef4444', CBRN_6:'#fbbf24',
     };
 
-    async function loadReports() {
-        const r = await api('/reports');
-        if (!r.ok) return;
-        const list = await r.json();
+    // ── Tab switching ───────────────────────────────────────────────
+    window.showTab = function(name) {
+        document.querySelectorAll('.rep-tabpane').forEach(p => p.style.display = 'none');
+        document.querySelectorAll('.rep-tab').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + name).style.display = 'flex';
+        document.getElementById('tab-btn-' + name).classList.add('active');
+    };
 
-        // Unreviewed badge
-        const unreviewed = list.filter(rep => rep.status === 'RECEIVED').length;
-        const badge = document.getElementById('unreviewed-badge');
-        badge.style.display = unreviewed ? 'inline' : 'none';
-        badge.textContent   = unreviewed + ' new';
+    // ── Stats strip ─────────────────────────────────────────────────
+    function renderStats(list) {
+        const counts = { RECEIVED: 0, ACKNOWLEDGED: 0, PROCESSED: 0, REJECTED: 0 };
+        list.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+        document.getElementById('stat-total').textContent     = list.length;
+        document.getElementById('stat-received').textContent  = counts.RECEIVED;
+        document.getElementById('stat-acked').textContent     = counts.ACKNOWLEDGED;
+        document.getElementById('stat-processed').textContent = counts.PROCESSED;
+        document.getElementById('stat-rejected').textContent  = counts.REJECTED;
+    }
 
-        // Sidebar (sort by timestamp desc, most recent first)
-        const recent = document.getElementById('recent-list');
-        recent.innerHTML = list.slice(0, 15).map(rep => {
-            const c = TYPE_COLORS[rep.type] || '#64748b';
-            let preview = '';
-            try {
-                const p = JSON.parse(rep.payload);
-                if (rep.type === 'LOGREP') {
-                    const assess = p.section_g?.assessment || '';
-                    const serial = p.serial ? `SER ${p.serial}` : '';
-                    preview = [serial, assess ? `Assess: ${assess}` : ''].filter(Boolean).join(' · ');
-                } else {
-                    preview = p.line_1 || '';
-                }
-            } catch(_){}
-            return `<div class="recent-item" style="border-left-color:${c}"
-                        onclick="showReportDetail(${rep.id})">
-                <span class="ri-type" style="color:${c}">${rep.type}</span>
-                <span class="ri-meta"> · ${(rep.timestamp||'').slice(11,16)}</span>
-                <div class="ri-preview">${escHtml(preview)}</div>
-            </div>`;
-        }).join('') || '<small style="color:#475569">No reports yet</small>';
+    // ── Type filter chips ────────────────────────────────────────────
+    function renderTypeFilterChips(list) {
+        const types = [...new Set(list.map(r => r.type))].sort();
+        const wrap = document.getElementById('type-filter-chips');
+        if (!wrap) return;
+        wrap.innerHTML = types.map(t => {
+            const col = TYPE_COLORS[t] || '#64748b';
+            const on  = activeTypeFilters.has(t) ? ' on' : '';
+            return `<span class="type-fchip${on}"
+                         style="background:${col}22;color:${col};border-color:${col}88"
+                         onclick="toggleTypeFilter('${t}')">${escHtml(t)}</span>`;
+        }).join('');
+    }
 
-        // Main table
-        const tbody = document.getElementById('reports-body');
-        tbody.innerHTML = list.map(rep => {
-            const c  = TYPE_COLORS[rep.type] || '#64748b';
-            const st = rep.status || 'RECEIVED';
-            const isCas = rep.type === 'CAS';
-            let line1 = '—', detail = '', foLabel = '—';
-            try {
-                const p = JSON.parse(rep.payload);
-                // Summary column: varies by type
-                if (rep.type === 'LOGREP') {
-                    const g = p.section_g || {};
-                    const a = p.section_a || {};
-                    line1 = [g.assessment, a.present ? `Strength: ${a.present}` : ''].filter(Boolean).join(' · ') || '—';
-                } else if (isCas) {
-                    line1 = p.line_5_mgrs || p.line_5 || p.line_4 || '—';
-                } else {
-                    line1 = p.line_1 || '—';
-                }
-                if (isCas && p.fo_callsign) foLabel = p.fo_callsign;
+    window.toggleTypeFilter = function(type) {
+        if (activeTypeFilters.has(type)) activeTypeFilters.delete(type);
+        else activeTypeFilters.add(type);
+        renderTypeFilterChips(allReports);
+        applyFilter();
+    };
 
-                if (rep.type === 'LOGREP') {
-                    detail = renderLogrep(p, c);
-                } else {
+    // ── Status filter (stat chips) ───────────────────────────────────
+    window.filterByStatus = function(status) {
+        activeStatusFilter = status;
+        document.querySelectorAll('.stat-chip').forEach(c => c.classList.remove('active'));
+        const chipMap = { '':'stat-all', RECEIVED:'stat-recv', ACKNOWLEDGED:'stat-ack',
+                          PROCESSED:'stat-proc', REJECTED:'stat-rej' };
+        const el = document.getElementById(chipMap[status] || 'stat-all');
+        if (el) el.classList.add('active');
+        const sel = document.getElementById('status-filter');
+        if (sel) sel.value = status;
+        applyFilter();
+    };
+
+    // ── Combined search + type + status filter ───────────────────────
+    const applyFilter = window.applyFilter = function() {
+        const search = (document.getElementById('rep-search')?.value || '').toLowerCase();
+        const status = activeStatusFilter || (document.getElementById('status-filter')?.value || '');
+        let filtered = allReports;
+        if (status)                    filtered = filtered.filter(r => r.status === status);
+        if (activeTypeFilters.size > 0) filtered = filtered.filter(r => activeTypeFilters.has(r.type));
+        if (search) filtered = filtered.filter(r =>
+            r.type.toLowerCase().includes(search)
+            || (r.payload || '').toLowerCase().includes(search)
+            || (r.timestamp || '').includes(search));
+        renderTable(filtered);
+    };
+
+    // ── Build one report table row ───────────────────────────────────
+    function buildReportRow(rep) {
+        const c  = TYPE_COLORS[rep.type] || '#64748b';
+        const st = rep.status || 'RECEIVED';
+        const isCas = rep.type === 'CAS';
+        let line1 = '—', detail = '', foLabel = '—';
+        try {
+            const p = JSON.parse(rep.payload);
+            if (rep.type === 'LOGREP') {
+                const g = p.section_g || {};
+                const a = p.section_a || {};
+                line1 = [g.assessment, a.present ? `Strength: ${a.present}` : ''].filter(Boolean).join(' · ') || '—';
+            } else if (isCas) {
+                line1 = p.line_5_mgrs || p.line_5 || p.line_4 || '—';
+            } else {
+                line1 = p.line_1 || '—';
+            }
+            if (isCas && p.fo_callsign) foLabel = p.fo_callsign;
+
+            if (rep.type === 'LOGREP') {
+                detail = renderLogrep(p, c);
+            } else {
                 detail = Object.keys(p)
                     .filter(k => k.startsWith('line_') && p[k] && !k.includes('_lat') && !k.includes('_lon') && !k.includes('_mgrs'))
                     .map(k => {
-                        const n = k.slice(5);
+                        const n   = k.slice(5);
                         const lbl = p[`label_${n}`] || `Line ${n}`;
                         return `<div class="dl-grid">
                             <span class="dl-num" style="color:${c}">${n}</span>
@@ -814,97 +849,114 @@
                             <span class="dl-val">${escHtml(p[k])}</span>
                         </div>`;
                     }).join('');
-                }
+            }
+            if (isCas) {
+                if (p.line_5_mgrs) detail += `<div style="margin-top:.35rem;font-size:.78rem;color:#fbbf24">📍 MGRS: <span style="font-family:monospace">${escHtml(p.line_5_mgrs)}</span></div>`;
+                if (p.line_5_lat && p.line_5_lon) detail += `<div style="font-size:.75rem;color:#64748b">Lat/Lon: ${p.line_5_lat.toFixed(5)}, ${p.line_5_lon.toFixed(5)}</div>`;
+                if (p.fo_callsign) detail += `<div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem">FO: <strong>${escHtml(p.fo_callsign)}</strong></div>`;
+            }
+        } catch(_){}
 
-                // CAS: append extra fields
-                if (isCas) {
-                    if (p.line_5_mgrs) detail += `<div style="margin-top:.35rem;font-size:.78rem;color:#fbbf24">📍 MGRS: <span style="font-family:monospace">${escHtml(p.line_5_mgrs)}</span></div>`;
-                    if (p.line_5_lat && p.line_5_lon) detail += `<div style="font-size:.75rem;color:#64748b">Lat/Lon: ${p.line_5_lat.toFixed(5)}, ${p.line_5_lon.toFixed(5)}</div>`;
-                    if (p.fo_callsign) detail += `<div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem">FO: <strong>${escHtml(p.fo_callsign)}</strong></div>`;
-                }
-            } catch(_){}
+        const ticBadge = (rep.tic || false)
+            ? `<span style="background:rgba(239,68,68,.2);color:#ef4444;font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:3px;border:1px solid #dc2626">TIC</span>`
+            : '<span style="color:#2a3142;font-size:.7rem">—</span>';
 
-            const ticBadge = (rep.tic || false)
-                ? `<span style="background:rgba(239,68,68,.2);color:#ef4444;font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:3px;border:1px solid #dc2626">TIC</span>`
-                : '<span style="color:#2a3142;font-size:.7rem">—</span>';
+        const note = rep.reviewer_note
+            ? `<div style="margin-top:.5rem;padding:.4rem .6rem;background:#1a2030;
+                           border-left:2px solid #34d399;border-radius:0 4px 4px 0;
+                           font-size:.78rem;color:#94a3b8">
+                   <strong style="color:#34d399">Review note:</strong> ${escHtml(rep.reviewer_note)}
+               </div>` : '';
 
-            // Reviewer note (if any)
-            const note = rep.reviewer_note
-                ? `<div style="margin-top:.5rem;padding:.4rem .6rem;background:#1a2030;
-                               border-left:2px solid #34d399;border-radius:0 4px 4px 0;
-                               font-size:.78rem;color:#94a3b8">
-                       <strong style="color:#34d399">Review note:</strong> ${escHtml(rep.reviewer_note)}
-                   </div>` : '';
+        const actionPanel = `
+            <div class="status-panel">
+                <h4>Update status</h4>
+                <textarea class="status-note" id="note-${rep.id}"
+                          placeholder="Optional note sent back to the operator…">${escHtml(rep.reviewer_note||'')}</textarea>
+                <div class="status-actions">
+                    <button class="btn-status btn-ack"
+                            onclick="updateStatus(${rep.id},'ACKNOWLEDGED')">✓ Acknowledge</button>
+                    <button class="btn-status btn-proc"
+                            onclick="updateStatus(${rep.id},'PROCESSED')">✔ Processed</button>
+                    <button class="btn-status btn-rej"
+                            onclick="updateStatus(${rep.id},'REJECTED')">✕ Reject</button>
+                    <span class="status-result" id="sr-${rep.id}"></span>
+                </div>
+            </div>`;
 
-            // Status action panel (only show for BC/Admin — visible to all, server enforces role)
-            const actionPanel = `
-                <div class="status-panel">
-                    <h4>Update status</h4>
-                    <textarea class="status-note" id="note-${rep.id}"
-                              placeholder="Optional note sent back to the operator…">${escHtml(rep.reviewer_note||'')}</textarea>
-                    <div class="status-actions">
-                        <button class="btn-status btn-ack"
-                                onclick="updateStatus(${rep.id},'ACKNOWLEDGED')">✓ Acknowledge</button>
-                        <button class="btn-status btn-proc"
-                                onclick="updateStatus(${rep.id},'PROCESSED')">✔ Processed</button>
-                        <button class="btn-status btn-rej"
-                                onclick="updateStatus(${rep.id},'REJECTED')">✕ Reject</button>
-                        <span class="status-result" id="sr-${rep.id}"></span>
-                    </div>
-                </div>`;
+        const routingPanel = rep.type === 'LOGREP' ? `
+            <div class="status-panel" style="border-color:#0ea5e9">
+                <h4 style="color:#0ea5e9">📦 Route LOGREP</h4>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" id="route-dests-${rep.id}">
+                    ${['S1','S2','S3','S4','COY_A','COY_B','COY_C','COY_D'].map(d =>
+                        `<label style="display:flex;align-items:center;gap:3px;font-size:.75rem;cursor:pointer">
+                            <input type="checkbox" name="rdest" value="${d}" style="accent-color:#0ea5e9"> ${d}
+                        </label>`
+                    ).join('')}
+                </div>
+                <button class="btn-status" style="background:#0ea5e922;color:#0ea5e9;border-color:#0ea5e9"
+                        onclick="routeLogrep(${rep.id})">→ Route</button>
+                <span class="status-result" id="route-res-${rep.id}"></span>
+                <div id="route-status-${rep.id}" style="margin-top:6px"></div>
+            </div>` : '';
 
-            // LOGREP routing panel
-            const routingPanel = rep.type === 'LOGREP' ? `
-                <div class="status-panel" style="border-color:#0ea5e9">
-                    <h4 style="color:#0ea5e9">📦 Route LOGREP</h4>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" id="route-dests-${rep.id}">
-                        ${['S1','S2','S3','S4','COY_A','COY_B','COY_C','COY_D'].map(d =>
-                            `<label style="display:flex;align-items:center;gap:3px;font-size:.75rem;cursor:pointer">
-                                <input type="checkbox" name="rdest" value="${d}" style="accent-color:#0ea5e9"> ${d}
-                            </label>`
-                        ).join('')}
-                    </div>
-                    <button class="btn-status" style="background:#0ea5e922;color:#0ea5e9;border-color:#0ea5e9"
-                            onclick="routeLogrep(${rep.id})">→ Route</button>
-                    <span class="status-result" id="route-res-${rep.id}"></span>
-                    <div id="route-status-${rep.id}" style="margin-top:6px"></div>
-                </div>` : '';
+        const feedbackPanel = rep.type === 'LOGREP' ? `
+            <div class="status-panel" style="border-color:#22c55e;margin-top:6px">
+                <h4 style="color:#22c55e">↩ Feedback / Action taken</h4>
+                <input id="feedback-dest-${rep.id}" placeholder="Destination (e.g. S4)"
+                       style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                              border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+                <input id="feedback-by-${rep.id}" placeholder="Your callsign"
+                       style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                              border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+                <textarea id="feedback-text-${rep.id}" rows="2"
+                          placeholder="Action taken / feedback…"
+                          style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                                 border-radius:4px;padding:4px 8px;font-size:.78rem;
+                                 width:100%;margin-bottom:4px;resize:vertical"></textarea>
+                <button class="btn-status" style="background:#22c55e22;color:#22c55e;border-color:#22c55e"
+                        onclick="submitLogrepFeedback(${rep.id})">Submit Feedback</button>
+                <span class="status-result" id="feedback-res-${rep.id}"></span>
+            </div>` : '';
 
-            const feedbackPanel = rep.type === 'LOGREP' ? `
-                <div class="status-panel" style="border-color:#22c55e;margin-top:6px">
-                    <h4 style="color:#22c55e">↩ Feedback / Action taken</h4>
-                    <input id="feedback-dest-${rep.id}" placeholder="Destination (e.g. S4)"
-                           style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
-                                  border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
-                    <input id="feedback-by-${rep.id}" placeholder="Your callsign"
-                           style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
-                                  border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
-                    <textarea id="feedback-text-${rep.id}" rows="2"
-                              placeholder="Action taken / feedback…"
-                              style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
-                                     border-radius:4px;padding:4px 8px;font-size:.78rem;
-                                     width:100%;margin-bottom:4px;resize:vertical"></textarea>
-                    <button class="btn-status" style="background:#22c55e22;color:#22c55e;border-color:#22c55e"
-                            onclick="submitLogrepFeedback(${rep.id})">Submit Feedback</button>
-                    <span class="status-result" id="feedback-res-${rep.id}"></span>
-                </div>` : '';
+        return `<tr id="rep-row-${rep.id}">
+            <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
+            <td>${ticBadge}</td>
+            <td><span class="s-badge s-${st}">${st}</span></td>
+            <td style="color:#64748b;white-space:nowrap">${(rep.timestamp||'').slice(0,16).replace('T',' ')}</td>
+            <td style="color:#94a3b8;font-size:.78rem">${escHtml(foLabel)}</td>
+            <td style="font-family:monospace;font-size:0.82rem">${escHtml(line1)}</td>
+            <td>
+                <button onclick="toggleDetail(this)"
+                        style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
+                <div class="rep-detail" data-id="${rep.id}">
+                    ${detail}${note}${actionPanel}${routingPanel}${feedbackPanel}
+                </div>
+            </td>
+        </tr>`;
+    }
 
-            return `<tr id="rep-row-${rep.id}">
-                <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
-                <td>${ticBadge}</td>
-                <td><span class="s-badge s-${st}">${st}</span></td>
-                <td style="color:#64748b;white-space:nowrap">${(rep.timestamp||'').slice(0,16).replace('T',' ')}</td>
-                <td style="color:#94a3b8;font-size:.78rem">${escHtml(foLabel)}</td>
-                <td style="font-family:monospace;font-size:0.82rem">${escHtml(line1)}</td>
-                <td>
-                    <button onclick="toggleDetail(this)"
-                            style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
-                    <div class="rep-detail" data-id="${rep.id}">
-                        ${detail}${note}${actionPanel}${routingPanel}${feedbackPanel}
-                    </div>
-                </td>
-            </tr>`;
-        }).join('') || '<tr><td colspan="7" style="color:#475569">No reports</td></tr>';
+    // ── Render filtered rows into table body ─────────────────────────
+    function renderTable(list) {
+        const tbody = document.getElementById('reports-body');
+        tbody.innerHTML = list.map(buildReportRow).join('')
+            || '<tr><td colspan="7" style="color:#475569">No reports</td></tr>';
+    }
+
+    // ── Reports loader (fetch + refresh stats + filter) ──────────────
+    async function loadReports() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        allReports = await r.json();
+
+        const unreviewed = allReports.filter(rep => rep.status === 'RECEIVED').length;
+        const badge = document.getElementById('unreviewed-badge');
+        badge.style.display = unreviewed ? 'inline' : 'none';
+        badge.textContent   = unreviewed + ' new';
+
+        renderStats(allReports);
+        renderTypeFilterChips(allReports);
+        applyFilter();
     }
 
     window.updateStatus = async function(id, newStatus) {
