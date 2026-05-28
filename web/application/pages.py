@@ -82,3 +82,6 @@ class PageService:
 
     def organisation(self) -> PageView:
         return PageView("organisation.html")
+
+    def cbrn(self) -> PageView:
+        return PageView("cbrn.html")
