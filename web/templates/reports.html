@@ -275,7 +275,6 @@
                     ('CAS',     '#dc2626'),
                     ('CONTACT', '#d97706'),
                     ('SPOT',    '#7c3aed'),
-                    ('LOGREP',  '#0ea5e9'),
                 ] %}
                 {% for key, color in types %}
                 <button class="type-btn{% if loop.first %} active{% endif %}"
@@ -287,19 +286,12 @@
                 {% endfor %}
 
                 <div class="divider"></div>
-                <h3>LOGREP Import</h3>
-                <p style="font-size:.7rem;color:#64748b;margin:.1rem 0 .4rem">
-                    Free-form text or CoT XML with <code>&lt;logrep&gt;</code>.
-                </p>
-                <input type="file" id="logrep-file" accept=".txt,.xml,.logrep,text/plain,text/xml" multiple
-                       style="display:none" onchange="importLogrep(this.files)">
-                <button class="type-btn" style="background:#1a2233;color:#0ea5e9"
-                        onclick="document.getElementById('logrep-file').click()">
+                <a href="/logrep/" style="display:flex;align-items:center;gap:.5rem;
+                   padding:.45rem .7rem;border-radius:6px;background:#1a2233;
+                   color:#0ea5e9;font-size:.85rem;text-decoration:none;margin-bottom:.15rem">
                     <span class="type-dot" style="background:#0ea5e9"></span>
-                    📦 Import LOGREP file…
-                </button>
-                <div id="logrep-import-status" style="font-size:.72rem;color:#94a3b8;margin:.25rem 0 0;min-height:1em"></div>
-
+                    📦 LOGREP →
+                </a>
                 <div class="divider"></div>
                 <h3 style="display:flex;align-items:center;justify-content:space-between">
                     ✈ CAS Assets
@@ -981,35 +973,6 @@
                 d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         });
-    };
-
-    window.importLogrep = async function(fileList) {
-        const status = document.getElementById('logrep-import-status');
-        const files  = Array.from(fileList || []);
-        if (!files.length) return;
-        status.style.color = '#94a3b8';
-        status.textContent = `Uploading ${files.length} file(s)…`;
-        const form = new FormData();
-        files.forEach(f => form.append('files', f, f.name));
-        let r;
-        try {
-            r = await fetch(window.ARROW_BACKEND_URL + '/reports/logrep/import-text', {
-                method: 'POST', headers, body: form,
-            });
-        } catch (e) {
-            status.textContent = '✗ ' + e.message; status.style.color = '#ef4444'; return;
-        }
-        if (r.ok) {
-            const list = await r.json();
-            status.textContent = `✓ Imported ${list.length} LOGREP(s)`;
-            status.style.color = '#0ea5e9';
-            loadReports();
-        } else {
-            const err = await r.text().catch(() => String(r.status));
-            status.textContent = `✗ Failed (${r.status}): ${err.slice(0,200)}`;
-            status.style.color = '#ef4444';
-        }
-        document.getElementById('logrep-file').value = '';
     };
 
     window.routeLogrep = async function(repId) {

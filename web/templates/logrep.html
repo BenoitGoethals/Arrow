@@ -1,0 +1,1188 @@
+{% extends "base.html" %}
+{% block title %}LOGREP — Arrow{% endblock %}
+{% block head %}
+<style>
+    /* ── Shell ─────────────────────────────────────────────────────── */
+    .lr-shell   { display:flex; flex-direction:column; height:calc(100vh - 60px);
+                  background:#0d1117; }
+
+    /* ── Tab bar ────────────────────────────────────────────────────── */
+    .lr-tabbar  { display:flex; align-items:center; background:#161b25;
+                  border-bottom:1px solid #2a3142; padding:0 1rem; flex-shrink:0; }
+    .lr-tab     { padding:.65rem 1.2rem; background:none; border:0;
+                  border-bottom:2px solid transparent; color:#64748b;
+                  font:inherit; font-size:.88rem; cursor:pointer;
+                  transition:color .15s,border-color .15s; margin-bottom:-1px; }
+    .lr-tab:hover  { color:#94a3b8; }
+    .lr-tab.active { color:#e2e8f0; border-bottom-color:#0ea5e9; font-weight:600; }
+    .lr-tabbar .tb-spacer { flex:1; }
+    #lr-badge  { display:none; background:#dc2626; color:#fff; font-size:.65rem;
+                 font-weight:700; padding:2px 8px; border-radius:99px; margin-right:.5rem; }
+
+    /* ── Tab panes ──────────────────────────────────────────────────── */
+    .lr-tabpane { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+
+    /* ── Stats strip ────────────────────────────────────────────────── */
+    .lr-stats   { display:flex; background:#0e1217; border-bottom:1px solid #1e2736;
+                  flex-shrink:0; }
+    .lr-stat    { padding:.5rem 1.25rem; border-right:1px solid #1e2736;
+                  display:flex; flex-direction:column; align-items:center; gap:1px;
+                  cursor:pointer; transition:background .12s; }
+    .lr-stat:hover  { background:#161b25; }
+    .lr-stat.active { background:#161b25; color:#e2e8f0; }
+    .lr-stat .sv { font-size:1.1rem; font-weight:700; line-height:1; }
+    .lr-stat .sl { font-size:.65rem; text-transform:uppercase; letter-spacing:.08em;
+                   color:#64748b; }
+
+    /* ── Filter bar ─────────────────────────────────────────────────── */
+    .lr-filterbar { display:flex; align-items:center; gap:.5rem; padding:.5rem 1rem;
+                    background:#161b25; border-bottom:1px solid #1e2736; flex-shrink:0;
+                    flex-wrap:wrap; }
+    .lr-filterbar input[type=search] { background:#0e1217; border:1px solid #2a3142;
+                                       border-radius:5px; color:#e2e8f0; padding:.3rem .6rem;
+                                       font:inherit; font-size:.82rem; width:200px; outline:none; }
+    .lr-filterbar input[type=search]:focus { border-color:#0ea5e9; }
+    .lr-filterbar select { background:#0e1217; border:1px solid #2a3142; border-radius:5px;
+                           color:#e2e8f0; padding:.3rem .6rem; font:inherit; font-size:.82rem; }
+
+    /* ── Dashboard table ────────────────────────────────────────────── */
+    .lr-table-wrap { flex:1; overflow-y:auto; }
+    .lr-table   { width:100%; border-collapse:collapse; font-size:.85rem; }
+    .lr-table th { text-align:left; color:#64748b; font-size:.72rem; text-transform:uppercase;
+                   letter-spacing:.1em; padding:.4rem .6rem;
+                   border-bottom:1px solid #2a3142; background:#0e1217;
+                   position:sticky; top:0; }
+    .lr-table td { padding:.45rem .6rem; border-bottom:1px solid #1e2736; vertical-align:top; }
+    .lr-table tr:hover td { background:#1a1f29; }
+
+    /* assess badges */
+    .assess-GREEN  { background:rgba(34,197,94,.15);  color:#22c55e; border:1px solid #16a34a; }
+    .assess-AMBER  { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid #b45309; }
+    .assess-RED    { background:rgba(239,68,68,.15);  color:#ef4444; border:1px solid #dc2626; }
+    .assess-badge  { display:inline-block; font-size:.65rem; font-weight:700;
+                     padding:1px 6px; border-radius:3px; }
+    .s-badge { display:inline-block; font-size:.62rem; font-weight:700;
+               padding:1px 6px; border-radius:3px; }
+    .s-RECEIVED     { background:rgba(100,116,139,.2); color:#94a3b8; border:1px solid #475569; }
+    .s-ACKNOWLEDGED { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid #b45309; }
+    .s-PROCESSED    { background:rgba(34,197,94,.15);  color:#22c55e; border:1px solid #16a34a; }
+    .s-REJECTED     { background:rgba(239,68,68,.15);  color:#ef4444; border:1px solid #dc2626; }
+
+    /* ── Detail expand ──────────────────────────────────────────────── */
+    .lr-detail { display:none; background:#0e1217; border-left:3px solid #0ea5e9;
+                 padding:.6rem .75rem; font-size:.8rem; }
+
+    /* ── Status / routing panels ────────────────────────────────────── */
+    .status-panel { margin-top:.75rem; padding:.75rem; border-radius:6px;
+                    background:#0e1217; border:1px solid #2a3142; }
+    .status-panel h4 { margin:0 0 .5rem; font-size:.75rem; color:#64748b;
+                       text-transform:uppercase; letter-spacing:.08em; }
+    .status-actions { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+    .status-note { width:100%; margin-bottom:.5rem; background:#161b25; color:#e2e8f0;
+                   border:1px solid #2a3142; border-radius:4px; padding:.35rem .5rem;
+                   font:inherit; font-size:.82rem; resize:vertical; min-height:36px; }
+    .status-note:focus { outline:none; border-color:#34d399; }
+    .btn-status { padding:.3rem .75rem; border:1px solid; border-radius:5px;
+                  font:inherit; font-size:.78rem; font-weight:600;
+                  cursor:pointer; background:transparent; transition:background .15s; }
+    .btn-status:hover { filter:brightness(1.2); }
+    .btn-ack  { color:#f59e0b; border-color:#f59e0b; }
+    .btn-ack:hover  { background:rgba(245,158,11,.12); }
+    .btn-proc { color:#22c55e; border-color:#22c55e; }
+    .btn-proc:hover { background:rgba(34,197,94,.12); }
+    .btn-rej  { color:#ef4444; border-color:#ef4444; }
+    .btn-rej:hover  { background:rgba(239,68,68,.12); }
+    .status-result { font-size:.75rem; color:#64748b; }
+
+    /* ── LOGREP section renderer (DL grid) ──────────────────────────── */
+    .dl-grid  { display:grid; grid-template-columns:28px 140px 1fr; gap:.2rem .5rem; }
+    .dl-num   { font-weight:700; }
+    .dl-lbl   { color:#94a3b8; }
+    .dl-val   { color:#e2e8f0; font-family:monospace; }
+
+    /* ── New LOGREP tab ─────────────────────────────────────────────── */
+    .lr-new-shell { display:grid; grid-template-columns:1fr 280px; height:100%; overflow:hidden; }
+    .lr-form-wrap { overflow-y:auto; padding:1.5rem 2rem; }
+    .lr-import-side { background:#161b25; border-left:1px solid #2a3142;
+                      overflow-y:auto; padding:.75rem; display:flex; flex-direction:column; gap:.4rem; }
+    .lr-import-side h3 { font-size:.7rem; text-transform:uppercase; letter-spacing:.15em;
+                         color:#64748b; margin:.4rem 0 .2rem; }
+    .lr-import-side .divider { height:1px; background:#2a3142; margin:.4rem 0; }
+
+    /* Section panels */
+    .lr-section { border:1px solid #2a3142; border-radius:8px; margin-bottom:1.25rem;
+                  overflow:hidden; }
+    .lr-sec-hdr { display:flex; align-items:center; gap:.6rem; padding:.45rem .75rem;
+                  background:#0e1217; border-bottom:1px solid #1e2736; cursor:pointer;
+                  user-select:none; }
+    .lr-sec-hdr:hover { background:#131920; }
+    .lr-sec-letter { background:#0ea5e9; color:#fff; font-size:.65rem; font-weight:700;
+                     padding:1px 7px; border-radius:3px; flex-shrink:0; }
+    .lr-sec-title  { font-size:.82rem; font-weight:600; color:#cbd5e1; }
+    .lr-sec-body   { padding:.75rem 1rem; }
+    .lr-sec-body.collapsed { display:none; }
+
+    /* Form fields */
+    .lr-field-row { display:grid; gap:.5rem; margin-bottom:.6rem; }
+    .lr-field-row.cols-2 { grid-template-columns:1fr 1fr; }
+    .lr-field-row.cols-3 { grid-template-columns:1fr 1fr 1fr; }
+    .lr-field-row.cols-4 { grid-template-columns:1fr 1fr 1fr 1fr; }
+    .lr-field { display:flex; flex-direction:column; gap:2px; }
+    .lr-field label { font-size:.7rem; color:#64748b; text-transform:uppercase; letter-spacing:.06em; }
+    .lr-field input, .lr-field select, .lr-field textarea {
+        background:#0d1117; border:1px solid #2a3142; border-radius:5px;
+        color:#e2e8f0; padding:.3rem .55rem; font:inherit; font-size:.85rem; outline:none;
+    }
+    .lr-field input:focus, .lr-field select:focus, .lr-field textarea:focus {
+        border-color:#0ea5e9;
+    }
+    .lr-field textarea { resize:vertical; min-height:48px; }
+    .lr-field input[type=checkbox] { width:16px; height:16px; cursor:pointer;
+                                      accent-color:#0ea5e9; align-self:flex-start;
+                                      margin-top:4px; }
+    .lr-sub-hdr { font-size:.72rem; font-weight:600; color:#94a3b8; text-transform:uppercase;
+                  letter-spacing:.07em; margin:.75rem 0 .35rem; padding-bottom:.2rem;
+                  border-bottom:1px solid #1e2736; }
+
+    /* Dynamic tables */
+    .lr-dyn-table { width:100%; border-collapse:collapse; font-size:.82rem; margin-bottom:.5rem; }
+    .lr-dyn-table th { text-align:left; padding:.25rem .4rem; font-size:.7rem;
+                       color:#64748b; border-bottom:1px solid #2a3142; }
+    .lr-dyn-table td { padding:.2rem .3rem; border-bottom:1px solid #1e2736; }
+    .lr-dyn-table input { background:#0d1117; border:1px solid #2a3142; border-radius:3px;
+                          color:#e2e8f0; padding:.2rem .4rem; font:inherit; font-size:.82rem;
+                          width:100%; outline:none; }
+    .lr-dyn-table input:focus { border-color:#0ea5e9; }
+    .lr-dyn-table select { background:#0d1117; border:1px solid #2a3142; border-radius:3px;
+                           color:#e2e8f0; padding:.2rem .4rem; font:inherit; font-size:.82rem;
+                           width:100%; }
+    .btn-add-row { padding:.25rem .7rem; border:1px solid #2a3142; border-radius:4px;
+                   background:none; color:#64748b; font:inherit; font-size:.78rem;
+                   cursor:pointer; }
+    .btn-add-row:hover { border-color:#475569; color:#94a3b8; }
+    .btn-del-row { padding:.15rem .4rem; border:1px solid #3f1515; border-radius:3px;
+                   background:none; color:#ef4444; font:inherit; font-size:.72rem; cursor:pointer; }
+    .btn-del-row:hover { background:#3f1515; }
+
+    /* Assessment selector */
+    .assess-select { display:flex; gap:.5rem; }
+    .assess-opt { padding:.3rem .9rem; border-radius:5px; border:1px solid transparent;
+                  font:inherit; font-size:.82rem; font-weight:600; cursor:pointer;
+                  background:none; transition:background .12s; }
+    .assess-opt[data-v="GREEN"]  { color:#22c55e; border-color:#22c55e44; }
+    .assess-opt[data-v="AMBER"]  { color:#f59e0b; border-color:#f59e0b44; }
+    .assess-opt[data-v="RED"]    { color:#ef4444; border-color:#ef4444; }
+    .assess-opt.selected[data-v="GREEN"] { background:rgba(34,197,94,.2); border-color:#22c55e; }
+    .assess-opt.selected[data-v="AMBER"] { background:rgba(245,158,11,.2); border-color:#f59e0b; }
+    .assess-opt.selected[data-v="RED"]   { background:rgba(239,68,68,.2);  border-color:#ef4444; }
+
+    /* Submit row */
+    .lr-submit-row { display:flex; gap:.75rem; align-items:center; margin-top:.75rem; }
+    .btn-lr-submit { padding:.5rem 1.4rem; border:0; border-radius:6px; font:inherit;
+                     font-weight:600; font-size:.9rem; cursor:pointer;
+                     background:#0ea5e9; color:#fff; }
+    .btn-lr-submit:hover { background:#0284c7; }
+    .btn-lr-clear  { padding:.5rem 1rem; border:1px solid #2a3142; border-radius:6px;
+                     font:inherit; font-size:.85rem; background:none; color:#64748b; cursor:pointer; }
+    .btn-lr-clear:hover { border-color:#475569; color:#94a3b8; }
+    .lr-submit-msg { font-size:.82rem; }
+    .lr-submit-msg.ok  { color:#34d399; }
+    .lr-submit-msg.err { color:#ef4444; }
+
+    main { padding:0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lr-shell">
+
+    <!-- ── Tab bar ────────────────────────────────────────────────── -->
+    <div class="lr-tabbar">
+        <button id="tab-btn-dashboard" class="lr-tab active" onclick="showTab('dashboard')">
+            📊 Dashboard
+        </button>
+        <button id="tab-btn-new" class="lr-tab" onclick="showTab('new')">
+            ✍ New LOGREP
+        </button>
+        <span class="tb-spacer"></span>
+        <span id="lr-badge"></span>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         DASHBOARD TAB
+    ══════════════════════════════════════════════════════════════ -->
+    <div id="tab-dashboard" class="lr-tabpane">
+
+        <!-- Stats strip -->
+        <div class="lr-stats">
+            <div class="lr-stat active" id="lrs-all" onclick="filterStatus('')">
+                <span class="sv" id="ls-total" style="color:#0ea5e9">—</span>
+                <span class="sl">Total</span>
+            </div>
+            <div class="lr-stat" id="lrs-recv" onclick="filterStatus('RECEIVED')">
+                <span class="sv" id="ls-received" style="color:#94a3b8">—</span>
+                <span class="sl">New</span>
+            </div>
+            <div class="lr-stat" id="lrs-ack" onclick="filterStatus('ACKNOWLEDGED')">
+                <span class="sv" id="ls-acked" style="color:#f59e0b">—</span>
+                <span class="sl">Acked</span>
+            </div>
+            <div class="lr-stat" id="lrs-proc" onclick="filterStatus('PROCESSED')">
+                <span class="sv" id="ls-processed" style="color:#22c55e">—</span>
+                <span class="sl">Done</span>
+            </div>
+            <div class="lr-stat" id="lrs-rej" onclick="filterStatus('REJECTED')">
+                <span class="sv" id="ls-rejected" style="color:#ef4444">—</span>
+                <span class="sl">Rejected</span>
+            </div>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="lr-filterbar">
+            <input type="search" id="lr-search" placeholder="🔍 Serial, unit, assessment…"
+                   oninput="applyFilter()">
+            <select id="lr-status-filter" onchange="applyFilter()">
+                <option value="">All statuses</option>
+                <option value="RECEIVED">Received</option>
+                <option value="ACKNOWLEDGED">Acknowledged</option>
+                <option value="PROCESSED">Processed</option>
+                <option value="REJECTED">Rejected</option>
+            </select>
+        </div>
+
+        <!-- Reports table -->
+        <div class="lr-table-wrap">
+            <table class="lr-table">
+                <thead>
+                    <tr>
+                        <th>Serial</th>
+                        <th>DTG</th>
+                        <th>Higher HQ</th>
+                        <th>Strength</th>
+                        <th>Assessment</th>
+                        <th>Status</th>
+                        <th>Routing</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="lr-tbody">
+                    <tr><td colspan="8" style="color:#475569">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         NEW LOGREP TAB
+    ══════════════════════════════════════════════════════════════ -->
+    <div id="tab-new" class="lr-tabpane" style="display:none">
+        <div class="lr-new-shell">
+
+            <!-- ── Form ─────────────────────────────────────────── -->
+            <div class="lr-form-wrap">
+                <h2 style="color:#0ea5e9;margin:0 0 .2rem;font-size:1.1rem">
+                    📦 NATO LOGREP
+                </h2>
+                <p style="color:#64748b;font-size:.82rem;margin:0 0 1.25rem">
+                    Logistics Report — Sections A through G
+                </p>
+
+                <form id="logrep-form" onsubmit="submitLogrep(event)">
+
+                    <!-- Header fields -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter" style="background:#475569">HDR</span>
+                            <span class="lr-sec-title">Header</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <div class="lr-field-row cols-4">
+                                <div class="lr-field">
+                                    <label>Serial</label>
+                                    <input type="text" id="lr-serial" placeholder="e.g. LOGREP-001">
+                                </div>
+                                <div class="lr-field">
+                                    <label>DTG</label>
+                                    <input type="text" id="lr-dtg" placeholder="151200ZAPR25">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Period From</label>
+                                    <input type="text" id="lr-period-from" placeholder="150600Z">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Period To</label>
+                                    <input type="text" id="lr-period-to" placeholder="151800Z">
+                                </div>
+                            </div>
+                            <div class="lr-field-row">
+                                <div class="lr-field">
+                                    <label>Higher HQ</label>
+                                    <input type="text" id="lr-higher-hq" placeholder="e.g. 2 BDE">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section A: PERSTAT -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter">A</span>
+                            <span class="lr-sec-title">PERSTAT — Personnel Status</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <div class="lr-field-row cols-4">
+                                <div class="lr-field">
+                                    <label>Authorised</label>
+                                    <input type="number" id="a-auth" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Present</label>
+                                    <input type="number" id="a-present" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>KIA</label>
+                                    <input type="number" id="a-kia" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>WIA (evacuated)</label>
+                                    <input type="number" id="a-wia-evac" value="0" min="0">
+                                </div>
+                            </div>
+                            <div class="lr-field-row cols-3">
+                                <div class="lr-field">
+                                    <label>WIA (duty)</label>
+                                    <input type="number" id="a-wia-duty" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Missing</label>
+                                    <input type="number" id="a-missing" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Sick</label>
+                                    <input type="number" id="a-sick" value="0" min="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section B: Supply -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter">B</span>
+                            <span class="lr-sec-title">Supply</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <div class="lr-sub-hdr">Class I — Rations</div>
+                            <div class="lr-field-row cols-3">
+                                <div class="lr-field">
+                                    <label>DOS</label>
+                                    <input type="number" id="b1-dos" value="0" min="0" step="0.1">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Ration type</label>
+                                    <input type="text" id="b1-ration" placeholder="e.g. MRE, CDP">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Water (litres)</label>
+                                    <input type="number" id="b1-water" value="0" min="0">
+                                </div>
+                            </div>
+
+                            <div class="lr-sub-hdr">Class III — POL</div>
+                            <div class="lr-field-row cols-3">
+                                <div class="lr-field">
+                                    <label>Diesel (L)</label>
+                                    <input type="number" id="b3-diesel" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Petrol (L)</label>
+                                    <input type="number" id="b3-petrol" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Avgas (L)</label>
+                                    <input type="number" id="b3-avgas" value="0" min="0">
+                                </div>
+                            </div>
+
+                            <div class="lr-sub-hdr">Class V — Ammunition</div>
+                            <table class="lr-dyn-table" id="b5-table">
+                                <thead>
+                                    <tr><th style="width:40%">Type</th><th>On Hand</th><th>Consumption</th><th style="width:30px"></th></tr>
+                                </thead>
+                                <tbody id="b5-body"></tbody>
+                            </table>
+                            <button type="button" class="btn-add-row" onclick="addB5Row()">+ Add ammo</button>
+
+                            <div class="lr-sub-hdr">Class VIII — Medical Supplies</div>
+                            <div class="lr-field-row cols-4">
+                                <div class="lr-field">
+                                    <label>Morphine (units)</label>
+                                    <input type="number" id="b8-morphine" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Tourniquets</label>
+                                    <input type="number" id="b8-tourniquets" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>IV bags</label>
+                                    <input type="number" id="b8-iv" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Shortfalls</label>
+                                    <input type="text" id="b8-shortfalls" placeholder="Items short">
+                                </div>
+                            </div>
+
+                            <div class="lr-sub-hdr">Class IX — Spare Parts</div>
+                            <div class="lr-field-row">
+                                <div class="lr-field">
+                                    <label>Shortfalls</label>
+                                    <input type="text" id="b9-shortfalls" placeholder="Parts / assemblies short">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section C: EQPSTAT -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter">C</span>
+                            <span class="lr-sec-title">EQPSTAT — Equipment Status</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <table class="lr-dyn-table" id="c-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:28%">Equipment type</th>
+                                        <th>AUTH</th><th>On Hand</th>
+                                        <th>FMC</th><th>PMC</th><th>NMC</th>
+                                        <th style="width:30px"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="c-body"></tbody>
+                            </table>
+                            <button type="button" class="btn-add-row" onclick="addCRow()">+ Add equipment</button>
+                        </div>
+                    </div>
+
+                    <!-- Section D: Maintenance -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter">D</span>
+                            <span class="lr-sec-title">Maintenance</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <div class="lr-field-row cols-3">
+                                <div class="lr-field">
+                                    <label>Open work orders</label>
+                                    <input type="number" id="d-work-orders" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Deadline equipment</label>
+                                    <input type="number" id="d-deadline" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Parts awaiting</label>
+                                    <input type="text" id="d-parts" placeholder="Description">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section E: Medical -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter">E</span>
+                            <span class="lr-sec-title">Medical</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <div class="lr-field-row cols-2">
+                                <div class="lr-field">
+                                    <label>Evacuations (24h)</label>
+                                    <input type="number" id="e-evac" value="0" min="0">
+                                </div>
+                                <div class="lr-field">
+                                    <label>Note</label>
+                                    <input type="text" id="e-note" placeholder="Additional medical info">
+                                </div>
+                            </div>
+                            <div class="lr-field-row cols-2" style="margin-top:.3rem">
+                                <div class="lr-field" style="flex-direction:row;align-items:center;gap:.5rem">
+                                    <input type="checkbox" id="e-medic" checked>
+                                    <label style="text-transform:none;letter-spacing:0;font-size:.85rem;cursor:pointer" for="e-medic">Medic operational</label>
+                                </div>
+                                <div class="lr-field" style="flex-direction:row;align-items:center;gap:.5rem">
+                                    <input type="checkbox" id="e-supplies-crit">
+                                    <label style="text-transform:none;letter-spacing:0;font-size:.85rem;cursor:pointer;color:#ef4444" for="e-supplies-crit">Supplies critical</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section F: LOGREQ -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter">F</span>
+                            <span class="lr-sec-title">LOGREQ — Logistics Requests</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <table class="lr-dyn-table" id="f-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:15%">Priority</th>
+                                        <th style="width:40%">Item</th>
+                                        <th>Quantity</th>
+                                        <th>ETA</th>
+                                        <th style="width:30px"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="f-body"></tbody>
+                            </table>
+                            <button type="button" class="btn-add-row" onclick="addFRow()">+ Add request</button>
+                        </div>
+                    </div>
+
+                    <!-- Section G: Assessment -->
+                    <div class="lr-section">
+                        <div class="lr-sec-hdr" onclick="toggleSection(this)">
+                            <span class="lr-sec-letter">G</span>
+                            <span class="lr-sec-title">Assessment</span>
+                        </div>
+                        <div class="lr-sec-body">
+                            <div style="margin-bottom:.6rem">
+                                <div style="font-size:.7rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.35rem">
+                                    Overall Logistic Status
+                                </div>
+                                <div class="assess-select" id="assess-btns">
+                                    <button type="button" class="assess-opt selected" data-v="GREEN" onclick="selectAssess('GREEN')">● GREEN</button>
+                                    <button type="button" class="assess-opt" data-v="AMBER" onclick="selectAssess('AMBER')">● AMBER</button>
+                                    <button type="button" class="assess-opt" data-v="RED" onclick="selectAssess('RED')">● RED</button>
+                                </div>
+                                <input type="hidden" id="g-assessment" value="GREEN">
+                            </div>
+                            <div class="lr-field">
+                                <label>Remarks</label>
+                                <textarea id="g-remarks" rows="3"
+                                          placeholder="Logistics assessment remarks and significant shortfalls…"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lr-submit-row">
+                        <button type="submit" class="btn-lr-submit">📦 Submit LOGREP</button>
+                        <button type="button" class="btn-lr-clear" onclick="clearForm()">Clear</button>
+                        <span id="lr-submit-msg" class="lr-submit-msg"></span>
+                    </div>
+                </form>
+            </div>
+
+            <!-- ── Import side ──────────────────────────────────── -->
+            <aside class="lr-import-side">
+                <h3>Import</h3>
+                <p style="font-size:.7rem;color:#64748b;margin:.1rem 0 .4rem">
+                    Free-form text or CoT XML with <code>&lt;logrep&gt;</code>.
+                </p>
+                <input type="file" id="logrep-file"
+                       accept=".txt,.xml,.logrep,text/plain,text/xml" multiple
+                       style="display:none" onchange="importLogrep(this.files)">
+                <button style="display:flex;align-items:center;gap:.5rem;padding:.42rem .7rem;
+                               border-radius:6px;cursor:pointer;border:1px solid #0ea5e9;
+                               background:#1a2233;color:#0ea5e9;font:inherit;font-size:.85rem;width:100%"
+                        onclick="document.getElementById('logrep-file').click()">
+                    📦 Import LOGREP file…
+                </button>
+                <div id="logrep-import-status"
+                     style="font-size:.72rem;color:#94a3b8;margin:.25rem 0 0;min-height:1em"></div>
+
+                <div class="divider"></div>
+                <h3>Routing destinations</h3>
+                <p style="font-size:.7rem;color:#64748b;margin:.1rem 0 0">
+                    S1 / S2 / S3 / S4 / COY_A–D
+                </p>
+                <p style="font-size:.7rem;color:#475569;margin:.3rem 0 0">
+                    Use the routing panel in the Dashboard tab to route individual reports.
+                </p>
+            </aside>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: `Bearer ${token}` };
+    const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p,
+        { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g,
+            c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    // ── Tab switching ──────────────────────────────────────────────
+    window.showTab = function(name) {
+        document.querySelectorAll('.lr-tabpane').forEach(p => p.style.display = 'none');
+        document.querySelectorAll('.lr-tab').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + name).style.display = 'flex';
+        document.getElementById('tab-btn-' + name).classList.add('active');
+    };
+
+    // ── Section accordion ─────────────────────────────────────────
+    window.toggleSection = function(hdr) {
+        const body = hdr.nextElementSibling;
+        body.classList.toggle('collapsed');
+    };
+
+    // ── Assessment selector ───────────────────────────────────────
+    window.selectAssess = function(val) {
+        document.querySelectorAll('.assess-opt').forEach(b => b.classList.remove('selected'));
+        document.querySelector(`.assess-opt[data-v="${val}"]`)?.classList.add('selected');
+        document.getElementById('g-assessment').value = val;
+    };
+
+    // ── Dynamic table rows ────────────────────────────────────────
+    window.addB5Row = function() {
+        const tr = document.createElement('tr');
+        tr.className = 'b5-row';
+        tr.innerHTML = `
+            <td><input class="b5-type" type="text" placeholder="e.g. 5.56mm"></td>
+            <td><input class="b5-oh"   type="number" value="0" min="0"></td>
+            <td><input class="b5-cons" type="number" value="0" min="0"></td>
+            <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove()">✕</button></td>`;
+        document.getElementById('b5-body').appendChild(tr);
+    };
+
+    window.addCRow = function() {
+        const tr = document.createElement('tr');
+        tr.className = 'c-row';
+        tr.innerHTML = `
+            <td><input class="c-type" type="text" placeholder="e.g. WARRIOR IFV"></td>
+            <td><input class="c-auth" type="number" value="0" min="0"></td>
+            <td><input class="c-oh"   type="number" value="0" min="0"></td>
+            <td><input class="c-fmc"  type="number" value="0" min="0"></td>
+            <td><input class="c-pmc"  type="number" value="0" min="0"></td>
+            <td><input class="c-nmc"  type="number" value="0" min="0"></td>
+            <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove()">✕</button></td>`;
+        document.getElementById('c-body').appendChild(tr);
+    };
+
+    window.addFRow = function() {
+        const tr = document.createElement('tr');
+        tr.className = 'f-row';
+        tr.innerHTML = `
+            <td><select class="f-pri">
+                <option value="IMMEDIATE">IMMEDIATE</option>
+                <option value="URGENT">URGENT</option>
+                <option value="ROUTINE" selected>ROUTINE</option>
+            </select></td>
+            <td><input class="f-item" type="text" placeholder="Item description"></td>
+            <td><input class="f-qty"  type="text" placeholder="e.g. 200 rds"></td>
+            <td><input class="f-eta"  type="text" placeholder="e.g. 160600Z"></td>
+            <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove()">✕</button></td>`;
+        document.getElementById('f-body').appendChild(tr);
+    };
+
+    // ── Build payload from form ───────────────────────────────────
+    function buildPayload() {
+        const num = id => parseFloat(document.getElementById(id)?.value || 0) || 0;
+        const str = id => document.getElementById(id)?.value?.trim() || '';
+        const chk = id => document.getElementById(id)?.checked ?? false;
+
+        const classV = [...document.querySelectorAll('.b5-row')].map(r => ({
+            type: r.querySelector('.b5-type')?.value || '',
+            on_hand: parseInt(r.querySelector('.b5-oh')?.value || 0) || 0,
+            consumption: parseInt(r.querySelector('.b5-cons')?.value || 0) || 0,
+        })).filter(r => r.type.trim());
+
+        const eqpStat = [...document.querySelectorAll('.c-row')].map(r => ({
+            type: r.querySelector('.c-type')?.value || '',
+            auth: parseInt(r.querySelector('.c-auth')?.value || 0) || 0,
+            on_hand: parseInt(r.querySelector('.c-oh')?.value || 0) || 0,
+            fmc: parseInt(r.querySelector('.c-fmc')?.value || 0) || 0,
+            pmc: parseInt(r.querySelector('.c-pmc')?.value || 0) || 0,
+            nmc: parseInt(r.querySelector('.c-nmc')?.value || 0) || 0,
+        })).filter(r => r.type.trim());
+
+        const logreq = [...document.querySelectorAll('.f-row')].map(r => ({
+            priority: r.querySelector('.f-pri')?.value || 'ROUTINE',
+            item: r.querySelector('.f-item')?.value || '',
+            quantity: r.querySelector('.f-qty')?.value || '',
+            eta: r.querySelector('.f-eta')?.value || '',
+        })).filter(r => r.item.trim());
+
+        return {
+            serial:      str('lr-serial'),
+            dtg:         str('lr-dtg'),
+            period_from: str('lr-period-from'),
+            period_to:   str('lr-period-to'),
+            higher_hq:   str('lr-higher-hq'),
+            section_a: {
+                authorised:    parseInt(num('a-auth')),
+                present:       parseInt(num('a-present')),
+                kia:           parseInt(num('a-kia')),
+                wia_evacuated: parseInt(num('a-wia-evac')),
+                wia_duty:      parseInt(num('a-wia-duty')),
+                missing:       parseInt(num('a-missing')),
+                sick:          parseInt(num('a-sick')),
+            },
+            section_b: {
+                class_i: {
+                    dos:         num('b1-dos'),
+                    ration_type: str('b1-ration'),
+                    water_litres: parseInt(num('b1-water')),
+                },
+                class_iii: {
+                    diesel_litres: parseInt(num('b3-diesel')),
+                    petrol_litres: parseInt(num('b3-petrol')),
+                    avgas_litres:  parseInt(num('b3-avgas')),
+                },
+                class_v:   classV,
+                class_viii: {
+                    morphine:    parseInt(num('b8-morphine')),
+                    tourniquets: parseInt(num('b8-tourniquets')),
+                    iv_bags:     parseInt(num('b8-iv')),
+                    shortfalls:  str('b8-shortfalls'),
+                },
+                class_ix_shortfalls: str('b9-shortfalls'),
+            },
+            section_c: eqpStat,
+            section_d: {
+                open_work_orders:   parseInt(num('d-work-orders')),
+                deadline_equipment: parseInt(num('d-deadline')),
+                parts_awaiting:     str('d-parts'),
+            },
+            section_e: {
+                evacuations_24h:  parseInt(num('e-evac')),
+                medic_operational: chk('e-medic'),
+                supplies_critical: chk('e-supplies-crit'),
+                note:             str('e-note'),
+            },
+            section_f: logreq,
+            section_g: {
+                assessment: str('g-assessment'),
+                remarks:    str('g-remarks'),
+            },
+        };
+    }
+
+    // ── Submit new LOGREP ─────────────────────────────────────────
+    window.submitLogrep = async function(e) {
+        e.preventDefault();
+        const msg = document.getElementById('lr-submit-msg');
+        msg.textContent = 'Submitting…'; msg.className = 'lr-submit-msg';
+        const payload = buildPayload();
+        const r = await api('/reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'LOGREP', payload }),
+        });
+        if (r.ok) {
+            msg.textContent = '✓ LOGREP submitted';
+            msg.className = 'lr-submit-msg ok';
+            clearForm();
+            loadLogreps();
+            showTab('dashboard');
+        } else {
+            const err = await r.json().catch(() => ({}));
+            msg.textContent = `✗ Failed (${r.status}): ${err.detail || ''}`;
+            msg.className = 'lr-submit-msg err';
+        }
+    };
+
+    window.clearForm = function() {
+        document.getElementById('logrep-form').reset();
+        document.getElementById('b5-body').innerHTML = '';
+        document.getElementById('c-body').innerHTML = '';
+        document.getElementById('f-body').innerHTML = '';
+        selectAssess('GREEN');
+        document.getElementById('lr-submit-msg').textContent = '';
+    };
+
+    // ── LOGREP file import ────────────────────────────────────────
+    window.importLogrep = async function(fileList) {
+        const statusEl = document.getElementById('logrep-import-status');
+        const files    = Array.from(fileList || []);
+        if (!files.length) return;
+        statusEl.style.color = '#94a3b8';
+        statusEl.textContent = `Uploading ${files.length} file(s)…`;
+        const form = new FormData();
+        files.forEach(f => form.append('files', f, f.name));
+        let r;
+        try {
+            r = await fetch(window.ARROW_BACKEND_URL + '/reports/logrep/import-text',
+                { method: 'POST', headers, body: form });
+        } catch (e) {
+            statusEl.textContent = '✗ ' + e.message;
+            statusEl.style.color = '#ef4444'; return;
+        }
+        if (r.ok) {
+            const list = await r.json();
+            statusEl.textContent = `✓ Imported ${list.length} LOGREP(s)`;
+            statusEl.style.color = '#0ea5e9';
+            setTimeout(() => { statusEl.textContent = ''; }, 5000);
+            loadLogreps();
+        } else {
+            const err = await r.text().catch(() => String(r.status));
+            statusEl.textContent = `✗ (${r.status}): ${err.slice(0, 120)}`;
+            statusEl.style.color = '#ef4444';
+        }
+        document.getElementById('logrep-file').value = '';
+    };
+
+    // ── Dashboard state ───────────────────────────────────────────
+    let allLogreps    = [];
+    let activeStat    = '';
+
+    // ── Stats strip ───────────────────────────────────────────────
+    function renderStats(list) {
+        const c = { RECEIVED:0, ACKNOWLEDGED:0, PROCESSED:0, REJECTED:0 };
+        list.forEach(r => { if (c[r.status] !== undefined) c[r.status]++; });
+        document.getElementById('ls-total').textContent     = list.length;
+        document.getElementById('ls-received').textContent  = c.RECEIVED;
+        document.getElementById('ls-acked').textContent     = c.ACKNOWLEDGED;
+        document.getElementById('ls-processed').textContent = c.PROCESSED;
+        document.getElementById('ls-rejected').textContent  = c.REJECTED;
+
+        const badge = document.getElementById('lr-badge');
+        badge.style.display = c.RECEIVED ? 'inline' : 'none';
+        badge.textContent   = c.RECEIVED + ' new';
+    }
+
+    window.filterStatus = function(status) {
+        activeStat = status;
+        document.querySelectorAll('.lr-stat').forEach(c => c.classList.remove('active'));
+        const map = { '':'lrs-all', RECEIVED:'lrs-recv', ACKNOWLEDGED:'lrs-ack',
+                      PROCESSED:'lrs-proc', REJECTED:'lrs-rej' };
+        document.getElementById(map[status] || 'lrs-all')?.classList.add('active');
+        const sel = document.getElementById('lr-status-filter');
+        if (sel) sel.value = status;
+        applyFilter();
+    };
+
+    const applyFilter = window.applyFilter = function() {
+        const search = (document.getElementById('lr-search')?.value || '').toLowerCase();
+        const stat   = activeStat || (document.getElementById('lr-status-filter')?.value || '');
+        let filtered = allLogreps;
+        if (stat)   filtered = filtered.filter(r => r.status === stat);
+        if (search) filtered = filtered.filter(r =>
+            (r.payload || '').toLowerCase().includes(search));
+        renderTable(filtered);
+    };
+
+    // ── LOGREP detail renderer (sections A–G) ─────────────────────
+    function renderLogrep(p, c) {
+        const h = s => esc(String(s ?? ''));
+        const lrSec = (letter, title, body) => `
+            <div style="margin-bottom:.5rem;border:1px solid #1e2d3d;border-radius:5px;overflow:hidden">
+                <div style="background:#162030;padding:.28rem .55rem;display:flex;align-items:center;gap:.45rem">
+                    <span style="background:${c};color:#fff;font-size:.62rem;font-weight:700;
+                                 padding:1px 5px;border-radius:3px">${letter}</span>
+                    <span style="font-size:.76rem;font-weight:600;color:#cbd5e1">${title}</span>
+                </div>
+                <div style="padding:.4rem .6rem;font-size:.76rem">${body}</div>
+            </div>`;
+        const row = (lbl, val) => (val != null && val !== '')
+            ? `<div style="display:flex;gap:.5rem;margin:.12rem 0">
+                   <span style="color:#64748b;min-width:130px">${lbl}</span>
+                   <span style="color:#e2e8f0">${h(val)}</span>
+               </div>` : '';
+        const tbl = (hdrs, rows) => {
+            if (!rows?.length) return '<em style="color:#475569">—</em>';
+            return `<table style="width:100%;border-collapse:collapse;font-size:.74rem;margin-top:.2rem">
+                <thead><tr>${hdrs.map(hd =>`<th style="border-bottom:1px solid #1e2d3d;padding:2px 5px;text-align:left;color:#64748b">${hd}</th>`).join('')}</tr></thead>
+                <tbody>${rows.map(cells =>`<tr>${cells.map(v =>`<td style="padding:2px 5px;border-bottom:1px solid #0f1928;color:#cbd5e1">${h(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+            </table>`;
+        };
+
+        let out = `<div style="display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;margin-bottom:.5rem;font-size:.76rem">
+            ${row('DTG', p.dtg)}${row('Period', p.period_from && p.period_to ? `${p.period_from} → ${p.period_to}` : p.period_from||'')}
+            ${row('Serial', p.serial)}${row('Higher HQ', p.higher_hq)}
+        </div>`;
+
+        const a = p.section_a || {};
+        out += lrSec('A','PERSTAT',[row('Authorised',a.authorised),row('Present',a.present),
+            row('KIA',a.kia),row('WIA (evac)',a.wia_evacuated),row('WIA (duty)',a.wia_duty),
+            row('Missing',a.missing),row('Sick',a.sick)].join(''));
+
+        const b = p.section_b || {}, b1=b.class_i||{}, b3=b.class_iii||{}, b8=b.class_viii||{};
+        let bHtml = '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.25rem 0 .1rem">Class I</div>';
+        bHtml += [row('DOS',b1.dos),row('Ration',b1.ration_type),row('Water (L)',b1.water_litres)].join('');
+        bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class III</div>';
+        bHtml += [row('Diesel (L)',b3.diesel_litres),row('Petrol (L)',b3.petrol_litres),row('Avgas (L)',b3.avgas_litres)].join('');
+        bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class V</div>';
+        bHtml += tbl(['Type','On Hand','Consumption'],(b.class_v||[]).map(r=>[r.type,r.on_hand,r.consumption]));
+        bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class VIII</div>';
+        bHtml += [row('Morphine',b8.morphine),row('Tourniquets',b8.tourniquets),row('IV bags',b8.iv_bags),row('Shortfalls',b8.shortfalls)].join('');
+        if (b.class_ix_shortfalls) bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class IX</div>' + row('Shortfalls',b.class_ix_shortfalls);
+        out += lrSec('B','Supply',bHtml);
+
+        out += lrSec('C','EQPSTAT',tbl(['Type','AUTH','OH','FMC','PMC','NMC'],
+            (p.section_c||[]).map(r=>[r.type,r.auth,r.on_hand,r.fmc,r.pmc,r.nmc])));
+
+        const d = p.section_d||{};
+        out += lrSec('D','Maintenance',[row('Open work orders',d.open_work_orders),
+            row('Deadline equip',d.deadline_equipment),row('Parts awaiting',d.parts_awaiting)].join(''));
+
+        const e = p.section_e||{};
+        out += lrSec('E','Medical',[row('Evacuations (24h)',e.evacuations_24h),
+            row('Medic operational',e.medic_operational!=null?(e.medic_operational?'Yes':'No'):null),
+            row('Supplies critical',e.supplies_critical!=null?(e.supplies_critical?'⚠ Yes':'No'):null),
+            row('Note',e.note)].join(''));
+
+        out += lrSec('F','LOGREQ',tbl(['Priority','Item','Qty','ETA'],
+            (p.section_f||[]).map(r=>[r.priority,r.item,r.quantity,r.eta])));
+
+        const g = p.section_g||{};
+        const ac={GREEN:'#22c55e',AMBER:'#f59e0b',RED:'#ef4444'}[g.assessment]||c;
+        let gHtml = g.assessment
+            ? `<span style="background:${ac}22;color:${ac};border:1px solid ${ac};
+                            border-radius:4px;padding:2px 10px;font-weight:700;font-size:.8rem">${g.assessment}</span>` : '';
+        if (g.remarks) gHtml += `<div style="margin-top:.3rem;color:#94a3b8">${h(g.remarks)}</div>`;
+        out += lrSec('G','Assessment',gHtml || '<em style="color:#475569">—</em>');
+        return out;
+    }
+
+    // ── Dashboard table ───────────────────────────────────────────
+    function renderTable(list) {
+        const tbody = document.getElementById('lr-tbody');
+        if (!list.length) {
+            tbody.innerHTML = '<tr><td colspan="8" style="color:#475569;text-align:center;padding:1rem">No LOGREP reports</td></tr>';
+            return;
+        }
+        tbody.innerHTML = list.map(rep => {
+            const st = rep.status || 'RECEIVED';
+            let serial = '—', dtg = '—', higherHq = '—', present = '—', assess = '', routeHtml = '';
+            try {
+                const p = JSON.parse(rep.payload);
+                serial   = p.serial   || '—';
+                dtg      = p.dtg      || '—';
+                higherHq = p.higher_hq || '—';
+                present  = p.section_a?.present ?? '—';
+                const g  = p.section_g || {};
+                if (g.assessment) {
+                    assess = `<span class="assess-badge assess-${esc(g.assessment)}">${esc(g.assessment)}</span>`;
+                }
+            } catch (_) {}
+
+            return `<tr id="lr-row-${rep.id}">
+                <td style="font-family:monospace;font-size:.82rem">${esc(serial)}</td>
+                <td style="font-family:monospace;font-size:.78rem;color:#94a3b8">${esc(dtg)}</td>
+                <td style="color:#64748b;font-size:.8rem">${esc(higherHq)}</td>
+                <td style="text-align:center">${esc(String(present))}</td>
+                <td>${assess}</td>
+                <td><span class="s-badge s-${esc(st)}">${esc(st)}</span></td>
+                <td id="lr-route-summary-${rep.id}" style="font-size:.72rem;color:#64748b">—</td>
+                <td>
+                    <button onclick="toggleLrDetail(this)"
+                            style="background:none;border:0;color:#64748b;cursor:pointer;font-size:.8rem">▼</button>
+                    <div class="lr-detail" data-id="${rep.id}"></div>
+                </td>
+            </tr>`;
+        }).join('');
+
+        // Load routing summaries async
+        list.forEach(rep => loadRouteSummary(rep.id));
+    }
+
+    window.toggleLrDetail = function(btn) {
+        const detail = btn.nextElementSibling;
+        const open   = detail.style.display === 'block';
+        detail.style.display = open ? 'none' : 'block';
+        btn.textContent = open ? '▼' : '▲';
+        if (!open && !detail.dataset.loaded) {
+            detail.dataset.loaded = '1';
+            const id = parseInt(detail.dataset.id);
+            // Render LOGREP detail
+            const rep = allLogreps.find(r => r.id === id);
+            if (rep) {
+                let p = {};
+                try { p = JSON.parse(rep.payload); } catch (_) {}
+                const c = '#0ea5e9';
+                const note = rep.reviewer_note
+                    ? `<div style="margin-top:.5rem;padding:.4rem .6rem;background:#1a2030;
+                                   border-left:2px solid #34d399;border-radius:0 4px 4px 0;
+                                   font-size:.78rem;color:#94a3b8">
+                           <strong style="color:#34d399">Review note:</strong> ${esc(rep.reviewer_note)}
+                       </div>` : '';
+                detail.innerHTML = renderLogrep(p, c) + note + buildActionPanels(id);
+                loadLogrepRouting(id);
+            }
+        }
+    };
+
+    function buildActionPanels(id) {
+        return `
+        <div class="status-panel" style="margin-top:.75rem">
+            <h4>Update status</h4>
+            <textarea class="status-note" id="note-${id}" placeholder="Optional note…"></textarea>
+            <div class="status-actions">
+                <button class="btn-status btn-ack"  onclick="updateStatus(${id},'ACKNOWLEDGED')">✓ Acknowledge</button>
+                <button class="btn-status btn-proc" onclick="updateStatus(${id},'PROCESSED')">✔ Processed</button>
+                <button class="btn-status btn-rej"  onclick="updateStatus(${id},'REJECTED')">✕ Reject</button>
+                <span class="status-result" id="sr-${id}"></span>
+            </div>
+        </div>
+
+        <div class="status-panel" style="border-color:#0ea5e9;margin-top:.5rem">
+            <h4 style="color:#0ea5e9">📦 Route LOGREP</h4>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" id="route-dests-${id}">
+                ${['S1','S2','S3','S4','COY_A','COY_B','COY_C','COY_D'].map(d =>
+                    `<label style="display:flex;align-items:center;gap:3px;font-size:.75rem;cursor:pointer">
+                         <input type="checkbox" name="rdest" value="${d}" style="accent-color:#0ea5e9"> ${d}
+                     </label>`
+                ).join('')}
+            </div>
+            <button class="btn-status" style="background:#0ea5e922;color:#0ea5e9;border-color:#0ea5e9"
+                    onclick="routeLogrep(${id})">→ Route</button>
+            <span class="status-result" id="route-res-${id}"></span>
+            <div id="route-status-${id}" style="margin-top:6px"></div>
+        </div>
+
+        <div class="status-panel" style="border-color:#22c55e;margin-top:.5rem">
+            <h4 style="color:#22c55e">↩ Feedback / Action taken</h4>
+            <input id="feedback-dest-${id}" placeholder="Destination (e.g. S4)"
+                   style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                          border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+            <input id="feedback-by-${id}" placeholder="Your callsign"
+                   style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                          border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+            <textarea id="feedback-text-${id}" rows="2" placeholder="Action taken / feedback…"
+                      style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                             border-radius:4px;padding:4px 8px;font-size:.78rem;
+                             width:100%;margin-bottom:4px;resize:vertical"></textarea>
+            <button class="btn-status" style="background:#22c55e22;color:#22c55e;border-color:#22c55e"
+                    onclick="submitLogrepFeedback(${id})">Submit Feedback</button>
+            <span class="status-result" id="feedback-res-${id}"></span>
+        </div>`;
+    }
+
+    window.updateStatus = async function(id, newStatus) {
+        const note = document.getElementById(`note-${id}`)?.value || '';
+        const res  = document.getElementById(`sr-${id}`);
+        if (res) res.textContent = 'Saving…';
+        const r = await api(`/reports/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus, reviewer_note: note }),
+        });
+        if (r.ok) { if (res) res.textContent = `✓ ${newStatus}`; loadLogreps(); }
+        else {
+            const err = await r.json().catch(() => ({}));
+            if (res) res.textContent = `✗ ${err.detail || r.status}`;
+        }
+    };
+
+    window.routeLogrep = async function(repId) {
+        const wrap   = document.getElementById(`route-dests-${repId}`);
+        const result = document.getElementById(`route-res-${repId}`);
+        const dests  = Array.from(wrap.querySelectorAll('input[name="rdest"]:checked')).map(el => el.value);
+        if (!dests.length) { result.textContent = 'Select at least one destination'; return; }
+        result.textContent = 'Routing…'; result.style.color = '#94a3b8';
+        const r = await api(`/reports/${repId}/routing`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ destinations: dests }),
+        });
+        if (r.ok) {
+            result.textContent = `✓ Routed to ${dests.join(', ')}`;
+            result.style.color = '#0ea5e9';
+            loadLogrepRouting(repId);
+        } else {
+            result.textContent = `✗ Failed (${r.status})`;
+            result.style.color = '#ef4444';
+        }
+    };
+
+    window.submitLogrepFeedback = async function(repId) {
+        const dest   = document.getElementById(`feedback-dest-${repId}`)?.value?.trim().toUpperCase();
+        const by     = document.getElementById(`feedback-by-${repId}`)?.value?.trim();
+        const text   = document.getElementById(`feedback-text-${repId}`)?.value?.trim();
+        const result = document.getElementById(`feedback-res-${repId}`);
+        if (!dest || !text) { result.textContent = 'Destination and text required'; return; }
+        const routesR = await api(`/reports/${repId}/routing`);
+        if (!routesR.ok) { result.textContent = '✗ Cannot load routing'; return; }
+        const routes = await routesR.json();
+        const route  = routes.find(ro => ro.destination === dest);
+        if (!route) { result.textContent = `✗ ${dest} not routed yet`; return; }
+        result.textContent = 'Submitting…'; result.style.color = '#94a3b8';
+        const r = await api(`/reports/${repId}/routing/${route.id}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ feedback_text: text, feedback_by: by }),
+        });
+        if (r.ok) { result.textContent = '✓ Feedback submitted'; result.style.color = '#22c55e'; loadLogrepRouting(repId); }
+        else { result.textContent = `✗ Failed (${r.status})`; result.style.color = '#ef4444'; }
+    };
+
+    async function loadLogrepRouting(repId) {
+        const wrap = document.getElementById(`route-status-${repId}`);
+        if (!wrap) return;
+        const r = await api(`/reports/${repId}/routing`);
+        if (!r.ok) return;
+        const routes = await r.json();
+        const sc = { PENDING:'#64748b', ACKNOWLEDGED:'#f59e0b', FEEDBACK:'#22c55e' };
+        wrap.innerHTML = routes.map(ro => {
+            const c = sc[ro.status] || '#64748b';
+            const fb = ro.feedback_text
+                ? `<div style="font-size:.71rem;color:#94a3b8;margin-top:2px">
+                       ↩ <strong style="color:${c}">${esc(ro.feedback_by||'?')}</strong>: ${esc(ro.feedback_text.slice(0,100))}
+                   </div>` : '';
+            return `<div style="border-left:2px solid ${c};padding:.2rem .5rem;margin:.2rem 0;font-size:.74rem">
+                <span style="color:${c};font-weight:700">${esc(ro.destination)}</span>
+                <span style="color:#475569;margin-left:6px">${ro.status}</span>
+                <span style="color:#334155;margin-left:6px">${(ro.routed_at||'').slice(11,16)}</span>
+                ${fb}
+            </div>`;
+        }).join('') || '<span style="color:#475569;font-size:.72rem">Not yet routed</span>';
+    }
+
+    async function loadRouteSummary(repId) {
+        const cell = document.getElementById(`lr-route-summary-${repId}`);
+        if (!cell) return;
+        const r = await api(`/reports/${repId}/routing`);
+        if (!r.ok) return;
+        const routes = await r.json();
+        if (!routes.length) { cell.textContent = '—'; return; }
+        const colors = { PENDING:'#64748b', ACKNOWLEDGED:'#f59e0b', FEEDBACK:'#22c55e' };
+        cell.innerHTML = routes.map(ro =>
+            `<span style="color:${colors[ro.status]||'#64748b'};margin-right:4px;font-weight:600">${esc(ro.destination)}</span>`
+        ).join('');
+    }
+
+    // ── Load LOGREP reports ────────────────────────────────────────
+    async function loadLogreps() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        const all = await r.json();
+        allLogreps = all.filter(rep => rep.type === 'LOGREP');
+        renderStats(allLogreps);
+        applyFilter();
+    }
+
+    // ── WebSocket ─────────────────────────────────────────────────
+    function connectWS() {
+        const ws = new WebSocket(
+            window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
+        ws.onmessage = ev => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.channel === 'report' && (
+                    msg.data?.type === 'LOGREP' ||
+                    msg.event === 'logrep_routed' ||
+                    msg.event === 'logrep_feedback'
+                )) loadLogreps();
+            } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+    connectWS();
+
+    loadLogreps();
+    setInterval(loadLogreps, 30000);
+})();
+</script>
+{% endblock %}
