@@ -88,7 +88,7 @@ class Operator(Base):
     callsign: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     rank: Mapped[str] = mapped_column(String(40), default="OR-1")
     status: Mapped[str] = mapped_column(String(20), default="OFFLINE")
-    role: Mapped[str] = mapped_column(String(20), default="OPERATOR")  # ADMIN, BATTLE_CAPTAIN, OPERATOR
+    role: Mapped[str] = mapped_column(String(20), default="OPERATOR")  # ADMIN, BATTLE_CAPTAIN, OPERATOR, LOG, FO, CAS, INTEL, OPS, MED, CBRN, FBC
     password_hash: Mapped[str] = mapped_column(String(255))
 
     team_id:    Mapped[int | None] = mapped_column(ForeignKey("teams.id"),    nullable=True)
