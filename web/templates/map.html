@@ -3704,7 +3704,7 @@
             if (msg.channel === 'tracking' && msg.event === 'position') {
                 const d = msg.data;
                 const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
-                if (_mid && d.mission_id !== _mid) return;
+                if (_mid && d.mission_id && d.mission_id !== _mid) return;
                 const op = state.operators.get(d.operator_id) || { id: d.operator_id, callsign: d.callsign, rank: '', role: 'OPERATOR' };
                 op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
                 state.operators.set(op.id, op);
@@ -3714,7 +3714,7 @@
                 placeCotTrack(msg.data);
             } else if (msg.channel === 'tactical-object') {
                 const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
-                if (_mid && msg.data.mission_id !== _mid) return;
+                if (_mid && msg.data.mission_id && msg.data.mission_id !== _mid) return;
                 if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); schedRefreshEnemies(); }
                 else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); schedRefreshEnemies(); }
             } else if (msg.channel === 'alert') {

@@ -960,15 +960,6 @@ async def main() -> None:
         if MISSION_ID:
             log.info("Mission id=%d", MISSION_ID)
 
-        # Assign all operators to the mission.
-        # The web map WS handler filters position updates by operator.mission_id;
-        # without this step all 30 operators are invisible if a mission is active.
-        if MISSION_ID:
-            op_ids = [op.op_id for op in all_ops if op.op_id]
-            await _api(client, "POST", f"/missions/{MISSION_ID}/operators",
-                       token=admin_token, json={"operator_ids": op_ids})
-            log.info("Assigned %d operators to mission %d", len(op_ids), MISSION_ID)
-
         await plant_opord(client, admin_token)
         enemy_units = await plant_enemy(client, admin_token)
 
