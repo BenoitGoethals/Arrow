@@ -18,6 +18,13 @@ informational fields like attacker / agent / yield_kt / description).
 Re-uses the same URL-persistence + path-prefix conventions as
 `simulate_battlefield.py`: pass `--backend http://host/api` once and the URL
 is remembered in `~/.config/arrow/simulator.json` for subsequent runs.
+
+Run:
+  uv run python simulate_global_cbrn.py
+  uv run python simulate_global_cbrn.py --backend http://78.21.255.210:6001
+  uv run python simulate_global_cbrn.py --reset
+  uv run python simulate_global_cbrn.py --no-move
+  uv run python simulate_global_cbrn.py --steps 60 --dt 1.5
 """
 
 from __future__ import annotations
@@ -267,6 +274,12 @@ def main() -> None:
                         help="Mark all existing CBRN_* reports as REJECTED before submitting new ones")
     parser.add_argument("--mission-name", default="Operation Regnum Ignis",
                         help="Mission name to create or adopt (default: Operation Regnum Ignis)")
+    parser.add_argument("--no-move",  action="store_true",
+                        help="Plan-only mode — accepted for interface parity (no movement in this simulator)")
+    parser.add_argument("--steps",    type=int, default=80,
+                        help="Movement steps — accepted for interface parity (not used by this simulator)")
+    parser.add_argument("--dt",       type=float, default=2.0,
+                        help="Seconds between steps — accepted for interface parity (not used by this simulator)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,

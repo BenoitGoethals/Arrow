@@ -18,8 +18,10 @@ ENEMY affiliation so the renderer can colour them correctly.
 
 Run:
   uv run python simulate_battlefield.py
-  uv run python simulate_battlefield.py --backend http://192.168.0.240:6001
+  uv run python simulate_battlefield.py --backend http://78.21.255.210:6001
   uv run python simulate_battlefield.py --reset      # wipe existing TGs first
+  uv run python simulate_battlefield.py --no-move    # plan-only (no movement in this simulator)
+  uv run python simulate_battlefield.py --steps 60 --dt 1.5
 """
 
 from __future__ import annotations
@@ -311,6 +313,12 @@ def main() -> None:
                         help="Delete every existing tactical-graphic/enemy/POI before planting")
     parser.add_argument("--mission-name", default="Operation Iron Ardennes",
                         help="Mission name to create or adopt (default: Operation Iron Ardennes)")
+    parser.add_argument("--no-move",  action="store_true",
+                        help="Plan-only mode — accepted for interface parity (no movement in this simulator)")
+    parser.add_argument("--steps",    type=int, default=80,
+                        help="Movement steps — accepted for interface parity (not used by this simulator)")
+    parser.add_argument("--dt",       type=float, default=2.0,
+                        help="Seconds between steps — accepted for interface parity (not used by this simulator)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,

@@ -16,7 +16,7 @@ from web.infrastructure.template_renderer import FlaskTemplateRenderer, PageRend
 from web.presentation import proxy_routes, shell_routes
 from web.presentation.blueprints import (
     admin, apk, cas, dashboard, fire_missions, history, messaging, missions,
-    objectives, opord, reports, streams, strike_packages, tactical_map, tracks,
+    objectives, opord, organisation, reports, streams, strike_packages, tactical_map, tracks,
 )
 
 
@@ -38,7 +38,7 @@ def create_app(
     for module in (
         dashboard, tactical_map, messaging, fire_missions, streams,
         reports, history, objectives, opord, admin, apk, tracks, missions,
-        strike_packages, cas,
+        strike_packages, cas, organisation,
     ):
         app.register_blueprint(module.build_blueprint(service, renderer))
     shell_routes.register(app, service, renderer)

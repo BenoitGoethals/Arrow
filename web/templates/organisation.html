@@ -1,0 +1,728 @@
+{% extends "base.html" %}
+{% block title %}Personnel — Arrow{% endblock %}
+{% block head %}
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<style>
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.org-shell   { display:grid; grid-template-columns:38% 62%; height:calc(100vh - 60px); gap:0; }
+.org-panel   { overflow-y:auto; padding:1.2rem 1.4rem; border-right:1px solid #2a3142; }
+.org-panel:last-child { border-right:0; }
+.panel-hdr   { display:flex; align-items:center; gap:.6rem; margin-bottom:1rem; }
+.panel-hdr h2 { margin:0; font-size:1rem; flex:1; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.btn         { padding:.35rem .8rem; border:0; border-radius:5px; font:inherit; font-size:.82rem; cursor:pointer; }
+.btn-primary { background:#34d399; color:#0d1117; font-weight:600; }
+.btn-primary:hover { background:#6ee7b7; }
+.btn-danger  { background:#ef4444; color:#fff; }
+.btn-danger:hover  { background:#f87171; }
+.btn-ghost   { background:#1f2937; color:#94a3b8; border:1px solid #2a3142; }
+.btn-ghost:hover   { border-color:#475569; color:#e2e8f0; }
+.btn-sm      { padding:.15rem .45rem; font-size:.76rem; }
+.btn-icon    { padding:.15rem .3rem; font-size:.82rem; background:none; border:0; cursor:pointer; color:#475569; }
+.btn-icon:hover { color:#94a3b8; }
+
+/* ── Hierarchy tree ───────────────────────────────────────────────────────── */
+.htree details              { margin-left:1.1rem; }
+.htree summary              { cursor:pointer; padding:.25rem 0; list-style:none; }
+.htree summary::-webkit-details-marker { display:none; }
+.h-row       { display:flex; align-items:center; gap:.4rem; padding:.18rem 0; border-radius:4px; }
+.h-row:hover { background:#1a2233; }
+.h-toggle    { color:#34d399; font-size:.7rem; width:12px; flex-shrink:0; cursor:pointer; }
+.h-icon      { font-size:.8rem; flex-shrink:0; }
+.h-name      { flex:1; font-size:.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.h-name-input { flex:1; font-size:.85rem; background:#0d1117; color:#e2e8f0; border:1px solid #34d399;
+                border-radius:3px; padding:0 .3rem; min-width:0; }
+.h-meta      { font-size:.7rem; color:#475569; white-space:nowrap; }
+.h-actions   { display:none; gap:.2rem; align-items:center; }
+.h-row:hover .h-actions { display:flex; }
+
+/* Team drop zones */
+.team-drop   { margin-left:1.1rem; padding:.15rem .4rem; border-radius:5px;
+               border:1px dashed transparent; transition:all .15s; }
+.team-drop.dragover { background:#1e3a2f; border-color:#34d399; }
+
+/* Operator chips inside tree */
+.op-chip     { display:flex; align-items:center; gap:.35rem; padding:.12rem .4rem;
+               border-radius:4px; font-size:.78rem; cursor:grab; user-select:none;
+               color:#94a3b8; }
+.op-chip:hover  { background:#1a2233; }
+.op-chip.dragging { opacity:.4; }
+.op-dot-on  { width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0; }
+.op-dot-off { width:6px;height:6px;border-radius:50%;background:#475569;flex-shrink:0; }
+
+/* ── Operators panel ──────────────────────────────────────────────────────── */
+.op-search   { background:#0d1117; color:#e2e8f0; border:1px solid #2a3142;
+               border-radius:5px; padding:.35rem .6rem; font:inherit; font-size:.85rem;
+               flex:1; min-width:0; }
+.op-search:focus { outline:none; border-color:#34d399; }
+
+.op-group    { margin-bottom:.8rem; }
+.op-group-hdr { font-size:.68rem; text-transform:uppercase; letter-spacing:.12em;
+                color:#475569; padding:.2rem 0; border-bottom:1px solid #1e2736;
+                margin-bottom:.3rem; }
+.op-row      { display:flex; align-items:center; gap:.4rem; padding:.3rem .5rem;
+               border-radius:5px; cursor:grab; user-select:none;
+               border:1px solid transparent; transition:background .1s; }
+.op-row:hover { background:#1a1f29; border-color:#2a3142; }
+.op-row.dragging { opacity:.35; }
+.drag-handle { color:#475569; font-size:.9rem; flex-shrink:0; cursor:grab; }
+.op-cs       { font-weight:600; font-size:.85rem; flex:1; min-width:60px;
+               white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.op-rank     { font-family:monospace; font-size:.75rem; color:#64748b; width:36px; }
+.badge       { display:inline-block; font-size:.65rem; font-weight:700;
+               padding:1px 5px; border-radius:3px; white-space:nowrap; }
+.badge-adm   { background:#7c2d12; color:#fed7aa; }
+.badge-bc    { background:#1e40af; color:#bfdbfe; }
+.badge-op    { background:#1e293b; color:#94a3b8; }
+.op-actions  { display:none; gap:.2rem; }
+.op-row:hover .op-actions { display:flex; }
+
+/* ── Modals ───────────────────────────────────────────────────────────────── */
+.modal-bg    { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65);
+               z-index:1000; align-items:center; justify-content:center; }
+.modal-bg.open { display:flex; }
+.modal       { background:#161b25; border:1px solid #2a3142; border-radius:10px;
+               padding:1.4rem; width:460px; max-width:96vw; max-height:90vh; overflow-y:auto; }
+.modal h3    { margin:0 0 1rem; font-size:1rem; }
+.field       { display:flex; flex-direction:column; gap:.25rem; margin-bottom:.85rem; }
+.field label { font-size:.76rem; color:#94a3b8; }
+.field input, .field select { background:#0d1117; color:#e2e8f0; border:1px solid #2a3142;
+               border-radius:5px; padding:.4rem .55rem; font:inherit; font-size:.86rem; }
+.field input:focus, .field select:focus { outline:none; border-color:#34d399; }
+.field .hint { font-size:.7rem; color:#475569; }
+.modal-footer { display:flex; gap:.6rem; justify-content:flex-end; margin-top:1.1rem; }
+.form-error  { color:#ef4444; font-size:.78rem; margin-top:.3rem; }
+
+/* Import preview table */
+.preview-table { width:100%; border-collapse:collapse; font-size:.78rem; margin-top:.7rem;
+                 max-height:240px; overflow-y:auto; display:block; }
+.preview-table th { text-align:left; color:#64748b; padding:.3rem .5rem;
+                    border-bottom:1px solid #2a3142; white-space:nowrap; }
+.preview-table td { padding:.25rem .5rem; border-bottom:1px solid #1e2736; }
+.import-status { font-size:.8rem; padding:.5rem; border-radius:5px; margin-top:.6rem; }
+.import-ok   { background:#166534; color:#86efac; }
+.import-err  { background:#7f1d1d; color:#fca5a5; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="org-shell">
+
+  <!-- ═══════════════ LEFT: HIERARCHY TREE ═══════════════════════════════ -->
+  <div class="org-panel" id="tree-panel">
+    <div class="panel-hdr">
+      <h2>🏛 Hierarchy</h2>
+      <button class="btn btn-ghost btn-sm" onclick="openImportModal('hierarchy')" title="Import from Excel">⬆ Import</button>
+      <button class="btn btn-ghost btn-sm" onclick="downloadTemplate('hierarchy')" title="Download Excel template">⬇ Template</button>
+      <button class="btn btn-primary btn-sm" onclick="addNode('company',null,'')">+ Company</button>
+    </div>
+    <div id="htree-root" class="htree"></div>
+  </div>
+
+  <!-- ═══════════════ RIGHT: OPERATORS ══════════════════════════════════ -->
+  <div class="org-panel">
+    <div class="panel-hdr">
+      <h2>👥 Operators</h2>
+      <input class="op-search" id="op-search" placeholder="Search callsign…" oninput="renderOps()"/>
+      <button class="btn btn-ghost btn-sm" onclick="openImportModal('operators')" title="Import from Excel">⬆ Import</button>
+      <button class="btn btn-ghost btn-sm" onclick="downloadTemplate('operators')" title="Download Excel template">⬇ Template</button>
+      <button class="btn btn-primary btn-sm" onclick="openCreateOp()">+ New</button>
+    </div>
+    <div id="ops-root"></div>
+  </div>
+
+</div>
+
+<!-- ── New / Edit Operator modal ────────────────────────────────────────── -->
+<div class="modal-bg" id="modal-op">
+  <div class="modal">
+    <h3 id="modal-op-title">Operator</h3>
+    <input type="hidden" id="op-id"/>
+    <div class="field" id="field-callsign">
+      <label>Callsign *</label>
+      <input id="op-callsign" placeholder="e.g. BRAVO-42"/>
+    </div>
+    <div class="field" id="field-password">
+      <label id="lbl-password">Password *</label>
+      <input id="op-password" type="password" placeholder="min 8 chars"/>
+      <span class="hint" id="hint-password"></span>
+    </div>
+    <div class="field">
+      <label>Rank</label>
+      <select id="op-rank">
+        {% for r in ['OR-1','OR-2','OR-3','OR-4','OR-5','OR-6','OR-7','OR-8','OF-1','OF-2','OF-3','OF-4','OF-5'] %}
+        <option>{{ r }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Role</label>
+      <select id="op-role">
+        <option value="OPERATOR">OPERATOR</option>
+        <option value="BATTLE_CAPTAIN">BATTLE_CAPTAIN</option>
+        <option value="ADMIN">ADMIN</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Team</label>
+      <select id="op-team"><option value="">— unassigned —</option></select>
+    </div>
+    <div id="op-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-op')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveOp()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Add hierarchy node modal ─────────────────────────────────────────── -->
+<div class="modal-bg" id="modal-node">
+  <div class="modal">
+    <h3 id="modal-node-title">Add</h3>
+    <div class="field"><label>Name *</label><input id="node-name" placeholder="Name"/></div>
+    <div id="node-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-node')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNode()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Import modal ──────────────────────────────────────────────────────── -->
+<div class="modal-bg" id="modal-import">
+  <div class="modal" style="width:560px">
+    <h3 id="import-title">Import from Excel</h3>
+    <div class="field">
+      <label>Excel file (.xlsx or .csv) *</label>
+      <input type="file" id="import-file" accept=".xlsx,.csv,.xls"
+             style="color:#e2e8f0" onchange="previewImport()"/>
+    </div>
+    <div id="import-preview"></div>
+    <div id="import-status"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-import')">Cancel</button>
+      <button class="btn btn-primary" id="import-confirm-btn" style="display:none" onclick="confirmImport()">Import</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const token = localStorage.getItem('arrow_token');
+  if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+  const role = localStorage.getItem('arrow_role') || '';
+  if (role !== 'ADMIN') {
+    document.getElementById('tree-panel').innerHTML =
+      '<p style="color:#ef4444;padding:2rem">ADMIN role required.</p>';
+    return;
+  }
+
+  const missionId = () => localStorage.getItem('arrow_mission_id') || '';
+  const hdr = () => {
+    const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    const mid = missionId();
+    if (mid) h['X-Mission-ID'] = mid;
+    return h;
+  };
+  const api = (p, o = {}) =>
+    fetch(window.ARROW_BACKEND_URL + p, { ...o, headers: { ...hdr(), ...(o.headers || {}) } });
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let companies = [], platoons = [], sections = [], teams = [], operators = [], missions = [];
+
+  async function loadAll() {
+    [companies, platoons, sections, teams, operators, missions] = await Promise.all([
+      api('/companies').then(r => r.ok ? r.json() : []),
+      api('/platoons').then(r  => r.ok ? r.json() : []),
+      api('/sections').then(r  => r.ok ? r.json() : []),
+      api('/teams').then(r     => r.ok ? r.json() : []),
+      api('/operators').then(r => r.ok ? r.json() : []),
+      api('/missions').then(r  => r.ok ? r.json() : []),
+    ]);
+  }
+
+  // ── Utilities ──────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                          .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function openModal(id)  { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // ── Hierarchy tree rendering ───────────────────────────────────────────────
+  function renderTree() {
+    const root = document.getElementById('htree-root');
+    if (!companies.length) {
+      root.innerHTML = '<p style="color:#475569;font-size:.85rem">No companies yet — add one to start.</p>';
+      return;
+    }
+
+    const pltByco  = groupBy(platoons, p => p.company_id);
+    const secByPlt = groupBy(sections, s => s.platoon_id);
+    const tmBySec  = groupBy(teams,    t => t.section_id);
+    const opByTeam = groupBy(operators, o => o.team_id);
+
+    root.innerHTML = companies.map(co => buildCoHtml(co, pltByco, secByPlt, tmBySec, opByTeam)).join('');
+    bindTreeDnD();
+  }
+
+  function buildCoHtml(co, pltByco, secByPlt, tmBySec, opByTeam) {
+    const plts = pltByco[co.id] || [];
+    const opCount = countOpsUnder(co.id, pltByco, secByPlt, tmBySec, opByTeam);
+    return `<details open>
+      <summary>
+        <div class="h-row" data-level="company" data-id="${co.id}">
+          <span class="h-toggle">▾</span>
+          <span class="h-icon">🏢</span>
+          <span class="h-name" id="n-co-${co.id}" ondblclick="startRename('co',${co.id})">${esc(co.name)}</span>
+          <span class="h-meta">${opCount} ops</span>
+          <span class="h-actions">
+            <button class="btn-icon" onclick="addNode('platoon',${co.id},'${esc(co.name)}')" title="Add Platoon">+ plt</button>
+            <button class="btn-icon" onclick="startRename('co',${co.id})" title="Rename">✏</button>
+            <button class="btn-icon" style="color:#ef4444" onclick="delNode('companies',${co.id},'${esc(co.name)}')" title="Delete">×</button>
+          </span>
+        </div>
+      </summary>
+      ${plts.map(p => buildPltHtml(p, secByPlt, tmBySec, opByTeam)).join('')}
+    </details>`;
+  }
+
+  function buildPltHtml(plt, secByPlt, tmBySec, opByTeam) {
+    const secs = secByPlt[plt.id] || [];
+    return `<details open>
+      <summary>
+        <div class="h-row">
+          <span class="h-toggle">▾</span>
+          <span class="h-icon">📋</span>
+          <span class="h-name" ondblclick="startRename('plt',${plt.id})">${esc(plt.name)}</span>
+          <span class="h-actions">
+            <button class="btn-icon" onclick="addNode('section',${plt.id},'${esc(plt.name)}')" title="Add Section">+ sec</button>
+            <button class="btn-icon" onclick="startRename('plt',${plt.id})" title="Rename">✏</button>
+            <button class="btn-icon" style="color:#ef4444" onclick="delNode('platoons',${plt.id},'${esc(plt.name)}')" title="Delete">×</button>
+          </span>
+        </div>
+      </summary>
+      ${secs.map(s => buildSecHtml(s, tmBySec, opByTeam)).join('')}
+    </details>`;
+  }
+
+  function buildSecHtml(sec, tmBySec, opByTeam) {
+    const tms = tmBySec[sec.id] || [];
+    return `<details open>
+      <summary>
+        <div class="h-row">
+          <span class="h-toggle">▾</span>
+          <span class="h-icon">📁</span>
+          <span class="h-name" ondblclick="startRename('sec',${sec.id})">${esc(sec.name)}</span>
+          <span class="h-actions">
+            <button class="btn-icon" onclick="addNode('team',${sec.id},'${esc(sec.name)}')" title="Add Team">+ team</button>
+            <button class="btn-icon" onclick="startRename('sec',${sec.id})" title="Rename">✏</button>
+            <button class="btn-icon" style="color:#ef4444" onclick="delNode('sections',${sec.id},'${esc(sec.name)}')" title="Delete">×</button>
+          </span>
+        </div>
+      </summary>
+      ${tms.map(t => buildTeamHtml(t, opByTeam)).join('')}
+    </details>`;
+  }
+
+  function buildTeamHtml(t, opByTeam) {
+    const ops = opByTeam[t.id] || [];
+    const chips = ops.map(op => `
+      <div class="op-chip" draggable="true" data-op-id="${op.id}" title="${esc(op.callsign)} — drag to reassign">
+        <span class="${op.online ? 'op-dot-on' : 'op-dot-off'}"></span>
+        <span>${esc(op.callsign)}</span>
+        <span style="font-size:.7rem;color:#475569">${esc(op.rank)}</span>
+      </div>`).join('');
+
+    return `<div class="team-drop" data-team-id="${t.id}">
+      <div class="h-row">
+        <span class="h-icon">👥</span>
+        <span class="h-name" ondblclick="startRename('team',${t.id})">${esc(t.name)}</span>
+        <span class="h-meta">${ops.length}</span>
+        <span class="h-actions">
+          <button class="btn-icon" onclick="startRename('team',${t.id})" title="Rename">✏</button>
+          <button class="btn-icon" style="color:#ef4444" onclick="delNode('teams',${t.id},'${esc(t.name)}')" title="Delete">×</button>
+        </span>
+      </div>
+      <div class="tree-ops">${chips}</div>
+    </div>`;
+  }
+
+  function countOpsUnder(coId, pltByco, secByPlt, tmBySec, opByTeam) {
+    let n = 0;
+    for (const p of pltByco[coId] || [])
+      for (const s of secByPlt[p.id] || [])
+        for (const t of tmBySec[s.id] || [])
+          n += (opByTeam[t.id] || []).length;
+    return n;
+  }
+
+  function groupBy(arr, fn) {
+    const m = {};
+    for (const x of arr) { const k = fn(x); (m[k] = m[k] || []).push(x); }
+    return m;
+  }
+
+  // ── Drag-and-drop wiring ──────────────────────────────────────────────────
+  function bindTreeDnD() {
+    // Chips in tree → drag from tree
+    document.querySelectorAll('.op-chip[data-op-id]').forEach(chip => {
+      chip.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('opId', chip.dataset.opId);
+        chip.classList.add('dragging');
+      });
+      chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+    });
+
+    // Team drop zones
+    document.querySelectorAll('.team-drop[data-team-id]').forEach(zone => {
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+      zone.addEventListener('drop', async e => {
+        e.preventDefault(); zone.classList.remove('dragover');
+        const opId = e.dataTransfer.getData('opId');
+        if (!opId) return;
+        await api(`/operators/${opId}`, { method:'PATCH',
+          body: JSON.stringify({ team_id: parseInt(zone.dataset.teamId) }) });
+        await loadAll(); renderTree(); renderOps();
+      });
+    });
+  }
+
+  // ── Inline rename ─────────────────────────────────────────────────────────
+  const pathMap = { co:'companies', plt:'platoons', sec:'sections', team:'teams' };
+
+  window.startRename = function(kind, id) {
+    // Find the h-name span
+    const spanId = `n-${kind}-${id}`;
+    let nameSpan = document.getElementById(spanId);
+    // Fall back: find via dataset
+    if (!nameSpan) {
+      nameSpan = document.querySelector(`.h-row [ondblclick*="startRename('${kind}',${id})"]`);
+    }
+    if (!nameSpan) return;
+    const currentName = nameSpan.textContent;
+    const inp = document.createElement('input');
+    inp.className = 'h-name-input';
+    inp.value = currentName;
+    nameSpan.replaceWith(inp);
+    inp.focus(); inp.select();
+
+    const commit = async () => {
+      const newName = inp.value.trim();
+      if (!newName || newName === currentName) { inp.replaceWith(nameSpan); return; }
+      const r = await api(`/${pathMap[kind]}/${id}`, { method:'PATCH', body: JSON.stringify({ name: newName }) });
+      if (r.ok) { await loadAll(); renderTree(); }
+      else       { inp.replaceWith(nameSpan); }
+    };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') inp.replaceWith(nameSpan); });
+    inp.addEventListener('blur', commit);
+  };
+
+  // ── Add / delete hierarchy nodes ──────────────────────────────────────────
+  let _nodeType = '', _nodeParentId = null;
+  window.addNode = function(type, parentId, parentName) {
+    _nodeType = type; _nodeParentId = parentId;
+    const titles = { company:'Add Company', platoon:`Add Platoon to ${parentName}`,
+                     section:`Add Section to ${parentName}`, team:`Add Team to ${parentName}` };
+    document.getElementById('modal-node-title').textContent = titles[type];
+    document.getElementById('node-name').value = '';
+    document.getElementById('node-err').textContent = '';
+    openModal('modal-node');
+  };
+
+  window.saveNode = async function() {
+    const name  = document.getElementById('node-name').value.trim();
+    const errEl = document.getElementById('node-err');
+    if (!name) { errEl.textContent = 'Name is required.'; return; }
+    const bodies = { company:{name}, platoon:{name,company_id:_nodeParentId},
+                     section:{name,platoon_id:_nodeParentId}, team:{name,section_id:_nodeParentId} };
+    const paths  = { company:'companies', platoon:'platoons', section:'sections', team:'teams' };
+    const r = await api(`/${paths[_nodeType]}`, { method:'POST', body: JSON.stringify(bodies[_nodeType]) });
+    if (!r.ok) { errEl.textContent = `Failed: ${r.status} ${await r.text()}`; return; }
+    closeModal('modal-node');
+    await loadAll(); renderTree(); renderOps();
+  };
+
+  window.delNode = async function(path, id, name) {
+    if (!confirm(`Delete "${name}"? All children will be deleted too.`)) return;
+    await api(`/${path}/${id}`, { method:'DELETE' });
+    await loadAll(); renderTree(); renderOps();
+  };
+
+  // ── Operator panel rendering ──────────────────────────────────────────────
+  function renderOps() {
+    const root   = document.getElementById('ops-root');
+    const q      = (document.getElementById('op-search').value || '').toLowerCase();
+    const teamMap = Object.fromEntries(teams.map(t => [t.id, t.name]));
+
+    // Build path labels: team_id → "Company / Platoon / Section / Team"
+    const pathLabel = buildTeamPathLabels();
+
+    let filtered = operators.filter(op =>
+      !q || op.callsign.toLowerCase().includes(q) || (op.rank||'').toLowerCase().includes(q)
+    );
+
+    // Group: unassigned first, then by team_id
+    const unassigned = filtered.filter(o => !o.team_id);
+    const byTeam = groupBy(filtered.filter(o => o.team_id), o => o.team_id);
+
+    let html = '';
+
+    if (unassigned.length) {
+      html += `<div class="op-group">
+        <div class="op-group-hdr" style="color:#f59e0b">⚠ Unassigned (${unassigned.length})</div>
+        ${unassigned.map(op => opRowHtml(op, '')).join('')}
+      </div>`;
+    }
+
+    for (const [teamId, ops] of Object.entries(byTeam)) {
+      const label = pathLabel[teamId] || teamMap[teamId] || `Team #${teamId}`;
+      html += `<div class="op-group">
+        <div class="op-group-hdr">${esc(label)} (${ops.length})</div>
+        ${ops.map(op => opRowHtml(op, teamId)).join('')}
+      </div>`;
+    }
+
+    if (!html) html = `<p style="color:#475569;font-size:.85rem;padding:.5rem">No operators${q ? ' matching "'+esc(q)+'"' : ''}.</p>`;
+    root.innerHTML = html;
+    bindOpsDnD();
+  }
+
+  function opRowHtml(op, teamId) {
+    const badge = op.role==='ADMIN' ? 'badge-adm' : op.role==='BATTLE_CAPTAIN' ? 'badge-bc' : 'badge-op';
+    const dot   = `<span class="${op.online?'op-dot-on':'op-dot-off'}"></span>`;
+    return `<div class="op-row" draggable="true" data-op-id="${op.id}">
+      <span class="drag-handle" title="Drag to assign">⋮⋮</span>
+      ${dot}
+      <span class="op-cs">${esc(op.callsign)}</span>
+      <span class="op-rank">${esc(op.rank)}</span>
+      <span class="badge ${badge}">${op.role==='BATTLE_CAPTAIN'?'BC':op.role}</span>
+      <span class="op-actions">
+        <button class="btn btn-ghost btn-sm" onclick='openEditOp(${JSON.stringify(op)})'>Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteOp(${op.id},'${esc(op.callsign)}')">×</button>
+      </span>
+    </div>`;
+  }
+
+  function bindOpsDnD() {
+    document.querySelectorAll('.op-row[data-op-id]').forEach(row => {
+      row.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('opId', row.dataset.opId);
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    });
+  }
+
+  function buildTeamPathLabels() {
+    const coMap  = Object.fromEntries(companies.map(c => [c.id, c.name]));
+    const pltMap = Object.fromEntries(platoons.map(p => [p.id, p]));
+    const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
+    const result = {};
+    for (const t of teams) {
+      const sec = secMap[t.section_id];
+      const plt = sec ? pltMap[sec.platoon_id] : null;
+      const co  = plt ? coMap[plt.company_id] : null;
+      result[t.id] = [co, plt?.name, sec?.name, t.name].filter(Boolean).join(' › ');
+    }
+    return result;
+  }
+
+  // ── Operator CRUD ──────────────────────────────────────────────────────────
+  window.openCreateOp = function() {
+    document.getElementById('op-id').value = '';
+    document.getElementById('modal-op-title').textContent = '➕ New Operator';
+    document.getElementById('op-callsign').value = '';
+    document.getElementById('op-callsign').disabled = false;
+    document.getElementById('field-callsign').style.display = '';
+    document.getElementById('op-password').value = '';
+    document.getElementById('lbl-password').textContent = 'Password *';
+    document.getElementById('hint-password').textContent = '';
+    document.getElementById('op-rank').value = 'OR-3';
+    document.getElementById('op-role').value = 'OPERATOR';
+    populateTeamSelect(null);
+    document.getElementById('op-err').textContent = '';
+    openModal('modal-op');
+  };
+
+  window.openEditOp = function(op) {
+    document.getElementById('op-id').value = op.id;
+    document.getElementById('modal-op-title').textContent = `✏️ Edit: ${op.callsign}`;
+    document.getElementById('field-callsign').style.display = 'none';
+    document.getElementById('op-password').value = '';
+    document.getElementById('lbl-password').textContent = 'New password';
+    document.getElementById('hint-password').textContent = 'Leave blank to keep current password.';
+    document.getElementById('op-rank').value = op.rank;
+    document.getElementById('op-role').value = op.role;
+    populateTeamSelect(op.team_id);
+    document.getElementById('op-err').textContent = '';
+    openModal('modal-op');
+  };
+
+  function populateTeamSelect(selectedTeamId) {
+    const sel = document.getElementById('op-team');
+    sel.innerHTML = '<option value="">— unassigned —</option>' +
+      teams.map(t => `<option value="${t.id}" ${t.id == selectedTeamId ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  }
+
+  window.saveOp = async function() {
+    const id    = document.getElementById('op-id').value;
+    const errEl = document.getElementById('op-err');
+    const pwd   = document.getElementById('op-password').value;
+    const teamVal = document.getElementById('op-team').value;
+    const body  = {
+      rank:    document.getElementById('op-rank').value,
+      role:    document.getElementById('op-role').value,
+      team_id: teamVal ? parseInt(teamVal) : null,
+    };
+    errEl.textContent = '';
+
+    if (!id) {
+      // Create
+      const callsign = document.getElementById('op-callsign').value.trim();
+      if (!callsign || !pwd) { errEl.textContent = 'Callsign and password are required.'; return; }
+      const r = await api('/auth/register/admin', { method:'POST',
+        body: JSON.stringify({ callsign, password: pwd, rank: body.rank, role: body.role, team_id: body.team_id }) });
+      if (!r.ok) { errEl.textContent = `Error ${r.status}: ${await r.text()}`; return; }
+    } else {
+      // Update
+      const r = await api(`/operators/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+      if (!r.ok) { errEl.textContent = `Save failed: ${r.status}`; return; }
+      if (pwd) {
+        const rp = await api(`/operators/${id}/set-password`, { method:'POST', body: JSON.stringify({ password: pwd }) });
+        if (!rp.ok) { errEl.textContent = `Password update failed: ${rp.status}`; return; }
+      }
+    }
+    closeModal('modal-op');
+    await loadAll(); renderTree(); renderOps();
+  };
+
+  window.deleteOp = async function(id, callsign) {
+    if (!confirm(`Delete operator "${callsign}"? This cannot be undone.`)) return;
+    await api(`/operators/${id}`, { method:'DELETE' });
+    await loadAll(); renderTree(); renderOps();
+  };
+
+  // ── Excel import ───────────────────────────────────────────────────────────
+  let _importKind = 'hierarchy';
+  let _importRows = [];
+
+  window.openImportModal = function(kind) {
+    _importKind = kind;
+    document.getElementById('import-title').textContent =
+      kind === 'hierarchy' ? '⬆ Import Hierarchy' : '⬆ Import Operators';
+    document.getElementById('import-file').value = '';
+    document.getElementById('import-preview').innerHTML = '';
+    document.getElementById('import-status').innerHTML = '';
+    document.getElementById('import-confirm-btn').style.display = 'none';
+    _importRows = [];
+    openModal('modal-import');
+  };
+
+  window.previewImport = function() {
+    const file = document.getElementById('import-file').files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type: 'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      _importRows = raw;
+      if (!raw.length) {
+        document.getElementById('import-preview').innerHTML =
+          '<p style="color:#f59e0b;font-size:.82rem">No data rows found.</p>';
+        return;
+      }
+
+      const cols = Object.keys(raw[0]);
+      const preview = raw.slice(0, 8);
+      const tableHtml = `<table class="preview-table">
+        <thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${preview.map(row =>
+          `<tr>${cols.map(c => `<td>${esc(row[c])}</td>`).join('')}</tr>`
+        ).join('')}</tbody>
+      </table>
+      <p style="font-size:.75rem;color:#64748b;margin-top:.4rem">${raw.length} rows total${raw.length>8?' (showing first 8)':''}.</p>`;
+      document.getElementById('import-preview').innerHTML = tableHtml;
+      document.getElementById('import-confirm-btn').style.display = '';
+      document.getElementById('import-status').innerHTML = '';
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  window.confirmImport = async function() {
+    const statusEl = document.getElementById('import-status');
+    statusEl.innerHTML = '<span style="color:#94a3b8;font-size:.82rem">Importing…</span>';
+    document.getElementById('import-confirm-btn').disabled = true;
+
+    let body, path;
+    if (_importKind === 'hierarchy') {
+      // Map rows to {company, platoon, section, team}
+      const rows = _importRows.map(r => ({
+        company: String(r.Company || r.company || '').trim(),
+        platoon: String(r.Platoon || r.platoon || '').trim(),
+        section: String(r.Section || r.section || '').trim(),
+        team:    String(r.Team    || r.team    || '').trim(),
+      })).filter(r => r.company && r.platoon && r.section && r.team);
+      body = { rows };
+      path = '/import/hierarchy';
+    } else {
+      const rows = _importRows.map(r => ({
+        callsign: String(r.Callsign || r.callsign || '').trim(),
+        password: String(r.Password || r.password || 'changeme').trim(),
+        rank:     String(r.Rank     || r.rank     || 'OR-1').trim(),
+        role:     String(r.Role     || r.role     || 'OPERATOR').trim().toUpperCase(),
+        team:     String(r.Team     || r.team     || '').trim() || null,
+      })).filter(r => r.callsign);
+      body = { rows };
+      path = '/import/operators';
+    }
+
+    const r = await api(path, { method:'POST', body: JSON.stringify(body) });
+    document.getElementById('import-confirm-btn').disabled = false;
+    if (r.ok) {
+      const result = await r.json();
+      const msg = _importKind === 'hierarchy'
+        ? `✓ Done — ${result.created} nodes created, ${result.total_rows} rows processed.`
+        : `✓ Done — ${result.created} created, ${result.updated} updated.`;
+      statusEl.innerHTML = `<div class="import-status import-ok">${msg}</div>`;
+      await loadAll(); renderTree(); renderOps();
+    } else {
+      const txt = await r.text();
+      statusEl.innerHTML = `<div class="import-status import-err">Error ${r.status}: ${esc(txt)}</div>`;
+    }
+  };
+
+  window.downloadTemplate = function(kind) {
+    let headers, example;
+    if (kind === 'hierarchy') {
+      headers = ['Company', 'Platoon', 'Section', 'Team'];
+      example = [
+        ['Alpha Company', '1st Platoon', 'HQ Section', 'HQ Team'],
+        ['Alpha Company', '1st Platoon', 'HQ Section', 'Assault Team'],
+        ['Alpha Company', '2nd Platoon', 'Support Section', 'Weapons Team'],
+      ];
+    } else {
+      headers = ['Callsign', 'Password', 'Rank', 'Role', 'Team'];
+      example = [
+        ['ALPHA-6', 'password123', 'OF-2', 'BATTLE_CAPTAIN', 'HQ Team'],
+        ['BRAVO-1', 'password123', 'OR-5', 'OPERATOR', 'Assault Team'],
+        ['CHARLIE-3', 'password123', 'OR-3', 'OPERATOR', ''],
+      ];
+    }
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...example]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Import');
+    XLSX.writeFile(wb, `arrow_${kind}_template.xlsx`);
+  };
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  loadAll().then(() => { renderTree(); renderOps(); });
+
+})();
+</script>
+{% endblock %}

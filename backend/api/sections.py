@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import SectionIn, SectionOut
+from backend.api.schemas import CompanyIn, SectionIn, SectionOut
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage.database import get_db
 from backend.storage.models import Operator, Section
@@ -41,3 +41,19 @@ def delete_section(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     db.delete(s)
     db.commit()
+
+
+@router.patch("/{section_id}", response_model=SectionOut)
+def update_section(
+    section_id: int,
+    payload: CompanyIn,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_role("ADMIN")),
+) -> Section:
+    s = db.get(Section, section_id)
+    if not s:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    s.name = payload.name
+    db.commit()
+    db.refresh(s)
+    return s

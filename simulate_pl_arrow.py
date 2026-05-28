@@ -25,9 +25,12 @@ WS filter (which drops updates where operator.mission_id != active mission)
 does not silently discard position updates.
 
 Usage
+  uv run python simulate_pl_arrow.py
+  uv run python simulate_pl_arrow.py --backend http://78.21.255.210:6001
   uv run python simulate_pl_arrow.py --speed 20   # recommended: 20x faster
   uv run python simulate_pl_arrow.py --reset       # wipe sim ops first
-  uv run python simulate_pl_arrow.py --backend http://192.168.1.10:6001
+  uv run python simulate_pl_arrow.py --no-move     # plan-only, no GPS sim
+  uv run python simulate_pl_arrow.py --steps 60 --dt 1.5
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ import argparse
 import asyncio
 import logging
 import math
+import os
 import random
 from dataclasses import dataclass, field
 from typing import Optional
@@ -48,14 +52,28 @@ import sim_utils
 # ---------------------------------------------------------------------------
 
 parser = argparse.ArgumentParser(description="PL Arrow -- Dendermonde -> Aalst")
-parser.add_argument("--backend", default="http://localhost:6001")
-parser.add_argument("--speed", type=float, default=1.0,
+parser.add_argument("--backend",
+                    default=(os.environ.get("ARROW_BACKEND_URL")
+                             or sim_utils.load_saved_backend()
+                             or "http://localhost:6001"),
+                    help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, then localhost.")
+parser.add_argument("--speed", type=float, default=None,
                     help="Time multiplier (1=real time, 20=20x faster)")
 parser.add_argument("--reset", action="store_true",
                     help="Delete all sim operators before starting")
 parser.add_argument("--seed-admin", default="benoit")
 parser.add_argument("--seed-admin-password", default="ranger14")
 parser.add_argument("--mission-name", default="Op Dendermonde-Aalst")
+parser.add_argument("--admin",    default=None,
+                    help="Alias for --seed-admin (ADMIN callsign)")
+parser.add_argument("--password", default=None,
+                    help="Alias for --seed-admin-password (ADMIN password)")
+parser.add_argument("--no-move",  action="store_true",
+                    help="Plant OPORD and enemies only, skip the movement simulation")
+parser.add_argument("--steps",    type=int, default=None,
+                    help="Movement steps. If given with --dt, derives speed and limits run duration.")
+parser.add_argument("--dt",       type=float, default=None,
+                    help="Seconds between steps. If given with --steps, derives speed and total duration.")
 ARGS = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO,
@@ -937,6 +955,19 @@ async def run_platoon(client: httpx.AsyncClient,
 async def main() -> None:
     global MISSION_ID
 
+    # Apply --admin/--password aliases
+    if ARGS.admin:
+        ARGS.seed_admin = ARGS.admin
+    if ARGS.password:
+        ARGS.seed_admin_password = ARGS.password
+
+    # Derive speed from --steps/--dt if --speed not explicitly given
+    if ARGS.speed is None:
+        if ARGS.dt is not None:
+            ARGS.speed = UPDATE_S / ARGS.dt
+        else:
+            ARGS.speed = 1.0  # default
+
     all_ops, sections = _build_platoon()
     log.info("=== Op Dendermonde-Aalst -- PL Arrow simulator ===")
     log.info("Backend: %s  |  Operators: %d  |  Speed: %.1fx",
@@ -965,6 +996,10 @@ async def main() -> None:
 
         await login_all(client, all_ops)
 
+        if ARGS.no_move:
+            log.info("plan-only mode: skipping movement loop")
+            return
+
         log.info("=== Simulation running -- Ctrl-C to stop ===")
         try:
             await asyncio.gather(
@@ -978,7 +1013,22 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    _timeout: float | None = (
+        ARGS.steps * ARGS.dt
+        if ARGS.steps is not None and ARGS.dt is not None
+        else None
+    )
+
+    async def _run() -> None:
+        try:
+            if _timeout:
+                await asyncio.wait_for(main(), timeout=_timeout)
+            else:
+                await main()
+        except asyncio.TimeoutError:
+            log.info("steps×dt duration elapsed — simulation complete")
+
     try:
-        asyncio.run(main())
+        asyncio.run(_run())
     except KeyboardInterrupt:
         log.info("Simulator stopped.")
