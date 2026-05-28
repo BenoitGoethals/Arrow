@@ -3605,6 +3605,46 @@
         LOST_COMMS:  '#6366f1',
     };
 
+    // ── LOGREP notification toast ─────────────────────────────────────────────
+    function showLogrepToast(msg, color) {
+        color = color || '#0ea5e9';
+        let wrap = document.getElementById('logrep-toast-wrap');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.id = 'logrep-toast-wrap';
+            wrap.style.cssText = 'position:fixed;top:68px;right:16px;z-index:9999;'
+                + 'display:flex;flex-direction:column;gap:6px;pointer-events:none';
+            document.body.appendChild(wrap);
+        }
+        const card = document.createElement('div');
+        card.style.cssText = `background:#0d1117;border:1px solid ${color};border-radius:6px;`
+            + `padding:8px 14px;color:${color};font-size:.82rem;font-family:monospace;`
+            + `box-shadow:0 4px 18px rgba(0,0,0,.7);pointer-events:auto;cursor:pointer;`
+            + `max-width:320px;word-break:break-word;transition:opacity .4s`;
+        card.textContent = msg;
+        card.title = 'Click to open Reports';
+        card.onclick = () => window.open('/reports/', '_blank');
+        wrap.appendChild(card);
+        setTimeout(() => { card.style.opacity = '0'; setTimeout(() => card.remove(), 450); }, 7000);
+    }
+
+    function handleLogrepArrived(d) {
+        const payload = d.payload || {};
+        const g = payload.section_g || {};
+        const a = payload.section_a || {};
+        const assess = g.assessment || '';
+        const assessColor = {GREEN:'#22c55e', AMBER:'#f59e0b', RED:'#ef4444'}[assess] || '#0ea5e9';
+        const strength = a.present != null ? ` · Str: ${a.present}` : '';
+        showLogrepToast(`📦 LOGREP received${strength}${assess ? ' · ' + assess : ''}`, assessColor);
+        // Desktop notification when page backgrounded
+        if (document.visibilityState !== 'visible' && 'Notification' in window
+            && Notification.permission === 'granted') {
+            new Notification('LOGREP received', {
+                body: `Assessment: ${assess || '?'}${strength}`,
+            });
+        }
+    }
+
     function handleAlertTriggered(d) {
         if (d.latitude == null || d.longitude == null) return;
         // Admin global filter — when alerts are muted, swallow the pulse/zoom.
@@ -3728,6 +3768,13 @@
             } else if (msg.channel === 'report') {
                 loadMapReports();
                 loadCbrnReports();
+                if (msg.event === 'submitted' && msg.data?.type === 'LOGREP') {
+                    handleLogrepArrived(msg.data);
+                } else if (msg.event === 'logrep_routed') {
+                    showLogrepToast(`📦 LOGREP routed → ${(msg.data?.destinations||[]).join(', ')}`, '#0ea5e9');
+                } else if (msg.event === 'logrep_feedback') {
+                    showLogrepToast(`📦 LOGREP feedback from ${msg.data?.destination || '?'} · ${msg.data?.feedback_by || ''}`, '#22c55e');
+                }
             } else if (msg.channel === 'fire-mission') {
                 loadFmMarkers();
                 loadMapFireMissions();

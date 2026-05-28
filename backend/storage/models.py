@@ -539,6 +539,27 @@ class StreamRecording(Base):
     file_path:   Mapped[str]      = mapped_column(String(255))
 
 
+class LogrepRoute(Base):
+    """Routing record for a LOGREP report — tracks which staff branches received
+    it and their feedback.
+
+    Destinations are free-form labels (S1, S2, S3, S4, COY_A, COY_B …) so that
+    any order of battle can be represented without schema changes.
+    Lifecycle: PENDING → ACKNOWLEDGED → FEEDBACK.
+    """
+    __tablename__ = "logrep_routes"
+
+    id:            Mapped[int]           = mapped_column(primary_key=True)
+    report_id:     Mapped[int]           = mapped_column(ForeignKey("reports.id"), index=True)
+    destination:   Mapped[str]           = mapped_column(String(40))   # S1, S2, COY_A …
+    routed_by:     Mapped[int]           = mapped_column(ForeignKey("operators.id"))
+    routed_at:     Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+    status:        Mapped[str]           = mapped_column(String(20), default="PENDING")
+    feedback_text: Mapped[str]           = mapped_column(Text, default="")
+    feedback_by:   Mapped[str]           = mapped_column(String(80), default="")  # callsign
+    feedback_at:   Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class StrikePackage(Base):
     """Composite tactical plan bundling all assets for a kinetic operation.
 

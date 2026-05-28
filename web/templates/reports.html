@@ -174,6 +174,7 @@
             ('CAS',     '#dc2626'),
             ('CONTACT', '#d97706'),
             ('SPOT',    '#7c3aed'),
+            ('LOGREP',  '#0ea5e9'),
         ] %}
         {% for key, color in types %}
         <button class="type-btn{% if loop.first %} active{% endif %}"
@@ -198,6 +199,21 @@
             ☢ Import CBRN file…
         </button>
         <div id="cbrn-import-status" style="font-size:.72rem;color:#94a3b8;margin:.25rem 0 0;min-height:1em"></div>
+
+        <div class="divider"></div>
+        <h3>LOGREP Import</h3>
+        <p style="font-size:.7rem;color:#64748b;margin:.1rem 0 .4rem">
+            Free-form NATO LOGREP text files or CoT XML with embedded
+            <code>&lt;logrep&gt;</code>. Best-effort parsed into sections A–G.
+        </p>
+        <input type="file" id="logrep-file" accept=".txt,.xml,.logrep,text/plain,text/xml" multiple
+               style="display:none" onchange="importLogrep(this.files)">
+        <button class="type-btn" style="background:#1a2233;color:#0ea5e9"
+                onclick="document.getElementById('logrep-file').click()">
+            <span class="type-dot" style="background:#0ea5e9"></span>
+            📦 Import LOGREP file…
+        </button>
+        <div id="logrep-import-status" style="font-size:.72rem;color:#94a3b8;margin:.25rem 0 0;min-height:1em"></div>
 
         <div class="divider"></div>
         <h3>Recent</h3>
@@ -541,13 +557,109 @@
     function typeSubtitle(t) {
         return { MEDEVAC:'Medical Evacuation Request', CASEVAC:'Casualty Evacuation',
                  CAS:'Close Air Support Request', CONTACT:'SALUTE Contact Report',
-                 SPOT:'Spot Report (SALUTE format)' }[t] || '';
+                 SPOT:'Spot Report (SALUTE format)',
+                 LOGREP:'NATO Logistics Report' }[t] || '';
+    }
+
+    // ── LOGREP renderer ─────────────────────────────────────────────
+    function renderLogrep(p, c) {
+        const h  = (s) => escHtml(String(s ?? ''));
+        const lrSection = (letter, title, bodyHtml) => `
+            <div style="margin-bottom:.6rem;border:1px solid #1e2d3d;border-radius:6px;overflow:hidden">
+                <div style="background:#162030;padding:.3rem .6rem;display:flex;align-items:center;gap:.5rem">
+                    <span style="background:${c};color:#fff;font-size:.65rem;font-weight:700;
+                                 padding:1px 6px;border-radius:3px">${letter}</span>
+                    <span style="font-size:.78rem;font-weight:600;color:#cbd5e1">${title}</span>
+                </div>
+                <div style="padding:.45rem .65rem;font-size:.78rem">${bodyHtml}</div>
+            </div>`;
+        const row = (lbl, val) => val != null && val !== ''
+            ? `<div style="display:flex;gap:.5rem;margin:.15rem 0">
+                   <span style="color:#64748b;min-width:130px">${lbl}</span>
+                   <span style="color:#e2e8f0">${h(val)}</span>
+               </div>` : '';
+        const tbl = (headers, rows) => {
+            if (!rows || rows.length === 0) return '<em style="color:#475569">—</em>';
+            return `<table style="width:100%;border-collapse:collapse;font-size:.76rem;margin-top:.2rem">
+                <thead><tr>${headers.map(hd => `<th style="border-bottom:1px solid #1e2d3d;padding:2px 6px;text-align:left;color:#64748b">${hd}</th>`).join('')}</tr></thead>
+                <tbody>${rows.map(cells => `<tr>${cells.map(v => `<td style="padding:2px 6px;border-bottom:1px solid #0f1928;color:#cbd5e1">${h(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+            </table>`;
+        };
+
+        let out = '';
+
+        // Header meta
+        out += `<div style="display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;margin-bottom:.55rem;font-size:.78rem">
+            ${row('DTG', p.dtg)}${row('Period', p.period_from && p.period_to ? `${p.period_from} → ${p.period_to}` : (p.period_from||''))}
+            ${row('Serial', p.serial)}${row('Higher HQ', p.higher_hq)}
+        </div>`;
+
+        // A – PERSTAT
+        const a = p.section_a || {};
+        out += lrSection('A', 'PERSTAT', [
+            row('Authorised', a.authorised), row('Present', a.present),
+            row('KIA', a.kia), row('WIA (evacuated)', a.wia_evacuated),
+            row('WIA (duty)', a.wia_duty), row('Missing', a.missing), row('Sick', a.sick),
+        ].join(''));
+
+        // B – Supply
+        const b = p.section_b || {};
+        const b1 = b.class_i || {};
+        const b3 = b.class_iii || {};
+        const b5rows = (b.class_v || []).map(r => [r.type, r.on_hand, r.consumption]);
+        const b8 = b.class_viii || {};
+        let bHtml = `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.25rem 0 .1rem">Class I — Rations</div>`;
+        bHtml += [row('DOS', b1.dos), row('Ration type', b1.ration_type), row('Water (L)', b1.water_litres)].join('');
+        bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class III — POL</div>`;
+        bHtml += [row('Diesel (L)', b3.diesel_litres), row('Petrol (L)', b3.petrol_litres), row('Avgas (L)', b3.avgas_litres)].join('');
+        bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class V — Ammunition</div>`;
+        bHtml += tbl(['Type', 'On Hand', 'Consumption'], b5rows);
+        bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class VIII — Medical</div>`;
+        bHtml += [row('Morphine auto-injectors', b8.morphine), row('Tourniquets', b8.tourniquets), row('IV bags', b8.iv_bags), row('Shortfalls', b8.shortfalls)].join('');
+        if (b.class_ix_shortfalls) bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class IX — Spare Parts</div>${row('Shortfalls', b.class_ix_shortfalls)}`;
+        out += lrSection('B', 'Supply', bHtml);
+
+        // C – EQPSTAT
+        const erows = (p.section_c || []).map(r => [r.type, r.auth, r.on_hand, r.fmc, r.pmc, r.nmc]);
+        out += lrSection('C', 'EQPSTAT', tbl(['Type','AUTH','OH','FMC','PMC','NMC'], erows));
+
+        // D – Maintenance
+        const d = p.section_d || {};
+        out += lrSection('D', 'Maintenance', [
+            row('Open work orders', d.open_work_orders), row('Deadline equipment', d.deadline_equipment),
+            row('Parts awaiting', d.parts_awaiting),
+        ].join(''));
+
+        // E – Medical
+        const e = p.section_e || {};
+        out += lrSection('E', 'Medical', [
+            row('Evacuations (24h)', e.evacuations_24h),
+            row('Medic operational', e.medic_operational != null ? (e.medic_operational ? 'Yes' : 'No') : null),
+            row('Supplies critical', e.supplies_critical != null ? (e.supplies_critical ? 'Yes' : 'No') : null),
+            row('Note', e.note),
+        ].join(''));
+
+        // F – LOGREQ
+        const freqs = (p.section_f || []).map(r => [r.priority, r.item, r.quantity, r.eta]);
+        out += lrSection('F', 'LOGREQ', tbl(['Priority','Item','Quantity','ETA'], freqs));
+
+        // G – Assessment
+        const g = p.section_g || {};
+        const assessColors = { GREEN:'#22c55e', AMBER:'#f59e0b', RED:'#ef4444' };
+        const ac = assessColors[g.assessment] || c;
+        let gHtml = g.assessment
+            ? `<span style="background:${ac}22;color:${ac};border:1px solid ${ac};border-radius:4px;padding:2px 10px;font-weight:700;font-size:.82rem">${g.assessment}</span>`
+            : '';
+        if (g.remarks) gHtml += `<div style="margin-top:.35rem;color:#94a3b8">${h(g.remarks)}</div>`;
+        out += lrSection('G', 'Assessment', gHtml || '<em style="color:#475569">—</em>');
+
+        return out;
     }
 
     // ── Reports list ────────────────────────────────────────────────
     const TYPE_COLORS = {
         MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626',
-        CONTACT:'#d97706', SPOT:'#7c3aed',
+        CONTACT:'#d97706', SPOT:'#7c3aed', LOGREP:'#0ea5e9',
         CBRN_1:'#fbbf24', CBRN_2:'#fbbf24', CBRN_3:'#f97316',
         CBRN_4:'#fbbf24', CBRN_5:'#ef4444', CBRN_6:'#fbbf24',
     };
@@ -568,7 +680,16 @@
         recent.innerHTML = list.slice(0, 15).map(rep => {
             const c = TYPE_COLORS[rep.type] || '#64748b';
             let preview = '';
-            try { const p = JSON.parse(rep.payload); preview = p.line_1 || ''; } catch(_){}
+            try {
+                const p = JSON.parse(rep.payload);
+                if (rep.type === 'LOGREP') {
+                    const assess = p.section_g?.assessment || '';
+                    const serial = p.serial ? `SER ${p.serial}` : '';
+                    preview = [serial, assess ? `Assess: ${assess}` : ''].filter(Boolean).join(' · ');
+                } else {
+                    preview = p.line_1 || '';
+                }
+            } catch(_){}
             return `<div class="recent-item" style="border-left-color:${c}"
                         onclick="showReportDetail(${rep.id})">
                 <span class="ri-type" style="color:${c}">${rep.type}</span>
@@ -586,12 +707,21 @@
             let line1 = '—', detail = '', foLabel = '—';
             try {
                 const p = JSON.parse(rep.payload);
-                // For CAS use target description or location as the primary summary
-                line1 = isCas
-                    ? (p.line_5_mgrs || p.line_5 || p.line_4 || '—')
-                    : (p.line_1 || '—');
+                // Summary column: varies by type
+                if (rep.type === 'LOGREP') {
+                    const g = p.section_g || {};
+                    const a = p.section_a || {};
+                    line1 = [g.assessment, a.present ? `Strength: ${a.present}` : ''].filter(Boolean).join(' · ') || '—';
+                } else if (isCas) {
+                    line1 = p.line_5_mgrs || p.line_5 || p.line_4 || '—';
+                } else {
+                    line1 = p.line_1 || '—';
+                }
                 if (isCas && p.fo_callsign) foLabel = p.fo_callsign;
 
+                if (rep.type === 'LOGREP') {
+                    detail = renderLogrep(p, c);
+                } else {
                 detail = Object.keys(p)
                     .filter(k => k.startsWith('line_') && p[k] && !k.includes('_lat') && !k.includes('_lon') && !k.includes('_mgrs'))
                     .map(k => {
@@ -603,6 +733,7 @@
                             <span class="dl-val">${escHtml(p[k])}</span>
                         </div>`;
                     }).join('');
+                }
 
                 // CAS: append extra fields
                 if (isCas) {
@@ -641,6 +772,42 @@
                     </div>
                 </div>`;
 
+            // LOGREP routing panel
+            const routingPanel = rep.type === 'LOGREP' ? `
+                <div class="status-panel" style="border-color:#0ea5e9">
+                    <h4 style="color:#0ea5e9">📦 Route LOGREP</h4>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" id="route-dests-${rep.id}">
+                        ${['S1','S2','S3','S4','COY_A','COY_B','COY_C','COY_D'].map(d =>
+                            `<label style="display:flex;align-items:center;gap:3px;font-size:.75rem;cursor:pointer">
+                                <input type="checkbox" name="rdest" value="${d}" style="accent-color:#0ea5e9"> ${d}
+                            </label>`
+                        ).join('')}
+                    </div>
+                    <button class="btn-status" style="background:#0ea5e922;color:#0ea5e9;border-color:#0ea5e9"
+                            onclick="routeLogrep(${rep.id})">→ Route</button>
+                    <span class="status-result" id="route-res-${rep.id}"></span>
+                    <div id="route-status-${rep.id}" style="margin-top:6px"></div>
+                </div>` : '';
+
+            const feedbackPanel = rep.type === 'LOGREP' ? `
+                <div class="status-panel" style="border-color:#22c55e;margin-top:6px">
+                    <h4 style="color:#22c55e">↩ Feedback / Action taken</h4>
+                    <input id="feedback-dest-${rep.id}" placeholder="Destination (e.g. S4)"
+                           style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                                  border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+                    <input id="feedback-by-${rep.id}" placeholder="Your callsign"
+                           style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                                  border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+                    <textarea id="feedback-text-${rep.id}" rows="2"
+                              placeholder="Action taken / feedback…"
+                              style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                                     border-radius:4px;padding:4px 8px;font-size:.78rem;
+                                     width:100%;margin-bottom:4px;resize:vertical"></textarea>
+                    <button class="btn-status" style="background:#22c55e22;color:#22c55e;border-color:#22c55e"
+                            onclick="submitLogrepFeedback(${rep.id})">Submit Feedback</button>
+                    <span class="status-result" id="feedback-res-${rep.id}"></span>
+                </div>` : '';
+
             return `<tr id="rep-row-${rep.id}">
                 <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
                 <td>${ticBadge}</td>
@@ -652,7 +819,7 @@
                     <button onclick="toggleDetail(this)"
                             style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
                     <div class="rep-detail" data-id="${rep.id}">
-                        ${detail}${note}${actionPanel}
+                        ${detail}${note}${actionPanel}${routingPanel}${feedbackPanel}
                     </div>
                 </td>
             </tr>`;
@@ -682,6 +849,10 @@
         const open   = detail.style.display === 'block';
         detail.style.display = open ? 'none' : 'block';
         btn.textContent = open ? '▼' : '▲';
+        if (!open) {
+            const id = parseInt(detail.dataset.id);
+            if (!isNaN(id)) loadLogrepRouting(id);
+        }
     };
 
     window.showReportDetail = function(id) {
@@ -729,6 +900,108 @@
         }
         document.getElementById('cbrn-file').value = '';
     };
+
+    window.importLogrep = async function(fileList) {
+        const status = document.getElementById('logrep-import-status');
+        const files  = Array.from(fileList || []);
+        if (!files.length) return;
+        status.style.color = '#94a3b8';
+        status.textContent = `Uploading ${files.length} file(s)…`;
+        const form = new FormData();
+        files.forEach(f => form.append('files', f, f.name));
+        let r;
+        try {
+            r = await fetch(window.ARROW_BACKEND_URL + '/reports/logrep/import-text', {
+                method: 'POST', headers, body: form,
+            });
+        } catch (e) {
+            status.textContent = '✗ ' + e.message; status.style.color = '#ef4444'; return;
+        }
+        if (r.ok) {
+            const list = await r.json();
+            status.textContent = `✓ Imported ${list.length} LOGREP(s)`;
+            status.style.color = '#0ea5e9';
+            loadReports();
+        } else {
+            const err = await r.text().catch(() => String(r.status));
+            status.textContent = `✗ Failed (${r.status}): ${err.slice(0,200)}`;
+            status.style.color = '#ef4444';
+        }
+        document.getElementById('logrep-file').value = '';
+    };
+
+    window.routeLogrep = async function(repId) {
+        const wrap   = document.getElementById(`route-dests-${repId}`);
+        const result = document.getElementById(`route-res-${repId}`);
+        const dests  = Array.from(wrap.querySelectorAll('input[name="rdest"]:checked')).map(el => el.value);
+        if (!dests.length) { result.textContent = 'Select at least one destination'; return; }
+        result.textContent = 'Routing…'; result.style.color = '#94a3b8';
+        const r = await api(`/reports/${repId}/routing`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ destinations: dests }),
+        });
+        if (r.ok) {
+            result.textContent = `✓ Routed to ${dests.join(', ')}`;
+            result.style.color = '#0ea5e9';
+            loadLogrepRouting(repId);
+        } else {
+            result.textContent = `✗ Failed (${r.status})`;
+            result.style.color = '#ef4444';
+        }
+    };
+
+    window.submitLogrepFeedback = async function(repId) {
+        const dest    = document.getElementById(`feedback-dest-${repId}`)?.value?.trim().toUpperCase();
+        const by      = document.getElementById(`feedback-by-${repId}`)?.value?.trim();
+        const text    = document.getElementById(`feedback-text-${repId}`)?.value?.trim();
+        const result  = document.getElementById(`feedback-res-${repId}`);
+        if (!dest || !text) { result.textContent = 'Destination and feedback text are required'; return; }
+
+        // Find the route_id for this destination
+        const routesR = await api(`/reports/${repId}/routing`);
+        if (!routesR.ok) { result.textContent = '✗ Cannot load routing'; return; }
+        const routes = await routesR.json();
+        const route  = routes.find(ro => ro.destination === dest);
+        if (!route) { result.textContent = `✗ Destination ${dest} not in routing list — route it first`; return; }
+
+        result.textContent = 'Submitting…'; result.style.color = '#94a3b8';
+        const r = await api(`/reports/${repId}/routing/${route.id}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ feedback_text: text, feedback_by: by }),
+        });
+        if (r.ok) {
+            result.textContent = '✓ Feedback submitted';
+            result.style.color = '#22c55e';
+            loadLogrepRouting(repId);
+        } else {
+            result.textContent = `✗ Failed (${r.status})`;
+            result.style.color = '#ef4444';
+        }
+    };
+
+    async function loadLogrepRouting(repId) {
+        const wrap = document.getElementById(`route-status-${repId}`);
+        if (!wrap) return;
+        const r = await api(`/reports/${repId}/routing`);
+        if (!r.ok) return;
+        const routes = await r.json();
+        const statusColors = { PENDING:'#64748b', ACKNOWLEDGED:'#f59e0b', FEEDBACK:'#22c55e' };
+        wrap.innerHTML = routes.map(ro => {
+            const c = statusColors[ro.status] || '#64748b';
+            const fb = ro.feedback_text
+                ? `<div style="margin-top:2px;font-size:.72rem;color:#94a3b8">
+                       ↩ <strong style="color:${c}">${escHtml(ro.feedback_by||'?')}</strong>: ${escHtml(ro.feedback_text.slice(0,120))}
+                   </div>` : '';
+            return `<div style="border-left:2px solid ${c};padding:.2rem .5rem;margin:.2rem 0;font-size:.75rem">
+                <span style="color:${c};font-weight:700">${escHtml(ro.destination)}</span>
+                <span style="color:#475569;margin-left:6px">${ro.status}</span>
+                <span style="color:#334155;margin-left:6px">${(ro.routed_at||'').slice(11,16)}</span>
+                ${fb}
+            </div>`;
+        }).join('') || '<span style="color:#475569;font-size:.73rem">Not yet routed</span>';
+    }
 
     // ── CAS capacity — sidebar compact view ────────────────────────
     async function loadCasAssets() {

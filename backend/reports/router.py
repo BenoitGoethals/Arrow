@@ -8,19 +8,23 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import DroneSpotIn, ReportIn, ReportOut, ReportUpdate
+from backend.api.schemas import (
+    DroneSpotIn, LogrepRouteFeedbackIn, LogrepRouteIn, LogrepRouteOut,
+    ReportIn, ReportOut, ReportUpdate,
+)
 from backend.audit import log_event
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.missions.dependencies import get_active_mission
 from backend.reports.cbrn import CbrnParseError, parse_cbrn
+from backend.reports.logrep_parser import parse_logrep_cot, parse_logrep_text
 from backend.storage.database import get_db
-from backend.storage.models import Alert, Mission, Operator, Report
+from backend.storage.models import Alert, LogrepRoute, Mission, Operator, Report
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 CBRN_TYPES    = {f"CBRN_{i}" for i in range(1, 7)}
-VALID_TYPES   = {"CONTACT", "SPOT", "CASEVAC", "MEDEVAC", "CAS", "DRONE_SPOT"} | CBRN_TYPES
+VALID_TYPES   = {"CONTACT", "SPOT", "CASEVAC", "MEDEVAC", "CAS", "DRONE_SPOT", "LOGREP"} | CBRN_TYPES
 VALID_STATUSES = {"RECEIVED", "ACKNOWLEDGED", "PROCESSED", "REJECTED"}
 
 
@@ -196,6 +200,196 @@ async def submit_drone_spot(
               resource=f"report:{rep.id}",
               detail=f"drone_type={payload['drone_type']} behavior={payload['behavior']} alert={alert.id}")
     return rep
+
+
+@router.post("/logrep/import-text", response_model=list[ReportOut], status_code=status.HTTP_201_CREATED)
+async def import_logrep_text(
+    files: list[UploadFile] = File(..., description="One or more LOGREP text files"),
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
+) -> list[Report]:
+    """Parse uploaded free-form LOGREP text files (best-effort) and store each as a Report."""
+    created: list[Report] = []
+    errors:  list[str]    = []
+
+    for up in files:
+        raw = (await up.read()).decode("utf-8", errors="replace")
+        # Try CoT XML first, fall back to plain-text parser
+        parsed = parse_logrep_cot(raw)
+        if parsed is None:
+            parsed = parse_logrep_text(raw)
+        parsed["source_file"] = up.filename or "uploaded.logrep"
+
+        rep = Report(
+            type="LOGREP", operator_id=current.id,
+            payload=json.dumps(parsed), status="RECEIVED",
+            mission_id=mission.id if mission else current.mission_id,
+        )
+        db.add(rep); db.commit(); db.refresh(rep)
+
+        await broadcaster.broadcast({
+            "channel": "report", "event": "submitted",
+            "mission_id": rep.mission_id,
+            "data": {
+                "id": rep.id, "type": rep.type, "status": rep.status,
+                "operator_id": rep.operator_id, "payload": parsed,
+            },
+        })
+        created.append(rep)
+
+    if not created and errors:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "; ".join(errors))
+    return created
+
+
+@router.post("/logrep/import-cot", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
+async def import_logrep_cot_endpoint(
+    body: ReportIn,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
+) -> Report:
+    """Accept a raw CoT XML string in body.payload['xml'] and extract an embedded LOGREP."""
+    xml = body.payload.get("xml", "")
+    parsed = parse_logrep_cot(xml) if xml else None
+    if parsed is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "No <logrep> element found in CoT XML")
+
+    rep = Report(
+        type="LOGREP", operator_id=current.id,
+        payload=json.dumps(parsed), status="RECEIVED",
+        mission_id=mission.id if mission else current.mission_id,
+    )
+    db.add(rep); db.commit(); db.refresh(rep)
+    await broadcaster.broadcast({
+        "channel": "report", "event": "submitted",
+        "mission_id": rep.mission_id,
+        "data": {
+            "id": rep.id, "type": "LOGREP", "status": "RECEIVED",
+            "operator_id": rep.operator_id, "payload": parsed,
+        },
+    })
+    return rep
+
+
+@router.get("/{report_id}/routing", response_model=list[LogrepRouteOut])
+def get_logrep_routing(
+    report_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[LogrepRoute]:
+    rep = db.get(Report, report_id)
+    if not rep:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return db.query(LogrepRoute).filter(LogrepRoute.report_id == report_id).all()
+
+
+@router.post("/{report_id}/routing", response_model=list[LogrepRouteOut],
+             status_code=status.HTTP_201_CREATED)
+async def route_logrep(
+    report_id: int,
+    payload:   LogrepRouteIn,
+    db:        Session  = Depends(get_db),
+    current:   Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> list[LogrepRoute]:
+    """Route a LOGREP to one or more staff branches / companies for action."""
+    rep = db.get(Report, report_id)
+    if not rep or rep.type != "LOGREP":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "LOGREP report not found")
+
+    created: list[LogrepRoute] = []
+    for dest in payload.destinations:
+        dest = dest.strip().upper()
+        if not dest:
+            continue
+        existing = db.query(LogrepRoute).filter(
+            LogrepRoute.report_id == report_id,
+            LogrepRoute.destination == dest,
+        ).first()
+        if existing:
+            created.append(existing)
+            continue
+        route = LogrepRoute(
+            report_id=report_id, destination=dest,
+            routed_by=current.id, status="PENDING",
+        )
+        db.add(route)
+        created.append(route)
+
+    db.commit()
+    for r in created:
+        db.refresh(r)
+
+    log_event(db, "LOGREP_ROUTED", operator_id=current.id,
+              resource=f"report:{report_id}",
+              detail=f"destinations:{','.join(payload.destinations)}")
+
+    await broadcaster.broadcast({
+        "channel": "report", "event": "logrep_routed",
+        "data": {
+            "report_id":   report_id,
+            "routed_by":   current.callsign,
+            "destinations": payload.destinations,
+        },
+    })
+    return created
+
+
+@router.post("/{report_id}/routing/{route_id}/feedback",
+             response_model=LogrepRouteOut)
+async def logrep_feedback(
+    report_id: int,
+    route_id:  int,
+    payload:   LogrepRouteFeedbackIn,
+    db:        Session  = Depends(get_db),
+    current:   Operator = Depends(get_current_operator),
+) -> LogrepRoute:
+    """Submit feedback for a routed LOGREP destination."""
+    route = db.get(LogrepRoute, route_id)
+    if not route or route.report_id != report_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    route.feedback_text = payload.feedback_text
+    route.feedback_by   = payload.feedback_by or current.callsign
+    route.feedback_at   = datetime.now(timezone.utc)
+    route.status        = "FEEDBACK"
+    db.commit(); db.refresh(route)
+
+    log_event(db, "LOGREP_FEEDBACK", operator_id=current.id,
+              resource=f"report:{report_id}",
+              detail=f"dest:{route.destination} by:{route.feedback_by}")
+
+    await broadcaster.broadcast({
+        "channel": "report", "event": "logrep_feedback",
+        "data": {
+            "report_id":   report_id,
+            "route_id":    route_id,
+            "destination": route.destination,
+            "feedback_by": route.feedback_by,
+            "status":      route.status,
+        },
+    })
+    return route
+
+
+@router.patch("/{report_id}/routing/{route_id}/acknowledge",
+              response_model=LogrepRouteOut)
+async def acknowledge_logrep_route(
+    report_id: int,
+    route_id:  int,
+    db:        Session  = Depends(get_db),
+    current:   Operator = Depends(get_current_operator),
+) -> LogrepRoute:
+    """Acknowledge receipt of a routed LOGREP."""
+    route = db.get(LogrepRoute, route_id)
+    if not route or route.report_id != report_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if route.status == "PENDING":
+        route.status = "ACKNOWLEDGED"
+        db.commit(); db.refresh(route)
+    return route
 
 
 @router.patch("/{report_id}", response_model=ReportOut)

@@ -169,6 +169,19 @@ def _migrate(conn: object) -> None:
         "  created_at DATETIME,"
         "  updated_at DATETIME"
         ")",
+        # LOGREP routing & feedback — per-report per-destination tracking
+        "CREATE TABLE IF NOT EXISTS logrep_routes ("
+        "  id INTEGER PRIMARY KEY,"
+        "  report_id INTEGER NOT NULL REFERENCES reports(id),"
+        "  destination VARCHAR(40) NOT NULL,"
+        "  routed_by INTEGER REFERENCES operators(id),"
+        "  routed_at DATETIME,"
+        "  status VARCHAR(20) DEFAULT 'PENDING',"
+        "  feedback_text TEXT DEFAULT '',"
+        "  feedback_by VARCHAR(80) DEFAULT '',"
+        "  feedback_at DATETIME"
+        ")",
+        "CREATE INDEX IF NOT EXISTS ix_logrep_routes_report ON logrep_routes(report_id)",
     ]
     for sql in migrations:
         try:

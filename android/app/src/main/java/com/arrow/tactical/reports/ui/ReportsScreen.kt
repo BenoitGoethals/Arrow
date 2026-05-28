@@ -21,9 +21,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.arrow.tactical.auth.ProfileStore
 import com.arrow.tactical.network.ReportDto
 import com.arrow.tactical.reports.ReportRepository
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -84,6 +86,7 @@ private data class ReportTypeDef(
     val label: String,
     val color: Color,
     val lines: List<LineField>,
+    val isLogrep: Boolean = false,
 )
 
 private val REPORT_TYPES = listOf(
@@ -92,6 +95,7 @@ private val REPORT_TYPES = listOf(
     ReportTypeDef("CAS",      "CAS",      Color(0xFFDC2626), CAS_LINES),
     ReportTypeDef("CONTACT",  "CONTACT",  Color(0xFFD97706), CONTACT_LINES),
     ReportTypeDef("SPOT",     "SPOT",     Color(0xFF7C3AED), CONTACT_LINES),
+    ReportTypeDef("LOGREP",   "LOGREP",   Color(0xFF0EA5E9), emptyList(), isLogrep = true),
 )
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -99,8 +103,9 @@ private val REPORT_TYPES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(
-    repo:      ReportRepository,
-    container: com.arrow.tactical.di.AppContainer? = null,
+    repo:         ReportRepository,
+    container:    com.arrow.tactical.di.AppContainer? = null,
+    profileStore: ProfileStore? = null,
     presetLat: Double? = null,
     presetLon: Double? = null,
 ) {
@@ -123,21 +128,48 @@ fun ReportsScreen(
         }
     }
 
-    // Listen for report status updates from the server via WebSocket
+    // Listen for report WS events: status updates, incoming LOGREPs, routing feedback
     LaunchedEffect(Unit) {
         container?.wsClient?.events()?.collect { msg ->
             val channel = msg["channel"]?.toString()?.trim('"')
             val event   = msg["event"]?.toString()?.trim('"')
-            if (channel == "report" && event == "status_updated") {
-                // Refresh list so the new status badge appears immediately
-                repo.list().onSuccess { reports = it }
-                // Notify operator if this is their own report
-                val data   = msg["data"] as? kotlinx.serialization.json.JsonObject
-                val status = data?.get("status")?.toString()?.trim('"') ?: return@collect
-                val note   = data["reviewer_note"]?.toString()?.trim('"') ?: ""
-                val type   = data["type"]?.toString()?.trim('"') ?: "report"
-                val notif  = "$type → $status" + if (note.isNotBlank()) ": $note" else ""
-                snackbarHost.showSnackbar(notif)
+            val data    = msg["data"] as? kotlinx.serialization.json.JsonObject
+            if (channel != "report") return@collect
+
+            when (event) {
+                "status_updated" -> {
+                    repo.list().onSuccess { reports = it }
+                    val st   = data?.get("status")?.toString()?.trim('"') ?: return@collect
+                    val note = data["reviewer_note"]?.toString()?.trim('"') ?: ""
+                    val type = data["type"]?.toString()?.trim('"') ?: "report"
+                    snackbarHost.showSnackbar("$type → $st" + if (note.isNotBlank()) ": $note" else "")
+                }
+                "submitted" -> {
+                    val type = data?.get("type")?.toString()?.trim('"')
+                    if (type == "LOGREP") {
+                        repo.list().onSuccess { reports = it }
+                        val payload = data?.get("payload") as? kotlinx.serialization.json.JsonObject
+                        val sectionG = payload?.get("section_g") as? kotlinx.serialization.json.JsonObject
+                        val assess   = sectionG?.get("assessment")?.toString()?.trim('"') ?: ""
+                        val sectionA = payload?.get("section_a") as? kotlinx.serialization.json.JsonObject
+                        val present  = sectionA?.get("present")?.toString()?.trim('"') ?: ""
+                        val msg2 = "📦 LOGREP received" +
+                            (if (present.isNotBlank()) " · Str: $present" else "") +
+                            (if (assess.isNotBlank()) " · $assess" else "")
+                        snackbarHost.showSnackbar(msg2)
+                    }
+                }
+                "logrep_routed" -> {
+                    val dests = (data?.get("destinations") as? kotlinx.serialization.json.JsonArray)
+                        ?.joinToString(", ") { it.toString().trim('"') } ?: ""
+                    snackbarHost.showSnackbar("📦 LOGREP routed → $dests")
+                }
+                "logrep_feedback" -> {
+                    val dest = data?.get("destination")?.toString()?.trim('"') ?: "?"
+                    val by   = data?.get("feedback_by")?.toString()?.trim('"') ?: ""
+                    repo.list().onSuccess { reports = it }
+                    snackbarHost.showSnackbar("↩ LOGREP feedback from $dest${if (by.isNotBlank()) " · $by" else ""}")
+                }
             }
         }
     }
@@ -176,84 +208,97 @@ fun ReportsScreen(
                 }
             }
 
-            // ── Form / collapse toggle ────────────────────────────────────
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${selectedType.label} — 9-Liner",
-                        style      = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color      = selectedType.color,
-                        modifier   = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = { showForm = !showForm }) {
-                        Icon(
-                            if (showForm) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = if (showForm) "Collapse" else "Expand",
-                        )
-                    }
-                }
-                HorizontalDivider(color = selectedType.color.copy(alpha = 0.4f))
-            }
-
-            // ── 9 line fields ─────────────────────────────────────────────
-            if (showForm) {
-                items(selectedType.lines) { field ->
-                    NineLineField(
-                        field    = field,
-                        value    = values[field.number - 1],
-                        onChange = { v ->
-                            values = values.toMutableList().also { it[field.number - 1] = v }
-                        },
-                        accentColor = selectedType.color,
-                    )
-                }
-
-                // Submit
+            // ── LOGREP — full multi-section form ─────────────────────────
+            if (selectedType.isLogrep) {
                 item {
-                    Spacer(Modifier.height(4.dp))
-                    Button(
-                        enabled  = !submitting,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors   = ButtonDefaults.buttonColors(
-                            containerColor = selectedType.color,
-                        ),
-                        onClick = {
-                            submitting = true
-                            statusMsg  = null
-                            scope.launch {
-                                val payload = buildJsonObject {
-                                    selectedType.lines.forEachIndexed { i, f ->
-                                        put("line_${f.number}", JsonPrimitive(values[i]))
-                                        put("label_${f.number}", JsonPrimitive(f.label))
-                                    }
-                                }
-                                repo.submit(selectedType.key, payload)
-                                    .onSuccess {
-                                        statusMsg = "✓ ${selectedType.label} report submitted"
-                                        values = List(9) { "" }
-                                        repo.list().onSuccess { reports = it }
-                                    }
-                                    .onFailure { statusMsg = "✗ ${it.message}" }
-                                submitting = false
-                            }
+                    LogrepForm(
+                        repo         = repo,
+                        profileStore = profileStore ?: container?.profileStore,
+                        onSubmitted  = {
+                            scope.launch { repo.list().onSuccess { reports = it } }
                         },
+                    )
+                }
+            } else {
+                // ── Form / collapse toggle ────────────────────────────────────
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(if (submitting) "Submitting…" else "Submit ${selectedType.label}")
-                    }
-                    statusMsg?.let {
-                        val isErr = it.startsWith("✗")
                         Text(
-                            it,
-                            color = if (isErr) MaterialTheme.colorScheme.error else selectedType.color,
-                            style = MaterialTheme.typography.bodySmall,
+                            "${selectedType.label} — 9-Liner",
+                            style      = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color      = selectedType.color,
+                            modifier   = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { showForm = !showForm }) {
+                            Icon(
+                                if (showForm) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                contentDescription = if (showForm) "Collapse" else "Expand",
+                            )
+                        }
+                    }
+                    HorizontalDivider(color = selectedType.color.copy(alpha = 0.4f))
+                }
+
+                // ── 9 line fields ─────────────────────────────────────────────
+                if (showForm) {
+                    items(selectedType.lines) { field ->
+                        NineLineField(
+                            field    = field,
+                            value    = values[field.number - 1],
+                            onChange = { v ->
+                                values = values.toMutableList().also { it[field.number - 1] = v }
+                            },
+                            accentColor = selectedType.color,
                         )
                     }
+
+                    // Submit
+                    item {
+                        Spacer(Modifier.height(4.dp))
+                        Button(
+                            enabled  = !submitting,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors   = ButtonDefaults.buttonColors(
+                                containerColor = selectedType.color,
+                            ),
+                            onClick = {
+                                submitting = true
+                                statusMsg  = null
+                                scope.launch {
+                                    val payload = buildJsonObject {
+                                        selectedType.lines.forEachIndexed { i, f ->
+                                            put("line_${f.number}", JsonPrimitive(values[i]))
+                                            put("label_${f.number}", JsonPrimitive(f.label))
+                                        }
+                                    }
+                                    repo.submit(selectedType.key, payload)
+                                        .onSuccess {
+                                            statusMsg = "✓ ${selectedType.label} report submitted"
+                                            values = List(9) { "" }
+                                            repo.list().onSuccess { reports = it }
+                                        }
+                                        .onFailure { statusMsg = "✗ ${it.message}" }
+                                    submitting = false
+                                }
+                            },
+                        ) {
+                            Text(if (submitting) "Submitting…" else "Submit ${selectedType.label}")
+                        }
+                        statusMsg?.let {
+                            val isErr = it.startsWith("✗")
+                            Text(
+                                it,
+                                color = if (isErr) MaterialTheme.colorScheme.error else selectedType.color,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
                 }
-            }
+            } // end non-LOGREP branch
 
             // ── Recent reports ────────────────────────────────────────────
             if (reports.isNotEmpty()) {
