@@ -43,11 +43,40 @@ data class OperatorDto(
     val rank: String,
     val status: String,
     val role: String,
-    @SerialName("team_id") val teamId: Int? = null,
+    @SerialName("team_id")   val teamId: Int? = null,
+    @SerialName("team_role") val teamRole: String? = null,
+    @SerialName("mission_id") val missionId: Int? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val altitude: Double? = null,
     val online: Boolean = false,   // computed by backend: status=ONLINE + last_seen ≤ 90s
+)
+
+@Serializable
+data class TeamDto(
+    val id: Int,
+    val name: String,
+    @SerialName("section_id") val sectionId: Int,
+)
+
+@Serializable
+data class SectionDto(
+    val id: Int,
+    val name: String,
+    @SerialName("platoon_id") val platoonId: Int,
+)
+
+@Serializable
+data class PlatoonDto(
+    val id: Int,
+    val name: String,
+    @SerialName("company_id") val companyId: Int,
+)
+
+@Serializable
+data class CompanyDto(
+    val id: Int,
+    val name: String,
 )
 
 @Serializable
