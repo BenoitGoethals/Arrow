@@ -101,6 +101,15 @@
     .map-fm-status { font-size: 0.6rem; padding: 1px 4px; border-radius: 2px; margin-left: auto; }
     .map-fm-grid { font-size: 0.7rem; color: #fca5a5; font-family: monospace; }
     .map-fm-desc { font-size: 0.68rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .map-alert { padding: 0.35rem 0.5rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid #dc2626; cursor: pointer; background: #1a0a0a; }
+    .map-alert:hover { background: #2a1010; }
+    .map-alert-type { font-size: 0.65rem; font-weight: 700; }
+    .map-alert-meta { font-size: 0.65rem; color: #475569; }
+    .map-alert-grid { font-size: 0.7rem; color: #fca5a5; font-family: monospace; }
+    .map-msg { padding: 0.35rem 0.45rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid #2563eb; cursor: pointer; }
+    .map-msg:hover { background: #1f2937; }
+    .map-msg-header { font-size: 0.65rem; color: #475569; }
+    .map-msg-body { font-size: 0.72rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
     .sb-section > summary { list-style: none; cursor: pointer; user-select: none;
                             display: flex; align-items: center; gap: 6px; }
@@ -192,6 +201,20 @@
                 <span id="reports-count" class="sb-count">0</span>
             </summary>
             <div id="map-reports"><small style="color:#475569">Loading…</small></div>
+        </details>
+
+        <details class="sb-section" style="margin-top:1rem">
+            <summary><h3 style="display:inline">Alerts</h3>
+                <span id="alerts-count" class="sb-count">0</span>
+            </summary>
+            <div id="map-alerts"><small style="color:#475569">Loading…</small></div>
+        </details>
+
+        <details class="sb-section" style="margin-top:1rem">
+            <summary><h3 style="display:inline">Messages</h3>
+                <span id="msgs-count" class="sb-count">0</span>
+            </summary>
+            <div id="map-messages"><small style="color:#475569">Loading…</small></div>
         </details>
 
         <details class="sb-section" style="margin-top:1rem">
@@ -650,6 +673,8 @@
         loadMapFireMissions();
         loadMapReports();
         loadCbrnReports();
+        loadMapAlerts();
+        loadMapMessages();
         // KML / overlay panels: rebuild the active overlays from the cached
         // entries — when ``visibility.kml_layers`` flips off, every layer
         // group is removed from the map.
@@ -2787,6 +2812,62 @@
         }
     }
 
+    const ALERT_TYPE_COLORS = {
+        TIC: '#dc2626', MEDICAL: '#16a34a', EVAC: '#f59e0b',
+        LOST_COMMS: '#6366f1', DRONE_SPOTTED: '#f97316',
+    };
+
+    async function loadMapAlerts() {
+        const el = document.getElementById('map-alerts');
+        if (!el) return;
+        const cnt = document.getElementById('alerts-count');
+        try {
+            const r = await api('/alerts');
+            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; if (cnt) cnt.textContent = '!'; return; }
+            const list = await r.json();
+            const active = list.filter(a => a.status !== 'ACK');
+            if (cnt) cnt.textContent = active.length;
+            if (!list.length) { el.innerHTML = '<small style="color:#475569">No alerts</small>'; return; }
+            el.innerHTML = list.slice(0, 20).map(a => {
+                const c    = ALERT_TYPE_COLORS[a.type] || '#dc2626';
+                const time = (a.timestamp || '').slice(11, 16);
+                const grid = (a.latitude != null && a.longitude != null) ? toMgrs(a.latitude, a.longitude) : '—';
+                const ack  = a.status === 'ACK' ? ' style="opacity:0.45"' : '';
+                return `<div class="map-alert"${ack} style="border-left-color:${c}"
+                             onclick="map.setView([${a.latitude ?? 0},${a.longitude ?? 0}],16)">
+                    <div><span class="map-alert-type" style="color:${c}">⚠ ${escHtml(a.type)}</span>
+                         <span class="map-alert-meta"> · ${time} · op#${a.operator_id} · ${a.status}</span></div>
+                    <div class="map-alert-grid">${escHtml(grid)}</div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
+    async function loadMapMessages() {
+        const el = document.getElementById('map-messages');
+        if (!el) return;
+        const cnt = document.getElementById('msgs-count');
+        try {
+            const r = await api('/messages');
+            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; if (cnt) cnt.textContent = '!'; return; }
+            const list = await r.json();
+            if (cnt) cnt.textContent = list.length;
+            if (!list.length) { el.innerHTML = '<small style="color:#475569">No messages</small>'; return; }
+            el.innerHTML = list.slice(0, 20).map(m => {
+                const time = (m.timestamp || '').slice(11, 16);
+                const dest = m.group_id ? `grp:${m.group_id}` : (m.receiver_id ? `op#${m.receiver_id}` : 'ALL');
+                return `<div class="map-msg" onclick="window.location='/messaging/'">
+                    <div class="map-msg-header">op#${m.sender_id} → ${dest} · ${time}</div>
+                    <div class="map-msg-body">${escHtml(m.content.slice(0, 80))}</div>
+                </div>`;
+            }).join('');
+        } catch (e) {
+            el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
     // ── Fire mission map markers ──────────────────────────────────────────────
 
     const FM_TYPE_ABBR = {
@@ -3639,8 +3720,11 @@
             } else if (msg.channel === 'alert') {
                 if (msg.event === 'triggered') handleAlertTriggered(msg.data);
                 else if (msg.event === 'ack')  removeAlertLayer(msg.data.id);
+                loadMapAlerts();
             } else if (msg.channel === 'presence') {
                 loadHierarchy();
+            } else if (msg.channel === 'chat') {
+                loadMapMessages();
             } else if (msg.channel === 'report') {
                 loadMapReports();
                 loadCbrnReports();
@@ -3676,6 +3760,7 @@
     function reloadAllMapData() {
         loadHierarchy(); loadEnemies(); loadCotTracks();
         loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
+        loadMapAlerts(); loadMapMessages();
     }
     window.addEventListener('arrow-mission-changed', () => {
         flyToActiveMission();
@@ -3683,11 +3768,13 @@
     });
     flyToActiveMission();
 
-    loadHierarchy(); loadEnemies(); loadCotTracks(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
+    loadHierarchy(); loadEnemies(); loadCotTracks(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages();
     setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);
     setInterval(loadMapReports, 30000);
     setInterval(loadCbrnReports, 30000);
+    setInterval(loadMapAlerts, 20000);
+    setInterval(loadMapMessages, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags
     connectWS();
 })();
