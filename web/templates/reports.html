@@ -287,20 +287,6 @@
                 {% endfor %}
 
                 <div class="divider"></div>
-                <h3>CBRN Import</h3>
-                <p style="font-size:.7rem;color:#64748b;margin:.1rem 0 .4rem">
-                    NATO CBRN 1–6 (STANAG 2103). One or more <code>.txt</code> files.
-                </p>
-                <input type="file" id="cbrn-file" accept=".txt,.cbrn,.msg,text/plain" multiple
-                       style="display:none" onchange="importCbrn(this.files)">
-                <button class="type-btn" style="background:#1a2233;color:#fbbf24"
-                        onclick="document.getElementById('cbrn-file').click()">
-                    <span class="type-dot" style="background:#fbbf24"></span>
-                    ☢ Import CBRN file…
-                </button>
-                <div id="cbrn-import-status" style="font-size:.72rem;color:#94a3b8;margin:.25rem 0 0;min-height:1em"></div>
-
-                <div class="divider"></div>
                 <h3>LOGREP Import</h3>
                 <p style="font-size:.7rem;color:#64748b;margin:.1rem 0 .4rem">
                     Free-form text or CoT XML with <code>&lt;logrep&gt;</code>.
@@ -995,43 +981,6 @@
                 d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
         });
-    };
-
-    // ── CBRN file import ─────────────────────────────────────────────
-    window.importCbrn = async function(fileList) {
-        const status = document.getElementById('cbrn-import-status');
-        const files  = Array.from(fileList || []);
-        if (!files.length) return;
-
-        status.style.color = '#94a3b8';
-        status.textContent = `Uploading ${files.length} file(s)…`;
-
-        const form = new FormData();
-        files.forEach(f => form.append('files', f, f.name));
-
-        let r;
-        try {
-            r = await fetch(window.ARROW_BACKEND_URL + '/reports/cbrn/import', {
-                method: 'POST', headers, body: form,
-            });
-        } catch (e) {
-            status.textContent = '✗ ' + e.message;
-            status.style.color = '#ef4444';
-            return;
-        }
-
-        if (r.ok) {
-            const list = await r.json();
-            const types = list.map(x => x.type).join(', ');
-            status.textContent = `✓ Imported ${list.length} report(s): ${types}`;
-            status.style.color = '#34d399';
-            loadReports();
-        } else {
-            const err = await r.text().catch(() => String(r.status));
-            status.textContent = `✗ Failed (${r.status}): ${err.slice(0,200)}`;
-            status.style.color = '#ef4444';
-        }
-        document.getElementById('cbrn-file').value = '';
     };
 
     window.importLogrep = async function(fileList) {
