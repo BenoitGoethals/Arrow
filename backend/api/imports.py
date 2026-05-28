@@ -38,6 +38,7 @@ class OperatorRow(BaseModel):
     rank: str = "OR-1"
     role: str = "OPERATOR"
     team: str | None = None
+    team_role: str | None = None
 
 
 class OperatorImportBody(BaseModel):
@@ -98,6 +99,8 @@ def import_operators(
             existing.role = row.role
             if team_id is not None:
                 existing.team_id = team_id
+            if row.team_role is not None:
+                existing.team_role = row.team_role
             updated += 1
         else:
             op = Operator(
@@ -106,6 +109,7 @@ def import_operators(
                 rank=row.rank,
                 role=row.role,
                 team_id=team_id,
+                team_role=row.team_role,
                 last_seen=datetime.now(timezone.utc),
             )
             db.add(op)

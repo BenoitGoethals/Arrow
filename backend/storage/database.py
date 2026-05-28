@@ -148,6 +148,8 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE missions ADD COLUMN map_zoom INTEGER DEFAULT 13",
         # Single-device session enforcement
         "ALTER TABLE operators ADD COLUMN session_jti VARCHAR(36)",
+        # Tactical team role (position within team: LEADER, SNIPER, etc.)
+        "ALTER TABLE operators ADD COLUMN team_role VARCHAR(40)",
         # CAS 9-liner: Forward Observer assignment and Troops-In-Contact flag on reports
         "ALTER TABLE reports ADD COLUMN fo_operator_id INTEGER REFERENCES operators(id)",
         "ALTER TABLE reports ADD COLUMN tic BOOLEAN DEFAULT 0",
