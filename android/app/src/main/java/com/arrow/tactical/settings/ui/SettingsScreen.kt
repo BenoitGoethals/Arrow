@@ -6,11 +6,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.arrow.tactical.auth.OperatorProfile
+import com.arrow.tactical.auth.ProfileStore
 import com.arrow.tactical.settings.SettingsRepository
 import kotlinx.coroutines.launch
 
@@ -18,6 +22,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     repo: SettingsRepository,
+    profileStore: ProfileStore,
     isAuthenticated: Boolean,
     onLogin: () -> Unit,
     onLogout: () -> Unit,
@@ -26,12 +31,15 @@ fun SettingsScreen(
     onOpenVisibility: () -> Unit = {},
 ) {
     val server   by repo.serverUrl.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
+    val profile  by profileStore.profile.collectAsState(initial = null)
+
+    // Guest-mode editable identity (only used when not authenticated)
     val callsign by repo.callsign.collectAsState(initial = "")
     val team     by repo.team.collectAsState(initial = "")
-
-    var serverDraft   by remember(server)   { mutableStateOf(server) }
     var callsignDraft by remember(callsign) { mutableStateOf(callsign) }
     var teamDraft     by remember(team)     { mutableStateOf(team) }
+
+    var serverDraft by remember(server) { mutableStateOf(server) }
     var saved by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -47,7 +55,7 @@ fun SettingsScreen(
         ) {
             Spacer(Modifier.height(4.dp))
 
-            // ── Sync status banner ─────────────────────────────────────────
+            // ── Guest mode banner ──────────────────────────────────────────
             if (!isAuthenticated) {
                 Card(
                     colors = CardDefaults.cardColors(
@@ -66,7 +74,7 @@ fun SettingsScreen(
                             Text("Guest mode — local only",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer)
-                            Text("Data is saved on this device. Log in to sync with the server and collaborate with your team.",
+                            Text("Log in to sync with the server and join your team.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
@@ -86,7 +94,7 @@ fun SettingsScreen(
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
             }
 
-            // ── Connection ────────────────────────────────────────────────
+            // ── Connection ─────────────────────────────────────────────────
             Text("Connection", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
 
@@ -99,31 +107,16 @@ fun SettingsScreen(
                 singleLine    = true,
             )
 
-            // ── Identity ──────────────────────────────────────────────────
-            Text("Identity", style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary)
-
-            OutlinedTextField(
-                value         = callsignDraft,
-                onValueChange = { callsignDraft = it; saved = false },
-                label         = { Text("Callsign") },
-                modifier      = Modifier.fillMaxWidth(),
-                singleLine    = true,
-            )
-            OutlinedTextField(
-                value         = teamDraft,
-                onValueChange = { teamDraft = it; saved = false },
-                label         = { Text("Team") },
-                modifier      = Modifier.fillMaxWidth(),
-                singleLine    = true,
-            )
-
-            Spacer(Modifier.height(4.dp))
-
             Button(
-                onClick  = {
+                onClick = {
                     scope.launch {
-                        repo.update(serverUrl = serverDraft, callsign = callsignDraft, team = teamDraft)
+                        if (isAuthenticated) {
+                            repo.update(serverUrl = serverDraft)
+                        } else {
+                            repo.update(serverUrl = serverDraft,
+                                        callsign = callsignDraft,
+                                        team = teamDraft)
+                        }
                         saved = true
                     }
                 },
@@ -132,9 +125,34 @@ fun SettingsScreen(
                 Text(if (saved) "Saved ✓" else "Save settings")
             }
 
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
-            // ── Offline maps ──────────────────────────────────────────────
+            // ── Identity ───────────────────────────────────────────────────
+            if (isAuthenticated && profile != null) {
+                ProfileCard(profile = profile!!)
+            } else if (!isAuthenticated) {
+                Text("Identity", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary)
+
+                OutlinedTextField(
+                    value         = callsignDraft,
+                    onValueChange = { callsignDraft = it; saved = false },
+                    label         = { Text("Callsign") },
+                    modifier      = Modifier.fillMaxWidth(),
+                    singleLine    = true,
+                )
+                OutlinedTextField(
+                    value         = teamDraft,
+                    onValueChange = { teamDraft = it; saved = false },
+                    label         = { Text("Team (guest)") },
+                    modifier      = Modifier.fillMaxWidth(),
+                    singleLine    = true,
+                )
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+            // ── Offline maps ───────────────────────────────────────────────
             Text("Offline base maps", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
             OutlinedButton(onClick = onOpenOfflineMaps, modifier = Modifier.fillMaxWidth()) {
@@ -155,7 +173,7 @@ fun SettingsScreen(
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            // ── Auth action ───────────────────────────────────────────────
+            // ── Auth action ────────────────────────────────────────────────
             if (isAuthenticated) {
                 OutlinedButton(
                     onClick  = onLogout,
@@ -170,5 +188,88 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(16.dp))
         }
+    }
+}
+
+@Composable
+private fun ProfileCard(profile: OperatorProfile) {
+    Text("My Profile", style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Filled.Person, contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp))
+                Column {
+                    Text(profile.callsign,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold)
+                    Text("${profile.rank}  ·  ${profile.role}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            if (profile.teamRole != null) {
+                ProfileRow(
+                    label = "Team role",
+                    value = profile.teamRole.replace('_', ' ')
+                        .lowercase()
+                        .replaceFirstChar { it.uppercase() },
+                )
+            }
+
+            // Hierarchy path: Team · Section · Platoon · Company
+            val hierarchyParts = listOfNotNull(
+                profile.teamName,
+                profile.sectionName,
+                profile.platoonName,
+                profile.companyName,
+            )
+            if (hierarchyParts.isNotEmpty()) {
+                ProfileRow(label = "Unit", value = hierarchyParts.joinToString(" › "))
+            } else if (profile.teamId != null) {
+                ProfileRow(label = "Team ID", value = "#${profile.teamId}")
+            } else {
+                ProfileRow(label = "Unit", value = "Unassigned")
+            }
+
+            if (profile.missionName != null) {
+                ProfileRow(label = "Mission", value = profile.missionName)
+            } else if (profile.missionId != null) {
+                ProfileRow(label = "Mission ID", value = "#${profile.missionId}")
+            } else {
+                ProfileRow(label = "Mission", value = "Not assigned")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium)
     }
 }

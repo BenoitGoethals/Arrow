@@ -371,7 +371,8 @@ private fun MainShell(
             composable(Tab.Admin.route) { AdminScreen(container.logRepository) }
             composable(Tab.Settings.route) {
                 SettingsScreen(
-                    repo = container.settingsRepository,
+                    repo            = container.settingsRepository,
+                    profileStore    = container.profileStore,
                     isAuthenticated = isAuthenticated,
                     onLogin = onNavigateToLogin,
                     onLogout = {

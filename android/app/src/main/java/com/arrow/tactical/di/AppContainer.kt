@@ -6,6 +6,7 @@ import com.arrow.tactical.admin.LogRepository
 import com.arrow.tactical.admin.MapVisibilityRepository
 import com.arrow.tactical.alerts.AlertRepository
 import com.arrow.tactical.auth.AuthRepository
+import com.arrow.tactical.auth.ProfileStore
 import com.arrow.tactical.auth.TokenStore
 import com.arrow.tactical.data.local.AppDatabase
 import com.arrow.tactical.firemission.FireMissionRepository
@@ -41,6 +42,7 @@ class AppContainer(private val context: Context) {
 
     val settingsRepository = SettingsRepository(context)
     val tokenStore = TokenStore(context)
+    val profileStore = ProfileStore(context)
     val apiClient = ApiClient(settingsRepository, tokenStore)
     val wsClient = WsClient(settingsRepository, tokenStore, apiClient.json)
 
@@ -57,7 +59,7 @@ class AppContainer(private val context: Context) {
 
     // ── Domain repositories — all offline-first ────────────────────────────
 
-    val authRepository = AuthRepository(apiClient, tokenStore)
+    val authRepository = AuthRepository(apiClient, tokenStore, profileStore, settingsRepository)
 
     val trackingRepository = TrackingRepository(apiClient, db, tokenStore, connectivity)
 
