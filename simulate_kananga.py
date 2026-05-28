@@ -29,10 +29,11 @@ Coordinates (real)
 
 Run:
   uv run python simulate_kananga.py
-  uv run python simulate_kananga.py --backend http://192.168.0.240:6001
+  uv run python simulate_kananga.py --backend http://78.21.255.210:6001
   uv run python simulate_kananga.py --speed 30      # 30× real time
-  uv run python simulate_kananga.py --no-live        # static plant only
+  uv run python simulate_kananga.py --no-move        # static plant only
   uv run python simulate_kananga.py --reset          # wipe all existing TGs / OPORDs
+  uv run python simulate_kananga.py --steps 60 --dt 1.5
 """
 
 from __future__ import annotations
@@ -68,9 +69,16 @@ parser.add_argument("--reset",    action="store_true",
                     help="Wipe all TGs / enemies / POIs / OPORDs / sim operators first")
 parser.add_argument("--no-live",  action="store_true",
                     help="Plant the static OPORD + tactical objects then exit (no live operators)")
-parser.add_argument("--speed",    type=float, default=2.0,
+parser.add_argument("--no-move",  action="store_true", dest="no_live",
+                    help="Alias for --no-live: plant plan only, skip movement simulation")
+parser.add_argument("--speed",    type=float, default=None,
                     help="Phase time multiplier (default 2 — each phase ≈ 20 s). "
                          "Use 30 for a quick demo (≈ 3 s/phase).")
+parser.add_argument("--steps",    type=int, default=None,
+                    help="Movement steps. If given with --dt, derives speed (speed = TICK_SECONDS / dt) "
+                         "and limits run to steps × dt real seconds.")
+parser.add_argument("--dt",       type=float, default=None,
+                    help="Seconds between steps. If given with --steps, derives speed and total duration.")
 parser.add_argument("--once",     action="store_true",
                     help="Stop after Φ5 (no loop)")
 parser.add_argument("--mission-name", default="Operation Iron Sky",
@@ -1272,8 +1280,30 @@ async def amain() -> None:
 
 
 def main() -> None:
+    # Derive speed from --steps/--dt if --speed not explicitly given
+    if ARGS.speed is None:
+        if ARGS.dt is not None:
+            ARGS.speed = TICK_SECONDS / ARGS.dt
+        else:
+            ARGS.speed = 2.0  # default
+
+    timeout: float | None = (
+        ARGS.steps * ARGS.dt
+        if ARGS.steps is not None and ARGS.dt is not None
+        else None
+    )
+
+    async def _run() -> None:
+        try:
+            if timeout:
+                await asyncio.wait_for(amain(), timeout=timeout)
+            else:
+                await amain()
+        except asyncio.TimeoutError:
+            log.info("steps×dt duration elapsed — simulation complete")
+
     try:
-        asyncio.run(amain())
+        asyncio.run(_run())
     except KeyboardInterrupt:
         log.info("Stopped.")
 

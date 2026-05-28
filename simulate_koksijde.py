@@ -54,6 +54,8 @@ Run:
   uv run python simulate_koksijde.py --speed 4
   uv run python simulate_koksijde.py --no-live
   uv run python simulate_koksijde.py --reset
+  uv run python simulate_koksijde.py --no-move
+  uv run python simulate_koksijde.py --steps 60 --dt 1.5
 """
 
 from __future__ import annotations
@@ -89,10 +91,17 @@ parser.add_argument("--reset",    action="store_true",
                     help="Wipe TGs/enemies/POIs, prior HAMMERHEAD OPORD, overlays, sim operators first")
 parser.add_argument("--no-live",  action="store_true",
                     help="Plant static OPORD + tactical objects then exit")
+parser.add_argument("--no-move",  action="store_true", dest="no_live",
+                    help="Alias for --no-live: plant plan only, skip movement simulation")
 parser.add_argument("--skip-snapshots", action="store_true",
                     help="Don't request server-side OSM-tile snapshots")
-parser.add_argument("--speed",    type=float, default=2.0,
+parser.add_argument("--speed",    type=float, default=None,
                     help="Time multiplier (default 2× → full op ≈ 4 min)")
+parser.add_argument("--steps",    type=int, default=None,
+                    help="Movement steps. If given with --dt, derives speed (speed = TICK_SECONDS / dt) "
+                         "and limits run to steps × dt real seconds.")
+parser.add_argument("--dt",       type=float, default=None,
+                    help="Seconds between steps. If given with --steps, derives speed and total duration.")
 parser.add_argument("--loop",     action="store_true", default=True,
                     help="After Φ9 loop back to Φ1 so the demo keeps running (default on)")
 parser.add_argument("--once",     dest="loop", action="store_false",
@@ -1226,8 +1235,30 @@ async def amain() -> None:
 
 
 def main() -> None:
+    # Derive speed from --steps/--dt if --speed not explicitly given
+    if ARGS.speed is None:
+        if ARGS.dt is not None:
+            ARGS.speed = TICK_SECONDS / ARGS.dt
+        else:
+            ARGS.speed = 2.0  # default
+
+    timeout: float | None = (
+        ARGS.steps * ARGS.dt
+        if ARGS.steps is not None and ARGS.dt is not None
+        else None
+    )
+
+    async def _run() -> None:
+        try:
+            if timeout:
+                await asyncio.wait_for(amain(), timeout=timeout)
+            else:
+                await amain()
+        except asyncio.TimeoutError:
+            log.info("steps×dt duration elapsed — simulation complete")
+
     try:
-        asyncio.run(amain())
+        asyncio.run(_run())
     except KeyboardInterrupt:
         pass
 

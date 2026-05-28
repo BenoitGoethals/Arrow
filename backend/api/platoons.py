@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import PlatoonIn, PlatoonOut
+from backend.api.schemas import CompanyIn, PlatoonIn, PlatoonOut
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage.database import get_db
 from backend.storage.models import Operator, Platoon
@@ -41,3 +41,19 @@ def delete_platoon(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     db.delete(p)
     db.commit()
+
+
+@router.patch("/{platoon_id}", response_model=PlatoonOut)
+def update_platoon(
+    platoon_id: int,
+    payload: CompanyIn,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_role("ADMIN")),
+) -> Platoon:
+    plt = db.get(Platoon, platoon_id)
+    if not plt:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    plt.name = payload.name
+    db.commit()
+    db.refresh(plt)
+    return plt

@@ -21,8 +21,11 @@ Unit structure (same as Dendermonde scenario)
 
 Usage
   uv run python simulate_sluis.py
+  uv run python simulate_sluis.py --backend http://78.21.255.210:6001
   uv run python simulate_sluis.py --backend http://localhost:6001 --speed 4
   uv run python simulate_sluis.py --reset
+  uv run python simulate_sluis.py --no-move    # plan-only, no GPS sim
+  uv run python simulate_sluis.py --steps 60 --dt 1.5
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ import argparse
 import asyncio
 import logging
 import math
+import os
 import random
 from dataclasses import dataclass, field
 from typing import Optional
@@ -42,9 +46,12 @@ import sim_utils
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Arrow Sluis-attack scenario simulator")
-parser.add_argument("--backend", default="http://78.21.255.210:6200/api",
+parser.add_argument("--backend",
+                    default=(os.environ.get("ARROW_BACKEND_URL")
+                             or sim_utils.load_saved_backend()
+                             or "http://78.21.255.210:6200/api"),
                     help="Backend URL (e.g. http://host:6200/api or http://localhost:6001)")
-parser.add_argument("--speed", type=float, default=1.0,
+parser.add_argument("--speed", type=float, default=None,
                     help="Time multiplier (1 = real time, 6 = 6× faster)")
 parser.add_argument("--reset", action="store_true",
                     help="Delete sim operators before starting")
@@ -54,6 +61,16 @@ parser.add_argument("--seed-admin-password", default="ranger14",
                     help="Password for --seed-admin (default: ranger14)")
 parser.add_argument("--mission-name", default="Operation Sluis",
                     help="Mission name to create or adopt (default: Operation Sluis)")
+parser.add_argument("--admin",    default=None,
+                    help="Alias for --seed-admin (ADMIN callsign)")
+parser.add_argument("--password", default=None,
+                    help="Alias for --seed-admin-password (ADMIN password)")
+parser.add_argument("--no-move",  action="store_true",
+                    help="Plant OPORD and enemies only, skip the movement simulation")
+parser.add_argument("--steps",    type=int, default=None,
+                    help="Movement steps. If given with --dt, derives speed and limits run duration.")
+parser.add_argument("--dt",       type=float, default=None,
+                    help="Seconds between steps. If given with --steps, derives speed and total duration.")
 ARGS = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO,
@@ -814,6 +831,19 @@ async def reset_sim(client, all_ops):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 async def main() -> None:
+    # Apply --admin/--password aliases
+    if ARGS.admin:
+        ARGS.seed_admin = ARGS.admin
+    if ARGS.password:
+        ARGS.seed_admin_password = ARGS.password
+
+    # Derive speed from --steps/--dt if --speed not explicitly given
+    if ARGS.speed is None:
+        if ARGS.dt is not None:
+            ARGS.speed = UPDATE_S / ARGS.dt
+        else:
+            ARGS.speed = 1.0  # default
+
     all_ops, sections = _build_sections()
     speed_mult = ARGS.speed
 
@@ -850,6 +880,10 @@ async def main() -> None:
         admin_op = next(o for o in all_ops if o.role == "ADMIN")
         coros.append(run_cbrn(client, admin_op, speed_mult))
 
+        if ARGS.no_move:
+            log.info("plan-only mode: skipping movement loop")
+            return
+
         log.info("=== Operation Sluis running — Ctrl-C to stop ===")
         try:
             await asyncio.gather(*coros)
@@ -858,7 +892,22 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    _timeout: float | None = (
+        ARGS.steps * ARGS.dt
+        if ARGS.steps is not None and ARGS.dt is not None
+        else None
+    )
+
+    async def _run() -> None:
+        try:
+            if _timeout:
+                await asyncio.wait_for(main(), timeout=_timeout)
+            else:
+                await main()
+        except asyncio.TimeoutError:
+            log.info("steps×dt duration elapsed — simulation complete")
+
     try:
-        asyncio.run(main())
+        asyncio.run(_run())
     except KeyboardInterrupt:
         log.info("Simulator stopped.")

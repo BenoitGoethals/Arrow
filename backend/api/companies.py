@@ -41,3 +41,19 @@ def delete_company(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     db.delete(company)
     db.commit()
+
+
+@router.patch("/{company_id}", response_model=CompanyOut)
+def update_company(
+    company_id: int,
+    payload: CompanyIn,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_role("ADMIN")),
+) -> Company:
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    company.name = payload.name
+    db.commit()
+    db.refresh(company)
+    return company
