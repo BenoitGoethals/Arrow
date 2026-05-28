@@ -237,6 +237,28 @@ class ReportOut(ORMModel):
     reviewer_note: str = ""
     fo_operator_id: int | None = None
     tic: bool = False
+    mission_id: int | None = None
+
+
+class LogrepRouteIn(BaseModel):
+    destinations: list[str]   # ["S1", "S2", "COY_A", …]
+
+
+class LogrepRouteFeedbackIn(BaseModel):
+    feedback_text: str
+    feedback_by:   str = ""   # callsign of the responder
+
+
+class LogrepRouteOut(ORMModel):
+    id:            int
+    report_id:     int
+    destination:   str
+    routed_by:     int
+    routed_at:     datetime
+    status:        str
+    feedback_text: str
+    feedback_by:   str
+    feedback_at:   datetime | None
 
 
 class CasNineLinerIn(BaseModel):
