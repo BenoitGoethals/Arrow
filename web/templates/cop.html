@@ -1,0 +1,866 @@
+{% extends "base.html" %}
+{% block title %}COP — Arrow{% endblock %}
+{% block head %}
+<style>
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.cop-wrap     { display:flex; flex-direction:column; height:calc(100vh - 52px); background:#0d1117; color:#e2e8f0; font-size:.875rem; }
+.cop-topbar   { display:flex; align-items:center; gap:10px; padding:8px 14px; background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.cop-topbar h1{ font-size:1rem; font-weight:700; color:#38bdf8; letter-spacing:.06em; margin:0; }
+.cop-tabs     { display:flex; gap:2px; padding:0 14px; background:#0f172a; border-bottom:1px solid #1e293b; flex-shrink:0; overflow-x:auto; }
+.cop-tab      { padding:8px 14px; cursor:pointer; font-size:.8rem; letter-spacing:.05em; border-bottom:2px solid transparent; color:#64748b; white-space:nowrap; transition:color .15s; }
+.cop-tab:hover{ color:#94a3b8; }
+.cop-tab.active{ color:#38bdf8; border-bottom-color:#38bdf8; }
+.cop-body     { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+.cop-panel    { display:none; flex:1; overflow:hidden; flex-direction:column; }
+.cop-panel.active{ display:flex; }
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.cop-toolbar  { display:flex; align-items:center; gap:8px; padding:8px 14px; background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.cop-search   { background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:5px 10px; font-size:.82rem; width:200px; }
+.cop-search::placeholder{ color:#475569; }
+.cop-btn      { background:#1e293b; border:1px solid #334155; color:#e2e8f0; border-radius:4px; padding:5px 12px; font-size:.82rem; cursor:pointer; white-space:nowrap; }
+.cop-btn:hover{ background:#263040; }
+.cop-btn.primary{ background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+.cop-btn.primary:hover{ background:#0284c7; }
+.cop-btn.danger { background:#dc2626; border-color:#dc2626; color:#fff; }
+.cop-btn.danger:hover{ background:#b91c1c; }
+.cop-filter   { background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:5px 8px; font-size:.82rem; }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.cop-scroll   { flex:1; overflow-y:auto; }
+.cop-table    { width:100%; border-collapse:collapse; }
+.cop-table th { position:sticky; top:0; background:#111827; color:#64748b; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid #1e293b; white-space:nowrap; }
+.cop-table td { padding:8px 12px; border-bottom:1px solid #0f172a; vertical-align:top; }
+.cop-table tr:hover td{ background:#0f1a2e; }
+.cop-table tr.expanded td{ background:#0e1828; }
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.badge        { display:inline-block; padding:1px 7px; border-radius:3px; font-size:.72rem; font-weight:700; letter-spacing:.05em; }
+.badge-received   { background:#1e3a5f; color:#60a5fa; }
+.badge-acked      { background:#1a3a2a; color:#34d399; }
+.badge-processed  { background:#1c2a1c; color:#86efac; }
+.badge-rejected   { background:#3a1c1c; color:#f87171; }
+.badge-contact    { background:#78350f33; color:#fcd34d; }
+.badge-spot       { background:#4c1d9533; color:#c4b5fd; }
+.badge-casevac    { background:#1d4ed833; color:#93c5fd; }
+.badge-medevac    { background:#15803d33; color:#86efac; }
+.badge-cas        { background:#dc262633; color:#fca5a5; }
+.badge-logrep     { background:#0369a133; color:#7dd3fc; }
+.badge-cbrn       { background:#92400e33; color:#fcd34d; }
+.badge-doc        { background:#1e293b; color:#94a3b8; }
+.badge-tic        { background:#dc2626; color:#fff; font-size:.68rem; margin-left:4px; }
+
+/* ── Detail expand ───────────────────────────────────────────────────────── */
+.detail-row td { padding:0; }
+.detail-box   { padding:14px 16px; background:#0a1120; border-top:1px solid #1e293b; }
+.detail-grid  { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; margin-bottom:12px; }
+.detail-field { display:flex; flex-direction:column; gap:2px; }
+.detail-label { font-size:.68rem; color:#64748b; letter-spacing:.06em; text-transform:uppercase; }
+.detail-value { font-size:.82rem; color:#e2e8f0; word-break:break-word; }
+.detail-actions{ display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+.detail-note  { background:#1e293b; border:1px solid #2a3142; border-radius:4px; color:#e2e8f0; padding:6px 10px; font-size:.82rem; width:320px; resize:vertical; min-height:56px; }
+
+/* ── Status select ───────────────────────────────────────────────────────── */
+.status-select{ background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:4px 8px; font-size:.82rem; }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.cop-modal-bg  { display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:2000; align-items:center; justify-content:center; }
+.cop-modal-bg.open{ display:flex; }
+.cop-modal     { background:#111827; border:1px solid #2a3142; border-radius:8px; padding:0; width:660px; max-width:95vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,.8); }
+.modal-header  { display:flex; align-items:center; padding:14px 18px; border-bottom:1px solid #1e293b; }
+.modal-header h2{ flex:1; margin:0; font-size:.95rem; color:#38bdf8; }
+.modal-close   { background:none; border:0; color:#64748b; font-size:1.2rem; cursor:pointer; line-height:1; padding:0 4px; }
+.modal-close:hover{ color:#e2e8f0; }
+.modal-body    { flex:1; overflow-y:auto; padding:18px; }
+.modal-footer  { padding:12px 18px; border-top:1px solid #1e293b; display:flex; gap:8px; justify-content:flex-end; }
+.form-field    { margin-bottom:12px; display:flex; flex-direction:column; gap:4px; }
+.form-field label{ font-size:.78rem; color:#94a3b8; letter-spacing:.05em; }
+.form-field input, .form-field select, .form-field textarea{
+    background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:7px 10px; font-size:.85rem; }
+.form-field textarea{ resize:vertical; min-height:80px; }
+.form-2col     { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+.form-error    { color:#f87171; font-size:.8rem; margin-top:4px; }
+
+/* ── Stats chips ─────────────────────────────────────────────────────────── */
+.stat-chip     { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:12px; font-size:.75rem; font-weight:600; background:#1e293b; color:#94a3b8; }
+.stat-chip span{ font-size:.9rem; font-weight:700; color:#e2e8f0; }
+.stat-new      { background:#1e3a5f22; color:#60a5fa; }
+.stat-new span { color:#60a5fa; }
+
+/* ── Document preview ────────────────────────────────────────────────────── */
+.doc-preview   { background:#0a1120; border:1px solid #1e293b; border-radius:4px; padding:10px 14px; font-family:monospace; font-size:.78rem; color:#94a3b8; white-space:pre-wrap; max-height:300px; overflow-y:auto; margin-top:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cop-wrap">
+
+  <!-- Top bar -->
+  <div class="cop-topbar">
+    <h1>🗂 COMMON OPERATIONAL PICTURE</h1>
+    <div id="cop-stats" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    <span style="flex:1"></span>
+    <span id="cop-mission-label" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+
+  <!-- Tabs -->
+  <div class="cop-tabs">
+    <div class="cop-tab active" data-tab="overview">Overview</div>
+    <div class="cop-tab" data-tab="contact">Contact / Spot</div>
+    <div class="cop-tab" data-tab="medevac">CASEVAC / MEDEVAC</div>
+    <div class="cop-tab" data-tab="cas">CAS</div>
+    <div class="cop-tab" data-tab="logrep">LOGREP</div>
+    <div class="cop-tab" data-tab="cbrn">CBRN</div>
+    <div class="cop-tab" data-tab="docs">Documents</div>
+  </div>
+
+  <!-- Panels -->
+  <div class="cop-body">
+
+    <!-- ── Overview ─────────────────────────────────────────────────────── -->
+    <div class="cop-panel active" id="panel-overview">
+      <div class="cop-toolbar">
+        <input class="cop-search" id="ov-search" placeholder="Search all…">
+        <select class="cop-filter" id="ov-status-filter">
+          <option value="">All statuses</option>
+          <option value="RECEIVED">RECEIVED</option>
+          <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+          <option value="PROCESSED">PROCESSED</option>
+          <option value="REJECTED">REJECTED</option>
+        </select>
+        <select class="cop-filter" id="ov-type-filter">
+          <option value="">All types</option>
+          <option value="CONTACT">CONTACT</option>
+          <option value="SPOT">SPOT</option>
+          <option value="CASEVAC">CASEVAC</option>
+          <option value="MEDEVAC">MEDEVAC</option>
+          <option value="CAS">CAS</option>
+          <option value="LOGREP">LOGREP</option>
+          <option value="CBRN">CBRN</option>
+          <option value="DOC">DOCUMENT</option>
+        </select>
+      </div>
+      <div class="cop-scroll">
+        <table class="cop-table">
+          <thead><tr>
+            <th>Type</th><th>DTG</th><th>Summary</th><th>Status</th><th>By</th><th></th>
+          </tr></thead>
+          <tbody id="ov-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Contact / Spot ────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-contact">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="contact" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="contact">
+          <option value="">All statuses</option>
+          <option value="RECEIVED">RECEIVED</option>
+          <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+          <option value="PROCESSED">PROCESSED</option>
+          <option value="REJECTED">REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreateModal('CONTACT')">+ New CONTACT</button>
+        <button class="cop-btn" style="border-color:#7c3aed;color:#c4b5fd" onclick="openCreateModal('SPOT')">+ New SPOT</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>Location</th><th>Activity</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-contact"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── CASEVAC / MEDEVAC ──────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-medevac">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="medevac" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="medevac">
+          <option value="">All statuses</option>
+          <option value="RECEIVED">RECEIVED</option>
+          <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+          <option value="PROCESSED">PROCESSED</option>
+          <option value="REJECTED">REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreateModal('MEDEVAC')">+ New MEDEVAC</button>
+        <button class="cop-btn" style="border-color:#2563eb;color:#93c5fd" onclick="openCreateModal('CASEVAC')">+ New CASEVAC</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>Location</th><th>Patients</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-medevac"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── CAS ───────────────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-cas">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="cas" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="cas">
+          <option value="">All statuses</option>
+          <option value="RECEIVED">RECEIVED</option>
+          <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+          <option value="PROCESSED">PROCESSED</option>
+          <option value="REJECTED">REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreateModal('CAS')">+ New CAS 9-liner</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>TIC</th><th>DTG</th><th>Location</th><th>IP / Heading</th><th>Restrictions</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-cas"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── LOGREP ─────────────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-logrep">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="logrep" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="logrep">
+          <option value="">All statuses</option>
+          <option value="RECEIVED">RECEIVED</option>
+          <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+          <option value="PROCESSED">PROCESSED</option>
+          <option value="REJECTED">REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="location.href='/logrep/'">Open LOGREP →</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Serial</th><th>DTG</th><th>Higher HQ</th><th>Assessment</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-logrep"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── CBRN ───────────────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-cbrn">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="cbrn" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="cbrn">
+          <option value="">All statuses</option>
+          <option value="RECEIVED">RECEIVED</option>
+          <option value="ACKNOWLEDGED">ACKNOWLEDGED</option>
+          <option value="PROCESSED">PROCESSED</option>
+          <option value="REJECTED">REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="location.href='/cbrn/'">Open CBRN →</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>Agent</th><th>Location</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-cbrn"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── Documents ──────────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-docs">
+      <div class="cop-toolbar">
+        <input class="cop-search" id="doc-search" placeholder="Search documents…">
+        <label class="cop-btn primary" style="cursor:pointer">
+          ⤴ Upload .docx / .txt
+          <input type="file" id="doc-file-input" accept=".txt,.doc,.docx" multiple style="display:none">
+        </label>
+        <span id="doc-upload-status" style="font-size:.8rem;color:#94a3b8"></span>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Title</th><th>File</th><th>Type</th><th>Uploaded</th><th>By</th><th></th></tr></thead>
+        <tbody id="body-docs"></tbody>
+      </table></div>
+    </div>
+
+  </div><!-- /.cop-body -->
+</div>
+
+<!-- ── Create / View Report Modal ─────────────────────────────────────────── -->
+<div class="cop-modal-bg" id="create-modal">
+  <div class="cop-modal">
+    <div class="modal-header">
+      <h2 id="modal-title">New Report</h2>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <div id="modal-err" class="form-error" style="flex:1"></div>
+      <button class="cop-btn" onclick="closeModal()">Cancel</button>
+      <button class="cop-btn primary" id="modal-submit" onclick="submitReport()">Submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Document preview modal ─────────────────────────────────────────────── -->
+<div class="cop-modal-bg" id="doc-modal">
+  <div class="cop-modal" style="width:700px">
+    <div class="modal-header">
+      <h2 id="doc-modal-title">Document</h2>
+      <button class="modal-close" onclick="document.getElementById('doc-modal').classList.remove('open')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <a id="doc-modal-dl" href="#" class="cop-btn" target="_blank">⬇ Download</a>
+        <span id="doc-modal-meta" style="font-size:.78rem;color:#64748b;align-self:center"></span>
+      </div>
+      <div class="doc-preview" id="doc-modal-preview"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+const token   = localStorage.getItem('arrow_token');
+if (!token) { location.href = '/login?next=/cop/'; return; }
+const role    = (localStorage.getItem('arrow_role') || '').toUpperCase();
+const canEdit = role === 'ADMIN' || role === 'BATTLE_CAPTAIN';
+const headers = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+const mid     = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
+
+function mh(extra) {
+    return { ...headers, ...(mid ? { 'X-Mission-ID': String(mid) } : {}), ...extra };
+}
+function api(path, opts = {}) {
+    return fetch(window.ARROW_BACKEND_URL + path, { headers: mh(), ...opts });
+}
+
+// ── State ─────────────────────────────────────────────────────────────────
+let allReports   = [];
+let allDocuments = [];
+let operators    = {};  // id -> {callsign}
+
+// ── Tab switching ─────────────────────────────────────────────────────────
+document.querySelectorAll('.cop-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.cop-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.cop-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    });
+});
+
+// ── Load data ─────────────────────────────────────────────────────────────
+async function loadAll() {
+    const [rRes, dRes, oRes] = await Promise.all([
+        api('/reports'),
+        api('/cop/documents'),
+        api('/operators'),
+    ]);
+    if (rRes.ok) allReports   = await rRes.json();
+    if (dRes.ok) allDocuments = await dRes.json();
+    if (oRes.ok) { const ops = await oRes.json(); ops.forEach(o => operators[o.id] = o); }
+    renderStats();
+    renderOverview();
+    renderTab('contact', ['CONTACT','SPOT']);
+    renderTab('medevac', ['CASEVAC','MEDEVAC']);
+    renderTab('cas',     ['CAS']);
+    renderTab('logrep',  ['LOGREP']);
+    renderTab('cbrn',    ['CBRN_1','CBRN_2','CBRN_3','CBRN_4','CBRN_5','CBRN_6']);
+    renderDocs();
+}
+loadAll();
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+function renderStats() {
+    const total = allReports.length + allDocuments.length;
+    const newC  = allReports.filter(r => r.status === 'RECEIVED').length;
+    document.getElementById('cop-stats').innerHTML =
+        `<span class="stat-chip"><span>${total}</span> items</span>` +
+        `<span class="stat-chip stat-new"><span>${newC}</span> new</span>`;
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────
+function fmtDtg(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2,'0');
+    return `${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}Z ${d.toLocaleString('default',{month:'short',timeZone:'UTC'})} ${d.getUTCFullYear()}`;
+}
+function typeBadge(type) {
+    const t = type.toUpperCase();
+    if (t === 'CONTACT')                        return `<span class="badge badge-contact">${t}</span>`;
+    if (t === 'SPOT')                           return `<span class="badge badge-spot">${t}</span>`;
+    if (t === 'CASEVAC')                        return `<span class="badge badge-casevac">${t}</span>`;
+    if (t === 'MEDEVAC')                        return `<span class="badge badge-medevac">${t}</span>`;
+    if (t === 'CAS')                            return `<span class="badge badge-cas">${t}</span>`;
+    if (t === 'LOGREP')                         return `<span class="badge badge-logrep">${t}</span>`;
+    if (t.startsWith('CBRN'))                   return `<span class="badge badge-cbrn">${t}</span>`;
+    if (t === 'DOC')                            return `<span class="badge badge-doc">DOC</span>`;
+    return `<span class="badge badge-doc">${t}</span>`;
+}
+function statusBadge(s) {
+    const m = {RECEIVED:'badge-received',ACKNOWLEDGED:'badge-acked',PROCESSED:'badge-processed',REJECTED:'badge-rejected'};
+    return `<span class="badge ${m[s]||'badge-doc'}">${s}</span>`;
+}
+function payloadSummary(r) {
+    try {
+        const p = typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload;
+        if (r.type === 'LOGREP') return p.higher_hq || p.serial || '—';
+        const loc = p.line_3 || p.location || p.line_5_mgrs || '';
+        const act = p.line_2 || p.activity || '';
+        return [act, loc].filter(Boolean).join(' · ').slice(0,60) || '—';
+    } catch { return '—'; }
+}
+
+// ── Overview render ───────────────────────────────────────────────────────
+function renderOverview() {
+    const q   = (document.getElementById('ov-search').value || '').toLowerCase();
+    const st  = document.getElementById('ov-status-filter').value;
+    const typ = document.getElementById('ov-type-filter').value;
+
+    let rows = [];
+    allReports.forEach(r => {
+        const typGroup = r.type.startsWith('CBRN') ? 'CBRN' : r.type;
+        if (typ && typ !== 'CBRN' && typ !== typGroup) return;
+        if (typ === 'CBRN' && !r.type.startsWith('CBRN')) return;
+        if (st && r.status !== st) return;
+        const sum = payloadSummary(r);
+        if (q && !r.type.toLowerCase().includes(q) && !sum.toLowerCase().includes(q)) return;
+        const op  = operators[r.operator_id];
+        rows.push({ kind: 'report', ts: r.timestamp, r, sum, op });
+    });
+    allDocuments.forEach(d => {
+        if (typ && typ !== 'DOC') return;
+        if (q && !d.title.toLowerCase().includes(q) && !d.filename.toLowerCase().includes(q)) return;
+        rows.push({ kind: 'doc', ts: d.uploaded_at, d });
+    });
+    rows.sort((a,b) => new Date(b.ts) - new Date(a.ts));
+
+    const tb = document.getElementById('ov-body');
+    if (!rows.length) { tb.innerHTML = `<tr><td colspan="6" style="color:#475569;padding:20px">No items.</td></tr>`; return; }
+    tb.innerHTML = rows.map(row => {
+        if (row.kind === 'report') {
+            const r = row.r;
+            const tic = r.tic ? `<span class="badge badge-tic">TIC</span>` : '';
+            return `<tr>
+              <td>${typeBadge(r.type)}${tic}</td>
+              <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(r.timestamp)}</td>
+              <td style="color:#cbd5e1">${esc(row.sum)}</td>
+              <td>${statusBadge(r.status)}</td>
+              <td style="color:#64748b;font-size:.78rem">${row.op ? esc(row.op.callsign) : r.operator_id}</td>
+              <td><button class="cop-btn" onclick="toggleDetail(this,'report',${r.id})">▶</button></td>
+            </tr>
+            <tr class="detail-row" id="dr-report-${r.id}" style="display:none"><td colspan="6"></td></tr>`;
+        } else {
+            const d = row.d;
+            const op = operators[d.uploaded_by];
+            return `<tr>
+              <td>${typeBadge('DOC')}</td>
+              <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(d.uploaded_at)}</td>
+              <td style="color:#cbd5e1">${esc(d.title)}</td>
+              <td><span class="badge badge-doc">${d.content_type}</span></td>
+              <td style="color:#64748b;font-size:.78rem">${op ? esc(op.callsign) : d.uploaded_by}</td>
+              <td><button class="cop-btn" onclick="toggleDetail(this,'doc',${d.id})">▶</button></td>
+            </tr>
+            <tr class="detail-row" id="dr-doc-${d.id}" style="display:none"><td colspan="6"></td></tr>`;
+        }
+    }).join('');
+}
+document.getElementById('ov-search').addEventListener('input', renderOverview);
+document.getElementById('ov-status-filter').addEventListener('change', renderOverview);
+document.getElementById('ov-type-filter').addEventListener('change', renderOverview);
+
+// ── Per-tab renders ───────────────────────────────────────────────────────
+function renderTab(panelId, types) {
+    const q  = (document.querySelector(`.rpt-search[data-panel="${panelId}"]`)?.value || '').toLowerCase();
+    const st = document.querySelector(`.rpt-status[data-panel="${panelId}"]`)?.value || '';
+    const filtered = allReports.filter(r => {
+        const match = types.some(t => t === r.type || (t.startsWith('CBRN') && r.type.startsWith('CBRN')));
+        if (!match) return false;
+        if (st && r.status !== st) return false;
+        const sum = payloadSummary(r);
+        if (q && !r.type.toLowerCase().includes(q) && !sum.toLowerCase().includes(q)) return false;
+        return true;
+    });
+    const tb = document.getElementById('body-' + panelId);
+    if (!filtered.length) { tb.innerHTML = `<tr><td colspan="7" style="color:#475569;padding:20px">No reports.</td></tr>`; return; }
+
+    tb.innerHTML = filtered.map(r => {
+        let p = {};
+        try { p = typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload; } catch {}
+        const tic   = r.tic ? `<span class="badge badge-tic">TIC</span>` : '';
+        const cells = tabCells(panelId, r, p);
+        return `<tr>
+          ${cells}
+          <td>${statusBadge(r.status)}</td>
+          <td><button class="cop-btn" onclick="toggleDetail(this,'report',${r.id})">▶</button></td>
+        </tr>
+        <tr class="detail-row" id="dr-report-${r.id}" style="display:none"><td colspan="8"></td></tr>`;
+    }).join('');
+}
+
+function tabCells(panel, r, p) {
+    const tic = r.tic ? `<span class="badge badge-tic">TIC</span>` : '';
+    if (panel === 'contact')
+        return `<td>${typeBadge(r.type)}</td>
+                <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(r.timestamp)}</td>
+                <td>${esc(p.line_3||p.location||'—')}</td>
+                <td>${esc((p.line_2||p.activity||'—').slice(0,60))}</td>`;
+    if (panel === 'medevac')
+        return `<td>${typeBadge(r.type)}</td>
+                <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(r.timestamp)}</td>
+                <td>${esc(p.line_1||p.location||'—')}</td>
+                <td>${esc(p.line_3||p.patients_precedence||'—')}</td>`;
+    if (panel === 'cas')
+        return `<td>${tic}</td>
+                <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(r.timestamp)}</td>
+                <td>${esc(p.line_5_mgrs||p.line_5||'—')}</td>
+                <td>${esc(p.line_3||p.ip||'—')}</td>
+                <td>${esc(p.line_6||p.restrictions||'—')}</td>`;
+    if (panel === 'logrep') {
+        const assess = p.section_g?.assessment || p.assessment || '—';
+        const aColor = assess==='GREEN'?'#22c55e':assess==='AMBER'?'#f59e0b':assess==='RED'?'#ef4444':'#94a3b8';
+        return `<td>${esc(p.serial||'—')}</td>
+                <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(r.timestamp)}</td>
+                <td>${esc(p.higher_hq||'—')}</td>
+                <td><span style="color:${aColor};font-weight:700">${esc(assess)}</span></td>`;
+    }
+    if (panel === 'cbrn') {
+        const agent = p.agent || p.substance || p.type_of_hazard || '—';
+        const loc   = p.location || p.grid || '—';
+        return `<td>${typeBadge(r.type)}</td>
+                <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(r.timestamp)}</td>
+                <td>${esc(agent)}</td>
+                <td>${esc(loc)}</td>`;
+    }
+    return `<td colspan="4">${esc(payloadSummary(r))}</td>`;
+}
+
+// Wire search/filter for each tab
+document.querySelectorAll('.rpt-search, .rpt-status').forEach(el => {
+    const panel = el.dataset.panel;
+    const types = {
+        contact: ['CONTACT','SPOT'],
+        medevac: ['CASEVAC','MEDEVAC'],
+        cas:     ['CAS'],
+        logrep:  ['LOGREP'],
+        cbrn:    ['CBRN_1','CBRN_2','CBRN_3','CBRN_4','CBRN_5','CBRN_6'],
+    };
+    el.addEventListener('input',  () => renderTab(panel, types[panel]));
+    el.addEventListener('change', () => renderTab(panel, types[panel]));
+});
+
+// ── Documents render ──────────────────────────────────────────────────────
+function renderDocs() {
+    const q  = (document.getElementById('doc-search').value || '').toLowerCase();
+    const tb = document.getElementById('body-docs');
+    const filtered = allDocuments.filter(d =>
+        !q || d.title.toLowerCase().includes(q) || d.filename.toLowerCase().includes(q)
+    );
+    if (!filtered.length) { tb.innerHTML = `<tr><td colspan="6" style="color:#475569;padding:20px">No documents uploaded.</td></tr>`; return; }
+    tb.innerHTML = filtered.map(d => {
+        const op  = operators[d.uploaded_by];
+        const del = canEdit ? `<button class="cop-btn danger" onclick="deleteDoc(${d.id})">Delete</button>` : '';
+        return `<tr>
+          <td style="color:#e2e8f0">${esc(d.title)}</td>
+          <td style="color:#64748b;font-size:.78rem">${esc(d.filename)}</td>
+          <td><span class="badge badge-doc">${d.content_type}</span></td>
+          <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${fmtDtg(d.uploaded_at)}</td>
+          <td style="color:#64748b;font-size:.78rem">${op ? esc(op.callsign) : d.uploaded_by}</td>
+          <td style="display:flex;gap:6px">
+            <button class="cop-btn" onclick="previewDoc(${d.id})">View</button>
+            <a class="cop-btn" href="${window.ARROW_BACKEND_URL}/cop/documents/${d.id}/download?token=${encodeURIComponent(token)}" target="_blank">⬇</a>
+            ${del}
+          </td>
+        </tr>`;
+    }).join('');
+}
+document.getElementById('doc-search').addEventListener('input', renderDocs);
+
+// ── Document upload ───────────────────────────────────────────────────────
+document.getElementById('doc-file-input').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const status = document.getElementById('doc-upload-status');
+    status.textContent = 'Uploading…';
+    let ok = 0, fail = 0;
+    for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        const opts = { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, ...(mid ? { 'X-Mission-ID': String(mid) } : {}) }, body: fd };
+        const r = await fetch(window.ARROW_BACKEND_URL + '/cop/documents', opts);
+        if (r.ok) { const d = await r.json(); allDocuments.unshift(d); ok++; }
+        else fail++;
+    }
+    status.textContent = `${ok} uploaded${fail ? `, ${fail} failed` : ''}.`;
+    e.target.value = '';
+    renderStats();
+    renderDocs();
+    renderOverview();
+});
+
+// ── Document preview ──────────────────────────────────────────────────────
+function previewDoc(id) {
+    const d = allDocuments.find(x => x.id === id);
+    if (!d) return;
+    document.getElementById('doc-modal-title').textContent = d.title;
+    document.getElementById('doc-modal-meta').textContent  = `${d.filename} · ${d.content_type} · ${fmtDtg(d.uploaded_at)}`;
+    document.getElementById('doc-modal-dl').href = `${window.ARROW_BACKEND_URL}/cop/documents/${d.id}/download`;
+    const prev = document.getElementById('doc-modal-preview');
+    if (d.text_preview) {
+        prev.style.display = '';
+        prev.textContent = d.text_preview;
+    } else {
+        prev.style.display = 'none';
+    }
+    document.getElementById('doc-modal').classList.add('open');
+}
+
+// ── Delete document ───────────────────────────────────────────────────────
+async function deleteDoc(id) {
+    if (!confirm('Delete this document?')) return;
+    const r = await api(`/cop/documents/${id}`, { method: 'DELETE', headers: mh({'Content-Type':undefined}) });
+    if (r.ok || r.status === 204) {
+        allDocuments = allDocuments.filter(d => d.id !== id);
+        renderStats(); renderDocs(); renderOverview();
+    } else {
+        alert('Delete failed: ' + r.status);
+    }
+}
+
+// ── Detail expand/collapse ────────────────────────────────────────────────
+function toggleDetail(btn, kind, id) {
+    const rowId = `dr-${kind}-${id}`;
+    const row   = document.getElementById(rowId);
+    if (!row) return;
+    const open  = row.style.display !== 'none';
+    if (open) { row.style.display = 'none'; btn.textContent = '▶'; return; }
+    btn.textContent = '▼';
+    row.style.display = '';
+    const td = row.querySelector('td');
+    if (kind === 'report') renderReportDetail(td, id);
+    else renderDocDetail(td, id);
+}
+
+function renderReportDetail(td, id) {
+    const r = allReports.find(x => x.id === id);
+    if (!r) { td.textContent = 'Not found'; return; }
+    let p = {};
+    try { p = typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload; } catch {}
+
+    const fields = Object.entries(p).map(([k,v]) =>
+        `<div class="detail-field"><span class="detail-label">${esc(k)}</span><span class="detail-value">${esc(String(v))}</span></div>`
+    ).join('');
+
+    const statusOpts = ['RECEIVED','ACKNOWLEDGED','PROCESSED','REJECTED']
+        .map(s => `<option value="${s}"${s===r.status?' selected':''}>${s}</option>`).join('');
+    const actions = canEdit ? `
+        <textarea class="detail-note" id="note-${id}" placeholder="Reviewer note…">${esc(r.reviewer_note||'')}</textarea>
+        <select class="status-select" id="status-${id}">${statusOpts}</select>
+        <button class="cop-btn primary" onclick="updateStatus(${id})">Update</button>
+        <button class="cop-btn danger" onclick="deleteReport(${id})">Delete</button>
+    ` : '';
+
+    td.innerHTML = `<div class="detail-box">
+      <div class="detail-grid">${fields}</div>
+      <div class="detail-actions">${actions}</div>
+    </div>`;
+}
+
+function renderDocDetail(td, id) {
+    const d = allDocuments.find(x => x.id === id);
+    if (!d) { td.textContent = 'Not found'; return; }
+    const del = canEdit ? `<button class="cop-btn danger" onclick="deleteDoc(${d.id})">Delete</button>` : '';
+    td.innerHTML = `<div class="detail-box">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <a class="cop-btn" href="${window.ARROW_BACKEND_URL}/cop/documents/${d.id}/download" target="_blank">⬇ Download</a>
+        ${del}
+      </div>
+      ${d.text_preview ? `<div class="doc-preview">${esc(d.text_preview).slice(0,3000)}</div>` : ''}
+    </div>`;
+}
+
+// ── Status update ─────────────────────────────────────────────────────────
+async function updateStatus(id) {
+    const note   = document.getElementById(`note-${id}`)?.value || '';
+    const status = document.getElementById(`status-${id}`)?.value || 'RECEIVED';
+    const r = await api(`/reports/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, reviewer_note: note }),
+    });
+    if (r.ok) {
+        const updated = await r.json();
+        const idx = allReports.findIndex(x => x.id === id);
+        if (idx >= 0) allReports[idx] = updated;
+        renderStats(); renderOverview();
+        const activePanel = document.querySelector('.cop-tab.active')?.dataset.tab;
+        if (activePanel) {
+            const types = {contact:['CONTACT','SPOT'],medevac:['CASEVAC','MEDEVAC'],cas:['CAS'],logrep:['LOGREP'],cbrn:['CBRN_1','CBRN_2','CBRN_3','CBRN_4','CBRN_5','CBRN_6']};
+            if (types[activePanel]) renderTab(activePanel, types[activePanel]);
+        }
+    } else {
+        alert('Update failed: ' + (await r.text()));
+    }
+}
+
+// ── Delete report ─────────────────────────────────────────────────────────
+async function deleteReport(id) {
+    if (!confirm('Delete this report? This cannot be undone.')) return;
+    const r = await api(`/reports/${id}`, { method: 'DELETE', headers: mh({'Content-Type':undefined}) });
+    if (r.ok || r.status === 204) {
+        allReports = allReports.filter(x => x.id !== id);
+        renderStats(); renderOverview();
+        const activePanel = document.querySelector('.cop-tab.active')?.dataset.tab;
+        const types = {contact:['CONTACT','SPOT'],medevac:['CASEVAC','MEDEVAC'],cas:['CAS'],logrep:['LOGREP'],cbrn:['CBRN_1','CBRN_2','CBRN_3','CBRN_4','CBRN_5','CBRN_6']};
+        if (activePanel && types[activePanel]) renderTab(activePanel, types[activePanel]);
+    } else {
+        alert('Delete failed: ' + r.status);
+    }
+}
+
+// ── Create report modal ───────────────────────────────────────────────────
+let _modalType = '';
+const REPORT_FORMS = {
+    CONTACT: {
+        title: 'New CONTACT Report',
+        lines: [
+            { key:'line_1', label:'Line 1 — Size',        type:'text' },
+            { key:'line_2', label:'Line 2 — Activity',    type:'text' },
+            { key:'line_3', label:'Line 3 — Location',    type:'text' },
+            { key:'line_4', label:'Line 4 — Unit',        type:'text' },
+            { key:'line_5', label:'Line 5 — Time',        type:'text' },
+            { key:'line_6', label:'Line 6 — Equipment',   type:'text' },
+            { key:'line_7', label:'Line 7 — Direction',   type:'text' },
+            { key:'line_8', label:'Line 8 — Additional',  type:'textarea' },
+            { key:'line_9', label:'Line 9 — Reported by', type:'text' },
+        ],
+    },
+    SPOT: {
+        title: 'New SPOT Report',
+        lines: [
+            { key:'line_1', label:'Line 1 — Size',        type:'text' },
+            { key:'line_2', label:'Line 2 — Activity',    type:'text' },
+            { key:'line_3', label:'Line 3 — Location',    type:'text' },
+            { key:'line_4', label:'Line 4 — Unit',        type:'text' },
+            { key:'line_5', label:'Line 5 — Time',        type:'text' },
+            { key:'line_6', label:'Line 6 — Equipment',   type:'text' },
+            { key:'line_7', label:'Line 7 — Direction',   type:'text' },
+            { key:'line_8', label:'Line 8 — Additional',  type:'textarea' },
+            { key:'line_9', label:'Line 9 — Reported by', type:'text' },
+        ],
+    },
+    MEDEVAC: {
+        title: 'New MEDEVAC 9-liner',
+        lines: [
+            { key:'line_1', label:'Line 1 — Location (Grid / MGRS)', type:'text' },
+            { key:'line_2', label:'Line 2 — Radio freq / callsign',  type:'text' },
+            { key:'line_3', label:'Line 3 — Patients by precedence', type:'text' },
+            { key:'line_4', label:'Line 4 — Special equipment',      type:'text' },
+            { key:'line_5', label:'Line 5 — Patients by type',       type:'text' },
+            { key:'line_6', label:'Line 6 — Security at PZ',         type:'text' },
+            { key:'line_7', label:'Line 7 — Marking method',         type:'text' },
+            { key:'line_8', label:'Line 8 — Nationality / status',   type:'text' },
+            { key:'line_9', label:'Line 9 — NBC / terrain',          type:'text' },
+        ],
+    },
+    CASEVAC: {
+        title: 'New CASEVAC 9-liner',
+        lines: [
+            { key:'line_1', label:'Line 1 — Location (Grid / MGRS)', type:'text' },
+            { key:'line_2', label:'Line 2 — Radio freq / callsign',  type:'text' },
+            { key:'line_3', label:'Line 3 — Patients by precedence', type:'text' },
+            { key:'line_4', label:'Line 4 — Special equipment',      type:'text' },
+            { key:'line_5', label:'Line 5 — Patients by type',       type:'text' },
+            { key:'line_6', label:'Line 6 — Security at PZ',         type:'text' },
+            { key:'line_7', label:'Line 7 — Marking method',         type:'text' },
+            { key:'line_8', label:'Line 8 — Nationality / status',   type:'text' },
+            { key:'line_9', label:'Line 9 — NBC / terrain',          type:'text' },
+        ],
+    },
+    CAS: {
+        title: 'New CAS 9-liner',
+        lines: [
+            { key:'line_1', label:'Line 1 — Request number',         type:'text' },
+            { key:'line_2', label:'Line 2 — Location of friendlies', type:'text' },
+            { key:'line_3', label:'Line 3 — Target location (IP)',   type:'text' },
+            { key:'line_4', label:'Line 4 — Target elevation (ft)',  type:'text' },
+            { key:'line_5_mgrs', label:'Line 5 — Target location (MGRS)', type:'text' },
+            { key:'line_6', label:'Line 6 — Target description',     type:'text' },
+            { key:'line_7', label:'Line 7 — Target mark',            type:'text' },
+            { key:'line_8', label:'Line 8 — Friendlies / hostages',  type:'text' },
+            { key:'line_9', label:'Line 9 — Egress',                 type:'text' },
+            { key:'tic_flag', label:'Troops In Contact (TIC)',        type:'checkbox' },
+        ],
+    },
+};
+
+function openCreateModal(type) {
+    _modalType = type;
+    const form = REPORT_FORMS[type];
+    if (!form) return;
+    document.getElementById('modal-title').textContent = form.title;
+    document.getElementById('modal-err').textContent   = '';
+    document.getElementById('modal-body').innerHTML = form.lines.map(f => {
+        if (f.type === 'checkbox')
+            return `<div class="form-field" style="flex-direction:row;align-items:center;gap:8px">
+                      <input type="checkbox" id="f-${f.key}" name="${f.key}">
+                      <label for="f-${f.key}" style="margin:0">${esc(f.label)}</label>
+                    </div>`;
+        const tag = f.type === 'textarea' ? 'textarea' : 'input';
+        const close = f.type === 'textarea' ? '</textarea>' : '';
+        return `<div class="form-field"><label for="f-${f.key}">${esc(f.label)}</label>
+                  <${tag} id="f-${f.key}" name="${f.key}" placeholder="">${close}</${tag}>
+                </div>`;
+    }).join('');
+    document.getElementById('create-modal').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('create-modal').classList.remove('open');
+}
+
+async function submitReport() {
+    const form  = REPORT_FORMS[_modalType];
+    if (!form) return;
+    const payload = {};
+    let ticFlag = false;
+    for (const f of form.lines) {
+        const el = document.getElementById(`f-${f.key}`);
+        if (!el) continue;
+        if (f.type === 'checkbox') { ticFlag = el.checked; payload[f.key] = el.checked; }
+        else payload[f.key] = el.value.trim();
+    }
+    document.getElementById('modal-err').textContent = '';
+    const body = { type: _modalType, payload };
+    if (_modalType === 'CAS') body.tic = ticFlag;
+    const r = await api('/reports', { method: 'POST', body: JSON.stringify(body) });
+    if (r.ok) {
+        const rep = await r.json();
+        allReports.unshift(rep);
+        closeModal();
+        renderStats(); renderOverview();
+        const types = {contact:['CONTACT','SPOT'],medevac:['CASEVAC','MEDEVAC'],cas:['CAS']};
+        const activePanel = document.querySelector('.cop-tab.active')?.dataset.tab;
+        if (activePanel && types[activePanel]) renderTab(activePanel, types[activePanel]);
+    } else {
+        const err = await r.json().catch(() => ({}));
+        document.getElementById('modal-err').textContent = err.detail || 'Submit failed';
+    }
+}
+
+// ── WS live updates ───────────────────────────────────────────────────────
+const ws = new WebSocket(window.ARROW_WS_URL + '?token=' + encodeURIComponent(token));
+ws.addEventListener('message', e => {
+    try {
+        const msg = JSON.parse(e.data);
+        if (msg.channel !== 'report') return;
+        if (msg.event === 'submitted') {
+            if (!allReports.find(r => r.id === msg.data.id)) {
+                allReports.unshift({ ...msg.data, payload: JSON.stringify(msg.data.payload || {}), timestamp: new Date().toISOString() });
+                renderStats(); renderOverview();
+            }
+        } else if (msg.event === 'status_updated') {
+            const idx = allReports.findIndex(r => r.id === msg.data.id);
+            if (idx >= 0) {
+                allReports[idx] = { ...allReports[idx], ...msg.data };
+                renderStats(); renderOverview();
+            }
+        } else if (msg.event === 'deleted') {
+            allReports = allReports.filter(r => r.id !== msg.data.id);
+            renderStats(); renderOverview();
+        }
+    } catch {}
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function esc(s) {
+    return String(s||'').replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+})();
+</script>
+{% endblock %}

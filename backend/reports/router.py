@@ -433,3 +433,22 @@ async def update_report_status(
         },
     })
     return rep
+
+
+@router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> None:
+    rep = db.get(Report, report_id)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    db.delete(rep)
+    db.commit()
+    log_event(db, "REPORT_DELETED", operator_id=current.id, resource=f"report:{report_id}")
+    await broadcaster.broadcast({
+        "channel": "report",
+        "event":   "deleted",
+        "data":    {"id": report_id},
+    })
