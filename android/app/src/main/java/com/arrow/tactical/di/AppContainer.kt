@@ -14,6 +14,7 @@ import com.arrow.tactical.mission.MissionRepository
 import com.arrow.tactical.kml.KmlLayerRepository
 import com.arrow.tactical.map.MapSourceRepository
 import com.arrow.tactical.map.MilsymRenderer
+import com.arrow.tactical.map.WeatherRepository
 import com.arrow.tactical.messaging.ChatNotificationManager
 import com.arrow.tactical.messaging.MessageRepository
 import com.arrow.tactical.network.ApiClient
@@ -82,6 +83,7 @@ class AppContainer(private val context: Context) {
     val logRepository = LogRepository()
     val milsymRenderer = MilsymRenderer(context)
     val strikePackageRepository = StrikePackageRepository(apiClient, db)
+    val weatherRepository = WeatherRepository(apiClient.httpClient)
 
     // ── Sync engine ────────────────────────────────────────────────────────
 
