@@ -322,6 +322,7 @@
                 <button class="overlay-btn" id="ov-toggle" title="Saved overlays">📚 Overlays</button>
                 <button class="overlay-btn" id="goto-toggle" title="Go to location">🔍 Go To</button>
                 <button class="overlay-btn" id="track-toggle" title="Operator track history">📊 Tracks</button>
+                <button class="overlay-btn" id="wx-toggle" title="Weather overlays">🌧 Weather</button>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
             <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -342,6 +343,22 @@
                     <div id="kml-status" style="margin-top:6px; color:#94a3b8; font-size:0.78rem;"></div>
                 </div>
                 <div id="kml-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
+            </div>
+            <!-- ── Weather overlay panel ─────────────────────────────────── -->
+            <div id="wx-panel" style="display:none; position:absolute; top:60px; right:12px;
+                                      background:#0e1217; border:1px solid #2a3142;
+                                      border-radius:6px; padding:12px; z-index:1100;
+                                      min-width:240px; color:#e2e8f0; font-size:0.85rem;
+                                      box-shadow:0 4px 14px rgba(0,0,0,0.5)">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:10px">
+                    <strong style="flex:1">🌧 Weather</strong>
+                    <span id="wx-updated" style="font-size:.72rem;color:#64748b"></span>
+                    <button id="wx-close" class="overlay-btn" style="padding:0 8px">×</button>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px" id="wx-layers">
+                    <!-- populated by JS -->
+                </div>
+                <div style="margin-top:10px; font-size:.72rem; color:#475569" id="wx-credit"></div>
             </div>
             <!-- ── Saved overlays panel ─────────────────────────────────── -->
             <div id="ov-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -3833,6 +3850,152 @@
     setInterval(loadMapMessages, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags
     connectWS();
+
+    // ── Weather overlays ─────────────────────────────────────────────────
+    // RainViewer: free real-time precipitation radar, no API key needed.
+    // OpenWeatherMap: clouds/wind/temp/pressure — requires api_key in config.xml.
+    (async function initWeather() {
+        const wxPanel  = document.getElementById('wx-panel');
+        const wxClose  = document.getElementById('wx-close');
+        const wxToggle = document.getElementById('wx-toggle');
+        const wxLayers = document.getElementById('wx-layers');
+        const wxUpdated= document.getElementById('wx-updated');
+        const wxCredit = document.getElementById('wx-credit');
+
+        // Fetch OWM key from backend config
+        let owmKey = '';
+        try {
+            const cfgR = await api('/map/config');
+            if (cfgR.ok) { const cfg = await cfgR.json(); owmKey = cfg.owm_api_key || ''; }
+        } catch (_) {}
+
+        // ── Layer definitions ─────────────────────────────────────────────
+        const WX_LAYERS = [
+            {
+                id: 'rainviewer', label: '🌧 Rain Radar',
+                source: 'rainviewer', opacity: 0.6, active: false,
+                leafletLayer: null,
+            },
+            ...(owmKey ? [
+                { id:'owm_clouds',       label:'☁ Clouds',       source:'owm', owmLayer:'clouds_new',       opacity:0.5, active:false, leafletLayer:null },
+                { id:'owm_precip',       label:'🌦 Precipitation',source:'owm', owmLayer:'precipitation_new', opacity:0.6, active:false, leafletLayer:null },
+                { id:'owm_wind',         label:'💨 Wind speed',   source:'owm', owmLayer:'wind_new',          opacity:0.5, active:false, leafletLayer:null },
+                { id:'owm_temp',         label:'🌡 Temperature',  source:'owm', owmLayer:'temp_new',          opacity:0.5, active:false, leafletLayer:null },
+                { id:'owm_pressure',     label:'🌐 Pressure',     source:'owm', owmLayer:'pressure_new',      opacity:0.4, active:false, leafletLayer:null },
+            ] : []),
+        ];
+
+        // Build panel UI
+        wxLayers.innerHTML = WX_LAYERS.map(lyr => `
+            <div style="display:flex; align-items:center; gap:8px">
+                <input type="checkbox" id="wx-cb-${lyr.id}">
+                <label for="wx-cb-${lyr.id}" style="flex:1;cursor:pointer">${lyr.label}</label>
+                <input type="range" id="wx-op-${lyr.id}" min="0" max="1" step="0.05"
+                       value="${lyr.opacity}"
+                       style="width:70px;cursor:pointer" title="Opacity">
+            </div>
+        `).join('');
+        if (!owmKey) {
+            wxCredit.innerHTML = 'Rain radar: <a href="https://www.rainviewer.com" target="_blank" style="color:#60a5fa">RainViewer</a>. ' +
+                'Add an <a href="https://openweathermap.org/api" target="_blank" style="color:#60a5fa">OWM API key</a> in config.xml for more layers.';
+        } else {
+            wxCredit.innerHTML = 'Rain: <a href="https://www.rainviewer.com" target="_blank" style="color:#60a5fa">RainViewer</a> · ' +
+                'Weather: <a href="https://openweathermap.org" target="_blank" style="color:#60a5fa">OpenWeatherMap</a>';
+        }
+
+        // ── RainViewer tile management ────────────────────────────────────
+        let rvTimestamp = null;
+
+        async function refreshRainViewer() {
+            try {
+                const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+                if (!r.ok) return;
+                const data = await r.json();
+                const frames = data?.radar?.past;
+                if (!frames || !frames.length) return;
+                const latest = frames[frames.length - 1];
+                if (latest.time === rvTimestamp) return;   // no new frame
+                rvTimestamp = latest.time;
+
+                const lyr = WX_LAYERS.find(l => l.id === 'rainviewer');
+                if (!lyr) return;
+
+                const newTile = L.tileLayer(
+                    `https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/4/1_1.png`,
+                    { opacity: lyr.opacity, attribution: '© RainViewer', zIndex: 500, maxZoom: 18 }
+                );
+                if (lyr.leafletLayer && map.hasLayer(lyr.leafletLayer)) {
+                    map.removeLayer(lyr.leafletLayer);
+                    newTile.addTo(map);
+                }
+                lyr.leafletLayer = newTile;
+                if (lyr.active && !map.hasLayer(newTile)) newTile.addTo(map);
+
+                const d = new Date(rvTimestamp * 1000);
+                wxUpdated.textContent = `Updated ${d.getUTCHours().toString().padStart(2,'0')}:${d.getUTCMinutes().toString().padStart(2,'0')}Z`;
+            } catch (_) {}
+        }
+
+        // ── OWM tile layer factory ────────────────────────────────────────
+        function buildOwmLayer(owmLayer, opacity) {
+            return L.tileLayer(
+                `https://tile.openweathermap.org/map/${owmLayer}/{z}/{x}/{y}.png?appid=${owmKey}`,
+                { opacity, attribution: '© OpenWeatherMap', zIndex: 490, maxZoom: 18 }
+            );
+        }
+
+        // ── Toggle / opacity handlers ─────────────────────────────────────
+        WX_LAYERS.forEach(lyr => {
+            const cb = document.getElementById(`wx-cb-${lyr.id}`);
+            const sl = document.getElementById(`wx-op-${lyr.id}`);
+
+            cb.addEventListener('change', async () => {
+                lyr.active = cb.checked;
+                if (lyr.active) {
+                    if (!lyr.leafletLayer) {
+                        if (lyr.source === 'rainviewer') {
+                            await refreshRainViewer();
+                        } else {
+                            lyr.leafletLayer = buildOwmLayer(lyr.owmLayer, lyr.opacity);
+                        }
+                    }
+                    if (lyr.leafletLayer && !map.hasLayer(lyr.leafletLayer)) {
+                        lyr.leafletLayer.addTo(map);
+                    }
+                } else {
+                    if (lyr.leafletLayer && map.hasLayer(lyr.leafletLayer)) {
+                        map.removeLayer(lyr.leafletLayer);
+                    }
+                }
+            });
+
+            sl.addEventListener('input', () => {
+                lyr.opacity = parseFloat(sl.value);
+                if (lyr.leafletLayer) lyr.leafletLayer.setOpacity(lyr.opacity);
+            });
+        });
+
+        // ── Panel toggle ──────────────────────────────────────────────────
+        wxToggle.addEventListener('click', () => {
+            const open = wxPanel.style.display !== 'none';
+            // Close other panels first
+            ['kml-panel','ov-panel','goto-panel','track-panel'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            wxPanel.style.display = open ? 'none' : '';
+            wxToggle.classList.toggle('active', !open);
+            if (!open) refreshRainViewer();   // fetch latest on open
+        });
+        wxClose.addEventListener('click', () => {
+            wxPanel.style.display = 'none';
+            wxToggle.classList.remove('active');
+        });
+
+        // Refresh RainViewer every 10 minutes
+        setInterval(refreshRainViewer, 10 * 60 * 1000);
+    })();
+
 })();
 </script>
 {% endblock %}
