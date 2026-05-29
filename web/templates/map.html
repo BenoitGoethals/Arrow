@@ -3967,9 +3967,11 @@
               + '<a href="https://openweathermap.org/api" target="_blank" style="color:#475569">Add OWM key for more layers</a>';
 
         // ── RainViewer animation state ────────────────────────────────────
-        const RV_COLOR  = 2;    // Universal Blue colour scheme
+        const RV_COLOR  = 1;    // Universal Blue colour scheme (0=original, 1=UBlue, 4=Meteored)
         const RV_SMOOTH = 1;    // smooth edges
-        const RV_SNOW   = 1;    // highlight snow
+        const RV_SNOW   = 0;    // don't separate snow (avoids "Not Supported" on some tiles)
+        // 1×1 transparent GIF — shown instead of the "Zoom Level Not Supported" tile image
+        const RV_BLANK  = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
         const ANIM_MS   = 500;  // ms per frame during playback
 
         let rvFrames    = [];   // [{time, path, isForecast, layer}]
@@ -3997,7 +3999,10 @@
         }
         function layerForFrame(path, opacity, zIndex) {
             return L.tileLayer(rvTileUrl(path), {
-                opacity, attribution: '© RainViewer', zIndex, maxZoom: 18,
+                opacity, attribution: '© RainViewer', zIndex,
+                minNativeZoom: 0, maxNativeZoom: 7,   // radar tiles only exist up to zoom 7
+                maxZoom: 18,
+                errorTileUrl: RV_BLANK,
             });
         }
 
@@ -4151,7 +4156,8 @@
                 const latest = rvSatFrames[rvSatFrames.length - 1];
                 if (!latest) { loadFrames(); return; }
                 if (!latest.layer) latest.layer = L.tileLayer(satTileUrl(latest.path),
-                    { opacity: satOpacity, attribution: '© RainViewer', zIndex: 480 });
+                    { opacity: satOpacity, attribution: '© RainViewer', zIndex: 480,
+                      minNativeZoom: 0, maxNativeZoom: 7, maxZoom: 18, errorTileUrl: RV_BLANK });
                 satCurrentLayer = latest.layer;
                 if (!map.hasLayer(satCurrentLayer)) satCurrentLayer.addTo(map);
             } else if (satCurrentLayer && map.hasLayer(satCurrentLayer)) {
