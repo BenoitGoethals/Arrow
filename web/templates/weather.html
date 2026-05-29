@@ -143,10 +143,11 @@
     <div class="wx-sep"></div>
     <span class="wx-lbl">HORIZON</span>
     <div class="wx-hz-group">
-      <button class="wx-btn active" data-h="3"  onclick="setHorizon(3,this)">3 h</button>
-      <button class="wx-btn"        data-h="8"  onclick="setHorizon(8,this)">8 h</button>
-      <button class="wx-btn"        data-h="24" onclick="setHorizon(24,this)">24 h</button>
-      <button class="wx-btn"        data-h="72" onclick="setHorizon(72,this)">72 h</button>
+      <button class="wx-btn active" data-h="3"   onclick="setHorizon(3,this)">3 h</button>
+      <button class="wx-btn"        data-h="8"   onclick="setHorizon(8,this)">8 h</button>
+      <button class="wx-btn"        data-h="24"  onclick="setHorizon(24,this)">24 h</button>
+      <button class="wx-btn"        data-h="72"  onclick="setHorizon(72,this)">72 h</button>
+      <button class="wx-btn"        data-h="168" onclick="setHorizon(168,this)">7 D</button>
     </div>
 
     <button class="wx-btn pdf" onclick="exportPDF()">📄 Export PDF</button>
@@ -380,7 +381,7 @@ async function fetchWeather() {
       'precipitation_sum','windspeed_10m_max','winddirection_10m_dominant','sunrise','sunset'
     ].join(','));
     url.searchParams.set('wind_speed_unit', 'ms');
-    url.searchParams.set('forecast_days', '4');
+    url.searchParams.set('forecast_days', '7');
     url.searchParams.set('timezone', 'auto');
 
     const resp = await fetch(url.toString());
@@ -402,7 +403,7 @@ function renderAll(data) {
   document.getElementById('wx-ph-loc').textContent =
     `Location: ${mgrs}  (${lat.toFixed(4)}°, ${lon.toFixed(4)}°  ${data.timezone||'UTC'})`;
   document.getElementById('wx-ph-hz').textContent =
-    `Horizon: ${wxHorizon} hours`;
+    wxHorizon === 168 ? 'Horizon: 7 days' : `Horizon: ${wxHorizon} hours`;
   document.getElementById('wx-ph-gen').textContent =
     `Generated: ${new Date().toUTCString()}`;
 
@@ -446,6 +447,7 @@ function renderAll(data) {
   el.appendChild(renderRainChart(times, precip, rain, snow));
   el.appendChild(renderWindChart(times, wspeed, wdir));
   if(wxHorizon >= 24) el.appendChild(renderDailySummary(daily));
+  if(wxHorizon === 168) return; /* 7D: daily cards are the full story; skip hourly table */
   el.appendChild(renderTable(times, temp, precip, wspeed, wdir, cloud, wcode, vis, startIdx));
 }
 
@@ -622,7 +624,9 @@ function renderDailySummary(daily) {
   wrap.innerHTML = '<div class="wx-section"><span>📅</span> DAILY SUMMARY</div>';
   const grid = document.createElement('div');
   grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0;border-bottom:1px solid #1e293b;';
-  const n = Math.min(daily.time.length, wxHorizon === 72 ? 3 : 1);
+  const n = wxHorizon === 168 ? daily.time.length
+          : wxHorizon === 72  ? 3
+          : 1;
   for(let i=0; i<n; i++) {
     const d = new Date(daily.time[i]);
     const label = i===0 ? 'Today' : d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
@@ -658,7 +662,7 @@ function renderTable(times, temp, precip, wspeed, wdir, cloud, wcode, vis) {
   const scroll = document.createElement('div');
   scroll.className = 'wx-tbl-wrap';
 
-  /* for 72h, group into 6-hour bands */
+  /* group rows: 72h → every 6 h, 24h → every 3 h, else hourly */
   const step = wxHorizon >= 72 ? 6 : (wxHorizon >= 24 ? 3 : 1);
 
   let html = `<table class="wx-tbl">
