@@ -100,6 +100,9 @@ fun SitawareTopBar(
     /** Active saved-overlay count — drives the Overlays chip badge. */
     overlayActiveCount: Int = 0,
     onToggleOverlays: () -> Unit = {},
+    /** Whether the weather panel is open. */
+    weatherOpen: Boolean = false,
+    onToggleWeather: () -> Unit = {},
     isStreaming: Boolean = false,
     onToggleStream: () -> Unit = {},
     onLocateMe: () -> Unit = {},
@@ -220,6 +223,20 @@ fun SitawareTopBar(
                 fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                 color = if (ovOn) Color(0xFFC4B5FD) else Color(0xFFCBD5E1),
             )
+        }
+        // Weather toggle — opens/closes the weather overlay panel
+        Box(
+            Modifier
+                .clickable { onToggleWeather() }
+                .background(if (weatherOpen) Color(0x3338BDF8) else Color(0xFF12233A),
+                            RoundedCornerShape(4.dp))
+                .border(0.5.dp, if (weatherOpen) Color(0xFF38BDF8) else Color(0xFF2A3142),
+                        RoundedCornerShape(4.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("⛅ Wx", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                 color = if (weatherOpen) Color(0xFF7DD3FC) else Color(0xFFCBD5E1))
         }
         // Stream toggle
         IconButton(onClick = onToggleStream, modifier = Modifier.size(32.dp)) {
