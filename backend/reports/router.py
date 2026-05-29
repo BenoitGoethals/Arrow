@@ -24,7 +24,14 @@ from backend.websocket.manager import broadcaster
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 CBRN_TYPES    = {f"CBRN_{i}" for i in range(1, 7)}
-VALID_TYPES   = {"CONTACT", "SPOT", "CASEVAC", "MEDEVAC", "CAS", "DRONE_SPOT", "LOGREP"} | CBRN_TYPES
+VALID_TYPES   = {
+    "CONTACT", "SPOT", "SALUTE",
+    "CASEVAC", "MEDEVAC",
+    "CAS", "TGTREP", "BDA",
+    "PATROLREP", "OBSREP", "UAVREP",
+    "SITREP", "INTSUM", "SIGINTREP", "CYBERREP",
+    "DRONE_SPOT", "LOGREP",
+} | CBRN_TYPES
 VALID_STATUSES = {"RECEIVED", "ACKNOWLEDGED", "PROCESSED", "REJECTED"}
 
 
