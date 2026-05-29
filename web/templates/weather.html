@@ -86,6 +86,44 @@
 .wx-tbl tr:hover td { background:#0f1a2e; }
 .wx-tbl .wc  { font-size:1rem; }
 
+/* ── Astronomy section ───────────────────────────────────────────────────── */
+.wx-astro-grid { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #1e293b; }
+.wx-astro-card { padding:12px 14px; border-right:1px solid #1e293b; }
+.wx-astro-card:last-child { border-right:none; }
+.astro-hd { font-size:.7rem; color:#64748b; letter-spacing:.07em; text-transform:uppercase;
+            font-weight:700; margin-bottom:8px; }
+.astro-row { display:flex; justify-content:space-between; font-size:.8rem;
+             padding:3px 0; border-bottom:1px solid #0f172a; }
+.astro-row:last-child { border-bottom:none; }
+.astro-row .av { font-family:monospace; color:#7dd3fc; font-weight:600; }
+.wx-phases-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+                  gap:0; border-bottom:1px solid #1e293b; }
+.wx-phase-card { padding:10px 12px; border-right:1px solid #1e293b;
+                 border-bottom:1px solid #1e293b; }
+.wx-phase-card:last-child { border-right:none; }
+.phase-icon { font-size:1.6rem; line-height:1; margin-bottom:4px; }
+.phase-name { font-size:.72rem; color:#94a3b8; font-weight:600; letter-spacing:.04em; }
+.phase-date { font-size:.78rem; color:#e2e8f0; margin-top:2px; }
+.phase-time { font-size:.72rem; color:#64748b; font-family:monospace; }
+.wx-eclipse-list, .wx-sky-list { padding:8px 14px 12px; border-bottom:1px solid #1e293b; }
+.eclipse-row { display:flex; gap:10px; align-items:baseline; font-size:.8rem;
+               padding:5px 0; border-bottom:1px solid #0f172a; }
+.eclipse-row:last-child { border-bottom:none; }
+.eclipse-type { padding:1px 8px; border-radius:3px; font-size:.7rem; font-weight:700; }
+.et-total    { background:#78350f44; color:#fcd34d; }
+.et-annular  { background:#1e3a5f44; color:#7dd3fc; }
+.et-partial  { background:#1c2a1c44; color:#86efac; }
+.et-hybrid   { background:#3b0764aa; color:#d8b4fe; }
+.sky-planet-row { display:flex; gap:8px; align-items:center; font-size:.8rem;
+                  padding:5px 0; border-bottom:1px solid #0f172a; }
+.sky-planet-row:last-child { border-bottom:none; }
+.sky-planet-sym { font-size:1.1rem; width:22px; text-align:center; }
+.sky-planet-name { color:#94a3b8; width:70px; font-weight:600; font-size:.75rem; }
+.sky-bar-wrap { flex:1; background:#0f172a; border-radius:3px; height:8px; overflow:hidden; }
+.sky-bar { height:8px; border-radius:3px; background:#38bdf8; }
+.sky-alt  { color:#7dd3fc; font-family:monospace; font-size:.75rem; width:38px; text-align:right; }
+.sky-evt  { color:#64748b; font-size:.72rem; }
+
 /* ── Loading / error ─────────────────────────────────────────────────────── */
 .wx-loading { display:flex; align-items:center; justify-content:center;
               height:120px; color:#475569; font-size:.85rem; gap:8px; }
@@ -108,6 +146,13 @@
     .wx-tbl td  { border-bottom:1px solid #eee; color:#000; }
     .wx-tbl tr:hover td { background:none; }
     .wx-chart-wrap { page-break-inside:avoid; }
+    #wx-astro { display:flex !important; border-top:2px solid #000; margin-top:8px; }
+    .wx-astro-card { border-color:#ccc; }
+    .astro-row { border-bottom-color:#eee; }
+    .astro-row .av { color:#000; }
+    .astro-hd { color:#333; }
+    .wx-phase-card { border-color:#ccc; }
+    .eclipse-row { border-bottom-color:#eee; }
     #wx-print-header { display:block !important; }
     /* Ensure SVG charts print with visible colours */
     svg text  { fill:#000 !important; }
@@ -181,6 +226,8 @@
     <div class="wx-data-col" id="wx-data">
       <div class="wx-loading">⏳ Enter coordinates and click Fetch</div>
     </div>
+    <!-- Astronomical data — rendered separately, persists across horizon changes -->
+    <div class="wx-data-col" id="wx-astro" style="border-top:2px solid #1e293b;display:none"></div>
 
   </div>
 </div>
@@ -388,6 +435,7 @@ async function fetchWeather() {
     if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
     wxData = await resp.json();
     renderAll(wxData);
+    fetchAstro();   /* astronomical data fetched in parallel after weather */
   } catch(e) {
     el.innerHTML = `<div class="wx-err">⚠ Failed to load forecast: ${e.message}</div>`;
   }
@@ -720,6 +768,260 @@ function exportPDF() {
     buildWindSvg(times, ws, wd);
   }
   window.print();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ASTRONOMICAL / NIGHT SKY  — USNO API (public, no key required)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const USNO = 'https://aa.usno.navy.mil/api';
+
+const PHASE_ICON = {
+  'New Moon':'🌑', 'First Quarter':'🌓', 'Full Moon':'🌕', 'Last Quarter':'🌗',
+};
+const ECLIPSE_COLORS = {
+  Total:'et-total', Annular:'et-annular', Partial:'et-partial', Hybrid:'et-hybrid',
+};
+
+/* Planets for night-sky section (no API needed — computed locally) */
+const PLANETS = [
+  { sym:'☿', name:'Mercury', a:0.387,  e:0.2056, i:7.00,  L0:252.25, w0:77.46,  O0:48.33, n:4.0923  },
+  { sym:'♀', name:'Venus',   a:0.723,  e:0.0068, i:3.39,  L0:181.98, w0:131.57, O0:76.68, n:1.6021  },
+  { sym:'♂', name:'Mars',    a:1.524,  e:0.0934, i:1.85,  L0:355.45, w0:336.04, O0:49.58, n:0.5240  },
+  { sym:'♃', name:'Jupiter', a:5.203,  e:0.0489, i:1.30,  L0:34.40,  w0:14.33,  O0:100.46,n:0.0831  },
+  { sym:'♄', name:'Saturn',  a:9.537,  e:0.0565, i:2.49,  L0:49.94,  w0:93.06,  O0:113.72,n:0.0335  },
+];
+
+function _usnoDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function _tzOffset() {
+  return wxData ? Math.round(wxData.utc_offset_seconds / 3600) : -(new Date().getTimezoneOffset()/60);
+}
+function _hmFmt(t) { return t ? String(t).replace(/^(\d:\d\d)$/, '0$1') : '—'; }
+function _dayLen(r, s) {
+  if (!r || !s) return '—';
+  const [rh,rm] = r.split(':').map(Number), [sh,sm] = s.split(':').map(Number);
+  const m = (sh*60+sm)-(rh*60+rm); if (m<0) return '—';
+  return `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m`;
+}
+/* USNO rstt phen lookup — API now uses full English names */
+function _phen(arr, label) { return arr?.find(x => x.phen === label)?.time || null; }
+
+/* ── Simple planet elongation calculator (J2000 low-precision) ─────────────
+   Returns {elongDeg, isEvening} for each planet relative to the Sun.
+   Elongation > 15° and evening → evening star; < −15° and morning → morning.  */
+function _jd(date) {
+  const Y=date.getUTCFullYear(),M=date.getUTCMonth()+1,D=date.getUTCDate();
+  const A=Math.floor(7*(Y+Math.floor((M+9)/12))/4);
+  const B=Math.floor(275*M/9);
+  return 367*Y - A + B + D + 1721013.5;
+}
+function _meanLon(p, T) {
+  // T = Julian centuries from J2000
+  const deg = n => n - 360*Math.floor(n/360);
+  return deg(p.L0 + p.n * T * 36525);
+}
+function _sunLon(T) {
+  const g = (357.529 + 35999.050*T)*Math.PI/180;
+  return 280.459 + 36000.772*T + 1.915*Math.sin(g) + 0.020*Math.sin(2*g);
+}
+function planetElongation(p, date) {
+  const jd = _jd(date), T = (jd - 2451545.0)/36525;
+  const Ls = _sunLon(T) % 360;
+  const Lp = _meanLon(p, T);
+  let elong = Lp - Ls;
+  while (elong >  180) elong -= 360;
+  while (elong < -180) elong += 360;
+  return { elongDeg: Math.round(elong), isEvening: elong > 0 };
+}
+
+async function fetchAstro() {
+  const pos = readLatLon();
+  if (!pos) return;
+  const { lat, lon } = pos;
+  const tz     = _tzOffset();
+  const date   = _usnoDate();
+  const year   = new Date().getFullYear();
+  const coords = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+
+  const el = document.getElementById('wx-astro');
+  el.style.display = 'flex'; el.style.flexDirection = 'column';
+  el.innerHTML = '<div class="wx-loading" style="padding:20px">⏳ Loading astronomical data…</div>';
+
+  try {
+    const [rsttRaw, phasesRaw, eclRaw] = await Promise.all([
+      fetch(`${USNO}/rstt/oneday?ID=AA&date=${date}&coords=${coords}&tz=${tz}`)
+        .then(r=>r.json()).catch(()=>null),
+      fetch(`${USNO}/moon/phases/year?year=${year}`)
+        .then(r=>r.json()).catch(()=>null),
+      fetch(`${USNO}/eclipses/solar/year?year=${year}`)
+        .then(r=>r.json()).catch(()=>null),
+    ]);
+
+    /* USNO rstt wraps data under properties.data */
+    const rstt = rsttRaw?.properties?.data || {};
+    el.innerHTML = '';
+
+    /* ── Sun & Moon ──────────────────────────────────────────────────────── */
+    el.appendChild(_secHeader('☀️🌙', 'SUN & MOON TODAY'));
+
+    const sun  = rstt.sundata  || [];
+    const moon = rstt.moondata || [];
+
+    const sunRise  = _phen(sun,  'Rise');
+    const sunSet   = _phen(sun,  'Set');
+    const sunNoon  = _phen(sun,  'Upper Transit');
+    const moonRise = _phen(moon, 'Rise');
+    const moonSet  = _phen(moon, 'Set');
+    const illum    = rstt.fracillum || '—';
+    const curPhase = rstt.curphase  || '—';
+    const closest  = rstt.closestphase;
+
+    const phaseIcon = PHASE_ICON[curPhase] || '🌙';
+
+    const grid = document.createElement('div');
+    grid.className = 'wx-astro-grid';
+    grid.innerHTML = `
+      <div class="wx-astro-card">
+        <div class="astro-hd">☀️ Sun</div>
+        ${_arow('🌅 Sunrise',    _hmFmt(sunRise))}
+        ${_arow('🌇 Sunset',     _hmFmt(sunSet))}
+        ${_arow('🕛 Solar Noon', _hmFmt(sunNoon))}
+        ${_arow('⏱ Day Length',  _dayLen(sunRise, sunSet))}
+      </div>
+      <div class="wx-astro-card">
+        <div class="astro-hd">${phaseIcon} Moon</div>
+        ${_arow('Phase',        curPhase)}
+        ${_arow('Illumination', illum)}
+        ${_arow('🌅 Moonrise',  _hmFmt(moonRise))}
+        ${_arow('🌇 Moonset',   _hmFmt(moonSet))}
+        ${closest ? _arow('Next: '+closest.phase,
+            closest.month+'/'+closest.day+' '+closest.time+'Z') : ''}
+      </div>`;
+    el.appendChild(grid);
+
+    /* ── Twilight (tactical relevance) ───────────────────────────────────── */
+    const civD  = _phen(sun, 'End Civil Twilight');
+    const nautD = _phen(sun, 'End Nautical Twilight');
+    const astrD = _phen(sun, 'End Astronomical Twilight');
+    const civR  = _phen(sun, 'Begin Civil Twilight');
+    if (civD || nautD || astrD) {
+      const tw = document.createElement('div');
+      tw.style.cssText = 'padding:8px 14px 10px;border-bottom:1px solid #1e293b';
+      tw.innerHTML = `<div class="astro-hd" style="margin-bottom:5px">🌆 TWILIGHT — NVG/IR THRESHOLD</div>
+        ${civR  ? _arow('Civil dawn   (−6°)',        _hmFmt(civR))  : ''}
+        ${civD  ? _arow('Civil dusk   (−6°)',        _hmFmt(civD))  : ''}
+        ${nautD ? _arow('Nautical dusk (−12°)',      _hmFmt(nautD)) : ''}
+        ${astrD ? _arow('Astro. darkness (−18°)',    _hmFmt(astrD)) : ''}`;
+      el.appendChild(tw);
+    }
+
+    /* ── Moon phases ──────────────────────────────────────────────────────── */
+    el.appendChild(_secHeader('📅', 'UPCOMING MOON PHASES'));
+    const phaseGrid = document.createElement('div');
+    phaseGrid.className = 'wx-phases-grid';
+    const today = new Date();
+    const pdata = (phasesRaw?.phasedata || [])
+      .filter(p => new Date(p.year, p.month-1, p.day) >= today)
+      .slice(0, 8);
+    if (pdata.length) {
+      const MONTH = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      phaseGrid.innerHTML = pdata.map(p => `
+        <div class="wx-phase-card">
+          <div class="phase-icon">${PHASE_ICON[p.phase]||'🌙'}</div>
+          <div class="phase-name">${p.phase}</div>
+          <div class="phase-date">${MONTH[p.month]} ${p.day}, ${p.year}</div>
+          <div class="phase-time">${p.time}Z</div>
+        </div>`).join('');
+    } else {
+      phaseGrid.innerHTML = '<div style="padding:10px;color:#475569">Phase data unavailable</div>';
+    }
+    el.appendChild(phaseGrid);
+
+    /* ── Solar eclipses ───────────────────────────────────────────────────── */
+    el.appendChild(_secHeader('🌑', `SOLAR ECLIPSES ${year}`));
+    const eclDiv = document.createElement('div');
+    eclDiv.className = 'wx-eclipse-list';
+    const eclData = eclRaw?.eclipses_in_year || [];
+    if (eclData.length) {
+      eclDiv.innerHTML = eclData.map(e => {
+        const ev   = e.event || '';
+        const typeM = ev.match(/(Total|Annular|Partial|Hybrid)/i);
+        const type  = typeM ? typeM[1] : 'Solar';
+        const cls   = ECLIPSE_COLORS[type] || 'et-partial';
+        const MONTH = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const dateStr = e.month ? `${MONTH[e.month]} ${e.day}, ${e.year}` : ev;
+        return `<div class="eclipse-row">
+          <span class="eclipse-type ${cls}">${type}</span>
+          <span style="color:#e2e8f0;min-width:90px">${dateStr}</span>
+          <span style="color:#64748b;font-size:.75rem;flex:1">${ev}</span>
+        </div>`;
+      }).join('');
+    } else {
+      eclDiv.innerHTML = '<span style="color:#475569;font-size:.8rem">No solar eclipses this year</span>';
+    }
+    el.appendChild(eclDiv);
+
+    /* ── Night sky — planet elongations (computed, no extra API) ─────────── */
+    el.appendChild(_secHeader('✨', 'NIGHT SKY — VISIBLE PLANETS'));
+    const skyDiv = document.createElement('div');
+    skyDiv.className = 'wx-sky-list';
+
+    const illumNum = parseInt(illum) || 0;
+    const moonNote = illumNum > 75 ? '⚠ Bright moon (>75%) significantly reduces sky visibility' :
+                     illumNum > 40 ? 'Moderate moonlight — best viewing after moonset' :
+                                     '🌑 Dark sky tonight — excellent viewing conditions';
+    const mnDiv = document.createElement('div');
+    mnDiv.style.cssText = 'font-size:.75rem;color:#94a3b8;padding:4px 0 10px;border-bottom:1px solid #1e293b;margin-bottom:6px';
+    mnDiv.textContent = moonNote;
+    skyDiv.appendChild(mnDiv);
+
+    const PCOL = { Mercury:'#94a3b8', Venus:'#fbbf24', Mars:'#ef4444', Jupiter:'#a78bfa', Saturn:'#34d399' };
+    const now = new Date();
+    PLANETS.forEach(p => {
+      const { elongDeg, isEvening } = planetElongation(p, now);
+      const absE = Math.abs(elongDeg);
+      const visible = absE > 15;
+      const sky = isEvening ? 'Evening sky (W)' : 'Morning sky (E)';
+      const barPct = visible ? Math.min(95, absE) : 8;
+      const statusCol = visible ? '#34d399' : '#475569';
+      const statusTxt = visible ? `▲ ${sky}` : '▼ Near sun / not visible';
+      const elongTxt = `elong. ${elongDeg > 0 ? '+' : ''}${elongDeg}°`;
+      const row = document.createElement('div');
+      row.className = 'sky-planet-row';
+      row.innerHTML = `
+        <span class="sky-planet-sym">${p.sym}</span>
+        <span class="sky-planet-name">${p.name}</span>
+        <div class="sky-bar-wrap">
+          <div class="sky-bar" style="width:${barPct}%;background:${PCOL[p.name]}"></div>
+        </div>
+        <span class="sky-evt" style="color:${statusCol}">${statusTxt}</span>
+        <span style="color:#475569;font-size:.7rem;margin-left:6px">${elongTxt}</span>`;
+      skyDiv.appendChild(row);
+    });
+
+    /* Visibility note */
+    const noteDiv = document.createElement('div');
+    noteDiv.style.cssText = 'font-size:.72rem;color:#475569;padding:8px 0 2px;border-top:1px solid #0f172a;margin-top:6px';
+    noteDiv.textContent = 'Elongation from Sun: >15° = potentially visible. Bars show angular separation.';
+    skyDiv.appendChild(noteDiv);
+    el.appendChild(skyDiv);
+
+  } catch(err) {
+    el.innerHTML = `<div class="wx-err">⚠ Astronomical data unavailable: ${err.message}</div>`;
+  }
+}
+
+function _secHeader(icon, text) {
+  const d = document.createElement('div');
+  d.className = 'wx-section';
+  d.innerHTML = `<span>${icon}</span> ${text}`;
+  return d;
+}
+function _arow(label, val) {
+  return `<div class="astro-row"><span>${label}</span><span class="av">${val}</span></div>`;
 }
 
 /* ── Bootstrap ───────────────────────────────────────────────────────────── */

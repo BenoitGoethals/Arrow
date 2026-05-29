@@ -109,6 +109,18 @@
         </div>
     </div>
 
+    <!-- Z / Local clock -->
+    <span id="nav-clock" style="
+        display:flex;flex-direction:column;align-items:flex-end;
+        margin:0 10px;line-height:1.25;cursor:default;user-select:none;">
+        <span id="nav-clock-z"
+              style="font-family:monospace;font-size:.82rem;font-weight:700;
+                     color:#7dd3fc;letter-spacing:.04em">00:00:00Z</span>
+        <span id="nav-clock-l"
+              style="font-family:monospace;font-size:.68rem;
+                     color:#64748b;letter-spacing:.03em">00:00 LCL</span>
+    </span>
+
     <span class="spacer"></span>
     <!-- Mission selector -->
     <span id="nav-mission-wrap" style="display:none;align-items:center;gap:6px;margin-right:10px">
@@ -442,6 +454,25 @@
     // Call on load and whenever missions change
     document.addEventListener('DOMContentLoaded', _refreshNavMission);
     window.addEventListener('arrow-mission-changed', _refreshNavMission);
+
+    /* ── Z-time / local clock ────────────────────────────────────────────── */
+    (function () {
+        function _pad(n) { return String(n).padStart(2, '0'); }
+        function _tick() {
+            const now  = new Date();
+            const zh   = _pad(now.getUTCHours());
+            const zm   = _pad(now.getUTCMinutes());
+            const zs   = _pad(now.getUTCSeconds());
+            const lh   = _pad(now.getHours());
+            const lm   = _pad(now.getMinutes());
+            const elZ  = document.getElementById('nav-clock-z');
+            const elL  = document.getElementById('nav-clock-l');
+            if (elZ) elZ.textContent = `${zh}:${zm}:${zs}Z`;
+            if (elL) elL.textContent = `${lh}:${lm} LCL`;
+        }
+        _tick();
+        setInterval(_tick, 1000);
+    })();
 
     /* Photo loader — `/photos/{id}` requires Authorization: Bearer, which an
        <img> tag cannot send. Fetch with auth, expose as blob URL, cache by id. */
