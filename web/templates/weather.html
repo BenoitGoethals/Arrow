@@ -134,10 +134,9 @@
     <h1>⛅ WEATHER FORECAST</h1>
     <div class="wx-sep"></div>
 
-    <span class="wx-lbl">LAT</span>
-    <input id="wx-lat" class="wx-inp" type="number" step="0.001" value="50.850" placeholder="Latitude">
-    <span class="wx-lbl">LON</span>
-    <input id="wx-lon" class="wx-inp" type="number" step="0.001" value="4.350" placeholder="Longitude">
+    <span class="wx-lbl">MGRS</span>
+    <input id="wx-mgrs" class="wx-inp" style="width:140px;font-family:monospace;letter-spacing:.04em"
+           type="text" placeholder="31UDS 12345 67890" autocomplete="off" spellcheck="false">
     <button class="wx-btn" onclick="fetchWeather()">🔄 Fetch</button>
     <button class="wx-btn green" onclick="useMapCenter()">📍 Map center</button>
 
@@ -242,6 +241,17 @@ let owmLayers  = {};
 let rvLayer    = null;
 let ovlState   = { clouds:false, precip:false, wind:false, temp:false, radar:false };
 
+/* ── MGRS helpers ────────────────────────────────────────────────────────── */
+function setMgrsInput(lat, lng) {
+  document.getElementById('wx-mgrs').value = window.mgrsEncode(lat, lng);
+}
+function readLatLon() {
+  const raw = (document.getElementById('wx-mgrs').value || '').trim();
+  const ll  = window.mgrsDecode(raw);
+  if(!ll) return null;
+  return { lat: ll[0], lon: ll[1] };
+}
+
 /* ── Map init ────────────────────────────────────────────────────────────── */
 function initMap() {
   wxMap = L.map('wx-map', { zoomControl:true }).setView([50.85, 4.35], 8);
@@ -252,15 +262,13 @@ function initMap() {
   wxMarker = L.marker([50.85, 4.35], { draggable:true }).addTo(wxMap);
   wxMarker.on('dragend', () => {
     const ll = wxMarker.getLatLng();
-    document.getElementById('wx-lat').value = ll.lat.toFixed(4);
-    document.getElementById('wx-lon').value = ll.lng.toFixed(4);
+    setMgrsInput(ll.lat, ll.lng);
     fetchWeather();
   });
 
   wxMap.on('click', e => {
     const {lat,lng} = e.latlng;
-    document.getElementById('wx-lat').value = lat.toFixed(4);
-    document.getElementById('wx-lon').value = lng.toFixed(4);
+    setMgrsInput(lat, lng);
     wxMarker.setLatLng(e.latlng);
     fetchWeather();
   });
@@ -339,16 +347,19 @@ function setHorizon(h, btn) {
 /* ── Use map center ──────────────────────────────────────────────────────── */
 function useMapCenter() {
   const c = wxMap.getCenter();
-  document.getElementById('wx-lat').value = c.lat.toFixed(4);
-  document.getElementById('wx-lon').value = c.lng.toFixed(4);
+  setMgrsInput(c.lat, c.lng);
   fetchWeather();
 }
 
 /* ── Fetch weather from Open-Meteo ───────────────────────────────────────── */
 async function fetchWeather() {
-  const lat = parseFloat(document.getElementById('wx-lat').value);
-  const lon = parseFloat(document.getElementById('wx-lon').value);
-  if(isNaN(lat) || isNaN(lon)) return;
+  const pos = readLatLon();
+  if(!pos) {
+    document.getElementById('wx-data').innerHTML =
+      '<div class="wx-err">⚠ Invalid MGRS — enter a grid like <code>31UDS 12345 67890</code></div>';
+    return;
+  }
+  const {lat, lon} = pos;
 
   wxMarker.setLatLng([lat, lon]);
   wxMap.panTo([lat, lon]);
@@ -383,12 +394,13 @@ async function fetchWeather() {
 
 /* ── Render everything ───────────────────────────────────────────────────── */
 function renderAll(data) {
-  const lat = parseFloat(document.getElementById('wx-lat').value);
-  const lon = parseFloat(document.getElementById('wx-lon').value);
+  const pos = readLatLon();
+  const {lat, lon} = pos || { lat: data.latitude, lon: data.longitude };
+  const mgrs = window.mgrsEncode(lat, lon);
 
   /* Update print header */
   document.getElementById('wx-ph-loc').textContent =
-    `Location: ${lat.toFixed(4)}°, ${lon.toFixed(4)}° (${data.timezone||'UTC'})`;
+    `Location: ${mgrs}  (${lat.toFixed(4)}°, ${lon.toFixed(4)}°  ${data.timezone||'UTC'})`;
   document.getElementById('wx-ph-hz').textContent =
     `Horizon: ${wxHorizon} hours`;
   document.getElementById('wx-ph-gen').textContent =
@@ -709,11 +721,11 @@ function exportPDF() {
 /* ── Bootstrap ───────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   initMap();
-  /* key listener on coordinate inputs */
-  ['wx-lat','wx-lon'].forEach(id => {
-    document.getElementById(id).addEventListener('keydown', e => {
-      if(e.key === 'Enter') fetchWeather();
-    });
+  /* seed MGRS input with default location (Brussels) */
+  setMgrsInput(50.85, 4.35);
+  /* fetch on Enter */
+  document.getElementById('wx-mgrs').addEventListener('keydown', e => {
+    if(e.key === 'Enter') fetchWeather();
   });
 });
 </script>
