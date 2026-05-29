@@ -509,6 +509,15 @@
     if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
     const role = localStorage.getItem('arrow_role') || 'OPERATOR';
     const headers = { Authorization: `Bearer ${token}` };
+    // Namespace localStorage keys by the logged-in user so that multiple tabs
+    // with different accounts don't bleed basemap/overlay/visibility state.
+    function _jwtSub(t) {
+        try { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub || 'anon'; }
+        catch (_) { return 'anon'; }
+    }
+    const _uid = _jwtSub(token);
+    const LS_BASEMAP  = `arrow_${_uid}_basemap`;
+    const LS_OVERLAYS = `arrow_${_uid}_active_overlays`;
     // Include X-Mission-ID on every request so the backend scopes results to the
     // active mission. When no mission is selected the header is omitted and the
     // backend returns everything (no filter).
@@ -561,7 +570,7 @@
             overlayLayers[name].addTo(map);
             activeOverlay = name;
         }
-        localStorage.setItem('arrow_basemap', name);
+        localStorage.setItem(LS_BASEMAP, name);
         basemapSelect.value = name;
     }
 
@@ -586,7 +595,7 @@
             basemapSelect.appendChild(opt);
         }
 
-        const saved = localStorage.getItem('arrow_basemap');
+        const saved = localStorage.getItem(LS_BASEMAP);
         const initial = (saved && (saved === 'osm' || overlayLayers[saved])) ? saved : 'osm';
         activateBasemap(initial);
 
@@ -636,7 +645,7 @@
     // of truth and changes via the admin page propagate via:
     //   * the in-tab CustomEvent ``arrow-visibility-changed``
     //   * the cross-tab native ``storage`` event
-    const VIS_LS_KEY = 'arrow_visibility_prefs';
+    const VIS_LS_KEY = `arrow_${_uid}_vis_prefs`;
     function _applyVis(prefs) {
         if (!prefs) return;
         for (const k of Object.keys(state.visibility)) {
@@ -1276,7 +1285,7 @@
     // operator's filter choice without a server roundtrip.
     const ovState = {
         overlays:        new Map(),                   // id -> dto
-        active:          new Set(JSON.parse(localStorage.getItem('arrow_active_overlays') || '[]')),
+        active:          new Set(JSON.parse(localStorage.getItem(LS_OVERLAYS) || '[]')),
         panel:           document.getElementById('ov-panel'),
         list:            document.getElementById('ov-list'),
         editRow:         document.getElementById('ov-edit-row'),
@@ -1301,7 +1310,7 @@
     }
 
     function persistActiveOverlays() {
-        localStorage.setItem('arrow_active_overlays', JSON.stringify([...ovState.active]));
+        localStorage.setItem(LS_OVERLAYS, JSON.stringify([...ovState.active]));
     }
 
     function renderOverlayList() {
