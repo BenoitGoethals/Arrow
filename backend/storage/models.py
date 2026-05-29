@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.storage.database import Base
@@ -591,3 +591,23 @@ class StrikePackage(Base):
     report_ids:          Mapped[str]          = mapped_column(Text, default="[]")
     # Full asset manifest — JSON-encoded PackageAssets structure
     assets:             Mapped[str]           = mapped_column(Text, default="{}")
+
+
+class CopDocument(Base):
+    """Uploaded supporting document for the Common Operational Picture.
+
+    Accepts .docx / .doc and .txt files. Content is stored as raw bytes so
+    no external filesystem dependency is introduced. TXT content is also
+    mirrored in ``text_preview`` for in-browser display without a download.
+    """
+    __tablename__ = "cop_documents"
+
+    id:           Mapped[int]          = mapped_column(primary_key=True)
+    title:        Mapped[str]          = mapped_column(String(200))
+    filename:     Mapped[str]          = mapped_column(String(255))
+    content_type: Mapped[str]          = mapped_column(String(20))   # TXT or WORD
+    file_data:    Mapped[bytes]        = mapped_column(LargeBinary)
+    text_preview: Mapped[str]          = mapped_column(Text, default="")
+    uploaded_by:  Mapped[int]          = mapped_column(ForeignKey("operators.id"))
+    uploaded_at:  Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow)
+    mission_id:   Mapped[int | None]   = mapped_column(ForeignKey("missions.id"), nullable=True)

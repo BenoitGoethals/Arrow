@@ -38,6 +38,7 @@ from backend.missions.router import router as missions_router
 from backend.opord.router import router as opord_router
 from backend.reports.router import router as reports_router
 from backend.cas.router import router as cas_router
+from backend.cop.router import router as cop_router
 from backend.storage.database import init_db
 from backend.storage.seed import seed as seed_db
 from backend.tracking.router import router as tracking_router
@@ -206,6 +207,7 @@ def create_app() -> FastAPI:
     app.include_router(overlays_router)
     app.include_router(reports_router)
     app.include_router(cas_router)
+    app.include_router(cop_router)
     app.include_router(opord_router)
     app.include_router(fire_missions_router)
     app.include_router(history_router)
