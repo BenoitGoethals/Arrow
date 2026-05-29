@@ -109,16 +109,29 @@
         </div>
     </div>
 
-    <!-- Z / Local clock -->
+    <span class="spacer"></span>
+
+    <!-- Z / Local clock — centred between the two spacers -->
     <span id="nav-clock" style="
-        display:flex;flex-direction:column;align-items:flex-end;
-        margin:0 10px;line-height:1.25;cursor:default;user-select:none;">
-        <span id="nav-clock-z"
-              style="font-family:monospace;font-size:.82rem;font-weight:700;
-                     color:#7dd3fc;letter-spacing:.04em">00:00:00Z</span>
-        <span id="nav-clock-l"
-              style="font-family:monospace;font-size:.68rem;
-                     color:#64748b;letter-spacing:.03em">00:00 LCL</span>
+        display:flex;align-items:center;gap:14px;
+        cursor:default;user-select:none;white-space:nowrap;">
+        <!-- Zulu -->
+        <span style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:.65rem;font-weight:700;color:#475569;
+                         letter-spacing:.09em;text-transform:uppercase">Z</span>
+            <span id="nav-clock-z"
+                  style="font-family:monospace;font-size:.9rem;font-weight:700;
+                         color:#7dd3fc;letter-spacing:.04em">00:00:00</span>
+        </span>
+        <span style="color:#1e293b;font-size:.9rem">|</span>
+        <!-- Local -->
+        <span style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:.65rem;font-weight:700;color:#475569;
+                         letter-spacing:.09em;text-transform:uppercase">LCL</span>
+            <span id="nav-clock-l"
+                  style="font-family:monospace;font-size:.9rem;font-weight:700;
+                         color:#94a3b8;letter-spacing:.04em">00:00</span>
+        </span>
     </span>
 
     <span class="spacer"></span>
@@ -459,16 +472,13 @@
     (function () {
         function _pad(n) { return String(n).padStart(2, '0'); }
         function _tick() {
-            const now  = new Date();
-            const zh   = _pad(now.getUTCHours());
-            const zm   = _pad(now.getUTCMinutes());
-            const zs   = _pad(now.getUTCSeconds());
-            const lh   = _pad(now.getHours());
-            const lm   = _pad(now.getMinutes());
-            const elZ  = document.getElementById('nav-clock-z');
-            const elL  = document.getElementById('nav-clock-l');
-            if (elZ) elZ.textContent = `${zh}:${zm}:${zs}Z`;
-            if (elL) elL.textContent = `${lh}:${lm} LCL`;
+            const now = new Date();
+            const elZ = document.getElementById('nav-clock-z');
+            const elL = document.getElementById('nav-clock-l');
+            if (elZ) elZ.textContent =
+                `${_pad(now.getUTCHours())}:${_pad(now.getUTCMinutes())}:${_pad(now.getUTCSeconds())}`;
+            if (elL) elL.textContent =
+                `${_pad(now.getHours())}:${_pad(now.getMinutes())}`;
         }
         _tick();
         setInterval(_tick, 1000);
