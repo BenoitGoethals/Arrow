@@ -164,6 +164,7 @@ def map_config(_: Operator = Depends(get_current_operator)) -> dict:
     return {
         "tile_url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         "offline_enabled": cfg.maps.offline,
+        "owm_api_key": cfg.maps.owm_api_key,
     }
 
 
