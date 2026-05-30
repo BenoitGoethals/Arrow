@@ -142,11 +142,15 @@ async function load() {
   cbrn.forEach(r => {
     try {
       const p = JSON.parse(r.payload);
-      const lat = p.lat || p.latitude || p.location_lat;
-      const lng = p.lng || p.longitude || p.location_lng;
-      if (lat && lng) {
-        L.circle([lat,lng],{radius:500,color:'#fbbf24',fillColor:'#fbbf2444',weight:2})
-         .bindPopup(`<b>${r.type}</b><br>${r.status}<br><code>${window.mgrsEncode?window.mgrsEncode(lat,lng):''}</code>`)
+      /* CBRN reports store location under several possible keys */
+      const lat = p.lat ?? p.latitude ?? p.location_lat ?? p.observer_lat ?? r.latitude ?? null;
+      const lng = p.lng ?? p.longitude ?? p.location_lng ?? p.observer_lng ?? r.longitude ?? null;
+      if (lat != null && lng != null) {
+        const mgrs = window.mgrsEncode ? window.mgrsEncode(lat, lng) : '';
+        L.circle([lat, lng], {radius:500, color:'#fbbf24', fillColor:'#fbbf2455', weight:2})
+         .bindPopup(`<b>${r.type}</b><br>Status: ${r.status}<br>
+                    <code>${mgrs}</code><br>
+                    ${p.agent||p.type_agent||''} ${p.remarks||''}`)
          .addTo(cbrnLayer);
       }
     } catch(_){}

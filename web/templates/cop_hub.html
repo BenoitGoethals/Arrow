@@ -66,21 +66,22 @@ const COPS = [
 
 // Per-COP metric/status fetchers
 async function fetchTaccop() {
-  const [ops, alerts, objs] = await Promise.all([
-    arrowFetch('/operators').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  const [hier, alerts, objs] = await Promise.all([
+    arrowFetch('/hierarchy').then(r=>r.ok?r.json():{companies:[]}).catch(()=>({companies:[]})),
     arrowFetch('/alerts').then(r=>r.ok?r.json():[]).catch(()=>[]),
     arrowFetch('/tactical-objects').then(r=>r.ok?r.json():[]).catch(()=>[]),
   ]);
-  const online  = ops.filter(o=>o.online).length;
-  const actAlerts = alerts.filter(a=>a.status==='ACTIVE'||a.status==='TRIGGERED').length;
-  const enemies = objs.filter(o=>(o.type||'').toUpperCase().includes('ENEMY')||
-                                  (o.affiliation||'')!=='FRIENDLY').length;
-  const badge = actAlerts > 2 ? 'red' : actAlerts > 0 ? 'amber' : 'green';
+  let total=0, online=0;
+  (hier.companies||[]).forEach(c=>(c.platoons||[]).forEach(p=>(p.sections||[]).forEach(s=>
+    (s.teams||[]).forEach(t=>(t.operators||[]).forEach(o=>{ total++; if(o.online) online++; })))));
+  const actAlerts = alerts.filter(a=>a.status==='ACTIVE').length;
+  const enemies   = objs.filter(o=>o.affiliation==='ENEMY').length;
+  const badge = actAlerts > 5 ? 'red' : actAlerts > 0 ? 'amber' : 'green';
   return { badge, metrics:[
-    {label:'Operators online', value: online+'/'+ops.length},
+    {label:'Operators online', value: online+'/'+total},
     {label:'Active alerts',    value: actAlerts},
-    {label:'Enemy contacts',   value: enemies},
-    {label:'Friendly units',   value: ops.length},
+    {label:'Enemy objects',    value: enemies},
+    {label:'Friendly objects', value: objs.filter(o=>o.affiliation==='FRIENDLY').length},
   ]};
 }
 async function fetchLogcop() {
@@ -127,14 +128,15 @@ async function fetchFirescop() {
     arrowFetch('/fire-missions').then(r=>r.ok?r.json():[]).catch(()=>[]),
     arrowFetch('/cas/assets').then(r=>r.ok?r.json():[]).catch(()=>[]),
   ]);
-  const active   = fms.filter(f=>f.status==='ACTIVE'||f.status==='IN_PROGRESS').length;
+  const ACTIVE_ST = ['PENDING','ACKNOWLEDGED','IN_PROGRESS'];
+  const active   = fms.filter(f=>ACTIVE_ST.includes(f.status)).length;
   const casAvail = assets.filter(a=>a.status==='AVAILABLE').length;
   const badge = active > 3 ? 'red' : active > 0 ? 'amber' : 'green';
   return { badge, metrics:[
     {label:'Active fire mssns', value: active},
-    {label:'Total fire mssns',  value: fms.length},
+    {label:'Completed',         value: fms.filter(f=>f.status==='COMPLETED').length},
     {label:'CAS assets avail',  value: casAvail},
-    {label:'CAS assets total',  value: assets.length},
+    {label:'CAS total',         value: assets.length},
   ]};
 }
 async function fetchCbrncop() {

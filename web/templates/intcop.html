@@ -97,7 +97,7 @@ async function load() {
   ]);
 
   const intel   = reps.filter(r=>INT_TYPES.includes(r.type));
-  const enemies = objs.filter(o=>(o.affiliation||'FRIENDLY')!=='FRIENDLY');
+  const enemies = objs.filter(o=>o.affiliation==='ENEMY');
 
   document.getElementById('i-enemy').textContent    = enemies.length;
   document.getElementById('i-contacts').textContent = intel.filter(r=>
