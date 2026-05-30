@@ -48,22 +48,22 @@
     <span class="brand">ARROW</span>
 
     <!-- Dashboard -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <a class="nav-link nav-internal" href="{{ url_for('dashboard.index') }}">Dashboard</a>
     </div>
 
     <!-- Tactical Map -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <a class="nav-link nav-internal" href="{{ url_for('tactical_map.index') }}">🗺 Map</a>
     </div>
 
     <!-- Messaging -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <a class="nav-link nav-internal" href="{{ url_for('messaging.index') }}">💬 Messaging</a>
     </div>
 
     <!-- Ops dropdown -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <span class="nav-link nav-internal" tabindex="0">Ops ▾</span>
         <div class="nav-dropdown">
             <a href="/missions/" style="color:#f59e0b">🎯 Missions</a>
@@ -78,7 +78,7 @@
     </div>
 
     <!-- COPs dropdown -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <span class="nav-link nav-internal" tabindex="0">COPs ▾</span>
         <div class="nav-dropdown">
             <a href="{{ url_for('cop_hub.index') }}" style="color:#e2e8f0;font-weight:700">⊞ COP Hub</a>
@@ -93,7 +93,7 @@
     </div>
 
     <!-- Reporting dropdown -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <span class="nav-link nav-internal" tabindex="0">Reporting ▾</span>
         <div class="nav-dropdown">
             <a href="{{ url_for('reports.index') }}">📝 Reports</a>
@@ -105,7 +105,7 @@
     </div>
 
     <!-- ISR dropdown -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <span class="nav-link nav-internal" tabindex="0">ISR ▾</span>
         <div class="nav-dropdown">
             <a href="{{ url_for('streams.index') }}" style="color:#a78bfa">📡 Live Streams</a>
@@ -114,7 +114,7 @@
     </div>
 
     <!-- Admin dropdown -->
-    <div class="nav-item" style="display:none">
+    <div class="nav-item">
         <span class="nav-link nav-internal" tabindex="0">Admin ▾</span>
         <div class="nav-dropdown">
             <a href="{{ url_for('organisation.index') }}" style="color:#34d399">🏛 Personnel</a>
