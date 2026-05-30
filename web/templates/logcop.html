@@ -4,17 +4,17 @@
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
 <style>
-/* ── Layout ──────────────────────────────────────────────────────────────── */
+/* ── Layout ─────────────────────────────────────────────────────────────── */
 .lc-wrap  { display:flex; flex-direction:column; height:calc(100vh - 52px);
             background:#0d1117; color:#e2e8f0; font-size:.875rem; overflow:hidden; }
 
-/* ── Alert banner ────────────────────────────────────────────────────────── */
+/* ── Alert banner ───────────────────────────────────────────────────────── */
 #lc-alerts { display:none; align-items:center; gap:8px; padding:5px 14px;
              background:#450a0a; border-bottom:1px solid #7f1d1d; flex-shrink:0; flex-wrap:wrap; }
 .lc-alert-chip { padding:2px 10px; border-radius:3px; font-size:.74rem; font-weight:700;
                  letter-spacing:.04em; background:#7f1d1d; color:#fca5a5; white-space:nowrap; }
 
-/* ── Top bar ─────────────────────────────────────────────────────────────── */
+/* ── Top bar ────────────────────────────────────────────────────────────── */
 .lc-topbar { display:flex; align-items:center; gap:10px; padding:7px 14px;
              background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
 .lc-topbar h1 { font-size:.95rem; font-weight:700; color:#fb923c;
@@ -31,11 +31,19 @@
 .lc-btn.orange  { background:#ea580c; border-color:#ea580c; color:#fff; }
 .lc-btn.orange:hover { background:#c2410c; }
 
-/* ── Main split ──────────────────────────────────────────────────────────── */
+/* ── Summary strip ──────────────────────────────────────────────────────── */
+.lc-summary { display:flex; flex-shrink:0; background:#0a0f1a;
+              border-bottom:1px solid #1e293b; overflow-x:auto; }
+.sum-stat  { padding:5px 16px; border-right:1px solid #1e293b; display:flex;
+             flex-direction:column; align-items:center; gap:1px; flex-shrink:0; }
+.sum-val   { font-family:monospace; font-size:.9rem; font-weight:700; color:#e2e8f0; }
+.sum-lbl   { font-size:.6rem; text-transform:uppercase; letter-spacing:.09em; color:#475569; }
+
+/* ── Main split ─────────────────────────────────────────────────────────── */
 .lc-main { display:flex; flex:1; overflow:hidden; }
 
-/* ── Map column ──────────────────────────────────────────────────────────── */
-.lc-map-col { display:flex; flex-direction:column; width:42%; flex-shrink:0;
+/* ── Map column ─────────────────────────────────────────────────────────── */
+.lc-map-col { display:flex; flex-direction:column; width:40%; flex-shrink:0;
               border-right:1px solid #1e293b; }
 #lc-map    { flex:1; }
 .lc-map-legend { padding:6px 10px; background:#111827; border-top:1px solid #1e293b;
@@ -43,13 +51,27 @@
 .leg-item  { display:flex; align-items:center; gap:5px; font-size:.72rem; color:#94a3b8; }
 .leg-dot   { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
 
-/* ── Data column ─────────────────────────────────────────────────────────── */
-.lc-data-col { flex:1; display:flex; flex-direction:column; overflow-y:auto; }
+/* ── Data column with tabs ──────────────────────────────────────────────── */
+.lc-data-col { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+/* ── Tab nav ─────────────────────────────────────────────────────────────── */
+.lc-tabs { display:flex; background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; }
+.lc-tab  { padding:8px 16px; background:none; border:0; border-bottom:2px solid transparent;
+           color:#64748b; font:inherit; font-size:.78rem; cursor:pointer; white-space:nowrap;
+           display:flex; align-items:center; gap:5px; transition:color .15s; }
+.lc-tab:hover  { color:#94a3b8; }
+.lc-tab.active { color:#fb923c; border-bottom-color:#fb923c; font-weight:700; }
+.lc-tab-badge  { background:#dc2626; color:#fff; font-size:.62rem; font-weight:700;
+                 padding:0 5px; border-radius:99px; min-width:16px; text-align:center; }
+
+/* ── Tab panes ───────────────────────────────────────────────────────────── */
+.lc-tab-pane { flex:1; overflow-y:auto; display:flex; flex-direction:column; }
+.lc-tab-pane[hidden] { display:none !important; }
 
 /* ── Section headers ─────────────────────────────────────────────────────── */
 .lc-sec  { padding:8px 14px 5px; font-size:.7rem; color:#64748b; letter-spacing:.08em;
            text-transform:uppercase; font-weight:700; border-bottom:1px solid #1e293b;
-           display:flex; align-items:center; gap:8px; }
+           display:flex; align-items:center; gap:8px; flex-shrink:0; }
 .lc-sec span { color:#fb923c; font-size:.95rem; }
 .lc-sec .lc-sec-actions { margin-left:auto; display:flex; gap:6px; }
 
@@ -76,15 +98,15 @@
 @keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:.4} }
 
 /* ── Two-column lower panels ─────────────────────────────────────────────── */
-.lc-lower { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #1e293b; }
+.lc-lower { display:grid; grid-template-columns:1fr 1fr; }
 .lc-panel { display:flex; flex-direction:column; border-right:1px solid #1e293b; }
 .lc-panel:last-child { border-right:none; }
 
-/* ── Vehicle table ───────────────────────────────────────────────────────── */
+/* ── Generic table ───────────────────────────────────────────────────────── */
 .lc-vtbl { width:100%; border-collapse:collapse; font-size:.78rem; }
 .lc-vtbl th { background:#111827; color:#64748b; font-size:.68rem; letter-spacing:.06em;
               text-transform:uppercase; padding:6px 10px; text-align:left;
-              border-bottom:1px solid #1e293b; position:sticky; top:0; }
+              border-bottom:1px solid #1e293b; position:sticky; top:0; z-index:1; }
 .lc-vtbl td { padding:5px 10px; border-bottom:1px solid #0f172a; }
 .lc-vtbl tr:hover td { background:#0f1a2e; }
 .fmc-bar { display:flex; align-items:center; gap:3px; }
@@ -114,6 +136,45 @@
            text-overflow:ellipsis; }
 .cv-eta  { font-family:monospace; font-size:.72rem; color:#94a3b8; white-space:nowrap; }
 
+/* ── LOGREP list ─────────────────────────────────────────────────────────── */
+.lr-rep-item { border-bottom:1px solid #0f172a; }
+.lr-rep-row  { display:flex; align-items:center; gap:8px; padding:7px 12px;
+               cursor:pointer; flex-wrap:wrap; }
+.lr-rep-row:hover { background:#0f1a2e; }
+.lr-toggle   { color:#475569; font-size:.7rem; width:14px; flex-shrink:0; }
+.lr-serial   { font-family:monospace; font-size:.78rem; font-weight:700; color:#e2e8f0;
+               min-width:96px; }
+.lr-dtg      { font-family:monospace; font-size:.72rem; color:#64748b; min-width:100px; }
+.lr-hq       { font-size:.75rem; color:#94a3b8; flex:1; }
+.lr-strength { font-family:monospace; font-size:.75rem; color:#e2e8f0; min-width:55px; }
+.lr-detail-area { padding:10px 14px 10px 26px; background:#090d14;
+                  border-top:1px solid #1e293b; font-size:.76rem; }
+.lr-sec-block { border:1px solid #1e2d3d; border-radius:5px; margin-bottom:.45rem; overflow:hidden; }
+.lr-sec-hdr  { background:#162030; padding:.28rem .55rem; display:flex; align-items:center; gap:.45rem; }
+.lr-sec-hdr .lr-letter { background:#0ea5e9; color:#fff; font-size:.62rem; font-weight:700;
+                         padding:1px 5px; border-radius:3px; }
+.lr-sec-hdr .lr-title  { font-size:.76rem; font-weight:600; color:#cbd5e1; }
+.lr-sec-body { padding:.4rem .6rem; }
+.lr-kv  { display:flex; gap:.5rem; margin:.1rem 0; }
+.lr-kv-lbl { color:#64748b; min-width:130px; }
+.lr-kv-val { color:#e2e8f0; }
+.lr-mini-tbl { width:100%; border-collapse:collapse; font-size:.73rem; margin-top:.2rem; }
+.lr-mini-tbl th { border-bottom:1px solid #1e2d3d; padding:2px 5px; text-align:left; color:#64748b; }
+.lr-mini-tbl td { padding:2px 5px; border-bottom:1px solid #0f1928; color:#cbd5e1; }
+
+/* ── LOGREQ priority badges ──────────────────────────────────────────────── */
+.pri-IMMEDIATE { color:#ef4444; font-weight:700; }
+.pri-URGENT    { color:#f59e0b; font-weight:700; }
+.pri-ROUTINE   { color:#94a3b8; }
+
+/* ── Status badges ───────────────────────────────────────────────────────── */
+.sb { display:inline-block; font-size:.66rem; font-weight:700; padding:1px 6px;
+      border-radius:3px; border:1px solid; }
+.sb-RECEIVED     { background:rgba(100,116,139,.18); color:#94a3b8; border-color:#475569; }
+.sb-ACKNOWLEDGED { background:rgba(245,158,11,.12); color:#f59e0b; border-color:#b45309; }
+.sb-PROCESSED    { background:rgba(34,197,94,.12);  color:#22c55e; border-color:#16a34a; }
+.sb-REJECTED     { background:rgba(239,68,68,.12);  color:#ef4444; border-color:#dc2626; }
+
 /* ── Modals ──────────────────────────────────────────────────────────────── */
 .lc-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
                z-index:3000; align-items:center; justify-content:center; }
@@ -138,22 +199,19 @@
 .lc-row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
 
 /* ── LOGSTAT modal ───────────────────────────────────────────────────────── */
-#modal-logstat .lc-modal { width:560px; }
+#modal-logstat .lc-modal { width:580px; }
 #logstat-text { font-family:monospace; font-size:.77rem; background:#0d1117;
                 border:1px solid #1e293b; border-radius:4px; padding:10px;
                 color:#e2e8f0; white-space:pre; overflow-x:auto; min-height:200px;
-                max-height:50vh; overflow-y:auto; }
+                max-height:52vh; overflow-y:auto; }
 
 /* ── Print ───────────────────────────────────────────────────────────────── */
 @media print {
-    .lc-map-col, .lc-topbar .lc-btn, #lc-alerts { display:none !important; }
+    .lc-map-col, .lc-topbar .lc-btn, #lc-alerts, .lc-tabs { display:none !important; }
     .lc-main { flex-direction:column; overflow:visible; }
     .lc-data-col { overflow:visible; }
-    .lc-lower { grid-template-columns:1fr 1fr; }
+    .lc-tab-pane[hidden] { display:flex !important; }
     body, .lc-wrap { background:#fff; color:#000; }
-    .lc-sec { color:#555; }
-    .lc-cls-label { color:#333; }
-    .lc-vtbl td, .lc-vtbl th { border-color:#ccc; }
 }
 </style>
 {% endblock %}
@@ -166,15 +224,47 @@
 
   <!-- Top bar -->
   <div class="lc-topbar">
-    <h1>📦 LOGCOP</h1>
+    <h1>LOGCOP</h1>
     <div class="lc-sep"></div>
     <span class="lc-time" id="lc-ts">—</span>
     <div class="lc-sep"></div>
-    <button class="lc-btn orange" onclick="openModal('modal-supply-point')">📍 + Supply Point</button>
-    <button class="lc-btn primary" onclick="openModal('modal-convoy')">🚚 + Convoy</button>
-    <button class="lc-btn primary" onclick="openModal('modal-vehicle')">🚗 + Vehicle</button>
-    <button class="lc-btn" onclick="generateLogstat()">📋 LOGSTAT</button>
+    <button class="lc-btn orange" onclick="openModal('modal-supply-point')">+ Supply Point</button>
+    <button class="lc-btn primary" onclick="openModal('modal-convoy')">+ Convoy</button>
+    <button class="lc-btn primary" onclick="openModal('modal-vehicle')">+ Vehicle</button>
+    <button class="lc-btn" onclick="generateLogstat()">LOGSTAT</button>
     <button class="lc-btn" onclick="loadAll()">↻ Refresh</button>
+  </div>
+
+  <!-- Summary strip (aggregated from LOGREPs) -->
+  <div class="lc-summary" id="lc-summary">
+    <div class="sum-stat">
+      <span class="sum-val" id="sum-present" style="color:#e2e8f0">—</span>
+      <span class="sum-lbl">PERSTAT</span>
+    </div>
+    <div class="sum-stat">
+      <span class="sum-val" id="sum-cas" style="color:#ef4444">—</span>
+      <span class="sum-lbl">KIA/WIA</span>
+    </div>
+    <div class="sum-stat">
+      <span class="sum-val" id="sum-assess">—</span>
+      <span class="sum-lbl">ASSESSMENT</span>
+    </div>
+    <div class="sum-stat">
+      <span class="sum-val" id="sum-logreq-cnt" style="color:#f59e0b">—</span>
+      <span class="sum-lbl">LOGREQ OPEN</span>
+    </div>
+    <div class="sum-stat">
+      <span class="sum-val" id="sum-new-lr" style="color:#0ea5e9">—</span>
+      <span class="sum-lbl">NEW LOGREPs</span>
+    </div>
+    <div class="sum-stat">
+      <span class="sum-val" id="sum-maint-wo" style="color:#94a3b8">—</span>
+      <span class="sum-lbl">OPEN W/O</span>
+    </div>
+    <div class="sum-stat">
+      <span class="sum-val" id="sum-evac24" style="color:#a78bfa">—</span>
+      <span class="sum-lbl">EVAC 24H</span>
+    </div>
   </div>
 
   <!-- Main split -->
@@ -194,53 +284,87 @@
       </div>
     </div>
 
-    <!-- Data panels -->
+    <!-- Data column -->
     <div class="lc-data-col">
 
-      <!-- Supply classes -->
-      <div class="lc-sec">
-        <span>📊</span> SUPPLY STATUS (CLASS I – X)
-        <div class="lc-sec-actions">
-          <span style="font-size:.7rem;color:#475569">Click row to update quantity</span>
-        </div>
+      <!-- Tab nav -->
+      <div class="lc-tabs">
+        <button class="lc-tab active" data-tab="supply"   onclick="lcShowTab('supply')">SUPPLY</button>
+        <button class="lc-tab"        data-tab="vehicles" onclick="lcShowTab('vehicles')">VEHICLES</button>
+        <button class="lc-tab"        data-tab="logreps"  onclick="lcShowTab('logreps')">
+          LOGREPs <span class="lc-tab-badge" id="lr-new-badge" style="display:none"></span>
+        </button>
+        <button class="lc-tab"        data-tab="logreq"   onclick="lcShowTab('logreq')">
+          LOGREQ <span class="lc-tab-badge" id="lrq-cnt-badge" style="display:none"></span>
+        </button>
       </div>
-      <div class="lc-supply-grid" id="lc-supply"></div>
 
-      <!-- Vehicles + Convoys -->
-      <div class="lc-lower">
-        <div class="lc-panel">
-          <div class="lc-sec"><span>🚗</span> MAINTENANCE STATUS</div>
-          <div style="overflow-y:auto;max-height:260px">
-            <table class="lc-vtbl">
-              <thead><tr>
-                <th>Unit / Type</th><th>FMC</th><th>PMC</th><th>NMC</th><th>Rate</th><th></th>
-              </tr></thead>
-              <tbody id="lc-vehicles"></tbody>
-            </table>
+      <!-- ── Supply tab ── -->
+      <div id="lc-tab-supply" class="lc-tab-pane">
+        <div class="lc-sec">
+          <span>📊</span> SUPPLY STATUS (CLASS I – X)
+          <div class="lc-sec-actions">
+            <span style="font-size:.7rem;color:#475569">Click row to update</span>
           </div>
         </div>
-        <div class="lc-panel">
-          <div class="lc-sec">
-            <span>🚚</span> CONVOYS / LOGPAC
-          </div>
-          <div style="overflow-y:auto;max-height:260px" id="lc-convoys"></div>
+        <div class="lc-supply-grid" id="lc-supply"></div>
+
+        <div class="lc-sec"><span>📍</span> SUPPLY POINTS</div>
+        <div>
+          <table class="lc-vtbl">
+            <thead><tr>
+              <th>Name</th><th>Type</th><th>MGRS</th><th>Notes</th><th></th>
+            </tr></thead>
+            <tbody id="lc-points"></tbody>
+          </table>
         </div>
       </div>
 
-      <!-- Supply points table -->
-      <div class="lc-sec"><span>📍</span> SUPPLY POINTS</div>
-      <div style="overflow-y:auto">
-        <table class="lc-vtbl">
-          <thead><tr><th>Name</th><th>Type</th><th>MGRS</th><th>Notes</th><th></th></tr></thead>
-          <tbody id="lc-points"></tbody>
-        </table>
+      <!-- ── Vehicles tab ── -->
+      <div id="lc-tab-vehicles" class="lc-tab-pane" hidden>
+        <div class="lc-lower" style="flex:1">
+          <div class="lc-panel">
+            <div class="lc-sec"><span>🚗</span> MAINTENANCE STATUS</div>
+            <div style="overflow-y:auto;flex:1">
+              <table class="lc-vtbl">
+                <thead><tr>
+                  <th>Unit / Type</th><th>FMC</th><th>PMC</th><th>NMC</th><th>Rate</th><th></th>
+                </tr></thead>
+                <tbody id="lc-vehicles"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="lc-panel">
+            <div class="lc-sec"><span>🚚</span> CONVOYS / LOGPAC</div>
+            <div style="overflow-y:auto;flex:1" id="lc-convoys"></div>
+          </div>
+        </div>
       </div>
 
-    </div>
-  </div>
-</div>
+      <!-- ── LOGREPs tab ── -->
+      <div id="lc-tab-logreps" class="lc-tab-pane" hidden>
+        <div class="lc-sec">
+          <span>📦</span> LOGREP REPORTS
+          <div class="lc-sec-actions">
+            <a href="/logrep" style="font-size:.72rem;color:#0ea5e9;text-decoration:none">
+              Open LOGREP →
+            </a>
+          </div>
+        </div>
+        <div id="lc-logrep-list"></div>
+      </div>
 
-<!-- ── Modals ──────────────────────────────────────────────────────────────── -->
+      <!-- ── LOGREQ tab ── -->
+      <div id="lc-tab-logreq" class="lc-tab-pane" hidden>
+        <div class="lc-sec"><span>📋</span> OUTSTANDING REQUESTS (LOGREQ — Section F)</div>
+        <div id="lc-logreq-list"></div>
+      </div>
+
+    </div><!-- data col -->
+  </div><!-- main -->
+</div><!-- wrap -->
+
+<!-- ── Modals ────────────────────────────────────────────────────────────── -->
 
 <!-- Edit supply -->
 <div class="lc-modal-bg" id="modal-supply">
@@ -276,7 +400,7 @@
   </div>
 </div>
 
-<!-- Add vehicle -->
+<!-- Add / edit vehicle -->
 <div class="lc-modal-bg" id="modal-vehicle">
   <div class="lc-modal">
     <div class="lc-mhdr">
@@ -285,31 +409,19 @@
     </div>
     <div class="lc-mbody">
       <div class="lc-row2">
-        <div class="lc-field">
-          <label>Unit</label>
+        <div class="lc-field"><label>Unit</label>
           <input id="v-unit" type="text" placeholder="Alpha Company">
         </div>
-        <div class="lc-field">
-          <label>Vehicle type</label>
+        <div class="lc-field"><label>Vehicle type</label>
           <input id="v-type" type="text" placeholder="IFV / Truck / UAV">
         </div>
       </div>
       <div class="lc-row3">
-        <div class="lc-field">
-          <label>Total</label>
-          <input id="v-total" type="number" min="0" value="0">
-        </div>
-        <div class="lc-field">
-          <label>FMC</label>
-          <input id="v-fmc" type="number" min="0" value="0">
-        </div>
-        <div class="lc-field">
-          <label>PMC</label>
-          <input id="v-pmc" type="number" min="0" value="0">
-        </div>
+        <div class="lc-field"><label>Total</label><input id="v-total" type="number" min="0" value="0"></div>
+        <div class="lc-field"><label>FMC</label><input id="v-fmc" type="number" min="0" value="0"></div>
+        <div class="lc-field"><label>PMC</label><input id="v-pmc" type="number" min="0" value="0"></div>
       </div>
-      <div class="lc-field">
-        <label>Notes</label>
+      <div class="lc-field"><label>Notes</label>
         <input id="v-notes" type="text" placeholder="Faults, scheduled maintenance…">
       </div>
       <input type="hidden" id="v-id" value="">
@@ -321,7 +433,7 @@
   </div>
 </div>
 
-<!-- Add/edit convoy -->
+<!-- Add / edit convoy -->
 <div class="lc-modal-bg" id="modal-convoy">
   <div class="lc-modal">
     <div class="lc-mhdr">
@@ -330,12 +442,10 @@
     </div>
     <div class="lc-mbody">
       <div class="lc-row2">
-        <div class="lc-field">
-          <label>Callsign</label>
+        <div class="lc-field"><label>Callsign</label>
           <input id="cv-cs" type="text" placeholder="LOGPAC-21">
         </div>
-        <div class="lc-field">
-          <label>Status</label>
+        <div class="lc-field"><label>Status</label>
           <select id="cv-status">
             <option value="LOADING">Loading</option>
             <option value="EN_ROUTE">En Route</option>
@@ -345,34 +455,29 @@
           </select>
         </div>
       </div>
-      <div class="lc-field">
-        <label>Cargo (classes carried)</label>
-        <input id="cv-cargo" type="text" placeholder="Cl I x3 DOS, Cl III 5000L, Cl V 5.56mm">
+      <div class="lc-field"><label>Cargo</label>
+        <input id="cv-cargo" type="text" placeholder="Cl I x3 DOS, Cl III 5000L">
       </div>
       <div class="lc-row2">
-        <div class="lc-field">
-          <label>Origin</label>
+        <div class="lc-field"><label>Origin</label>
           <input id="cv-origin" type="text" placeholder="BSA Alpha">
         </div>
-        <div class="lc-field">
-          <label>Destination</label>
+        <div class="lc-field"><label>Destination</label>
           <input id="cv-dest" type="text" placeholder="CTCP Bravo">
         </div>
       </div>
       <div class="lc-row2">
-        <div class="lc-field">
-          <label>ETA</label>
+        <div class="lc-field"><label>ETA</label>
           <input id="cv-eta" type="text" placeholder="14:30Z">
         </div>
-        <div class="lc-field">
-          <label>Notes</label>
+        <div class="lc-field"><label>Notes</label>
           <input id="cv-notes" type="text" placeholder="Alternate route via ASR Falcon">
         </div>
       </div>
       <div class="lc-field">
         <label>Current position MGRS (optional — right-click map)</label>
         <input id="cv-mgrs" type="text" placeholder="31UDS 12345 67890"
-               style="font-family:monospace;letter-spacing:.04em" autocomplete="off" spellcheck="false">
+               style="font-family:monospace;letter-spacing:.04em" autocomplete="off">
       </div>
       <input type="hidden" id="cv-id" value="">
     </div>
@@ -391,16 +496,14 @@
       <button class="lc-mx" onclick="closeModal('modal-supply-point')">✕</button>
     </div>
     <div class="lc-mbody">
-      <div style="font-size:.75rem;color:#64748b;padding:4px 0;display:flex;align-items:center;gap:6px">
-        <span>🖱</span> Right-click anywhere on the map to drop a point instantly.
+      <div style="font-size:.75rem;color:#64748b;padding:4px 0">
+        Right-click anywhere on the map to drop a point instantly.
       </div>
       <div class="lc-row2">
-        <div class="lc-field">
-          <label>Name</label>
+        <div class="lc-field"><label>Name</label>
           <input id="sp-name" type="text" placeholder="BSA Alpha">
         </div>
-        <div class="lc-field">
-          <label>Type</label>
+        <div class="lc-field"><label>Type</label>
           <select id="sp-type">
             <option value="BSA">BSA — Brigade Support Area</option>
             <option value="FARP">FARP — Fwd Arming/Refueling</option>
@@ -413,13 +516,11 @@
           </select>
         </div>
       </div>
-      <div class="lc-field">
-        <label>MGRS Grid</label>
+      <div class="lc-field"><label>MGRS Grid</label>
         <input id="sp-mgrs" type="text" placeholder="31UDS 12345 67890"
-               style="font-family:monospace;letter-spacing:.04em" autocomplete="off" spellcheck="false">
+               style="font-family:monospace;letter-spacing:.04em" autocomplete="off">
       </div>
-      <div class="lc-field">
-        <label>Notes</label>
+      <div class="lc-field"><label>Notes</label>
         <input id="sp-notes" type="text" placeholder="10000L diesel, Class I x5 DOS">
       </div>
     </div>
@@ -434,15 +535,15 @@
 <div class="lc-modal-bg" id="modal-logstat">
   <div class="lc-modal">
     <div class="lc-mhdr">
-      <h2>📋 LOGSTAT</h2>
+      <h2>LOGSTAT</h2>
       <button class="lc-mx" onclick="closeModal('modal-logstat')">✕</button>
     </div>
     <div class="lc-mbody">
       <pre id="logstat-text"></pre>
     </div>
     <div class="lc-mfoot">
-      <button class="lc-btn" onclick="copyLogstat()">📋 Copy</button>
-      <button class="lc-btn primary" onclick="window.print()">🖨 Print</button>
+      <button class="lc-btn" onclick="copyLogstat()">Copy</button>
+      <button class="lc-btn primary" onclick="window.print()">Print</button>
       <button class="lc-btn" onclick="closeModal('modal-logstat')">Close</button>
     </div>
   </div>
@@ -459,9 +560,16 @@ let supplyData  = [];
 let vehicleData = [];
 let convoyData  = [];
 let pointData   = [];
-let editSupplyId = null;
-let editVehicleId = null;
-let editConvoyId  = null;
+let logrepData  = [];
+let editSupplyId   = null;
+let editVehicleId  = null;
+let editConvoyId   = null;
+
+/* ── XSS escape ─────────────────────────────────────────────────────────── */
+function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g,
+        c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 /* ── Map ─────────────────────────────────────────────────────────────────── */
 const map = L.map('lc-map').setView([50.85, 4.35], 8);
@@ -486,8 +594,7 @@ function _makeIcon(type) {
     const ico = POINT_ICONS[type]  || '📌';
     return L.divIcon({
         className:'',
-        iconSize:[32,32],
-        iconAnchor:[16,16],
+        iconSize:[32,32], iconAnchor:[16,16],
         html:`<div style="width:32px;height:32px;border-radius:50%;background:${col};
               border:2px solid #fff;display:flex;align-items:center;justify-content:center;
               font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.6)">${ico}</div>`,
@@ -504,25 +611,21 @@ function _fromMgrs(str) {
     return ll ? {lat: ll[0], lng: ll[1]} : null;
 }
 
-/* ── Map right-click context menu ────────────────────────────────────────── */
+/* ── Map right-click ────────────────────────────────────────────────────── */
 let _ctxLatLng = null;
 const _ctxMenu = document.createElement('div');
-_ctxMenu.style.cssText = `
-    position:fixed;background:#111827;border:1px solid #334155;border-radius:6px;
-    z-index:5000;min-width:188px;box-shadow:0 8px 24px rgba(0,0,0,.8);display:none;
-    overflow:hidden;`;
+_ctxMenu.style.cssText = `position:fixed;background:#111827;border:1px solid #334155;
+    border-radius:6px;z-index:5000;min-width:188px;box-shadow:0 8px 24px rgba(0,0,0,.8);
+    display:none;overflow:hidden;`;
 _ctxMenu.innerHTML = `
     <div id="ctx-coord" style="padding:7px 12px;font-family:monospace;font-size:.75rem;
          color:#64748b;border-bottom:1px solid #1e293b;letter-spacing:.04em"></div>
-    <div class="ctx-item" onclick="_ctxAddPoint()">📍 Add Supply Point here</div>
-    <div class="ctx-item" onclick="_ctxAddConvoy()">🚚 Add Convoy position here</div>
-    <div class="ctx-item" onclick="_ctxAddVehicle()">🚗 Add Vehicle entry</div>`;
-
-/* Shared ctx-item style via a <style> block */
+    <div class="ctx-item" onclick="_ctxAddPoint()">+ Add Supply Point here</div>
+    <div class="ctx-item" onclick="_ctxAddConvoy()">+ Add Convoy position here</div>
+    <div class="ctx-item" onclick="_ctxAddVehicle()">+ Add Vehicle entry</div>`;
 const _ctxStyle = document.createElement('style');
-_ctxStyle.textContent = `.ctx-item{padding:9px 14px;font-size:.82rem;color:#e2e8f0;
-    cursor:pointer;border-bottom:1px solid #0f172a;}
-    .ctx-item:last-child{border-bottom:none;}
+_ctxStyle.textContent = `.ctx-item{padding:9px 14px;font-size:.82rem;color:#e2e8f0;cursor:pointer;
+    border-bottom:1px solid #0f172a;}.ctx-item:last-child{border-bottom:none;}
     .ctx-item:hover{background:#1e293b;}`;
 document.head.appendChild(_ctxStyle);
 document.body.appendChild(_ctxMenu);
@@ -535,7 +638,7 @@ map.on('contextmenu', e => {
     _ctxMenu.style.top  = e.originalEvent.clientY + 'px';
     _ctxMenu.style.display = 'block';
 });
-document.addEventListener('click',    () => { _ctxMenu.style.display = 'none'; });
+document.addEventListener('click',   () => { _ctxMenu.style.display = 'none'; });
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         _ctxMenu.style.display = 'none';
@@ -546,16 +649,16 @@ document.addEventListener('keydown', e => {
 function _ctxAddPoint() {
     _ctxMenu.style.display = 'none';
     if (!_ctxLatLng) return;
-    document.getElementById('sp-mgrs').value  = _toMgrs(_ctxLatLng.lat, _ctxLatLng.lng);
-    document.getElementById('sp-name').value  = '';
+    document.getElementById('sp-mgrs').value = _toMgrs(_ctxLatLng.lat, _ctxLatLng.lng);
+    document.getElementById('sp-name').value = '';
     document.getElementById('sp-notes').value = '';
     openModal('modal-supply-point');
 }
 function _ctxAddConvoy() {
     _ctxMenu.style.display = 'none';
     if (!_ctxLatLng) return;
-    document.getElementById('cv-id').value   = '';
-    document.getElementById('cv-cs').value   = '';
+    document.getElementById('cv-id').value    = '';
+    document.getElementById('cv-cs').value    = '';
     document.getElementById('cv-status').value = 'EN_ROUTE';
     document.getElementById('cv-cargo').value  = '';
     document.getElementById('cv-origin').value = '';
@@ -579,7 +682,15 @@ function _ctxAddVehicle() {
     openModal('modal-vehicle');
 }
 
-/* ── Time ticker ─────────────────────────────────────────────────────────── */
+/* ── Tab switching ───────────────────────────────────────────────────────── */
+function lcShowTab(name) {
+    document.querySelectorAll('.lc-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.lc-tab-pane').forEach(p => p.hidden = true);
+    document.getElementById('lc-tab-' + name).hidden = false;
+    document.querySelector(`.lc-tab[data-tab="${name}"]`)?.classList.add('active');
+}
+
+/* ── Clock ───────────────────────────────────────────────────────────────── */
 function _tick() {
     const n = new Date();
     const p = x => String(x).padStart(2,'0');
@@ -598,7 +709,7 @@ async function _json(path, opts={}) {
     return r.status === 204 ? null : r.json();
 }
 
-/* ── Load all data ───────────────────────────────────────────────────────── */
+/* ── Load all ────────────────────────────────────────────────────────────── */
 async function loadAll() {
     try {
         [supplyData, vehicleData, convoyData, pointData] = await Promise.all([
@@ -615,9 +726,287 @@ async function loadAll() {
     } catch(e) { console.warn('LOGCOP load failed:', e.message); }
 }
 
-/* ── Supply status ───────────────────────────────────────────────────────── */
+async function loadLogreps() {
+    try {
+        const all = await _json('/reports');
+        logrepData = (all || []).filter(r => r.type === 'LOGREP');
+        renderSummaryStrip();
+        renderLogrepTab();
+        renderLogreqTab();
+        updateTabBadges();
+    } catch(e) { console.warn('LOGREP load failed:', e.message); }
+}
+
+/* ── Summary strip ───────────────────────────────────────────────────────── */
+function renderSummaryStrip() {
+    let totalAuth=0, totalPresent=0, totalKia=0, totalWia=0;
+    let logreqCount=0, openWO=0, evac24=0;
+    const assessments = [];
+
+    logrepData.forEach(rep => {
+        let p = {};
+        try { p = JSON.parse(rep.payload); } catch(_) {}
+        const a = p.section_a || {};
+        const d = p.section_d || {};
+        const e = p.section_e || {};
+        totalAuth    += (a.authorised    || 0);
+        totalPresent += (a.present       || 0);
+        totalKia     += (a.kia           || 0);
+        totalWia     += (a.wia_evacuated || 0) + (a.wia_duty || 0);
+        logreqCount  += (p.section_f || []).length;
+        openWO       += (d.open_work_orders || 0);
+        evac24       += (e.evacuations_24h  || 0);
+        if (p.section_g?.assessment) assessments.push(p.section_g.assessment);
+    });
+
+    document.getElementById('sum-present').textContent =
+        totalAuth ? `${totalPresent}/${totalAuth}` : '—';
+    document.getElementById('sum-cas').textContent =
+        (totalKia || totalWia) ? `${totalKia}K / ${totalWia}W` : '—';
+    document.getElementById('sum-logreq-cnt').textContent = logreqCount || '—';
+    document.getElementById('sum-new-lr').textContent =
+        logrepData.filter(r => r.status === 'RECEIVED').length || '—';
+    document.getElementById('sum-maint-wo').textContent = openWO || '—';
+    document.getElementById('sum-evac24').textContent = evac24 || '—';
+
+    const worstAssess = assessments.includes('RED')   ? 'RED'
+                      : assessments.includes('AMBER') ? 'AMBER'
+                      : assessments.length             ? 'GREEN' : null;
+    const aEl = document.getElementById('sum-assess');
+    if (worstAssess) {
+        const col = {GREEN:'#22c55e', AMBER:'#f59e0b', RED:'#ef4444'}[worstAssess];
+        aEl.style.color = col;
+        aEl.textContent = worstAssess;
+    } else {
+        aEl.style.color = '#475569';
+        aEl.textContent = '—';
+    }
+}
+
+/* ── Tab badges ──────────────────────────────────────────────────────────── */
+function updateTabBadges() {
+    const newCnt = logrepData.filter(r => r.status === 'RECEIVED').length;
+    const nb = document.getElementById('lr-new-badge');
+    nb.textContent = newCnt;
+    nb.style.display = newCnt ? 'inline' : 'none';
+
+    let lrqCnt = 0;
+    logrepData.forEach(rep => {
+        let p = {};
+        try { p = JSON.parse(rep.payload); } catch(_) {}
+        lrqCnt += (p.section_f || []).length;
+    });
+    const lb = document.getElementById('lrq-cnt-badge');
+    lb.textContent = lrqCnt;
+    lb.style.display = lrqCnt ? 'inline' : 'none';
+}
+
+/* ── LOGREP tab ──────────────────────────────────────────────────────────── */
+function renderLogrepTab() {
+    const el = document.getElementById('lc-logrep-list');
+    if (!logrepData.length) {
+        el.innerHTML = '<div style="padding:14px;color:#475569;font-size:.82rem">No LOGREP reports. Use the LOGREP page to submit or import.</div>';
+        return;
+    }
+    el.innerHTML = logrepData.map(rep => {
+        let p = {};
+        try { p = JSON.parse(rep.payload); } catch(_) {}
+        const a = p.section_a || {};
+        const g = p.section_g || {};
+        const st = rep.status || 'RECEIVED';
+
+        const ac = {GREEN:'#22c55e', AMBER:'#f59e0b', RED:'#ef4444'}[g.assessment] || '#64748b';
+        const assessBadge = g.assessment
+            ? `<span style="background:${ac}22;color:${ac};border:1px solid ${ac};
+               border-radius:3px;padding:1px 7px;font-size:.67rem;font-weight:700">${esc(g.assessment)}</span>`
+            : '';
+
+        const strength = a.authorised ? `${a.present ?? 0}/${a.authorised}` : '—';
+        const cas = (a.kia || 0) + (a.wia_evacuated || 0) + (a.wia_duty || 0);
+        const casHtml = cas
+            ? `<span style="color:#ef4444;font-size:.71rem;font-weight:700">${cas} cas</span>`
+            : '';
+
+        const lrqCnt = (p.section_f || []).length;
+        const lrqHtml = lrqCnt
+            ? `<span style="color:#f59e0b;font-size:.71rem">${lrqCnt} req</span>` : '';
+
+        return `
+        <div class="lr-rep-item" id="lr-item-${rep.id}">
+          <div class="lr-rep-row" onclick="toggleLrDetail(${rep.id})">
+            <span class="lr-toggle" id="lr-tog-${rep.id}">▶</span>
+            <span class="lr-serial">${esc(p.serial || '#' + rep.id)}</span>
+            <span class="lr-dtg">${esc(p.dtg || '—')}</span>
+            <span class="lr-hq">${esc(p.higher_hq || '—')}</span>
+            <span class="lr-strength">${esc(strength)}</span>
+            ${casHtml}
+            ${lrqHtml}
+            ${assessBadge}
+            <span class="sb sb-${esc(st)}">${esc(st)}</span>
+          </div>
+          <div class="lr-detail-area" id="lr-detail-${rep.id}" style="display:none"></div>
+        </div>`;
+    }).join('');
+}
+
+function toggleLrDetail(id) {
+    const area = document.getElementById(`lr-detail-${id}`);
+    const tog  = document.getElementById(`lr-tog-${id}`);
+    if (!area) return;
+    const open = area.style.display === 'block';
+    area.style.display = open ? 'none' : 'block';
+    tog.textContent = open ? '▶' : '▼';
+    if (!open && !area.dataset.loaded) {
+        area.dataset.loaded = '1';
+        const rep = logrepData.find(r => r.id === id);
+        if (rep) {
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch(_) {}
+            area.innerHTML = renderLogrepDetail(p);
+        }
+    }
+}
+
+function renderLogrepDetail(p) {
+    const kv = (lbl, val) => (val != null && val !== '' && val !== 0)
+        ? `<div class="lr-kv"><span class="lr-kv-lbl">${esc(lbl)}</span><span class="lr-kv-val">${esc(val)}</span></div>`
+        : '';
+    const sec = (letter, title, body, col='#0ea5e9') =>
+        `<div class="lr-sec-block">
+           <div class="lr-sec-hdr">
+             <span class="lr-letter" style="background:${col}">${esc(letter)}</span>
+             <span class="lr-title">${esc(title)}</span>
+           </div>
+           <div class="lr-sec-body">${body}</div>
+         </div>`;
+    const miniTbl = (hdrs, rows) => {
+        if (!rows || !rows.length) return '<em style="color:#475569">—</em>';
+        return `<table class="lr-mini-tbl">
+            <thead><tr>${hdrs.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+            <tbody>${rows.map(cells =>
+                `<tr>${cells.map(v => `<td>${esc(String(v ?? '—'))}</td>`).join('')}</tr>`
+            ).join('')}</tbody>
+        </table>`;
+    };
+
+    let out = `<div style="margin-bottom:.5rem;font-size:.74rem;color:#64748b;display:flex;gap:1.5rem;flex-wrap:wrap">
+        ${p.serial    ? `<span>Serial: <b style="color:#e2e8f0">${esc(p.serial)}</b></span>` : ''}
+        ${p.dtg       ? `<span>DTG: <b style="color:#e2e8f0">${esc(p.dtg)}</b></span>` : ''}
+        ${p.higher_hq ? `<span>To: <b style="color:#e2e8f0">${esc(p.higher_hq)}</b></span>` : ''}
+        ${p.period_from ? `<span>Period: <b style="color:#e2e8f0">${esc(p.period_from)} → ${esc(p.period_to||'')}</b></span>` : ''}
+    </div>`;
+
+    const a = p.section_a || {};
+    out += sec('A', 'PERSTAT',
+        kv('Authorised',    a.authorised)    +
+        kv('Present',       a.present)       +
+        kv('KIA',           a.kia)           +
+        kv('WIA (evac)',    a.wia_evacuated) +
+        kv('WIA (duty)',    a.wia_duty)      +
+        kv('Missing',       a.missing)       +
+        kv('Sick',          a.sick)
+    , '#0ea5e9');
+
+    const b = p.section_b || {}, b1 = b.class_i || {}, b3 = b.class_iii || {}, b8 = b.class_viii || {};
+    let bHtml = '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.2rem 0 .1rem">Class I</div>';
+    bHtml += kv('DOS', b1.dos) + kv('Ration', b1.ration_type) + kv('Water (L)', b1.water_litres);
+    bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class III — POL</div>';
+    bHtml += kv('Diesel (L)', b3.diesel_litres) + kv('Petrol (L)', b3.petrol_litres) + kv('Avgas (L)', b3.avgas_litres);
+    bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class V — Ammo</div>';
+    bHtml += miniTbl(['Type','On Hand','Consumption'], (b.class_v||[]).map(r=>[r.type, r.on_hand, r.consumption]));
+    bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class VIII — Medical</div>';
+    bHtml += kv('Morphine', b8.morphine) + kv('Tourniquets', b8.tourniquets) + kv('IV bags', b8.iv_bags) + kv('Shortfalls', b8.shortfalls);
+    if (b.class_ix_shortfalls) bHtml += '<div style="font-size:.7rem;font-weight:600;color:#94a3b8;margin:.3rem 0 .1rem">Class IX</div>' + kv('Shortfalls', b.class_ix_shortfalls);
+    out += sec('B', 'Supply', bHtml, '#fb923c');
+
+    out += sec('C', 'EQPSTAT',
+        miniTbl(['Type','AUTH','O/H','FMC','PMC','NMC'],
+            (p.section_c||[]).map(r => [r.type, r.auth, r.on_hand, r.fmc, r.pmc, r.nmc]))
+    , '#a78bfa');
+
+    const d = p.section_d || {};
+    out += sec('D', 'Maintenance',
+        kv('Open work orders', d.open_work_orders) +
+        kv('Deadline equip',   d.deadline_equipment) +
+        kv('Parts awaiting',   d.parts_awaiting)
+    , '#f59e0b');
+
+    const e = p.section_e || {};
+    out += sec('E', 'Medical',
+        kv('Evacuations 24h',   e.evacuations_24h) +
+        kv('Medic operational', e.medic_operational != null ? (e.medic_operational ? 'YES' : 'NO') : null) +
+        kv('Supplies critical', e.supplies_critical ? '⚠ YES' : null) +
+        kv('Note', e.note)
+    , '#22c55e');
+
+    out += sec('F', 'LOGREQ',
+        miniTbl(['Priority','Item','Qty','ETA'],
+            (p.section_f||[]).map(r => [r.priority, r.item, r.quantity, r.eta]))
+    , '#0ea5e9');
+
+    const g = p.section_g || {};
+    const gc = {GREEN:'#22c55e', AMBER:'#f59e0b', RED:'#ef4444'}[g.assessment] || '#64748b';
+    let gHtml = g.assessment
+        ? `<span style="background:${gc}22;color:${gc};border:1px solid ${gc};
+            border-radius:4px;padding:2px 10px;font-weight:700;font-size:.78rem">${esc(g.assessment)}</span>` : '';
+    if (g.remarks) gHtml += `<div style="margin-top:.3rem;color:#94a3b8">${esc(g.remarks)}</div>`;
+    out += sec('G', 'Assessment', gHtml || '<em style="color:#475569">—</em>', gc || '#64748b');
+
+    return out;
+}
+
+/* ── LOGREQ tab ──────────────────────────────────────────────────────────── */
+function renderLogreqTab() {
+    const el = document.getElementById('lc-logreq-list');
+    const allReqs = [];
+    logrepData.forEach(rep => {
+        let p = {};
+        try { p = JSON.parse(rep.payload); } catch(_) {}
+        (p.section_f || []).forEach(req => allReqs.push({
+            ...req,
+            from_serial: p.serial || ('#' + rep.id),
+            from_hq:     p.higher_hq || '',
+            rep_status:  rep.status,
+        }));
+    });
+
+    if (!allReqs.length) {
+        el.innerHTML = '<div style="padding:14px;color:#475569;font-size:.82rem">No outstanding LOGREQ items.</div>';
+        return;
+    }
+
+    const priOrder = { IMMEDIATE:0, URGENT:1, ROUTINE:2 };
+    allReqs.sort((a, b) => (priOrder[a.priority] ?? 3) - (priOrder[b.priority] ?? 3));
+
+    const priColor = { IMMEDIATE:'#ef4444', URGENT:'#f59e0b', ROUTINE:'#94a3b8' };
+
+    el.innerHTML = `<table class="lc-vtbl">
+        <thead><tr>
+            <th>Priority</th><th>Item</th><th>Qty</th><th>ETA</th>
+            <th>From</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+        ${allReqs.map(req => {
+            const pc = priColor[req.priority] || '#64748b';
+            const from = req.from_hq
+                ? `${esc(req.from_serial)} (${esc(req.from_hq)})`
+                : esc(req.from_serial);
+            return `<tr>
+                <td><span style="color:${pc};font-weight:700;font-size:.75rem">${esc(req.priority || '—')}</span></td>
+                <td style="font-weight:600">${esc(req.item || '—')}</td>
+                <td style="font-family:monospace;font-size:.75rem">${esc(req.quantity || '—')}</td>
+                <td style="font-family:monospace;font-size:.75rem">${esc(req.eta || '—')}</td>
+                <td style="color:#64748b;font-size:.73rem">${from}</td>
+                <td><span class="sb sb-${esc(req.rep_status)}">${esc(req.rep_status)}</span></td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+}
+
+/* ── Supply rendering ────────────────────────────────────────────────────── */
 function _trafficLight(qty, amber, red) {
-    if (qty <= 0 && amber <= 0 && red <= 0) return 'tl-green';  // VII / X (units, n/a)
+    if (qty <= 0 && amber <= 0 && red <= 0) return 'tl-green';
     if (qty < red)   return 'tl-red';
     if (qty < amber) return 'tl-amber';
     return 'tl-green';
@@ -634,15 +1023,15 @@ function renderSupply() {
         const pct = Math.min(100, (s.current_qty / max) * 100);
         const col = _barColor(tl);
         return `<div class="lc-supply-row" onclick="openSupplyEdit(${s.id})">
-          <span class="lc-cls-badge">Cl ${s.class_code}</span>
-          <span class="lc-cls-label">${s.label}</span>
+          <span class="lc-cls-badge">Cl ${esc(s.class_code)}</span>
+          <span class="lc-cls-label">${esc(s.label)}</span>
           <div class="lc-dos-bar">
             <div class="lc-bar-wrap">
               <div class="lc-bar" style="width:${pct}%;background:${col}"></div>
             </div>
           </div>
           <span class="lc-dos-val">${s.current_qty.toFixed(1)}</span>
-          <span class="lc-dos-unit">${s.unit}</span>
+          <span class="lc-dos-unit">${esc(s.unit)}</span>
           <div class="lc-traffic ${tl}"></div>
         </div>`;
     }).join('');
@@ -650,21 +1039,19 @@ function renderSupply() {
 
 function renderAlerts() {
     const critical = supplyData.filter(s =>
-        _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-red'
-    );
+        _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-red');
     const amber = supplyData.filter(s =>
-        _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-amber'
-    );
+        _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-amber');
     const bar = document.getElementById('lc-alerts');
-    if (!critical.length && !amber.length) { bar.style.display='none'; return; }
+    if (!critical.length && !amber.length) { bar.style.display = 'none'; return; }
     bar.style.display = 'flex';
     bar.innerHTML = '<span style="font-size:.72rem;font-weight:700;color:#fca5a5">⚠ CRITICAL:</span>' +
         critical.map(s =>
-            `<span class="lc-alert-chip">Cl ${s.class_code} ${s.current_qty.toFixed(1)} ${s.unit}</span>`
+            `<span class="lc-alert-chip">Cl ${esc(s.class_code)} ${s.current_qty.toFixed(1)} ${esc(s.unit)}</span>`
         ).join('') +
         (amber.length ? `<span style="color:#fcd34d;font-size:.72rem;margin-left:4px">AMBER:</span>` +
             amber.map(s => `<span class="lc-alert-chip" style="background:#78350f;color:#fcd34d">` +
-                `Cl ${s.class_code} ${s.current_qty.toFixed(1)} ${s.unit}</span>`).join('') : '');
+                `Cl ${esc(s.class_code)} ${s.current_qty.toFixed(1)} ${esc(s.unit)}</span>`).join('') : '');
 }
 
 /* ── Supply edit modal ───────────────────────────────────────────────────── */
@@ -672,9 +1059,8 @@ function openSupplyEdit(id) {
     const s = supplyData.find(x => x.id === id);
     if (!s) return;
     editSupplyId = id;
-    document.getElementById('modal-supply-title').textContent =
-        `Update Cl ${s.class_code} — ${s.label}`;
-    document.getElementById('supply-cls-badge').textContent = `(${s.unit})`;
+    document.getElementById('modal-supply-title').textContent = `Update Cl ${s.class_code} — ${s.label}`;
+    document.getElementById('supply-cls-badge').textContent   = `(${s.unit})`;
     document.getElementById('supply-current').value = s.current_qty;
     document.getElementById('supply-amber').value   = s.threshold_amber;
     document.getElementById('supply-red').value     = s.threshold_red;
@@ -684,9 +1070,9 @@ function openSupplyEdit(id) {
 async function saveSupply() {
     if (!editSupplyId) return;
     const body = {
-        current_qty:     parseFloat(document.getElementById('supply-current').value)||0,
-        threshold_amber: parseFloat(document.getElementById('supply-amber').value)||0,
-        threshold_red:   parseFloat(document.getElementById('supply-red').value)||0,
+        current_qty:     parseFloat(document.getElementById('supply-current').value) || 0,
+        threshold_amber: parseFloat(document.getElementById('supply-amber').value)   || 0,
+        threshold_red:   parseFloat(document.getElementById('supply-red').value)     || 0,
         notes:           document.getElementById('supply-notes').value,
     };
     try {
@@ -696,7 +1082,7 @@ async function saveSupply() {
         });
         closeModal('modal-supply');
         loadAll();
-    } catch(e) { alert('Save failed: '+e.message); }
+    } catch(e) { alert('Save failed: ' + e.message); }
 }
 
 /* ── Vehicles ────────────────────────────────────────────────────────────── */
@@ -707,19 +1093,19 @@ function renderVehicles() {
         return;
     }
     tb.innerHTML = vehicleData.map(v => {
-        const nmc  = v.total - v.fmc - v.pmc;
-        const pct  = v.total ? Math.round(v.fmc / v.total * 100) : 0;
+        const nmc   = v.total - v.fmc - v.pmc;
+        const pct   = v.total ? Math.round(v.fmc / v.total * 100) : 0;
         const fmcPx = v.total ? Math.round(v.fmc / v.total * 48) : 0;
         const pmcPx = v.total ? Math.round(v.pmc / v.total * 48) : 0;
         const nmcPx = 48 - fmcPx - pmcPx;
         return `<tr>
-          <td><div style="font-weight:600">${v.unit_name}</div>
-              <div style="font-size:.7rem;color:#64748b">${v.vehicle_type}</div></td>
+          <td><div style="font-weight:600">${esc(v.unit_name)}</div>
+              <div style="font-size:.7rem;color:#64748b">${esc(v.vehicle_type)}</div></td>
           <td style="color:#22c55e">${v.fmc}</td>
           <td style="color:#f59e0b">${v.pmc}</td>
           <td style="color:#ef4444">${nmc}</td>
           <td>
-            <div class="fmc-bar" title="${v.fmc} FMC / ${v.pmc} PMC / ${nmc} NMC">
+            <div class="fmc-bar">
               <div style="display:flex;height:8px;width:48px;border-radius:3px;overflow:hidden">
                 <div class="fmc-s s-fmc" style="width:${fmcPx}px"></div>
                 <div class="fmc-s s-pmc" style="width:${pmcPx}px"></div>
@@ -752,11 +1138,11 @@ function openVehicleEdit(id) {
 async function saveVehicle() {
     const id = document.getElementById('v-id').value;
     const body = {
-        unit_name: document.getElementById('v-unit').value,
+        unit_name:    document.getElementById('v-unit').value,
         vehicle_type: document.getElementById('v-type').value,
-        total: parseInt(document.getElementById('v-total').value)||0,
-        fmc:   parseInt(document.getElementById('v-fmc').value)||0,
-        pmc:   parseInt(document.getElementById('v-pmc').value)||0,
+        total: parseInt(document.getElementById('v-total').value) || 0,
+        fmc:   parseInt(document.getElementById('v-fmc').value)   || 0,
+        pmc:   parseInt(document.getElementById('v-pmc').value)   || 0,
         notes: document.getElementById('v-notes').value,
     };
     try {
@@ -772,10 +1158,10 @@ async function saveVehicle() {
             });
         }
         closeModal('modal-vehicle');
-        document.getElementById('v-id').value='';
-        editVehicleId=null;
+        document.getElementById('v-id').value = '';
+        editVehicleId = null;
         loadAll();
-    } catch(e) { alert('Save failed: '+e.message); }
+    } catch(e) { alert('Save failed: ' + e.message); }
 }
 async function deleteVehicle(id) {
     if (!confirm('Delete vehicle entry?')) return;
@@ -796,28 +1182,26 @@ function renderConvoys() {
     }
     el.innerHTML = convoyData.map(c =>
         `<div class="lc-convoy" onclick="openConvoyEdit(${c.id})">
-          <span class="cv-cs">${c.callsign}</span>
-          <span class="cv-status cs-${c.status}">${CV_LABEL[c.status]||c.status}</span>
-          <span class="cv-info" title="${c.cargo}">${c.cargo||c.origin+' → '+c.destination}</span>
-          <span class="cv-eta">${c.eta ? c.eta+'Z' : ''}</span>
+          <span class="cv-cs">${esc(c.callsign)}</span>
+          <span class="cv-status cs-${esc(c.status)}">${esc(CV_LABEL[c.status] || c.status)}</span>
+          <span class="cv-info" title="${esc(c.cargo)}">${esc(c.cargo || c.origin + ' → ' + c.destination)}</span>
+          <span class="cv-eta">${c.eta ? esc(c.eta) + 'Z' : ''}</span>
           <button class="ic-btn" onclick="event.stopPropagation();deleteConvoy(${c.id})">✕</button>
         </div>`
     ).join('');
-    // Update map markers
     convoyMarkers.clearLayers();
     convoyData.filter(c => c.lat && c.lng).forEach(c => {
         const col = {EN_ROUTE:'#38bdf8', LOADING:'#86efac', DELAYED:'#fcd34d',
-                     DELIVERED:'#4ade80', CANCELLED:'#78716c'}[c.status]||'#94a3b8';
+                     DELIVERED:'#4ade80', CANCELLED:'#78716c'}[c.status] || '#94a3b8';
         const icon = L.divIcon({
-            className:'',
-            iconSize:[28,28], iconAnchor:[14,14],
+            className:'', iconSize:[28,28], iconAnchor:[14,14],
             html:`<div style="width:28px;height:28px;border-radius:4px;background:${col};
                   border:2px solid #fff;display:flex;align-items:center;justify-content:center;
                   font-size:11px;font-weight:700;color:#000;box-shadow:0 2px 6px rgba(0,0,0,.6)">🚚</div>`,
         });
         L.marker([c.lat, c.lng], {icon})
-          .bindPopup(`<b>${c.callsign}</b><br>${c.cargo}<br>→ ${c.destination}<br>ETA: ${c.eta||'—'}`)
-          .addTo(convoyMarkers);
+         .bindPopup(`<b>${esc(c.callsign)}</b><br>${esc(c.cargo)}<br>→ ${esc(c.destination)}<br>ETA: ${esc(c.eta || '—')}`)
+         .addTo(convoyMarkers);
     });
 }
 function openConvoyEdit(id) {
@@ -836,9 +1220,7 @@ function openConvoyEdit(id) {
 }
 async function saveConvoy() {
     const id = document.getElementById('cv-id').value;
-    const _cvPos = _fromMgrs(document.getElementById('cv-mgrs').value);
-    const lat = _cvPos?.lat || null;
-    const lng = _cvPos?.lng || null;
+    const pos = _fromMgrs(document.getElementById('cv-mgrs').value);
     const body = {
         callsign:    document.getElementById('cv-cs').value,
         status:      document.getElementById('cv-status').value,
@@ -846,24 +1228,24 @@ async function saveConvoy() {
         origin:      document.getElementById('cv-origin').value,
         destination: document.getElementById('cv-dest').value,
         eta:         document.getElementById('cv-eta').value,
-        lat, lng,
-        notes:       document.getElementById('cv-notes').value,
+        lat: pos?.lat || null, lng: pos?.lng || null,
+        notes: document.getElementById('cv-notes').value,
     };
     try {
         if (id) {
             await _json(`/logcop/convoys/${id}`, {
                 method:'PATCH', headers:{'Content-Type':'application/json'},
-                body:JSON.stringify(body),
+                body: JSON.stringify(body),
             });
         } else {
             await _json('/logcop/convoys', {
                 method:'POST', headers:{'Content-Type':'application/json'},
-                body:JSON.stringify(body),
+                body: JSON.stringify(body),
             });
         }
         closeModal('modal-convoy');
         loadAll();
-    } catch(e) { alert('Save failed: '+e.message); }
+    } catch(e) { alert('Save failed: ' + e.message); }
 }
 async function deleteConvoy(id) {
     if (!confirm('Delete convoy?')) return;
@@ -877,10 +1259,10 @@ function renderPoints() {
     tb.innerHTML = pointData.map(p => {
         const mgrs = _toMgrs(p.lat, p.lng);
         return `<tr>
-          <td style="font-weight:600">${p.name}</td>
-          <td style="color:#94a3b8">${p.point_type}</td>
-          <td style="font-family:monospace;font-size:.75rem;color:#7dd3fc">${mgrs}</td>
-          <td style="color:#64748b;font-size:.75rem">${p.notes||'—'}</td>
+          <td style="font-weight:600">${esc(p.name)}</td>
+          <td style="color:#94a3b8">${esc(p.point_type)}</td>
+          <td style="font-family:monospace;font-size:.75rem;color:#7dd3fc">${esc(mgrs)}</td>
+          <td style="color:#64748b;font-size:.75rem">${esc(p.notes || '—')}</td>
           <td><button class="ic-btn" onclick="deletePoint(${p.id})">✕</button></td>
         </tr>`;
     }).join('') || '<tr><td colspan="5" style="color:#475569;padding:10px">No points — right-click on the map</td></tr>';
@@ -889,21 +1271,19 @@ function renderPoints() {
     pointData.forEach(p => {
         const mgrs = _toMgrs(p.lat, p.lng);
         L.marker([p.lat, p.lng], {icon: _makeIcon(p.point_type)})
-         .bindPopup(`<b>${POINT_ICONS[p.point_type]||'📌'} ${p.name}</b><br>
-                    <i>${p.point_type}</i><br>
-                    <code style="font-size:.8rem">${mgrs}</code><br>${p.notes||''}`)
+         .bindPopup(`<b>${esc(POINT_ICONS[p.point_type] || '')} ${esc(p.name)}</b><br>
+                    <i>${esc(p.point_type)}</i><br>
+                    <code>${esc(mgrs)}</code><br>${esc(p.notes || '')}`)
          .addTo(pointMarkers);
     });
     if (pointData.length) {
         const pts = pointData.map(p => [p.lat, p.lng]);
-        map.fitBounds(pts.length === 1
-            ? L.latLngBounds(pts).pad(2)
-            : L.latLngBounds(pts).pad(0.2));
+        map.fitBounds(L.latLngBounds(pts).pad(pts.length === 1 ? 2 : 0.2));
     }
 }
 async function saveSupplyPoint() {
     const pos = _fromMgrs(document.getElementById('sp-mgrs').value);
-    if (!pos) { alert('Invalid MGRS grid — enter e.g. 31UDS 12345 67890'); return; }
+    if (!pos) { alert('Invalid MGRS grid'); return; }
     const body = {
         name:       document.getElementById('sp-name').value,
         point_type: document.getElementById('sp-type').value,
@@ -913,11 +1293,11 @@ async function saveSupplyPoint() {
     try {
         await _json('/logcop/supply-points', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body:JSON.stringify(body),
+            body: JSON.stringify(body),
         });
         closeModal('modal-supply-point');
         loadAll();
-    } catch(e) { alert('Save failed: '+e.message); }
+    } catch(e) { alert('Save failed: ' + e.message); }
 }
 async function deletePoint(id) {
     if (!confirm('Delete supply point?')) return;
@@ -925,73 +1305,175 @@ async function deletePoint(id) {
     loadAll();
 }
 
-/* ── LOGSTAT generator ───────────────────────────────────────────────────── */
+/* ── LOGSTAT (enhanced with LOGREP data) ────────────────────────────────── */
 function generateLogstat() {
     const now = new Date();
-    const p = x => String(x).padStart(2,'0');
-    const dtg = `${p(now.getUTCDate())}${p(now.getUTCHours())}${p(now.getUTCMinutes())}Z ` +
+    const pad = x => String(x).padStart(2,'0');
+    const dtg = `${pad(now.getUTCDate())}${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}Z ` +
                 ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][now.getUTCMonth()] +
                 ` ${now.getUTCFullYear()}`;
     const TL = {'tl-green':'GREEN','tl-amber':'AMBER','tl-red':'RED'};
+    const hr = '─'.repeat(56);
+
     let t = `LOGISTICS STATUS REPORT (LOGSTAT)\n`;
-    t += `DTG: ${dtg}\n`;
-    t += `${'─'.repeat(50)}\n\n`;
+    t += `DTG: ${dtg}\n${hr}\n\n`;
+
+    // PERSTAT from LOGREPs
+    if (logrepData.length) {
+        t += `PERSTAT (sourced from ${logrepData.length} LOGREP(s))\n`;
+        let sumAuth=0, sumPres=0, sumKia=0, sumWia=0;
+        logrepData.forEach(rep => {
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch(_) {}
+            const a = p.section_a || {};
+            sumAuth += a.authorised    || 0;
+            sumPres += a.present       || 0;
+            sumKia  += a.kia           || 0;
+            sumWia  += (a.wia_evacuated||0) + (a.wia_duty||0);
+            const serial = p.serial || `#${rep.id}`;
+            const hq     = p.higher_hq || '';
+            t += `  ${(serial + (hq ? ` (${hq})` : '')).padEnd(30)} ` +
+                 `${a.present??0}/${a.authorised??0}  KIA:${a.kia??0}  WIA:${(a.wia_evacuated||0)+(a.wia_duty||0)}\n`;
+        });
+        t += `  ${'TOTAL'.padEnd(30)} ${sumPres}/${sumAuth}  KIA:${sumKia}  WIA:${sumWia}\n\n`;
+    }
+
+    // Supply
     t += `SUPPLY STATUS\n`;
     supplyData.forEach(s => {
-        const tl = _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red);
+        const tl     = _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red);
         const status = TL[tl] || '—';
-        t += `  CL ${s.class_code.padEnd(5)} ${s.label.padEnd(30)} `+
+        t += `  CL ${s.class_code.padEnd(5)} ${s.label.padEnd(30)} ` +
              `${s.current_qty.toFixed(1).padStart(5)} ${s.unit.padEnd(6)} ${status}\n`;
         if (s.notes) t += `         NOTE: ${s.notes}\n`;
     });
-    t += `\n`;
+    t += '\n';
+
+    // Vehicles
     if (vehicleData.length) {
         t += `MAINTENANCE STATUS\n`;
         vehicleData.forEach(v => {
             const nmc = v.total - v.fmc - v.pmc;
-            const pct = v.total ? Math.round(v.fmc/v.total*100) : 0;
-            t += `  ${v.unit_name.padEnd(20)} ${v.vehicle_type.padEnd(12)} `+
+            const pct = v.total ? Math.round(v.fmc / v.total * 100) : 0;
+            t += `  ${v.unit_name.padEnd(20)} ${v.vehicle_type.padEnd(12)} ` +
                  `FMC:${v.fmc} PMC:${v.pmc} NMC:${nmc} (${pct}% FMC)\n`;
         });
-        t += `\n`;
+        t += '\n';
     }
+
+    // Maintenance from LOGREPs
+    const logrepsWithMaint = logrepData.filter(rep => {
+        try { const p = JSON.parse(rep.payload); return p.section_d?.open_work_orders; } catch(_){return false;}
+    });
+    if (logrepsWithMaint.length) {
+        t += `MAINTENANCE (LOGREP Section D)\n`;
+        logrepsWithMaint.forEach(rep => {
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch(_) {}
+            const d = p.section_d || {};
+            t += `  ${(p.serial||'—').padEnd(16)} Open W/O:${d.open_work_orders||0}`;
+            if (d.deadline_equipment) t += `  Deadline:${d.deadline_equipment}`;
+            if (d.parts_awaiting)     t += `  Parts:${d.parts_awaiting}`;
+            t += '\n';
+        });
+        t += '\n';
+    }
+
+    // Medical from LOGREPs
+    const logrepsWithMed = logrepData.filter(rep => {
+        try { const p = JSON.parse(rep.payload); return p.section_e?.evacuations_24h || p.section_e?.supplies_critical; } catch(_){return false;}
+    });
+    if (logrepsWithMed.length) {
+        t += `MEDICAL (LOGREP Section E)\n`;
+        logrepsWithMed.forEach(rep => {
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch(_) {}
+            const e = p.section_e || {};
+            t += `  ${(p.serial||'—').padEnd(16)} Evac 24h:${e.evacuations_24h||0}`;
+            if (e.supplies_critical) t += `  *** MED SUPPLIES CRITICAL ***`;
+            if (!e.medic_operational) t += `  [MEDIC NON-OPERATIONAL]`;
+            if (e.note) t += `  Note:${e.note}`;
+            t += '\n';
+        });
+        t += '\n';
+    }
+
+    // Convoys
     if (convoyData.length) {
         t += `CONVOY / LOGPAC STATUS\n`;
         convoyData.forEach(c => {
-            t += `  ${c.callsign.padEnd(12)} ${c.status.padEnd(12)} ETA:${c.eta||'—'} `+
+            t += `  ${c.callsign.padEnd(12)} ${c.status.padEnd(12)} ETA:${c.eta||'—'} ` +
                  `${c.origin} → ${c.destination}\n`;
             if (c.cargo) t += `         CARGO: ${c.cargo}\n`;
         });
-        t += `\n`;
+        t += '\n';
     }
+
+    // Outstanding LOGREQ
+    const allReqs = [];
+    logrepData.forEach(rep => {
+        let p = {};
+        try { p = JSON.parse(rep.payload); } catch(_) {}
+        (p.section_f || []).forEach(req => allReqs.push({...req, serial: p.serial || rep.id}));
+    });
+    if (allReqs.length) {
+        const priOrder = {IMMEDIATE:0, URGENT:1, ROUTINE:2};
+        allReqs.sort((a,b) => (priOrder[a.priority]??3) - (priOrder[b.priority]??3));
+        t += `OUTSTANDING LOGREQ\n`;
+        allReqs.forEach(req => {
+            const pri = (req.priority || 'ROUTINE').padEnd(10);
+            const itm = (req.item     || '—').padEnd(26);
+            const qty = (req.quantity || '—').padEnd(14);
+            t += `  [${pri}] ${itm} ${qty} ETA:${req.eta||'—'}  (${req.serial})\n`;
+        });
+        t += '\n';
+    }
+
+    // Assessments from LOGREPs
+    const assessments = logrepData.filter(rep => {
+        try { return JSON.parse(rep.payload).section_g?.assessment; } catch(_){return false;}
+    });
+    if (assessments.length) {
+        t += `LOGISTICS ASSESSMENTS\n`;
+        assessments.forEach(rep => {
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch(_) {}
+            const g = p.section_g || {};
+            t += `  ${(p.serial||'—').padEnd(16)} ${g.assessment||'—'}`;
+            if (g.remarks) t += `  — ${g.remarks.slice(0,60)}`;
+            t += '\n';
+        });
+        t += '\n';
+    }
+
+    // Critical supply issues
     const critical = supplyData.filter(s =>
         _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-red');
     if (critical.length) {
-        t += `CRITICAL ISSUES\n`;
+        t += `CRITICAL SUPPLY SHORTFALLS\n`;
         critical.forEach(s => {
             t += `  *** CLASS ${s.class_code} BELOW MINIMUM (${s.current_qty.toFixed(1)} ${s.unit}) ***\n`;
             if (s.notes) t += `      ${s.notes}\n`;
         });
     }
+
     document.getElementById('logstat-text').textContent = t;
     openModal('modal-logstat');
 }
 function copyLogstat() {
     navigator.clipboard.writeText(document.getElementById('logstat-text').textContent)
-        .then(()=>alert('Copied to clipboard'));
+        .then(() => alert('Copied to clipboard'));
 }
 
 /* ── Modal helpers ───────────────────────────────────────────────────────── */
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-
-/* ── WebSocket live updates ──────────────────────────────────────────────── */
-window.addEventListener('arrow-logcop', () => loadAll());
+/* ── WebSocket ───────────────────────────────────────────────────────────── */
 (function wsConnect() {
     const wsUrl = window.ARROW_WS_URL;
     if (!wsUrl) return;
-    const tok = localStorage.getItem('arrow_token')||'';
+    const tok = localStorage.getItem('arrow_token') || '';
     const mid = arrowGetMissionId();
     const url = wsUrl + '?token=' + encodeURIComponent(tok) +
                 (mid ? '&mission_id=' + mid : '');
@@ -1000,13 +1482,16 @@ window.addEventListener('arrow-logcop', () => loadAll());
         try {
             const d = JSON.parse(e.data);
             if (d.channel === 'logcop') loadAll();
-        } catch(_){}
+            if (d.channel === 'report' && (d.data?.type === 'LOGREP' ||
+                d.event === 'logrep_routed' || d.event === 'logrep_feedback')) loadLogreps();
+        } catch(_) {}
     };
     ws.onclose = () => setTimeout(wsConnect, 3000);
 })();
 
 /* ── Boot ────────────────────────────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', loadAll);
-window.addEventListener('arrow-mission-changed', loadAll);
+document.addEventListener('DOMContentLoaded', () => { loadAll(); loadLogreps(); });
+window.addEventListener('arrow-mission-changed', () => { loadAll(); loadLogreps(); });
+window.addEventListener('arrow-logcop', () => loadAll());
 </script>
 {% endblock %}
