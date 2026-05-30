@@ -24,6 +24,13 @@
         <offline>true</offline>
     </maps>
 
+    <openweathermap>
+        <!-- Optional. Get a free key at https://openweathermap.org/api -->
+        <!-- Enables clouds, wind, temperature and pressure overlays on the map. -->
+        <!-- Rain-radar (RainViewer) works without a key. -->
+        <api_key>a96ffd287d43aa5923b5369dee774d7b</api_key>
+    </openweathermap>
+
     <cot>
         <multicast_group>239.2.3.1</multicast_group>
         <port>6969</port>

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}FIRESCOP — Arrow{% endblock %}
+{% block head %}
+<style>
+.fs-wrap { display:flex; flex-direction:column; height:calc(100vh - 52px);
+           background:#0d1117; color:#e2e8f0; font-size:.875rem; overflow:hidden; }
+.fs-bar  { display:flex; align-items:center; gap:10px; padding:7px 14px;
+           background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.fs-bar h1 { font-size:.95rem; font-weight:700; color:#ef4444; letter-spacing:.07em; margin:0; }
+.fs-link  { padding:4px 11px; border-radius:4px; font-size:.76rem; text-decoration:none;
+            border:1px solid #334155; color:#e2e8f0; background:#1e293b; }
+.fs-link:hover { background:#263040; }
+.fs-main { flex:1; display:grid; grid-template-columns:1fr 1fr; overflow:hidden; }
+.fs-panel{ display:flex; flex-direction:column; border-right:1px solid #1e293b; overflow-y:auto; }
+.fs-panel:last-child { border-right:none; }
+.fs-sec  { padding:8px 14px 5px; font-size:.7rem; color:#64748b; letter-spacing:.08em;
+           text-transform:uppercase; font-weight:700; border-bottom:1px solid #1e293b;
+           display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.fs-sec span { color:#ef4444; }
+/* Stats */
+.fs-stats { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #1e293b; flex-shrink:0; }
+.fss-cell { padding:10px 14px; border-right:1px solid #1e293b; border-bottom:1px solid #1e293b; }
+.fss-cell:nth-child(2n) { border-right:none; }
+.fss-lbl  { font-size:.66rem; color:#475569; text-transform:uppercase; letter-spacing:.05em; }
+.fss-val  { font-size:1.5rem; font-weight:700; font-family:monospace; margin-top:2px; }
+/* Fire mission rows */
+.fs-fm    { padding:8px 14px; border-bottom:1px solid #0f172a; }
+.fs-fm:hover { background:#0f1a2e; }
+.fm-hdr   { display:flex; align-items:center; gap:7px; }
+.fm-type  { padding:1px 8px; border-radius:3px; font-size:.68rem; font-weight:700; }
+.ft-ADJUST_FIRE { background:#92400e44; color:#fcd34d; }
+.ft-FIRE_FOR_EFFECT { background:#7f1d1d; color:#fca5a5; }
+.ft-SUPPRESSION { background:#1e3a5f44; color:#7dd3fc; }
+.ft-ILLUMINATION { background:#1c2a1c44; color:#86efac; }
+.fm-status { font-size:.68rem; color:#64748b; font-family:monospace; }
+.fm-ammo  { font-size:.72rem; color:#94a3b8; margin-top:2px; }
+/* CAS assets */
+.cas-asset { padding:7px 14px; border-bottom:1px solid #0f172a; display:flex; gap:8px; align-items:center; }
+.cas-cs    { font-family:monospace; font-weight:700; font-size:.82rem; min-width:90px; }
+.cas-st    { padding:1px 8px; border-radius:3px; font-size:.68rem; font-weight:700; }
+.cs-AVAILABLE { background:#14532d; color:#4ade80; }
+.cs-ENGAGED   { background:#7f1d1d; color:#fca5a5; }
+.cs-RTB       { background:#1e293b; color:#94a3b8; }
+.cas-info  { flex:1; font-size:.75rem; color:#64748b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fs-wrap">
+  <div class="fs-bar">
+    <h1>🔥 FIRESCOP — Artillery &amp; Air Support</h1>
+    <a href="{{ url_for('fire_missions.index') }}" class="fs-link">🔥 Fire Missions</a>
+    <a href="{{ url_for('cas_capacity.index') }}" class="fs-link">✈ CAS Capacity</a>
+    <a href="{{ url_for('cop_hub.index') }}" class="fs-link">⊞ Hub</a>
+    <span id="fs-ts" style="margin-left:auto;font-size:.72rem;color:#475569;font-family:monospace"></span>
+  </div>
+  <div class="fs-main">
+    <!-- Fire missions -->
+    <div class="fs-panel">
+      <div class="fs-sec"><span>📊</span> FIRE MISSION STATUS</div>
+      <div class="fs-stats">
+        <div class="fss-cell">
+          <div class="fss-lbl">Active</div>
+          <div class="fss-val" id="f-active" style="color:#ef4444">—</div>
+        </div>
+        <div class="fss-cell">
+          <div class="fss-lbl">Total</div>
+          <div class="fss-val" id="f-total" style="color:#e2e8f0">—</div>
+        </div>
+        <div class="fss-cell">
+          <div class="fss-lbl">Adjust Fire</div>
+          <div class="fss-val" id="f-adj" style="color:#fcd34d">—</div>
+        </div>
+        <div class="fss-cell">
+          <div class="fss-lbl">FFE / Suppr.</div>
+          <div class="fss-val" id="f-ffe" style="color:#fca5a5">—</div>
+        </div>
+      </div>
+      <div class="fs-sec"><span>🎯</span> FIRE MISSIONS</div>
+      <div id="fs-fms"></div>
+    </div>
+
+    <!-- CAS -->
+    <div class="fs-panel">
+      <div class="fs-sec"><span>📊</span> CAS ASSET STATUS</div>
+      <div class="fs-stats">
+        <div class="fss-cell">
+          <div class="fss-lbl">Available</div>
+          <div class="fss-val" id="c-avail" style="color:#4ade80">—</div>
+        </div>
+        <div class="fss-cell">
+          <div class="fss-lbl">Engaged</div>
+          <div class="fss-val" id="c-eng" style="color:#ef4444">—</div>
+        </div>
+        <div class="fss-cell">
+          <div class="fss-lbl">Total Assets</div>
+          <div class="fss-val" id="c-total" style="color:#e2e8f0">—</div>
+        </div>
+        <div class="fss-cell">
+          <div class="fss-lbl">CAS Requests</div>
+          <div class="fss-val" id="c-req" style="color:#7dd3fc">—</div>
+        </div>
+      </div>
+      <div class="fs-sec"><span>✈</span> CAS ASSETS</div>
+      <div id="fs-cas"></div>
+      <div class="fs-sec"><span>📋</span> CAS 9-LINERS (recent)</div>
+      <div id="fs-nine"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+function _ago(ts) {
+  const s=Math.floor((Date.now()-new Date(ts))/1000);
+  return s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h';
+}
+async function load() {
+  const [fms, assets, reps] = await Promise.all([
+    arrowFetch('/fire-missions').then(r=>r.ok?r.json():[]).catch(()=>[]),
+    arrowFetch('/cas/assets').then(r=>r.ok?r.json():[]).catch(()=>[]),
+    arrowFetch('/reports').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  ]);
+  const casReps = reps.filter(r=>r.type==='CAS');
+
+  // Fire missions stats
+  const active = fms.filter(f=>f.status==='ACTIVE'||f.status==='IN_PROGRESS').length;
+  document.getElementById('f-active').textContent = active;
+  document.getElementById('f-total').textContent  = fms.length;
+  document.getElementById('f-adj').textContent    = fms.filter(f=>f.mission_type==='ADJUST_FIRE').length;
+  document.getElementById('f-ffe').textContent    = fms.filter(f=>
+    f.mission_type==='FIRE_FOR_EFFECT'||f.mission_type==='SUPPRESSION').length;
+
+  // Fire missions list
+  document.getElementById('fs-fms').innerHTML = fms.length
+    ? fms.slice(0,15).map(f => {
+        const cls = 'ft-'+(f.mission_type||'ADJUST_FIRE');
+        return `<div class="fs-fm">
+          <div class="fm-hdr">
+            <span class="fm-type ${cls}">${(f.mission_type||'').replace(/_/g,' ')}</span>
+            <span class="fm-status">${f.status}</span>
+            <span style="margin-left:auto;font-size:.7rem;color:#475569">${_ago(f.timestamp)} ago</span>
+          </div>
+          <div class="fm-ammo">${f.ammunition} × ${f.quantity} | ${f.description||''}</div>
+        </div>`;
+      }).join('')
+    : '<div style="padding:10px 14px;color:#475569">No fire missions</div>';
+
+  // CAS assets stats
+  document.getElementById('c-avail').textContent = assets.filter(a=>a.status==='AVAILABLE').length;
+  document.getElementById('c-eng').textContent   = assets.filter(a=>a.status==='ENGAGED').length;
+  document.getElementById('c-total').textContent = assets.length;
+  document.getElementById('c-req').textContent   = casReps.length;
+
+  // CAS assets list
+  document.getElementById('fs-cas').innerHTML = assets.length
+    ? assets.map(a => `<div class="cas-asset">
+        <span class="cas-cs">${a.callsign}</span>
+        <span class="cas-st cs-${a.status}">${a.status}</span>
+        <span class="cas-info">${a.aircraft_type} · ${a.ordnance}</span>
+      </div>`).join('')
+    : '<div style="padding:10px 14px;color:#475569">No CAS assets registered</div>';
+
+  // 9-liners
+  document.getElementById('fs-nine').innerHTML = casReps.length
+    ? casReps.slice(0,5).map(r => {
+        let body=''; try{const p=JSON.parse(r.payload);body=`IP:${p.line_1||'—'} Tgt:${p.line_5_mgrs||p.line_4||'—'}`;}catch(_){}
+        return `<div style="padding:7px 14px;border-bottom:1px solid #0f172a">
+          <span style="font-family:monospace;font-size:.75rem;color:#7dd3fc">${body}</span>
+          <span style="float:right;font-size:.7rem;color:#475569">${_ago(r.timestamp)} ago</span>
+        </div>`;
+      }).join('')
+    : '<div style="padding:10px 14px;color:#475569">No CAS requests</div>';
+
+  const n=new Date(),p=x=>String(x).padStart(2,'0');
+  document.getElementById('fs-ts').textContent=`${p(n.getUTCHours())}:${p(n.getUTCMinutes())}Z`;
+}
+document.addEventListener('DOMContentLoaded', load);
+window.addEventListener('arrow-mission-changed', load);
+setInterval(load, 15000);
+</script>
+{% endblock %}

@@ -25,14 +25,6 @@
         <button type="button" id="mfa-cancel">Cancel</button>
     </form>
 
-    <h2>Register a new operator</h2>
-    <form id="register-form">
-        <label>Callsign <input name="callsign" required></label>
-        <label>Password <input name="password" type="password" required minlength="8"></label>
-        <label>Rank <input name="rank" value="OR-1"></label>
-        <button type="submit">Register &amp; sign in</button>
-    </form>
-
     <p id="auth-msg" class="auth-msg"></p>
 </section>
 {% endblock %}
@@ -45,28 +37,25 @@
     function storeAndRedirect(data) {
         localStorage.setItem('arrow_token', data.access_token);
         localStorage.setItem('arrow_role',  data.role);
-        // Plain OPERATORs are limited to the APK download page on the web UI.
         const role = (data.role || '').toUpperCase();
         const explicitNext = new URLSearchParams(location.search).get('next');
-        if (role === 'OPERATOR' && !explicitNext) {
-            location.href = '/download/';
-        } else {
-            location.href = next;
+        if (!explicitNext) {
+            if (role === 'OPERATOR')            { location.href = '/download/'; return; }
+            if (['LOG','CBRN','MED'].includes(role)) { location.href = '/map/'; return; }
         }
+        location.href = next;
     }
 
     function showMfa() {
-        document.getElementById('login-form').style.display    = 'none';
-        document.getElementById('register-form').style.display = 'none';
-        document.getElementById('mfa-form').style.display      = 'block';
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('mfa-form').style.display   = 'block';
         document.querySelector('#mfa-form input[name=code]').focus();
     }
 
     function hideMfa() {
         _mfaSession = null;
-        document.getElementById('mfa-form').style.display      = 'none';
-        document.getElementById('login-form').style.display    = 'block';
-        document.getElementById('register-form').style.display = 'block';
+        document.getElementById('mfa-form').style.display   = 'none';
+        document.getElementById('login-form').style.display = 'block';
         msg.textContent = '';
     }
 
@@ -125,29 +114,5 @@
         }
     });
 
-    document.getElementById('register-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        msg.textContent = 'Registering…';
-        const fd = new FormData(e.target);
-        try {
-            const r = await fetch(window.ARROW_BACKEND_URL + '/auth/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    callsign: fd.get('callsign'),
-                    password: fd.get('password'),
-                    rank:     fd.get('rank') || 'OR-1',
-                }),
-            });
-            if (!r.ok) {
-                const err = await r.json().catch(() => ({}));
-                msg.textContent = `Registration failed: ${err.detail || r.status}`;
-                return;
-            }
-            storeAndRedirect(await r.json());
-        } catch (err) {
-            msg.textContent = `Network error: ${err.message}`;
-        }
-    });
 </script>
 {% endblock %}

@@ -36,6 +36,7 @@ class OperatorConfig:
 @dataclass(slots=True)
 class MapsConfig:
     offline: bool = True
+    owm_api_key: str = ""   # OpenWeatherMap API key — optional, enables weather layers
 
 
 @dataclass(slots=True)
@@ -77,7 +78,7 @@ def load_config(path: Path | str | None = None) -> AppConfig:
             ),
             auth=AuthConfig(),
             operator=OperatorConfig(),
-            maps=MapsConfig(),
+            maps=MapsConfig(owm_api_key=os.environ.get("ARROW_OWM_API_KEY", "")),
             cot=CotConfig(),
             octopus=OctopusConfig(
                 api_key=os.environ.get("ARROW_OCTOPUS_API_KEY", ""),
@@ -109,6 +110,8 @@ def load_config(path: Path | str | None = None) -> AppConfig:
         ),
         maps=MapsConfig(
             offline=_text(root, "maps/offline", "true").lower() == "true",
+            owm_api_key=os.environ.get("ARROW_OWM_API_KEY")
+                        or _text(root, "openweathermap/api_key", ""),
         ),
         cot=CotConfig(
             multicast_group=_text(root, "cot/multicast_group", "239.2.3.1"),

@@ -8,9 +8,11 @@ _CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline' https://unpkg.com; "
     "style-src 'self' 'unsafe-inline' https://unpkg.com; "
-    "img-src 'self' data: blob: https://*.tile.openstreetmap.org; "
+    "img-src 'self' data: blob: https://*.tile.openstreetmap.org "
+        "https://*.rainviewer.com https://tile.openweathermap.org; "
     "media-src 'self' blob:; "
-    "connect-src 'self' ws: wss:; "
+    "connect-src 'self' ws: wss: https://api.rainviewer.com https://api.open-meteo.com "
+        "https://aa.usno.navy.mil https://api.sunrise-sunset.org; "
     "frame-ancestors 'none'"
 )
 

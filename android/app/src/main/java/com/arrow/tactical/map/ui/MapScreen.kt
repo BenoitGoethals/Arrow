@@ -205,6 +205,21 @@ fun MapScreen(
     // Temporary "Go To" pin — shown after the user navigates to a location.
     val goToMarker = remember { mutableStateOf<Marker?>(null) }
 
+    // ── Weather overlay state ──────────────────────────────────────────────
+    var wxPanelOpen     by remember { mutableStateOf(false) }
+    var wxRadarActive   by remember { mutableStateOf(false) }
+    var wxRadarOpacity  by remember { mutableFloatStateOf(0.7f) }
+    var wxSatActive     by remember { mutableStateOf(false) }
+    var wxSatOpacity    by remember { mutableFloatStateOf(0.5f) }
+    var wxPlaying       by remember { mutableStateOf(false) }
+    var wxFrames        by remember { mutableStateOf<List<com.arrow.tactical.map.RainViewerFrame>>(emptyList()) }
+    var wxNowcastStart  by remember { mutableIntStateOf(0) }
+    var wxSatFrame      by remember { mutableStateOf<com.arrow.tactical.map.RainViewerFrame?>(null) }
+    var wxFrameIndex    by remember { mutableIntStateOf(0) }
+    // Live references to the active OSMdroid tile overlays (null when not active).
+    val wxRadarOverlay = remember { mutableStateOf<com.arrow.tactical.map.WeatherTilesOverlay?>(null) }
+    val wxSatOverlay   = remember { mutableStateOf<com.arrow.tactical.map.WeatherTilesOverlay?>(null) }
+
     // Suspend function to launch the stream service, called after permission grant.
     // Each early-return path emits a logcat E line + a Toast so the failure mode is
     // never silent (visible in the Admin log viewer too).
@@ -567,6 +582,92 @@ fun MapScreen(
             if (cur != mapOrientation) mapOrientation = cur
             delay(100)
         }
+    }
+
+    // ── Weather — RainViewer data fetch, auto-refreshed every 10 minutes ──
+    LaunchedEffect(Unit) {
+        while (true) {
+            container.weatherRepository.fetchFrames().onSuccess { frames ->
+                wxFrames       = frames.radarFrames
+                wxNowcastStart = frames.nowcastStartIndex
+                wxSatFrame     = frames.satFrame
+                // Keep index in range; jump to latest observed frame on first load.
+                if (wxFrameIndex !in frames.radarFrames.indices) {
+                    wxFrameIndex = (frames.radarFrames.size - 1).coerceAtLeast(0)
+                }
+            }
+            delay(10 * 60 * 1000L)
+        }
+    }
+
+    // Advance animation frame every 500 ms while playing.
+    LaunchedEffect(wxPlaying) {
+        if (!wxPlaying) return@LaunchedEffect
+        while (true) {
+            delay(500)
+            if (wxFrames.isNotEmpty()) wxFrameIndex = (wxFrameIndex + 1) % wxFrames.size
+        }
+    }
+
+    // Radar tile overlay — rebuilds whenever the active frame or toggle changes.
+    LaunchedEffect(mapRef.value, wxRadarActive, wxFrameIndex, wxFrames) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        // Remove previous radar overlay.
+        wxRadarOverlay.value?.let { map.overlays.remove(it) }
+        wxRadarOverlay.value = null
+
+        if (wxRadarActive && wxFrameIndex in wxFrames.indices) {
+            val src      = com.arrow.tactical.map.RainViewerTileSource(wxFrames[wxFrameIndex].path)
+            val provider = MapTileProviderBasic(context, src)
+            val overlay  = com.arrow.tactical.map.WeatherTilesOverlay(provider, context, wxRadarOpacity).apply {
+                loadingBackgroundColor = android.graphics.Color.TRANSPARENT
+                loadingLineColor       = android.graphics.Color.TRANSPARENT
+            }
+            // Insert just above the MBTiles overlay (or at 0 when no MBTiles),
+            // below satellite and all marker overlays.
+            val satIdx = wxSatOverlay.value?.let { map.overlays.indexOf(it) } ?: -1
+            val mbtIdx = mbtilesOverlay.value?.let { map.overlays.indexOf(it) } ?: -1
+            val insertAt = when {
+                satIdx >= 0 -> satIdx + 1
+                mbtIdx >= 0 -> mbtIdx + 1
+                else        -> 0
+            }.coerceAtMost(map.overlays.size)
+            map.overlays.add(insertAt, overlay)
+            wxRadarOverlay.value = overlay
+        }
+        map.postInvalidate()
+    }
+
+    // Satellite tile overlay — rebuilds on toggle or new frame data.
+    LaunchedEffect(mapRef.value, wxSatActive, wxSatFrame) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        wxSatOverlay.value?.let { map.overlays.remove(it) }
+        wxSatOverlay.value = null
+
+        val frame = wxSatFrame
+        if (wxSatActive && frame != null) {
+            val src      = com.arrow.tactical.map.RainViewerTileSource(frame.path, isSatellite = true)
+            val provider = MapTileProviderBasic(context, src)
+            val overlay  = com.arrow.tactical.map.WeatherTilesOverlay(provider, context, wxSatOpacity).apply {
+                loadingBackgroundColor = android.graphics.Color.TRANSPARENT
+                loadingLineColor       = android.graphics.Color.TRANSPARENT
+            }
+            val mbtIdx   = mbtilesOverlay.value?.let { map.overlays.indexOf(it) } ?: -1
+            val insertAt = (if (mbtIdx >= 0) mbtIdx + 1 else 0).coerceAtMost(map.overlays.size)
+            map.overlays.add(insertAt, overlay)
+            wxSatOverlay.value = overlay
+        }
+        map.postInvalidate()
+    }
+
+    // Opacity — update existing overlays without rebuilding tile sources.
+    LaunchedEffect(wxRadarOpacity) {
+        wxRadarOverlay.value?.overlayAlpha = wxRadarOpacity
+        mapRef.value?.postInvalidate()
+    }
+    LaunchedEffect(wxSatOpacity) {
+        wxSatOverlay.value?.overlayAlpha = wxSatOpacity
+        mapRef.value?.postInvalidate()
     }
 
     // Load the list of base-map sources once. The selected one is remembered
@@ -1249,7 +1350,16 @@ fun MapScreen(
                 overlayActiveCount = activeOverlays.size,
                 onToggleOverlays   = {
                     overlayPanelOpen = !overlayPanelOpen
-                    if (overlayPanelOpen) kmlPanelOpen = false
+                    if (overlayPanelOpen) { kmlPanelOpen = false; wxPanelOpen = false }
+                },
+                weatherOpen     = wxPanelOpen,
+                onToggleWeather = {
+                    wxPanelOpen = !wxPanelOpen
+                    if (wxPanelOpen) { kmlPanelOpen = false; overlayPanelOpen = false }
+                    // Auto-enable radar on first open when data is available.
+                    if (wxPanelOpen && !wxRadarActive && wxFrames.isNotEmpty()) {
+                        wxRadarActive = true
+                    }
                 },
                 onCollapseBar   = { topBarCollapsed = true },
                 isStreaming     = isStreaming,
@@ -1358,6 +1468,58 @@ fun MapScreen(
                     activeOverlays = if (on) activeOverlays + id else activeOverlays - id
                 },
                 onClose   = { overlayPanelOpen = false },
+            )
+        }
+
+        // ── Weather panel — slides in from the right, stacks alongside KML/Overlay panels.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = wxPanelOpen,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = kmlPanelTop, end = 12.dp),
+            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }) +
+                    androidx.compose.animation.fadeIn(),
+            exit  = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }) +
+                    androidx.compose.animation.fadeOut(),
+        ) {
+            WeatherPanel(
+                radarFrames       = wxFrames,
+                nowcastStartIndex = wxNowcastStart,
+                currentFrameIndex = wxFrameIndex,
+                radarActive       = wxRadarActive,
+                radarOpacity      = wxRadarOpacity,
+                playing           = wxPlaying,
+                satActive         = wxSatActive,
+                satOpacity        = wxSatOpacity,
+                hasSat            = wxSatFrame != null,
+                onClose           = { wxPanelOpen = false },
+                onToggleRadar     = { wxRadarActive = it },
+                onRadarOpacity    = { wxRadarOpacity = it },
+                onTogglePlay      = { wxPlaying = !wxPlaying },
+                onPrev            = {
+                    wxPlaying = false
+                    if (wxFrames.isNotEmpty()) wxFrameIndex = (wxFrameIndex - 1 + wxFrames.size) % wxFrames.size
+                },
+                onNext            = {
+                    wxPlaying = false
+                    if (wxFrames.isNotEmpty()) wxFrameIndex = (wxFrameIndex + 1) % wxFrames.size
+                },
+                onSeek            = { idx ->
+                    wxPlaying = false
+                    wxFrameIndex = idx.coerceIn(0, (wxFrames.size - 1).coerceAtLeast(0))
+                },
+                onToggleSat       = { wxSatActive = it },
+                onSatOpacity      = { wxSatOpacity = it },
+                onRefresh         = {
+                    scope.launch {
+                        container.weatherRepository.fetchFrames().onSuccess { frames ->
+                            wxFrames       = frames.radarFrames
+                            wxNowcastStart = frames.nowcastStartIndex
+                            wxSatFrame     = frames.satFrame
+                            wxFrameIndex   = (frames.radarFrames.size - 1).coerceAtLeast(0)
+                        }
+                    }
+                },
             )
         }
 

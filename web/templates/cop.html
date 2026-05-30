@@ -1,0 +1,962 @@
+{% extends "base.html" %}
+{% block title %}COP — Arrow{% endblock %}
+{% block head %}
+<style>
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.cop-wrap   { display:flex; flex-direction:column; height:calc(100vh - 52px); background:#0d1117; color:#e2e8f0; font-size:.875rem; }
+.cop-topbar { display:flex; align-items:center; gap:10px; padding:8px 14px; background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.cop-topbar h1{ font-size:1rem; font-weight:700; color:#38bdf8; letter-spacing:.06em; margin:0; }
+.cop-tabs   { display:flex; gap:0; padding:0 8px; background:#0f172a; border-bottom:1px solid #1e293b; flex-shrink:0; overflow-x:auto; }
+.cop-tab    { padding:8px 13px; cursor:pointer; font-size:.78rem; letter-spacing:.05em; border-bottom:2px solid transparent; color:#64748b; white-space:nowrap; transition:color .15s; }
+.cop-tab:hover { color:#94a3b8; }
+.cop-tab.active { color:#38bdf8; border-bottom-color:#38bdf8; }
+.cop-body   { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+.cop-panel  { display:none; flex:1; overflow:hidden; flex-direction:column; }
+.cop-panel.active { display:flex; }
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.cop-toolbar{ display:flex; align-items:center; gap:8px; padding:8px 14px; background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.cop-search { background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:5px 10px; font-size:.82rem; width:180px; }
+.cop-search::placeholder{ color:#475569; }
+.cop-btn    { background:#1e293b; border:1px solid #334155; color:#e2e8f0; border-radius:4px; padding:5px 12px; font-size:.82rem; cursor:pointer; white-space:nowrap; text-decoration:none; display:inline-block; }
+.cop-btn:hover{ background:#263040; }
+.cop-btn.primary{ background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+.cop-btn.primary:hover{ background:#0284c7; }
+.cop-btn.danger { background:#dc2626; border-color:#dc2626; color:#fff; }
+.cop-btn.danger:hover{ background:#b91c1c; }
+.cop-filter { background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:5px 8px; font-size:.82rem; }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.cop-scroll { flex:1; overflow-y:auto; }
+.cop-table  { width:100%; border-collapse:collapse; }
+.cop-table th{ position:sticky; top:0; background:#111827; color:#64748b; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; padding:8px 12px; text-align:left; border-bottom:1px solid #1e293b; white-space:nowrap; z-index:1; }
+.cop-table td{ padding:8px 12px; border-bottom:1px solid #0f172a; vertical-align:top; }
+.cop-table tr:hover td{ background:#0f1a2e; }
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.badge      { display:inline-block; padding:1px 7px; border-radius:3px; font-size:.72rem; font-weight:700; letter-spacing:.05em; }
+.b-received { background:#1e3a5f; color:#60a5fa; }
+.b-acked    { background:#1a3a2a; color:#34d399; }
+.b-processed{ background:#1c2a1c; color:#86efac; }
+.b-rejected { background:#3a1c1c; color:#f87171; }
+.b-contact  { background:#78350f44; color:#fcd34d; }
+.b-spot     { background:#4c1d9544; color:#c4b5fd; }
+.b-salute   { background:#dc262644; color:#fca5a5; }
+.b-casevac  { background:#1d4ed844; color:#93c5fd; }
+.b-medevac  { background:#15803d44; color:#86efac; }
+.b-cas      { background:#dc262644; color:#fca5a5; }
+.b-tgtrep   { background:#92400e44; color:#fdba74; }
+.b-bda      { background:#44403c44; color:#d6d3d1; }
+.b-patrolrep{ background:#16537e44; color:#7dd3fc; }
+.b-obsrep   { background:#1e3a5f44; color:#93c5fd; }
+.b-uavrep   { background:#5b21b644; color:#c4b5fd; }
+.b-sitrep   { background:#166534; color:#86efac; }
+.b-intsum   { background:#1e3a5f; color:#7dd3fc; }
+.b-sigintrep{ background:#3b0764; color:#d8b4fe; }
+.b-cyberrep { background:#1c1917; color:#a8a29e; }
+.b-logrep   { background:#0369a144; color:#7dd3fc; }
+.b-cbrn     { background:#92400e44; color:#fcd34d; }
+.b-doc      { background:#1e293b; color:#94a3b8; }
+.b-tic      { background:#dc2626; color:#fff; font-size:.68rem; margin-left:4px; }
+
+/* ── Detail expand ───────────────────────────────────────────────────────── */
+.detail-box  { padding:14px 16px; background:#0a1120; border-top:1px solid #1e293b; }
+.detail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; margin-bottom:12px; }
+.detail-field{ display:flex; flex-direction:column; gap:2px; }
+.detail-label{ font-size:.68rem; color:#64748b; letter-spacing:.06em; text-transform:uppercase; }
+.detail-value{ font-size:.82rem; color:#e2e8f0; word-break:break-word; white-space:pre-wrap; }
+.detail-wide { grid-column:1/-1; }
+.detail-acts { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+.detail-note { background:#1e293b; border:1px solid #2a3142; border-radius:4px; color:#e2e8f0; padding:6px 10px; font-size:.82rem; width:300px; resize:vertical; min-height:56px; }
+.status-sel  { background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:4px 8px; font-size:.82rem; }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.cop-modal-bg{ display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:2000; align-items:center; justify-content:center; }
+.cop-modal-bg.open{ display:flex; }
+.cop-modal   { background:#111827; border:1px solid #2a3142; border-radius:8px; width:700px; max-width:95vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 16px 48px rgba(0,0,0,.8); }
+.modal-hdr   { display:flex; align-items:center; padding:14px 18px; border-bottom:1px solid #1e293b; }
+.modal-hdr h2{ flex:1; margin:0; font-size:.95rem; color:#38bdf8; }
+.modal-x     { background:none; border:0; color:#64748b; font-size:1.2rem; cursor:pointer; padding:0 4px; }
+.modal-x:hover{ color:#e2e8f0; }
+.modal-body  { flex:1; overflow-y:auto; padding:18px; }
+.modal-foot  { padding:12px 18px; border-top:1px solid #1e293b; display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+.f-field     { margin-bottom:12px; display:flex; flex-direction:column; gap:4px; }
+.f-field label{ font-size:.78rem; color:#94a3b8; }
+.f-field input,.f-field select,.f-field textarea{ background:#1e293b; border:1px solid #2a3142; color:#e2e8f0; border-radius:4px; padding:7px 10px; font-size:.85rem; }
+.f-field textarea{ resize:vertical; min-height:72px; }
+.f-2col      { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
+.f-err       { color:#f87171; font-size:.8rem; flex:1; }
+
+/* ── Stats ───────────────────────────────────────────────────────────────── */
+.stat-chip   { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:12px; font-size:.75rem; font-weight:600; background:#1e293b; color:#94a3b8; }
+.stat-chip span{ font-size:.9rem; font-weight:700; color:#e2e8f0; }
+.stat-new span { color:#60a5fa; }
+
+/* ── Doc preview ─────────────────────────────────────────────────────────── */
+.doc-preview { background:#0a1120; border:1px solid #1e293b; border-radius:4px; padding:10px 14px; font-family:monospace; font-size:.78rem; color:#94a3b8; white-space:pre-wrap; max-height:300px; overflow-y:auto; margin-top:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cop-wrap">
+
+  <div class="cop-topbar">
+    <h1>🗂 COMMON OPERATIONAL PICTURE</h1>
+    <div id="cop-stats" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    <span style="flex:1"></span>
+    <span id="cop-mission-label" style="font-size:.75rem;color:#64748b"></span>
+  </div>
+
+  <div class="cop-tabs">
+    <div class="cop-tab active"  data-tab="overview">Overview</div>
+    <div class="cop-tab" data-tab="contact">Contact / SALUTE</div>
+    <div class="cop-tab" data-tab="medevac">CASEVAC / MEDEVAC</div>
+    <div class="cop-tab" data-tab="firesupp">Fire Support</div>
+    <div class="cop-tab" data-tab="patrol">Patrol / ISR</div>
+    <div class="cop-tab" data-tab="intel">Intel / SITREP</div>
+    <div class="cop-tab" data-tab="logrep">LOGREP</div>
+    <div class="cop-tab" data-tab="cbrn">CBRN</div>
+    <div class="cop-tab" data-tab="docs">Documents</div>
+  </div>
+
+  <div class="cop-body">
+
+    <!-- ── Overview ──────────────────────────────────────────────────────── -->
+    <div class="cop-panel active" id="panel-overview">
+      <div class="cop-toolbar">
+        <input class="cop-search" id="ov-search" placeholder="Search all…">
+        <select class="cop-filter" id="ov-status">
+          <option value="">All statuses</option>
+          <option>RECEIVED</option><option>ACKNOWLEDGED</option>
+          <option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <select class="cop-filter" id="ov-type">
+          <option value="">All types</option>
+          <option>CONTACT</option><option>SPOT</option><option>SALUTE</option>
+          <option>CASEVAC</option><option>MEDEVAC</option>
+          <option>CAS</option><option>TGTREP</option><option>BDA</option>
+          <option>PATROLREP</option><option>OBSREP</option><option>UAVREP</option>
+          <option>SITREP</option><option>INTSUM</option><option>SIGINTREP</option><option>CYBERREP</option>
+          <option>LOGREP</option><option value="CBRN">CBRN (all)</option>
+          <option value="DOC">DOCUMENT</option>
+        </select>
+      </div>
+      <div class="cop-scroll">
+        <table class="cop-table">
+          <thead><tr><th>Type</th><th>DTG</th><th>Summary</th><th>Status</th><th>By</th><th></th></tr></thead>
+          <tbody id="ov-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Contact / SALUTE ──────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-contact">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="contact" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="contact">
+          <option value="">All statuses</option><option>RECEIVED</option>
+          <option>ACKNOWLEDGED</option><option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreate('SALUTE')">+ SALUTE</button>
+        <button class="cop-btn" style="border-color:#fcd34d;color:#fcd34d" onclick="openCreate('CONTACT')">+ CONTACT</button>
+        <button class="cop-btn" style="border-color:#c4b5fd;color:#c4b5fd" onclick="openCreate('SPOT')">+ SPOT</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>S — Size</th><th>A — Activity</th><th>L — Location</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-contact"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── CASEVAC / MEDEVAC ──────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-medevac">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="medevac" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="medevac">
+          <option value="">All statuses</option><option>RECEIVED</option>
+          <option>ACKNOWLEDGED</option><option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreate('MEDEVAC')">+ MEDEVAC</button>
+        <button class="cop-btn" style="border-color:#93c5fd;color:#93c5fd" onclick="openCreate('CASEVAC')">+ CASEVAC</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>Location</th><th>Patients (prec.)</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-medevac"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── Fire Support ───────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-firesupp">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="firesupp" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="firesupp">
+          <option value="">All statuses</option><option>RECEIVED</option>
+          <option>ACKNOWLEDGED</option><option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreate('CAS')">+ CAS 9-liner</button>
+        <button class="cop-btn" style="border-color:#fdba74;color:#fdba74" onclick="openCreate('TGTREP')">+ TGTREP</button>
+        <button class="cop-btn" style="border-color:#d6d3d1;color:#d6d3d1" onclick="openCreate('BDA')">+ BDA</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>TIC</th><th>DTG</th><th>Target / Location</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-firesupp"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── Patrol / ISR ───────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-patrol">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="patrol" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="patrol">
+          <option value="">All statuses</option><option>RECEIVED</option>
+          <option>ACKNOWLEDGED</option><option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreate('PATROLREP')">+ PATROLREP</button>
+        <button class="cop-btn" style="border-color:#93c5fd;color:#93c5fd" onclick="openCreate('OBSREP')">+ OBSREP</button>
+        <button class="cop-btn" style="border-color:#c4b5fd;color:#c4b5fd" onclick="openCreate('UAVREP')">+ UAVREP</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>Mission / Period</th><th>Key Finding</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-patrol"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── Intel / SITREP ─────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-intel">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="intel" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="intel">
+          <option value="">All statuses</option><option>RECEIVED</option>
+          <option>ACKNOWLEDGED</option><option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="openCreate('SITREP')">+ SITREP</button>
+        <button class="cop-btn" style="border-color:#7dd3fc;color:#7dd3fc" onclick="openCreate('INTSUM')">+ INTSUM</button>
+        <button class="cop-btn" style="border-color:#d8b4fe;color:#d8b4fe" onclick="openCreate('SIGINTREP')">+ SIGINTREP</button>
+        <button class="cop-btn" style="border-color:#a8a29e;color:#a8a29e" onclick="openCreate('CYBERREP')">+ CYBERREP</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>Summary / Friendly</th><th>Enemy</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-intel"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── LOGREP ─────────────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-logrep">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="logrep" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="logrep">
+          <option value="">All statuses</option><option>RECEIVED</option>
+          <option>ACKNOWLEDGED</option><option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="location.href='/logrep/'">Open LOGREP →</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Serial</th><th>DTG</th><th>Higher HQ</th><th>Assessment</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-logrep"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── CBRN ───────────────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-cbrn">
+      <div class="cop-toolbar">
+        <input class="cop-search rpt-search" data-panel="cbrn" placeholder="Search…">
+        <select class="cop-filter rpt-status" data-panel="cbrn">
+          <option value="">All statuses</option><option>RECEIVED</option>
+          <option>ACKNOWLEDGED</option><option>PROCESSED</option><option>REJECTED</option>
+        </select>
+        <button class="cop-btn primary" onclick="location.href='/cbrn/'">Open CBRN →</button>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Type</th><th>DTG</th><th>Agent</th><th>Location</th><th>Status</th><th></th></tr></thead>
+        <tbody id="body-cbrn"></tbody>
+      </table></div>
+    </div>
+
+    <!-- ── Documents ──────────────────────────────────────────────────────── -->
+    <div class="cop-panel" id="panel-docs">
+      <div class="cop-toolbar">
+        <input class="cop-search" id="doc-search" placeholder="Search documents…">
+        <label class="cop-btn primary" style="cursor:pointer">
+          ⤴ Upload .docx / .txt
+          <input type="file" id="doc-file-input" accept=".txt,.doc,.docx" multiple style="display:none">
+        </label>
+        <span id="doc-upload-status" style="font-size:.8rem;color:#94a3b8"></span>
+      </div>
+      <div class="cop-scroll"><table class="cop-table">
+        <thead><tr><th>Title</th><th>File</th><th>Type</th><th>Uploaded</th><th>By</th><th></th></tr></thead>
+        <tbody id="body-docs"></tbody>
+      </table></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Create / submit report modal ──────────────────────────────────────── -->
+<div class="cop-modal-bg" id="create-modal">
+  <div class="cop-modal">
+    <div class="modal-hdr">
+      <h2 id="modal-title">New Report</h2>
+      <button class="modal-x" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <span id="modal-err" class="f-err"></span>
+      <button class="cop-btn" onclick="closeModal()">Cancel</button>
+      <button class="cop-btn primary" onclick="submitReport()">Submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Document preview modal ─────────────────────────────────────────────── -->
+<div class="cop-modal-bg" id="doc-modal">
+  <div class="cop-modal" style="width:740px">
+    <div class="modal-hdr">
+      <h2 id="doc-modal-title">Document</h2>
+      <button class="modal-x" onclick="document.getElementById('doc-modal').classList.remove('open')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <a id="doc-modal-dl" href="#" class="cop-btn" target="_blank">⬇ Download</a>
+        <span id="doc-modal-meta" style="font-size:.78rem;color:#64748b;align-self:center"></span>
+      </div>
+      <div class="doc-preview" id="doc-modal-preview"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+const token   = localStorage.getItem('arrow_token');
+if (!token) { location.href = '/login?next=/cop/'; return; }
+const role    = (localStorage.getItem('arrow_role') || '').toUpperCase();
+const canEdit = role === 'ADMIN' || role === 'BATTLE_CAPTAIN';
+const hdr     = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+const mid     = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
+const mhdr    = (x={}) => ({ ...hdr, ...(mid ? {'X-Mission-ID':String(mid)} : {}), ...x });
+const api     = (p, o={}) => fetch(window.ARROW_BACKEND_URL + p, { headers: mhdr(), ...o });
+
+let allReports = [], allDocs = [], operators = {};
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+document.querySelectorAll('.cop-tab').forEach(t =>
+    t.addEventListener('click', () => {
+        document.querySelectorAll('.cop-tab').forEach(x => x.classList.remove('active'));
+        document.querySelectorAll('.cop-panel').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+    })
+);
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────
+async function loadAll() {
+    const [rr, dr, or_] = await Promise.all([api('/reports'), api('/cop/documents'), api('/operators')]);
+    if (rr.ok)  allReports = await rr.json();
+    if (dr.ok)  allDocs    = await dr.json();
+    if (or_.ok) { const ops = await or_.json(); ops.forEach(o => operators[o.id] = o); }
+    redrawAll();
+}
+loadAll();
+
+function redrawAll() {
+    renderStats();
+    renderOverview();
+    renderTab('contact',  ['CONTACT','SPOT','SALUTE']);
+    renderTab('medevac',  ['CASEVAC','MEDEVAC']);
+    renderTab('firesupp', ['CAS','TGTREP','BDA']);
+    renderTab('patrol',   ['PATROLREP','OBSREP','UAVREP']);
+    renderTab('intel',    ['SITREP','INTSUM','SIGINTREP','CYBERREP']);
+    renderTab('logrep',   ['LOGREP']);
+    renderTab('cbrn',     null);   // null = all CBRN_*
+    renderDocs();
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+function renderStats() {
+    const n = allReports.filter(r => r.status === 'RECEIVED').length;
+    document.getElementById('cop-stats').innerHTML =
+        `<span class="stat-chip"><span>${allReports.length + allDocs.length}</span> items</span>` +
+        `<span class="stat-chip stat-new"><span>${n}</span> new</span>`;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function esc(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function dtg(ts){
+    if (!ts) return '—';
+    const d=new Date(ts), p=n=>String(n).padStart(2,'0');
+    return `${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}Z ${d.toLocaleString('default',{month:'short',timeZone:'UTC'})} ${d.getUTCFullYear()}`;
+}
+const TYPE_BADGE = {
+    CONTACT:'b-contact', SPOT:'b-spot', SALUTE:'b-salute',
+    CASEVAC:'b-casevac', MEDEVAC:'b-medevac',
+    CAS:'b-cas', TGTREP:'b-tgtrep', BDA:'b-bda',
+    PATROLREP:'b-patrolrep', OBSREP:'b-obsrep', UAVREP:'b-uavrep',
+    SITREP:'b-sitrep', INTSUM:'b-intsum', SIGINTREP:'b-sigintrep', CYBERREP:'b-cyberrep',
+    LOGREP:'b-logrep', DOC:'b-doc',
+};
+function tbadge(type) {
+    const t = type.toUpperCase();
+    const cls = t.startsWith('CBRN') ? 'b-cbrn' : (TYPE_BADGE[t] || 'b-doc');
+    return `<span class="badge ${cls}">${esc(t)}</span>`;
+}
+function sbadge(s) {
+    const m={RECEIVED:'b-received',ACKNOWLEDGED:'b-acked',PROCESSED:'b-processed',REJECTED:'b-rejected'};
+    return `<span class="badge ${m[s]||'b-doc'}">${esc(s)}</span>`;
+}
+function payload(r) {
+    try { return typeof r.payload==='string' ? JSON.parse(r.payload) : r.payload; }
+    catch { return {}; }
+}
+function summary(r) {
+    const p = payload(r);
+    switch (r.type) {
+        case 'SALUTE':    return [p.activity, p.location].filter(Boolean).join(' · ');
+        case 'CONTACT':
+        case 'SPOT':      return [p.line_2||p.activity, p.line_3||p.location].filter(Boolean).join(' · ');
+        case 'CASEVAC':
+        case 'MEDEVAC':   return p.line_1 || p.location || '';
+        case 'CAS':       return p.line_5_mgrs || p.line_3 || '';
+        case 'TGTREP':    return [p.target_id, p.description].filter(Boolean).join(' — ');
+        case 'BDA':       return p.target || '';
+        case 'PATROLREP': return p.mission || '';
+        case 'OBSREP':    return p.observation_period || '';
+        case 'UAVREP':    return [p.platform, p.target].filter(Boolean).join(' · ');
+        case 'SITREP':    return p.friendly || '';
+        case 'INTSUM':    return p.summary || '';
+        case 'SIGINTREP': return p.summary || p.period || '';
+        case 'CYBERREP':  return p.incident || '';
+        case 'LOGREP':    return p.higher_hq || p.serial || '';
+        default:          return Object.values(p).filter(v=>typeof v==='string').slice(0,2).join(' · ');
+    }
+}
+
+// ── Overview ──────────────────────────────────────────────────────────────
+function renderOverview() {
+    const q   = (document.getElementById('ov-search').value||'').toLowerCase();
+    const st  = document.getElementById('ov-status').value;
+    const typ = document.getElementById('ov-type').value;
+    let rows = [];
+    allReports.forEach(r => {
+        const tg = r.type.startsWith('CBRN') ? 'CBRN' : r.type;
+        if (typ && typ !== tg && typ !== r.type) return;
+        if (st && r.status !== st) return;
+        const s = summary(r);
+        if (q && !r.type.toLowerCase().includes(q) && !s.toLowerCase().includes(q)) return;
+        rows.push({kind:'r', ts:r.timestamp, r, s});
+    });
+    allDocs.forEach(d => {
+        if (typ && typ !== 'DOC') return;
+        if (q && !d.title.toLowerCase().includes(q) && !d.filename.toLowerCase().includes(q)) return;
+        rows.push({kind:'d', ts:d.uploaded_at, d});
+    });
+    rows.sort((a,b) => new Date(b.ts)-new Date(a.ts));
+    const tb = document.getElementById('ov-body');
+    if (!rows.length) { tb.innerHTML=`<tr><td colspan="6" style="color:#475569;padding:20px">No items.</td></tr>`; return; }
+    tb.innerHTML = rows.map(({kind,r,d,s}) => kind==='r'
+        ? `<tr>
+            <td>${tbadge(r.type)}${r.tic?'<span class="badge b-tic">TIC</span>':''}</td>
+            <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${dtg(r.timestamp)}</td>
+            <td style="color:#cbd5e1">${esc(s.slice(0,70))}</td>
+            <td>${sbadge(r.status)}</td>
+            <td style="color:#64748b;font-size:.78rem">${esc((operators[r.operator_id]||{}).callsign||r.operator_id)}</td>
+            <td><button class="cop-btn" onclick="toggleDetail(this,'r',${r.id})">▶</button></td>
+           </tr><tr class="detail-row" id="dr-r-${r.id}" style="display:none"><td colspan="6"></td></tr>`
+        : `<tr>
+            <td>${tbadge('DOC')}</td>
+            <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${dtg(d.uploaded_at)}</td>
+            <td style="color:#cbd5e1">${esc(d.title)}</td>
+            <td><span class="badge b-doc">${d.content_type}</span></td>
+            <td style="color:#64748b;font-size:.78rem">${esc((operators[d.uploaded_by]||{}).callsign||d.uploaded_by)}</td>
+            <td><button class="cop-btn" onclick="toggleDetail(this,'d',${d.id})">▶</button></td>
+           </tr><tr class="detail-row" id="dr-d-${d.id}" style="display:none"><td colspan="6"></td></tr>`
+    ).join('');
+}
+document.getElementById('ov-search').addEventListener('input', renderOverview);
+document.getElementById('ov-status').addEventListener('change', renderOverview);
+document.getElementById('ov-type').addEventListener('change', renderOverview);
+
+// ── Per-tab table ─────────────────────────────────────────────────────────
+const TAB_TYPES = {
+    contact:  ['CONTACT','SPOT','SALUTE'],
+    medevac:  ['CASEVAC','MEDEVAC'],
+    firesupp: ['CAS','TGTREP','BDA'],
+    patrol:   ['PATROLREP','OBSREP','UAVREP'],
+    intel:    ['SITREP','INTSUM','SIGINTREP','CYBERREP'],
+    logrep:   ['LOGREP'],
+    cbrn:     null,
+};
+function renderTab(panelId, types) {
+    const q  = (document.querySelector(`.rpt-search[data-panel="${panelId}"]`)?.value||'').toLowerCase();
+    const st = document.querySelector(`.rpt-status[data-panel="${panelId}"]`)?.value||'';
+    const match = r => types ? types.includes(r.type) : r.type.startsWith('CBRN');
+    const filtered = allReports.filter(r => {
+        if (!match(r)) return false;
+        if (st && r.status !== st) return false;
+        const s = summary(r);
+        if (q && !r.type.toLowerCase().includes(q) && !s.toLowerCase().includes(q)) return false;
+        return true;
+    });
+    const tb = document.getElementById('body-' + panelId);
+    if (!filtered.length) {
+        tb.innerHTML = `<tr><td colspan="8" style="color:#475569;padding:20px">No reports.</td></tr>`;
+        return;
+    }
+    tb.innerHTML = filtered.map(r => {
+        const p = payload(r);
+        const cells = tabCells(panelId, r, p);
+        return `<tr>${cells}<td>${sbadge(r.status)}</td>
+                <td><button class="cop-btn" onclick="toggleDetail(this,'r',${r.id})">▶</button></td></tr>
+                <tr class="detail-row" id="dr-r-${r.id}" style="display:none"><td colspan="9"></td></tr>`;
+    }).join('');
+}
+function tabCells(panel, r, p) {
+    const T = () => `<td>${tbadge(r.type)}</td>`;
+    const D = () => `<td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${dtg(r.timestamp)}</td>`;
+    const e = s => esc(String(s||'—').slice(0,60));
+    if (panel==='contact')
+        return `${T()}${D()}<td>${e(p.size||p.line_1)}</td><td>${e(p.activity||p.line_2)}</td><td>${e(p.location||p.line_3)}</td>`;
+    if (panel==='medevac')
+        return `${T()}${D()}<td>${e(p.line_1||p.location)}</td><td>${e(p.line_3||p.patients_precedence)}</td>`;
+    if (panel==='firesupp') {
+        const tic = r.tic ? '<span class="badge b-tic">TIC</span>' : '';
+        const loc = p.line_5_mgrs||p.grid||p.line_3||'—';
+        const pri = p.priority||'—';
+        return `${T()}<td>${tic}</td>${D()}<td>${e(loc)}</td><td>${e(pri)}</td>`;
+    }
+    if (panel==='patrol') {
+        const what = p.mission||p.observation_period||p.platform||'—';
+        const find = p.enemy||p.enemy_activity||p.result||'—';
+        return `${T()}${D()}<td>${e(what)}</td><td>${e(find)}</td>`;
+    }
+    if (panel==='intel') {
+        const sum_ = p.summary||p.friendly||p.signals||p.incident||'—';
+        const enem = p.enemy||p.threat||'—';
+        return `${T()}${D()}<td>${e(sum_)}</td><td>${e(enem)}</td>`;
+    }
+    if (panel==='logrep') {
+        const assess = p.section_g?.assessment||p.assessment||'—';
+        const col = assess==='GREEN'?'#22c55e':assess==='AMBER'?'#f59e0b':assess==='RED'?'#ef4444':'#94a3b8';
+        return `<td>${e(p.serial)}</td>${D()}<td>${e(p.higher_hq)}</td><td style="color:${col};font-weight:700">${e(assess)}</td>`;
+    }
+    if (panel==='cbrn')
+        return `${T()}${D()}<td>${e(p.agent||p.substance||p.type_of_hazard)}</td><td>${e(p.location||p.grid)}</td>`;
+    return `${T()}${D()}<td colspan="2">${e(summary(r))}</td>`;
+}
+document.querySelectorAll('.rpt-search,.rpt-status').forEach(el => {
+    el.addEventListener('input',  () => renderTab(el.dataset.panel, TAB_TYPES[el.dataset.panel]));
+    el.addEventListener('change', () => renderTab(el.dataset.panel, TAB_TYPES[el.dataset.panel]));
+});
+
+// ── Documents ─────────────────────────────────────────────────────────────
+function renderDocs() {
+    const q  = (document.getElementById('doc-search').value||'').toLowerCase();
+    const tb = document.getElementById('body-docs');
+    const list = allDocs.filter(d => !q || d.title.toLowerCase().includes(q) || d.filename.toLowerCase().includes(q));
+    if (!list.length) { tb.innerHTML=`<tr><td colspan="6" style="color:#475569;padding:20px">No documents uploaded.</td></tr>`; return; }
+    tb.innerHTML = list.map(d => {
+        const op = operators[d.uploaded_by];
+        const del = canEdit ? `<button class="cop-btn danger" onclick="deleteDoc(${d.id})">Delete</button>` : '';
+        return `<tr>
+          <td style="color:#e2e8f0">${esc(d.title)}</td>
+          <td style="color:#64748b;font-size:.78rem">${esc(d.filename)}</td>
+          <td><span class="badge b-doc">${d.content_type}</span></td>
+          <td style="white-space:nowrap;color:#94a3b8;font-size:.78rem">${dtg(d.uploaded_at)}</td>
+          <td style="color:#64748b;font-size:.78rem">${esc((op||{}).callsign||d.uploaded_by)}</td>
+          <td style="display:flex;gap:6px">
+            <button class="cop-btn" onclick="previewDoc(${d.id})">View</button>
+            <a class="cop-btn" href="${window.ARROW_BACKEND_URL}/cop/documents/${d.id}/download" target="_blank">⬇</a>
+            ${del}
+          </td></tr>`;
+    }).join('');
+}
+document.getElementById('doc-search').addEventListener('input', renderDocs);
+
+document.getElementById('doc-file-input').addEventListener('change', async e => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const st = document.getElementById('doc-upload-status');
+    st.textContent = 'Uploading…';
+    let ok=0, fail=0;
+    for (const file of files) {
+        const fd = new FormData(); fd.append('file', file);
+        const r = await fetch(window.ARROW_BACKEND_URL + '/cop/documents', {
+            method:'POST',
+            headers: { 'Authorization':'Bearer '+token, ...(mid?{'X-Mission-ID':String(mid)}:{}) },
+            body: fd,
+        });
+        if (r.ok) { allDocs.unshift(await r.json()); ok++; } else fail++;
+    }
+    st.textContent = `${ok} uploaded${fail?`, ${fail} failed`:''}`;
+    e.target.value = '';
+    renderStats(); renderDocs(); renderOverview();
+});
+
+function previewDoc(id) {
+    const d = allDocs.find(x => x.id === id);
+    if (!d) return;
+    document.getElementById('doc-modal-title').textContent = d.title;
+    document.getElementById('doc-modal-meta').textContent  = `${d.filename} · ${d.content_type} · ${dtg(d.uploaded_at)}`;
+    document.getElementById('doc-modal-dl').href = `${window.ARROW_BACKEND_URL}/cop/documents/${d.id}/download`;
+    const prev = document.getElementById('doc-modal-preview');
+    prev.style.display = d.text_preview ? '' : 'none';
+    prev.textContent = d.text_preview || '';
+    document.getElementById('doc-modal').classList.add('open');
+}
+async function deleteDoc(id) {
+    if (!confirm('Delete this document?')) return;
+    const r = await api(`/cop/documents/${id}`, { method:'DELETE', headers:mhdr({'Content-Type':undefined}) });
+    if (r.ok||r.status===204) { allDocs=allDocs.filter(d=>d.id!==id); renderStats();renderDocs();renderOverview(); }
+    else alert('Delete failed: '+r.status);
+}
+
+// ── Detail expand ─────────────────────────────────────────────────────────
+function toggleDetail(btn, kind, id) {
+    const row = document.getElementById(`dr-${kind}-${id}`);
+    if (!row) return;
+    const open = row.style.display !== 'none';
+    btn.textContent = open ? '▶' : '▼';
+    row.style.display = open ? 'none' : '';
+    if (!open) {
+        const td = row.querySelector('td');
+        kind === 'r' ? renderReportDetail(td, id) : renderDocDetail(td, id);
+    }
+}
+function renderReportDetail(td, id) {
+    const r = allReports.find(x => x.id === id);
+    if (!r) return;
+    const p = payload(r);
+    const FIELD_LABELS = {
+        // SALUTE
+        size:'S — Size', activity:'A — Activity', location:'L — Location', unit:'U — Unit', time:'T — Time', equipment:'E — Equipment',
+        // 9-liner generic
+        line_1:'Line 1', line_2:'Line 2', line_3:'Line 3', line_4:'Line 4', line_5:'Line 5',
+        line_5_mgrs:'Line 5 (MGRS)', line_6:'Line 6', line_7:'Line 7', line_8:'Line 8', line_9:'Line 9',
+        // PATROLREP
+        mission:'Mission', movement:'Movement', enemy:'Enemy', terrain:'Terrain', civil:'Civil', recommendation:'Recommendation',
+        // OBSREP
+        observation_period:'Observation Period', enemy_activity:'Enemy Activity', pattern:'Pattern', route_usage:'Route Usage', timing:'Timing',
+        // UAVREP
+        platform:'Platform', sensor_type:'Sensor', flight_time:'Flight Time', target:'Target', result:'Result', bda:'BDA',
+        // TGTREP
+        target_id:'Target ID', grid:'Grid', description:'Description', priority:'Priority', recommended_weapon:'Recommended Weapon',
+        // BDA
+        damage_code:'Damage Code', assessment:'Assessment',
+        // SITREP
+        friendly:'Friendly', operations:'Operations', logistics:'Logistics', communications:'Comms', risks:'Risks', planned_actions:'Planned Actions',
+        // INTSUM/SIGINTREP
+        summary:'Summary', details:'Details', sources:'Sources', signals:'Signals', analysis:'Analysis',
+        // CYBERREP
+        incident:'Incident', source:'Source', impact:'Impact', action:'Action Taken',
+        // LOGREP
+        serial:'Serial', higher_hq:'Higher HQ',
+    };
+    const isLong = k => ['equipment','line_8','mission','movement','terrain','civil','recommendation',
+        'enemy_activity','pattern','route_usage','timing','result','bda','description','remarks',
+        'friendly','enemy','operations','logistics','communications','risks','planned_actions',
+        'summary','details','sources','signals','analysis','incident','impact','action'].includes(k);
+
+    const fields = Object.entries(p).filter(([,v]) => v !== null && v !== undefined && String(v).trim()).map(([k,v]) =>
+        `<div class="detail-field${isLong(k)?' detail-wide':''}">
+           <span class="detail-label">${esc(FIELD_LABELS[k]||k)}</span>
+           <span class="detail-value">${esc(String(v))}</span>
+         </div>`
+    ).join('');
+
+    const stOpts = ['RECEIVED','ACKNOWLEDGED','PROCESSED','REJECTED']
+        .map(s=>`<option value="${s}"${s===r.status?' selected':''}>${s}</option>`).join('');
+    const acts = canEdit ? `
+        <textarea class="detail-note" id="note-${id}" placeholder="Reviewer note…">${esc(r.reviewer_note||'')}</textarea>
+        <select class="status-sel" id="status-${id}">${stOpts}</select>
+        <button class="cop-btn primary" onclick="updateStatus(${id})">Update</button>
+        <button class="cop-btn danger"  onclick="deleteReport(${id})">Delete</button>` : '';
+
+    td.innerHTML = `<div class="detail-box">
+      <div class="detail-grid">${fields}</div>
+      <div class="detail-acts">${acts}</div>
+    </div>`;
+}
+function renderDocDetail(td, id) {
+    const d = allDocs.find(x => x.id === id);
+    if (!d) return;
+    const del = canEdit ? `<button class="cop-btn danger" onclick="deleteDoc(${d.id})">Delete</button>` : '';
+    td.innerHTML = `<div class="detail-box">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <a class="cop-btn" href="${window.ARROW_BACKEND_URL}/cop/documents/${d.id}/download" target="_blank">⬇ Download</a>${del}
+      </div>
+      ${d.text_preview ? `<div class="doc-preview">${esc(d.text_preview).slice(0,4000)}</div>` : ''}
+    </div>`;
+}
+
+// ── Status update / delete ────────────────────────────────────────────────
+async function updateStatus(id) {
+    const note   = document.getElementById(`note-${id}`)?.value||'';
+    const status = document.getElementById(`status-${id}`)?.value||'RECEIVED';
+    const r = await api(`/reports/${id}`, { method:'PATCH', body:JSON.stringify({status, reviewer_note:note}) });
+    if (r.ok) {
+        const upd = await r.json();
+        const idx = allReports.findIndex(x => x.id === id);
+        if (idx>=0) allReports[idx] = upd;
+        renderStats(); renderOverview();
+        const tab = document.querySelector('.cop-tab.active')?.dataset.tab;
+        if (tab && TAB_TYPES[tab] !== undefined) renderTab(tab, TAB_TYPES[tab]);
+    } else alert('Update failed: '+(await r.text()));
+}
+async function deleteReport(id) {
+    if (!confirm('Delete this report? Cannot be undone.')) return;
+    const r = await api(`/reports/${id}`, { method:'DELETE', headers:mhdr({'Content-Type':undefined}) });
+    if (r.ok||r.status===204) {
+        allReports = allReports.filter(x => x.id !== id);
+        renderStats(); renderOverview();
+        const tab = document.querySelector('.cop-tab.active')?.dataset.tab;
+        if (tab && TAB_TYPES[tab] !== undefined) renderTab(tab, TAB_TYPES[tab]);
+    } else alert('Delete failed: '+r.status);
+}
+
+// ── Report forms ──────────────────────────────────────────────────────────
+const FORMS = {
+    SALUTE: {
+        title: 'New SALUTE Report',
+        fields: [
+            {k:'size',     l:'S — Size',         t:'text'},
+            {k:'activity', l:'A — Activity',      t:'text'},
+            {k:'location', l:'L — Location',      t:'text'},
+            {k:'unit',     l:'U — Unit',          t:'text'},
+            {k:'time',     l:'T — Time',          t:'text'},
+            {k:'equipment',l:'E — Equipment',     t:'textarea'},
+        ],
+    },
+    CONTACT: {
+        title: 'New CONTACT Report',
+        fields: [
+            {k:'line_1',l:'Line 1 — Size',        t:'text'},
+            {k:'line_2',l:'Line 2 — Activity',    t:'text'},
+            {k:'line_3',l:'Line 3 — Location',    t:'text'},
+            {k:'line_4',l:'Line 4 — Unit',        t:'text'},
+            {k:'line_5',l:'Line 5 — Time',        t:'text'},
+            {k:'line_6',l:'Line 6 — Equipment',   t:'text'},
+            {k:'line_7',l:'Line 7 — Direction',   t:'text'},
+            {k:'line_8',l:'Line 8 — Additional',  t:'textarea'},
+            {k:'line_9',l:'Line 9 — Reported by', t:'text'},
+        ],
+    },
+    SPOT: {
+        title: 'New SPOT Report',
+        fields: [
+            {k:'line_1',l:'Line 1 — Size',        t:'text'},
+            {k:'line_2',l:'Line 2 — Activity',    t:'text'},
+            {k:'line_3',l:'Line 3 — Location',    t:'text'},
+            {k:'line_4',l:'Line 4 — Unit',        t:'text'},
+            {k:'line_5',l:'Line 5 — Time',        t:'text'},
+            {k:'line_6',l:'Line 6 — Equipment',   t:'text'},
+            {k:'line_7',l:'Line 7 — Direction',   t:'text'},
+            {k:'line_8',l:'Line 8 — Additional',  t:'textarea'},
+            {k:'line_9',l:'Line 9 — Reported by', t:'text'},
+        ],
+    },
+    MEDEVAC: {
+        title: 'New MEDEVAC 9-liner',
+        fields: [
+            {k:'line_1',l:'Line 1 — Location (Grid/MGRS)',t:'text'},
+            {k:'line_2',l:'Line 2 — Radio / callsign',    t:'text'},
+            {k:'line_3',l:'Line 3 — Patients by precedence',t:'text'},
+            {k:'line_4',l:'Line 4 — Special equipment',   t:'text'},
+            {k:'line_5',l:'Line 5 — Patients by type',    t:'text'},
+            {k:'line_6',l:'Line 6 — Security at PZ',      t:'text'},
+            {k:'line_7',l:'Line 7 — Marking method',      t:'text'},
+            {k:'line_8',l:'Line 8 — Nationality / status',t:'text'},
+            {k:'line_9',l:'Line 9 — NBC / terrain',       t:'text'},
+        ],
+    },
+    CASEVAC: {
+        title: 'New CASEVAC 9-liner',
+        fields: [
+            {k:'line_1',l:'Line 1 — Location (Grid/MGRS)',t:'text'},
+            {k:'line_2',l:'Line 2 — Radio / callsign',    t:'text'},
+            {k:'line_3',l:'Line 3 — Patients by precedence',t:'text'},
+            {k:'line_4',l:'Line 4 — Special equipment',   t:'text'},
+            {k:'line_5',l:'Line 5 — Patients by type',    t:'text'},
+            {k:'line_6',l:'Line 6 — Security at PZ',      t:'text'},
+            {k:'line_7',l:'Line 7 — Marking method',      t:'text'},
+            {k:'line_8',l:'Line 8 — Nationality / status',t:'text'},
+            {k:'line_9',l:'Line 9 — NBC / terrain',       t:'text'},
+        ],
+    },
+    CAS: {
+        title: 'New CAS 9-liner',
+        fields: [
+            {k:'line_1',    l:'Line 1 — Request number',          t:'text'},
+            {k:'line_2',    l:'Line 2 — Location of friendlies',  t:'text'},
+            {k:'line_3',    l:'Line 3 — IP / heading / distance', t:'text'},
+            {k:'line_4',    l:'Line 4 — Target elevation (ft)',   t:'text'},
+            {k:'line_5_mgrs',l:'Line 5 — Target (MGRS)',         t:'text'},
+            {k:'line_6',    l:'Line 6 — Target description',      t:'text'},
+            {k:'line_7',    l:'Line 7 — Target mark method',      t:'text'},
+            {k:'line_8',    l:'Line 8 — Friendlies / hostages',   t:'text'},
+            {k:'line_9',    l:'Line 9 — Egress',                  t:'text'},
+            {k:'tic_flag',  l:'Troops In Contact (TIC)',           t:'checkbox'},
+        ],
+    },
+    TGTREP: {
+        title: 'New Target Report (TGTREP)',
+        fields: [
+            {k:'target_id',         l:'Target Number',        t:'text'},
+            {k:'grid',              l:'Grid (MGRS)',           t:'text'},
+            {k:'description',       l:'Target Description',   t:'textarea'},
+            {k:'priority',          l:'Priority',             t:'select', opts:['High','Medium','Low']},
+            {k:'recommended_weapon',l:'Recommended Weapon',   t:'text'},
+            {k:'remarks',           l:'Remarks',              t:'textarea'},
+        ],
+    },
+    BDA: {
+        title: 'New Battle Damage Assessment (BDA)',
+        fields: [
+            {k:'target',      l:'Target',       t:'text'},
+            {k:'grid',        l:'Grid (MGRS)',  t:'text'},
+            {k:'result',      l:'Result',       t:'textarea'},
+            {k:'damage_code', l:'Damage Code',  t:'select', opts:['K — Destroyed','A — Damaged','N — No effect']},
+            {k:'assessment',  l:'Assessment',   t:'text'},
+            {k:'remarks',     l:'Remarks',      t:'textarea'},
+        ],
+    },
+    PATROLREP: {
+        title: 'New Patrol Report (PATROLREP)',
+        fields: [
+            {k:'mission',        l:'Mission / Tasking', t:'textarea'},
+            {k:'movement',       l:'Movement',          t:'textarea'},
+            {k:'enemy',          l:'Enemy Contact',     t:'textarea'},
+            {k:'terrain',        l:'Terrain',           t:'textarea'},
+            {k:'civil',          l:'Civil Population',  t:'textarea'},
+            {k:'recommendation', l:'Recommendations',   t:'textarea'},
+        ],
+    },
+    OBSREP: {
+        title: 'New Observation Report (OBSREP)',
+        fields: [
+            {k:'observation_period',l:'Observation Period', t:'text'},
+            {k:'enemy_activity',    l:'Enemy Activity',     t:'textarea'},
+            {k:'pattern',           l:'Pattern Analysis',   t:'textarea'},
+            {k:'route_usage',       l:'Route Usage',        t:'textarea'},
+            {k:'timing',            l:'Timing / Movements', t:'textarea'},
+        ],
+    },
+    UAVREP: {
+        title: 'New UAV / Drone Report (UAVREP)',
+        fields: [
+            {k:'platform',    l:'Platform',      t:'text'},
+            {k:'sensor_type', l:'Sensor Type',   t:'text'},
+            {k:'flight_time', l:'Flight Time',   t:'text'},
+            {k:'target',      l:'Target',        t:'text'},
+            {k:'result',      l:'Result / Targets observed', t:'textarea'},
+            {k:'bda',         l:'BDA',           t:'textarea'},
+            {k:'photos',      l:'Photos / Media attached',   t:'text'},
+        ],
+    },
+    SITREP: {
+        title: 'New Situation Report (SITREP)',
+        fields: [
+            {k:'friendly',       l:'1. Friendly Situation', t:'textarea'},
+            {k:'enemy',          l:'2. Enemy Situation',    t:'textarea'},
+            {k:'operations',     l:'3. Operations',         t:'textarea'},
+            {k:'logistics',      l:'4. Logistics',          t:'textarea'},
+            {k:'communications', l:'5. Communications',     t:'textarea'},
+            {k:'risks',          l:'6. Risks',              t:'textarea'},
+            {k:'planned_actions',l:'7. Planned Actions',    t:'textarea'},
+        ],
+    },
+    INTSUM: {
+        title: 'New Intelligence Summary (INTSUM)',
+        fields: [
+            {k:'period',     l:'Intelligence Period', t:'text'},
+            {k:'sources',    l:'Sources (HUMINT/SIGINT/OSINT/UAV/…)', t:'text'},
+            {k:'summary',    l:'Summary',             t:'textarea'},
+            {k:'details',    l:'Details',             t:'textarea'},
+            {k:'assessment', l:'Assessment',          t:'textarea'},
+        ],
+    },
+    SIGINTREP: {
+        title: 'New SIGINT Report (SIGINTREP)',
+        fields: [
+            {k:'period',   l:'Period',           t:'text'},
+            {k:'signals',  l:'Signals Detected', t:'textarea'},
+            {k:'analysis', l:'Analysis',         t:'textarea'},
+            {k:'summary',  l:'Summary',          t:'textarea'},
+        ],
+    },
+    CYBERREP: {
+        title: 'New Cyber Report (CYBERREP)',
+        fields: [
+            {k:'incident',l:'Incident Description', t:'textarea'},
+            {k:'source',  l:'Source',               t:'text'},
+            {k:'impact',  l:'Impact',               t:'textarea'},
+            {k:'action',  l:'Action Taken',         t:'textarea'},
+        ],
+    },
+};
+
+let _mtype = '';
+function openCreate(type) {
+    _mtype = type;
+    const f = FORMS[type];
+    if (!f) return;
+    document.getElementById('modal-title').textContent = f.title;
+    document.getElementById('modal-err').textContent   = '';
+    document.getElementById('modal-body').innerHTML    = f.fields.map(({k,l,t,opts}) => {
+        if (t === 'checkbox')
+            return `<div class="f-field" style="flex-direction:row;align-items:center;gap:8px">
+                      <input type="checkbox" id="f-${k}"><label for="f-${k}" style="margin:0">${esc(l)}</label></div>`;
+        if (t === 'select')
+            return `<div class="f-field"><label>${esc(l)}</label>
+                      <select id="f-${k}">${(opts||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select></div>`;
+        const tag = t === 'textarea' ? 'textarea' : 'input';
+        return `<div class="f-field"><label>${esc(l)}</label>
+                  <${tag} id="f-${k}" placeholder="">${t==='textarea'?'':''}</${tag}></div>`;
+    }).join('');
+    document.getElementById('create-modal').classList.add('open');
+}
+function closeModal() { document.getElementById('create-modal').classList.remove('open'); }
+
+async function submitReport() {
+    const f = FORMS[_mtype]; if (!f) return;
+    const p = {}; let tic = false;
+    for (const {k,t} of f.fields) {
+        const el = document.getElementById(`f-${k}`); if (!el) continue;
+        if (t==='checkbox') { tic=el.checked; p[k]=el.checked; }
+        else p[k] = el.value.trim();
+    }
+    document.getElementById('modal-err').textContent = '';
+    const body = { type: _mtype, payload: p };
+    if (_mtype === 'CAS') body.tic = tic;
+    const r = await api('/reports', { method:'POST', body:JSON.stringify(body) });
+    if (r.ok) {
+        allReports.unshift(await r.json());
+        closeModal(); redrawAll();
+    } else {
+        const err = await r.json().catch(()=>({}));
+        document.getElementById('modal-err').textContent = err.detail||'Submit failed';
+    }
+}
+
+// ── WebSocket live updates ────────────────────────────────────────────────
+const ws = new WebSocket(window.ARROW_WS_URL + '?token=' + encodeURIComponent(token));
+ws.addEventListener('message', e => {
+    try {
+        const msg = JSON.parse(e.data);
+        if (msg.channel !== 'report') return;
+        if (msg.event === 'submitted') {
+            if (!allReports.find(r => r.id === msg.data.id)) {
+                allReports.unshift({...msg.data, payload:JSON.stringify(msg.data.payload||{}), timestamp:new Date().toISOString()});
+                renderStats(); renderOverview();
+            }
+        } else if (msg.event === 'status_updated') {
+            const i = allReports.findIndex(r => r.id === msg.data.id);
+            if (i>=0) { allReports[i]={...allReports[i],...msg.data}; renderStats(); renderOverview(); }
+        } else if (msg.event === 'deleted') {
+            allReports = allReports.filter(r => r.id !== msg.data.id);
+            renderStats(); renderOverview();
+        }
+    } catch {}
+});
+
+})();
+</script>
+{% endblock %}

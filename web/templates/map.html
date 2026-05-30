@@ -322,6 +322,7 @@
                 <button class="overlay-btn" id="ov-toggle" title="Saved overlays">📚 Overlays</button>
                 <button class="overlay-btn" id="goto-toggle" title="Go to location">🔍 Go To</button>
                 <button class="overlay-btn" id="track-toggle" title="Operator track history">📊 Tracks</button>
+                <button class="overlay-btn" id="wx-toggle" title="Weather overlays">🌧 Weather</button>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
             <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -342,6 +343,72 @@
                     <div id="kml-status" style="margin-top:6px; color:#94a3b8; font-size:0.78rem;"></div>
                 </div>
                 <div id="kml-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
+            </div>
+            <!-- ── Weather overlay panel ─────────────────────────────────── -->
+            <div id="wx-panel" style="display:none;position:absolute;top:60px;right:12px;
+                                      background:#0b0f1c;border:1px solid #1e293b;
+                                      border-radius:7px;padding:0;z-index:1100;width:296px;
+                                      color:#e2e8f0;font-size:.84rem;
+                                      box-shadow:0 6px 28px rgba(0,0,0,.8);overflow:hidden">
+              <!-- header -->
+              <div style="display:flex;align-items:center;gap:6px;padding:9px 12px;background:#060c18;border-bottom:1px solid #1e293b">
+                <strong style="flex:1;font-size:.83rem;letter-spacing:.05em;color:#7dd3fc">🌧 WEATHER</strong>
+                <span id="wx-updated" style="font-size:.71rem;color:#64748b;font-family:monospace"></span>
+                <button id="wx-refresh" class="overlay-btn" style="padding:0 7px;font-size:.82rem" title="Refresh data">↻</button>
+                <button id="wx-close"   class="overlay-btn" style="padding:0 8px">×</button>
+              </div>
+
+              <!-- RADAR -->
+              <div style="padding:10px 12px;border-bottom:1px solid #0f172a">
+                <div style="font-size:.67rem;color:#475569;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Radar</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+                  <input type="checkbox" id="wx-cb-rainviewer">
+                  <label for="wx-cb-rainviewer" style="flex:1;cursor:pointer">🌧 Rain Radar</label>
+                  <input type="range" id="wx-op-rainviewer" min="0" max="1" step="0.05" value="0.7" style="width:58px;accent-color:#38bdf8" title="Opacity">
+                </div>
+                <!-- animation controls -->
+                <div id="wx-anim" style="background:#060c18;border:1px solid #1e293b;border-radius:5px;padding:8px;margin-bottom:7px">
+                  <div style="display:flex;align-items:center;gap:5px;margin-bottom:7px">
+                    <button id="wx-prev" class="overlay-btn" style="padding:1px 8px;font-size:.82rem" title="Previous">⏮</button>
+                    <button id="wx-play" class="overlay-btn" style="padding:1px 10px;font-size:1rem" title="Play / Pause">▶</button>
+                    <button id="wx-next" class="overlay-btn" style="padding:1px 8px;font-size:.82rem" title="Next">⏭</button>
+                    <span style="flex:1"></span>
+                    <span id="wx-frame-badge" style="font-size:.7rem;background:#1e3a5f;color:#7dd3fc;border-radius:3px;padding:1px 6px;font-family:monospace"></span>
+                  </div>
+                  <input type="range" id="wx-frame-slider" min="0" max="0" value="0"
+                         style="width:100%;cursor:pointer;accent-color:#38bdf8;height:4px">
+                  <div style="display:flex;justify-content:space-between;font-size:.66rem;color:#334155;margin-top:4px">
+                    <span id="wx-t-start"></span>
+                    <span id="wx-nowcast-label" style="color:#f59e0b"></span>
+                    <span id="wx-t-end" style="color:#38bdf8">LIVE ▸</span>
+                  </div>
+                </div>
+                <!-- IR Satellite -->
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="checkbox" id="wx-cb-satellite">
+                  <label for="wx-cb-satellite" style="flex:1;cursor:pointer">🛰 IR Satellite</label>
+                  <input type="range" id="wx-op-satellite" min="0" max="1" step="0.05" value="0.5" style="width:58px;accent-color:#a78bfa" title="Opacity">
+                </div>
+              </div>
+
+              <!-- OWM meteorological (populated by JS if key present) -->
+              <div id="wx-owm-section" style="display:none;padding:10px 12px;border-bottom:1px solid #0f172a">
+                <div style="font-size:.67rem;color:#475569;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Meteorological</div>
+                <div id="wx-owm-layers" style="display:flex;flex-direction:column;gap:5px"></div>
+              </div>
+
+              <!-- Radar legend -->
+              <div id="wx-legend" style="padding:8px 12px;border-bottom:1px solid #0f172a">
+                <div style="font-size:.67rem;color:#475569;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px">Radar Intensity (dBZ)</div>
+                <div style="height:9px;border-radius:3px;background:linear-gradient(to right,
+                  #0000cd,#0077ff,#00ccff,#00ff88,#aaff00,#ffff00,#ffaa00,#ff4400,#cc0000,#880088)"></div>
+                <div style="display:flex;justify-content:space-between;font-size:.64rem;color:#475569;margin-top:3px">
+                  <span>Light</span><span>Mod.</span><span>Heavy</span><span>Extreme</span>
+                </div>
+              </div>
+
+              <!-- credits -->
+              <div id="wx-credit" style="padding:6px 12px;font-size:.67rem;color:#334155;line-height:1.4"></div>
             </div>
             <!-- ── Saved overlays panel ─────────────────────────────────── -->
             <div id="ov-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -509,6 +576,15 @@
     if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
     const role = localStorage.getItem('arrow_role') || 'OPERATOR';
     const headers = { Authorization: `Bearer ${token}` };
+    // Namespace localStorage keys by the logged-in user so that multiple tabs
+    // with different accounts don't bleed basemap/overlay/visibility state.
+    function _jwtSub(t) {
+        try { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).sub || 'anon'; }
+        catch (_) { return 'anon'; }
+    }
+    const _uid = _jwtSub(token);
+    const LS_BASEMAP  = `arrow_${_uid}_basemap`;
+    const LS_OVERLAYS = `arrow_${_uid}_active_overlays`;
     // Include X-Mission-ID on every request so the backend scopes results to the
     // active mission. When no mission is selected the header is omitted and the
     // backend returns everything (no filter).
@@ -561,7 +637,7 @@
             overlayLayers[name].addTo(map);
             activeOverlay = name;
         }
-        localStorage.setItem('arrow_basemap', name);
+        localStorage.setItem(LS_BASEMAP, name);
         basemapSelect.value = name;
     }
 
@@ -586,7 +662,7 @@
             basemapSelect.appendChild(opt);
         }
 
-        const saved = localStorage.getItem('arrow_basemap');
+        const saved = localStorage.getItem(LS_BASEMAP);
         const initial = (saved && (saved === 'osm' || overlayLayers[saved])) ? saved : 'osm';
         activateBasemap(initial);
 
@@ -636,7 +712,7 @@
     // of truth and changes via the admin page propagate via:
     //   * the in-tab CustomEvent ``arrow-visibility-changed``
     //   * the cross-tab native ``storage`` event
-    const VIS_LS_KEY = 'arrow_visibility_prefs';
+    const VIS_LS_KEY = `arrow_${_uid}_vis_prefs`;
     function _applyVis(prefs) {
         if (!prefs) return;
         for (const k of Object.keys(state.visibility)) {
@@ -1276,7 +1352,7 @@
     // operator's filter choice without a server roundtrip.
     const ovState = {
         overlays:        new Map(),                   // id -> dto
-        active:          new Set(JSON.parse(localStorage.getItem('arrow_active_overlays') || '[]')),
+        active:          new Set(JSON.parse(localStorage.getItem(LS_OVERLAYS) || '[]')),
         panel:           document.getElementById('ov-panel'),
         list:            document.getElementById('ov-list'),
         editRow:         document.getElementById('ov-edit-row'),
@@ -1301,7 +1377,7 @@
     }
 
     function persistActiveOverlays() {
-        localStorage.setItem('arrow_active_overlays', JSON.stringify([...ovState.active]));
+        localStorage.setItem(LS_OVERLAYS, JSON.stringify([...ovState.active]));
     }
 
     function renderOverlayList() {
@@ -3824,6 +3900,310 @@
     setInterval(loadMapMessages, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags
     connectWS();
+
+    // ── Weather overlays ─────────────────────────────────────────────────
+    // RainViewer : animated radar (past + nowcast) + IR satellite — no key needed.
+    // OpenWeatherMap: clouds / wind / temp / pressure — key in config.xml.
+    (async function initWeather() {
+        const wxPanel   = document.getElementById('wx-panel');
+        const wxClose   = document.getElementById('wx-close');
+        const wxRefresh = document.getElementById('wx-refresh');
+        const wxToggle  = document.getElementById('wx-toggle');
+        const wxUpdated = document.getElementById('wx-updated');
+        const wxCredit  = document.getElementById('wx-credit');
+
+        // ── OWM key ───────────────────────────────────────────────────────
+        let owmKey = '';
+        try {
+            const cfgR = await api('/map/config');
+            if (cfgR.ok) { const cfg = await cfgR.json(); owmKey = cfg.owm_api_key || ''; }
+        } catch (_) {}
+
+        // ── OWM layer definitions + panel ────────────────────────────────
+        const OWM_LAYERS = owmKey ? [
+            { id:'owm_clouds', label:'☁ Clouds',        owmLayer:'clouds_new',        opacity:0.5, active:false, leafletLayer:null },
+            { id:'owm_precip', label:'🌦 Precipitation', owmLayer:'precipitation_new', opacity:0.6, active:false, leafletLayer:null },
+            { id:'owm_wind',   label:'💨 Wind speed',    owmLayer:'wind_new',           opacity:0.5, active:false, leafletLayer:null },
+            { id:'owm_temp',   label:'🌡 Temperature',   owmLayer:'temp_new',           opacity:0.5, active:false, leafletLayer:null },
+            { id:'owm_pressure',label:'🌐 Pressure',     owmLayer:'pressure_new',       opacity:0.4, active:false, leafletLayer:null },
+        ] : [];
+
+        if (OWM_LAYERS.length) {
+            document.getElementById('wx-owm-section').style.display = '';
+            document.getElementById('wx-owm-layers').innerHTML = OWM_LAYERS.map(l => `
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="checkbox" id="wx-cb-${l.id}">
+                  <label for="wx-cb-${l.id}" style="flex:1;cursor:pointer">${l.label}</label>
+                  <input type="range" id="wx-op-${l.id}" min="0" max="1" step="0.05" value="${l.opacity}"
+                         style="width:58px;accent-color:#38bdf8" title="Opacity">
+                </div>`).join('');
+
+            OWM_LAYERS.forEach(lyr => {
+                const cb = document.getElementById(`wx-cb-${lyr.id}`);
+                const sl = document.getElementById(`wx-op-${lyr.id}`);
+                cb.addEventListener('change', () => {
+                    lyr.active = cb.checked;
+                    if (lyr.active) {
+                        if (!lyr.leafletLayer) lyr.leafletLayer = L.tileLayer(
+                            `https://tile.openweathermap.org/map/${lyr.owmLayer}/{z}/{x}/{y}.png?appid=${owmKey}`,
+                            { opacity: lyr.opacity, attribution: '© OpenWeatherMap', zIndex: 490 }
+                        );
+                        if (!map.hasLayer(lyr.leafletLayer)) lyr.leafletLayer.addTo(map);
+                    } else if (lyr.leafletLayer && map.hasLayer(lyr.leafletLayer)) {
+                        map.removeLayer(lyr.leafletLayer);
+                    }
+                });
+                sl.addEventListener('input', () => {
+                    lyr.opacity = parseFloat(sl.value);
+                    if (lyr.leafletLayer) lyr.leafletLayer.setOpacity(lyr.opacity);
+                });
+            });
+        }
+
+        wxCredit.innerHTML = owmKey
+            ? 'Radar: <a href="https://www.rainviewer.com" target="_blank" style="color:#60a5fa">RainViewer</a> · '
+              + 'Layers: <a href="https://openweathermap.org" target="_blank" style="color:#60a5fa">OpenWeatherMap</a>'
+            : 'Radar: <a href="https://www.rainviewer.com" target="_blank" style="color:#60a5fa">RainViewer</a> · '
+              + '<a href="https://openweathermap.org/api" target="_blank" style="color:#475569">Add OWM key for more layers</a>';
+
+        // ── RainViewer animation state ────────────────────────────────────
+        const RV_COLOR  = 1;    // Universal Blue colour scheme (0=original, 1=UBlue, 4=Meteored)
+        const RV_SMOOTH = 1;    // smooth edges
+        const RV_SNOW   = 0;    // don't separate snow (avoids "Not Supported" on some tiles)
+        // 1×1 transparent GIF — shown instead of the "Zoom Level Not Supported" tile image
+        const RV_BLANK  = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        const ANIM_MS   = 500;  // ms per frame during playback
+
+        let rvFrames    = [];   // [{time, path, isForecast, layer}]
+        let rvSatFrames = [];   // [{time, path, layer}]
+        let rvIdx       = -1;   // current frame index
+        let rvPlaying   = false;
+        let rvTimer     = null;
+
+        // radar on/off state
+        let rvActive    = false;
+        let rvOpacity   = 0.7;
+        let satActive   = false;
+        let satOpacity  = 0.5;
+        let satCurrentLayer = null;
+
+        function rvTileUrl(path) {
+            return `https://tilecache.rainviewer.com${path}/256/{z}/{x}/{y}/${RV_COLOR}/${RV_SMOOTH}_${RV_SNOW}.png`;
+        }
+        function satTileUrl(path) {
+            return `https://tilecache.rainviewer.com${path}/256/{z}/{x}/{y}/0/0_0.png`;
+        }
+        function fmtTime(ts) {
+            const d = new Date(ts * 1000);
+            return `${String(d.getUTCHours()).padStart(2,'0')}:${String(d.getUTCMinutes()).padStart(2,'0')}Z`;
+        }
+        function layerForFrame(path, opacity, zIndex) {
+            return L.tileLayer(rvTileUrl(path), {
+                opacity, attribution: '© RainViewer', zIndex,
+                minNativeZoom: 0, maxNativeZoom: 7,   // radar tiles only exist up to zoom 7
+                maxZoom: 18,
+                errorTileUrl: RV_BLANK,
+            });
+        }
+
+        // ── Fetch all frames from RainViewer ──────────────────────────────
+        async function fetchRVData() {
+            const r = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+            if (!r.ok) return null;
+            return r.json();
+        }
+
+        async function loadFrames() {
+            const data = await fetchRVData();
+            if (!data) return;
+
+            const past    = data.radar?.past    || [];
+            const nowcast = data.radar?.nowcast || [];
+            const satInfr = data.satellite?.infrared || [];
+
+            // Merge radar frames, keeping existing layers if path unchanged
+            const prevByPath = {};
+            rvFrames.forEach(f => { prevByPath[f.path] = f.layer; });
+
+            rvFrames = [...past, ...nowcast].map(f => ({
+                time:       f.time,
+                path:       f.path,
+                isForecast: nowcast.some(n => n.time === f.time),
+                layer:      prevByPath[f.path] || null,
+            }));
+
+            // Satellite frames
+            const prevSatByPath = {};
+            rvSatFrames.forEach(f => { prevSatByPath[f.path] = f.layer; });
+            rvSatFrames = satInfr.map(f => ({
+                time: f.time, path: f.path,
+                layer: prevSatByPath[f.path] || null,
+            }));
+
+            updateSliderBounds();
+
+            // If we were at the latest frame or not started yet, jump to latest
+            if (rvIdx === -1 || rvIdx >= rvFrames.length - 1) {
+                rvIdx = rvFrames.length - 1;
+            }
+            showFrame(rvIdx);
+        }
+
+        function updateSliderBounds() {
+            const slider = document.getElementById('wx-frame-slider');
+            if (!slider || !rvFrames.length) return;
+            slider.max   = rvFrames.length - 1;
+            slider.value = rvIdx >= 0 ? rvIdx : rvFrames.length - 1;
+
+            const startEl = document.getElementById('wx-t-start');
+            const endEl   = document.getElementById('wx-t-end');
+            const ncEl    = document.getElementById('wx-nowcast-label');
+            if (startEl) startEl.textContent = rvFrames.length ? fmtTime(rvFrames[0].time) : '';
+            if (endEl)   endEl.textContent   = 'LIVE ▸';
+            const firstForecast = rvFrames.findIndex(f => f.isForecast);
+            if (ncEl) ncEl.textContent = firstForecast >= 0 ? '⚡ Nowcast' : '';
+        }
+
+        // ── Show a specific frame ─────────────────────────────────────────
+        function showFrame(idx) {
+            if (!rvFrames.length) return;
+            idx = Math.max(0, Math.min(rvFrames.length - 1, idx));
+            rvIdx = idx;
+            const frame = rvFrames[idx];
+
+            // Build tile lazily
+            if (!frame.layer) {
+                frame.layer = layerForFrame(frame.path, rvOpacity, 500);
+            } else {
+                frame.layer.setOpacity(rvOpacity);
+            }
+
+            // Remove any currently visible radar tile
+            rvFrames.forEach((f, i) => {
+                if (i !== idx && f.layer && map.hasLayer(f.layer)) map.removeLayer(f.layer);
+            });
+
+            if (rvActive && !map.hasLayer(frame.layer)) frame.layer.addTo(map);
+
+            // Update UI
+            const slider = document.getElementById('wx-frame-slider');
+            if (slider) slider.value = idx;
+            const badge = document.getElementById('wx-frame-badge');
+            if (badge) {
+                const prefix = frame.isForecast ? '⚡ ' : '';
+                badge.textContent   = prefix + fmtTime(frame.time);
+                badge.style.background = frame.isForecast ? '#431407' : '#1e3a5f';
+                badge.style.color      = frame.isForecast ? '#fb923c' : '#7dd3fc';
+            }
+            wxUpdated.textContent = fmtTime(frame.time);
+        }
+
+        // ── Animation playback ────────────────────────────────────────────
+        function rvPlay() {
+            if (rvPlaying || !rvFrames.length) return;
+            rvPlaying = true;
+            document.getElementById('wx-play').textContent = '⏸';
+            rvTimer = setInterval(() => {
+                rvIdx = (rvIdx + 1) % rvFrames.length;
+                showFrame(rvIdx);
+            }, ANIM_MS);
+        }
+        function rvPause() {
+            rvPlaying = false;
+            if (rvTimer) clearInterval(rvTimer);
+            document.getElementById('wx-play').textContent = '▶';
+        }
+
+        document.getElementById('wx-play').addEventListener('click', () => rvPlaying ? rvPause() : rvPlay());
+        document.getElementById('wx-prev').addEventListener('click', () => {
+            rvPause();
+            showFrame(rvIdx <= 0 ? rvFrames.length - 1 : rvIdx - 1);
+        });
+        document.getElementById('wx-next').addEventListener('click', () => {
+            rvPause();
+            showFrame((rvIdx + 1) % rvFrames.length);
+        });
+        document.getElementById('wx-frame-slider').addEventListener('input', e => {
+            rvPause();
+            showFrame(parseInt(e.target.value));
+        });
+
+        // ── Rain Radar toggle ─────────────────────────────────────────────
+        const rvCb = document.getElementById('wx-cb-rainviewer');
+        const rvOp = document.getElementById('wx-op-rainviewer');
+        rvCb.addEventListener('change', () => {
+            rvActive = rvCb.checked;
+            if (rvActive) {
+                if (!rvFrames.length) { loadFrames(); return; }
+                showFrame(rvIdx >= 0 ? rvIdx : rvFrames.length - 1);
+            } else {
+                rvPause();
+                rvFrames.forEach(f => { if (f.layer && map.hasLayer(f.layer)) map.removeLayer(f.layer); });
+            }
+        });
+        rvOp.addEventListener('input', () => {
+            rvOpacity = parseFloat(rvOp.value);
+            const f = rvFrames[rvIdx];
+            if (f?.layer) f.layer.setOpacity(rvOpacity);
+        });
+
+        // ── IR Satellite toggle ───────────────────────────────────────────
+        const satCb = document.getElementById('wx-cb-satellite');
+        const satOp = document.getElementById('wx-op-satellite');
+        satCb.addEventListener('change', () => {
+            satActive = satCb.checked;
+            if (satActive) {
+                const latest = rvSatFrames[rvSatFrames.length - 1];
+                if (!latest) { loadFrames(); return; }
+                if (!latest.layer) latest.layer = L.tileLayer(satTileUrl(latest.path),
+                    { opacity: satOpacity, attribution: '© RainViewer', zIndex: 480,
+                      minNativeZoom: 0, maxNativeZoom: 7, maxZoom: 18, errorTileUrl: RV_BLANK });
+                satCurrentLayer = latest.layer;
+                if (!map.hasLayer(satCurrentLayer)) satCurrentLayer.addTo(map);
+            } else if (satCurrentLayer && map.hasLayer(satCurrentLayer)) {
+                map.removeLayer(satCurrentLayer);
+            }
+        });
+        satOp.addEventListener('input', () => {
+            satOpacity = parseFloat(satOp.value);
+            if (satCurrentLayer) satCurrentLayer.setOpacity(satOpacity);
+        });
+
+        // ── Refresh button ────────────────────────────────────────────────
+        wxRefresh.addEventListener('click', async () => {
+            wxRefresh.textContent = '⟳';
+            await loadFrames();
+            if (rvActive) showFrame(rvFrames.length - 1);
+            setTimeout(() => { wxRefresh.textContent = '↻'; }, 600);
+        });
+
+        // ── Panel toggle ──────────────────────────────────────────────────
+        wxToggle.addEventListener('click', () => {
+            const open = wxPanel.style.display !== 'none';
+            ['kml-panel','ov-panel','goto-panel','track-panel'].forEach(id => {
+                const el = document.getElementById(id); if (el) el.style.display = 'none';
+            });
+            wxPanel.style.display = open ? 'none' : '';
+            wxToggle.classList.toggle('active', !open);
+            if (!open) {
+                // Auto-enable Rain Radar on first open
+                if (!rvActive) {
+                    rvActive = true;
+                    rvCb.checked = true;
+                }
+                if (!rvFrames.length) loadFrames();
+                else showFrame(rvFrames.length - 1);
+            }
+        });
+        wxClose.addEventListener('click', () => {
+            wxPanel.style.display = 'none';
+            wxToggle.classList.remove('active');
+        });
+
+        // Auto-refresh frames every 10 minutes
+        setInterval(loadFrames, 10 * 60 * 1000);
+    })();
+
 })();
 </script>
 {% endblock %}
