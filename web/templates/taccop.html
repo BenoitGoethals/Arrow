@@ -3,64 +3,97 @@
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
 <style>
-.tc-wrap { display:flex; flex-direction:column; height:calc(100vh - 52px); background:#0d1117; color:#e2e8f0; }
-.tc-bar  { display:flex; align-items:center; gap:10px; padding:7px 14px;
+.tc-wrap { display:flex; flex-direction:column; height:calc(100vh - 52px);
+           background:#0d1117; color:#e2e8f0; font-size:.875rem; overflow:hidden; }
+.tc-bar  { display:flex; align-items:center; gap:8px; padding:7px 14px;
            background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
 .tc-bar h1 { font-size:.95rem; font-weight:700; color:#34d399; letter-spacing:.07em; margin:0; }
-.tc-link  { padding:4px 11px; border-radius:4px; font-size:.76rem; text-decoration:none;
+.tc-link  { padding:4px 10px; border-radius:4px; font-size:.74rem; text-decoration:none;
             border:1px solid #334155; color:#e2e8f0; background:#1e293b; white-space:nowrap; }
 .tc-link:hover { background:#263040; }
 .tc-main { display:flex; flex:1; overflow:hidden; }
 #tc-map  { width:55%; flex-shrink:0; border-right:1px solid #1e293b; }
 .tc-data { flex:1; display:flex; flex-direction:column; overflow-y:auto; }
-.tc-sec  { padding:8px 14px 5px; font-size:.7rem; color:#64748b; letter-spacing:.08em;
+.tc-sec  { padding:7px 14px 4px; font-size:.7rem; color:#64748b; letter-spacing:.08em;
            text-transform:uppercase; font-weight:700; border-bottom:1px solid #1e293b;
-           display:flex; align-items:center; gap:8px; }
+           display:flex; align-items:center; gap:7px; flex-shrink:0; }
 .tc-sec span { color:#34d399; }
-/* Unit tree */
-.tc-unit { padding:5px 14px; border-bottom:1px solid #0f172a; display:flex; align-items:center; gap:8px; }
-.tc-unit:hover { background:#0f1a2e; }
-.tc-unit-name { flex:1; font-size:.8rem; font-weight:600; }
-.tc-online { font-family:monospace; font-size:.78rem; }
-.dot-on  { color:#22c55e; }
-.dot-off { color:#475569; }
-/* Alerts */
-.tc-alert { padding:7px 14px; border-bottom:1px solid #0f172a; display:flex; gap:8px; align-items:flex-start; }
-.al-type  { padding:2px 8px; border-radius:3px; font-size:.68rem; font-weight:700; white-space:nowrap; flex-shrink:0; }
-.al-TIC     { background:#7f1d1d; color:#fca5a5; }
-.al-MEDICAL { background:#1d4ed8; color:#93c5fd; }
-.al-EVAC    { background:#065f46; color:#6ee7b7; }
-.al-LOST_COMMS { background:#78350f; color:#fcd34d; }
-.al-other   { background:#1e293b; color:#94a3b8; }
-.al-info { flex:1; }
-.al-call { font-size:.78rem; font-weight:600; }
-.al-time { font-size:.7rem; color:#475569; font-family:monospace; }
+
+/* ── Unit tree ───────────────────────────────────────────────────────────── */
+.tc-company { border-bottom:1px solid #0f172a; }
+.tc-coy-hdr { display:flex; align-items:center; gap:8px; padding:6px 14px;
+              cursor:pointer; user-select:none; }
+.tc-coy-hdr:hover { background:#0f1a2e; }
+.tc-coy-name { flex:1; font-size:.8rem; font-weight:700; }
+.tc-pct-bar  { width:60px; height:5px; background:#1e293b; border-radius:3px; overflow:hidden; }
+.tc-pct-fill { height:100%; border-radius:3px; background:#22c55e; }
+.tc-pct-fill.amber { background:#f59e0b; }
+.tc-pct-fill.red   { background:#ef4444; }
+.tc-count    { font-family:monospace; font-size:.75rem; color:#64748b; min-width:44px; text-align:right; }
+.tc-plts     { display:none; padding:0 0 4px 20px; border-bottom:1px solid #1e293b; }
+.tc-plts.open { display:block; }
+.tc-plt-row  { font-size:.75rem; color:#94a3b8; padding:2px 0; }
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+.tc-alert { padding:6px 14px; border-bottom:1px solid #0f172a; display:flex; align-items:center; gap:8px; }
+.tc-alert:hover { background:#0f1a2e; }
+.al-badge { padding:1px 7px; border-radius:3px; font-size:.68rem; font-weight:700; white-space:nowrap; }
+.al-TIC          { background:#7f1d1d;   color:#fca5a5; }
+.al-DRONE_SPOTTED{ background:#4c1d95;   color:#c4b5fd; }
+.al-MEDICAL      { background:#1d4ed8;   color:#93c5fd; }
+.al-EVAC         { background:#065f46;   color:#6ee7b7; }
+.al-LOST_COMMS   { background:#78350f;   color:#fcd34d; }
+.al-default      { background:#1e293b;   color:#94a3b8; }
+.al-time         { font-size:.7rem; color:#475569; font-family:monospace; margin-left:auto; }
+.al-loc          { font-size:.7rem; color:#64748b; }
+
+/* ── Obj summary ─────────────────────────────────────────────────────────── */
+.tc-obj-row { display:flex; gap:16px; padding:8px 14px; font-size:.8rem; flex-wrap:wrap; }
+
+/* ── Map legend ──────────────────────────────────────────────────────────── */
+.tc-legend { display:flex; gap:12px; padding:5px 10px; background:#111827;
+             border-top:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.leg  { display:flex; align-items:center; gap:4px; font-size:.72rem; color:#94a3b8; }
+.ldot { width:9px; height:9px; border-radius:50%; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="tc-wrap">
   <div class="tc-bar">
-    <h1>🗺 TACCOP — Tactical Situation</h1>
+    <h1>🗺 TACCOP — Tactical</h1>
     <a href="{{ url_for('tactical_map.index') }}" class="tc-link">🗺 Full Map</a>
-    <a href="{{ url_for('fire_missions.index') }}" class="tc-link">🔥 Fire Missions</a>
+    <a href="{{ url_for('fire_missions.index') }}" class="tc-link">🔥 Fire Msns</a>
     <a href="{{ url_for('objectives.index') }}" class="tc-link">🚩 Objectives</a>
     <a href="{{ url_for('strike_packages.index') }}" class="tc-link">⚡ Strike Pkgs</a>
     <a href="{{ url_for('cop_hub.index') }}" class="tc-link">⊞ Hub</a>
-    <span id="tc-counts" style="margin-left:auto;font-family:monospace;font-size:.78rem;color:#64748b"></span>
+    <span id="tc-summary" style="margin-left:auto;font-size:.74rem;color:#64748b;font-family:monospace"></span>
+    <span id="tc-ts" style="font-size:.7rem;color:#475569;font-family:monospace"></span>
   </div>
+
   <div class="tc-main">
-    <div id="tc-map"></div>
+    <!-- Map -->
+    <div style="display:flex;flex-direction:column;width:55%;flex-shrink:0;border-right:1px solid #1e293b">
+      <div id="tc-map" style="flex:1"></div>
+      <div class="tc-legend">
+        <div class="leg"><div class="ldot" style="background:#22c55e"></div> Online</div>
+        <div class="leg"><div class="ldot" style="background:#475569"></div> Offline</div>
+        <div class="leg"><div class="ldot" style="background:#ef4444"></div> Enemy</div>
+        <div class="leg"><div class="ldot" style="background:#3b82f6"></div> Friendly obj</div>
+        <div class="leg"><div class="ldot" style="background:#f59e0b;border-radius:2px"></div> Fire msn</div>
+      </div>
+    </div>
+
+    <!-- Data -->
     <div class="tc-data">
-      <!-- Unit status -->
-      <div class="tc-sec"><span>👥</span> UNIT STATUS</div>
+      <div class="tc-sec"><span>👥</span> UNIT STATUS <small style="font-weight:400;color:#475569;font-size:.68rem;margin-left:4px">(click to expand)</small></div>
       <div id="tc-units"></div>
-      <!-- Active alerts -->
-      <div class="tc-sec"><span>⚡</span> ACTIVE ALERTS</div>
+
+      <div class="tc-sec"><span>⚡</span> ACTIVE ALERTS <span id="tc-alert-count" style="color:#ef4444;font-size:.8rem;margin-left:auto"></span></div>
       <div id="tc-alerts"></div>
-      <!-- Tactical objects summary -->
-      <div class="tc-sec"><span>🎯</span> TACTICAL OBJECTS</div>
-      <div id="tc-obj-summary" style="padding:8px 14px;font-size:.78rem;color:#94a3b8"></div>
+
+      <div class="tc-sec"><span>🎯</span> TACTICAL PICTURE</div>
+      <div class="tc-obj-row" id="tc-picture"></div>
     </div>
   </div>
 </div>
@@ -70,102 +103,143 @@
 <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script>
 'use strict';
-const map = L.map('tc-map').setView([50.85,4.35],8);
+
+const tcMap    = L.map('tc-map').setView([50.85, 4.35], 9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    {attribution:'© OSM',maxZoom:18}).addTo(map);
-const opLayer  = L.layerGroup().addTo(map);
-const objLayer = L.layerGroup().addTo(map);
+    { attribution:'© OSM', maxZoom:18 }).addTo(tcMap);
+const opLayer  = L.layerGroup().addTo(tcMap);
+const objLayer = L.layerGroup().addTo(tcMap);
+const fmLayer  = L.layerGroup().addTo(tcMap);
 
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
 function _ago(ts) {
-  const s = Math.floor((Date.now() - new Date(ts)) / 1000);
-  if (s < 60)  return s + 's ago';
-  if (s < 3600) return Math.floor(s/60) + 'm ago';
-  return Math.floor(s/3600) + 'h ago';
+    const s = Math.floor((Date.now() - new Date(ts)) / 1000);
+    if (s < 60)   return s + 's ago';
+    if (s < 3600) return Math.floor(s/60) + 'm ago';
+    return Math.floor(s/3600) + 'h ago';
+}
+function _mgrs(lat, lng) {
+    try { return window.mgrsEncode ? window.mgrsEncode(lat, lng) : ''; } catch(_){ return ''; }
 }
 
+/* ── Load ────────────────────────────────────────────────────────────────── */
 async function load() {
-  const [ops, alerts, objs, companies] = await Promise.all([
-    arrowFetch('/operators').then(r=>r.ok?r.json():[]).catch(()=>[]),
-    arrowFetch('/alerts').then(r=>r.ok?r.json():[]).catch(()=>[]),
-    arrowFetch('/tactical-objects').then(r=>r.ok?r.json():[]).catch(()=>[]),
-    arrowFetch('/companies').then(r=>r.ok?r.json():[]).catch(()=>[]),
-  ]);
+    const [hier, ops, alerts, objs, fms] = await Promise.all([
+        arrowFetch('/hierarchy').then(r=>r.ok?r.json():{companies:[]}).catch(()=>({companies:[]})),
+        arrowFetch('/operators').then(r=>r.ok?r.json():[]).catch(()=>[]),
+        arrowFetch('/alerts').then(r=>r.ok?r.json():[]).catch(()=>[]),
+        arrowFetch('/tactical-objects').then(r=>r.ok?r.json():[]).catch(()=>[]),
+        arrowFetch('/fire-missions').then(r=>r.ok?r.json():[]).catch(()=>[]),
+    ]);
 
-  // Units
-  const unitEl = document.getElementById('tc-units');
-  if (companies.length) {
-    const byUnit = {}; // company_name → {total, online}
-    ops.forEach(o => {
-      // Simple grouping by rank prefix if no company
-      const key = o.callsign.split(/\d/)[0] || 'Unknown';
-      if (!byUnit[key]) byUnit[key] = {total:0,online:0};
-      byUnit[key].total++;
-      if (o.online) byUnit[key].online++;
+    const companies = hier.companies || [];
+
+    /* ── Unit tree from hierarchy ────────────────────────────────────────── */
+    const unitEl = document.getElementById('tc-units');
+    if (!companies.length) {
+        unitEl.innerHTML = '<div style="padding:10px 14px;color:#475569">No unit hierarchy — select a mission</div>';
+    } else {
+        unitEl.innerHTML = companies.map(c => {
+            let total = 0, online = 0;
+            const platoonLines = [];
+            (c.platoons || []).forEach(plt => {
+                let pt = 0, po = 0;
+                (plt.sections || []).forEach(sec =>
+                    (sec.teams || []).forEach(team =>
+                        (team.operators || []).forEach(op => {
+                            pt++; total++;
+                            if (op.online) { po++; online++; }
+                        })
+                    )
+                );
+                if (pt) platoonLines.push(`${plt.name}: ${po}/${pt}`);
+            });
+            const pct = total ? Math.round(online/total*100) : 0;
+            const barCls = pct >= 70 ? '' : pct >= 40 ? 'amber' : 'red';
+            return `<div class="tc-company">
+              <div class="tc-coy-hdr" onclick="this.nextElementSibling.classList.toggle('open')">
+                <span class="tc-coy-name">${c.name}</span>
+                <div class="tc-pct-bar"><div class="tc-pct-fill ${barCls}" style="width:${pct}%"></div></div>
+                <span class="tc-count" style="color:${pct>=70?'#22c55e':pct>=40?'#f59e0b':'#ef4444'}">${online}/${total}</span>
+              </div>
+              <div class="tc-plts">${platoonLines.map(l=>`<div class="tc-plt-row">• ${l}</div>`).join('')}</div>
+            </div>`;
+        }).join('');
+    }
+
+    /* ── Alerts ──────────────────────────────────────────────────────────── */
+    const active = alerts.filter(a => a.status === 'ACTIVE');
+    document.getElementById('tc-alert-count').textContent = active.length ? `${active.length} active` : '';
+    document.getElementById('tc-alerts').innerHTML = active.length
+        ? active.map(a => {
+            const cls = 'al-' + (a.type || 'default');
+            const loc  = a.latitude && a.longitude ? _mgrs(a.latitude, a.longitude) : '';
+            return `<div class="tc-alert">
+              <span class="al-badge ${cls}">${a.type}</span>
+              <span class="al-loc">${loc}</span>
+              <span class="al-time">${_ago(a.timestamp)}</span>
+            </div>`;
+          }).join('')
+        : '<div style="padding:8px 14px;color:#475569;font-size:.78rem">No active alerts</div>';
+
+    /* ── Tactical picture ────────────────────────────────────────────────── */
+    const friendly = objs.filter(o => o.affiliation === 'FRIENDLY').length;
+    const enemy    = objs.filter(o => o.affiliation === 'ENEMY').length;
+    const onlineOps = ops.filter(o => o.online).length;
+    document.getElementById('tc-picture').innerHTML = `
+        <span>🟢 <b>${onlineOps}</b> online / <b>${ops.length}</b> total</span>
+        <span>🔵 <b>${friendly}</b> friendly obj</span>
+        <span>🔴 <b>${enemy}</b> enemy obj</span>
+        <span>🔥 <b>${fms.filter(f=>['PENDING','IN_PROGRESS','ACKNOWLEDGED'].includes(f.status)).length}</b> fire msns active</span>`;
+
+    document.getElementById('tc-summary').textContent =
+        `${onlineOps}/${ops.length} online · ${active.length} alerts · ${enemy} enemy`;
+
+    /* ── Map ─────────────────────────────────────────────────────────────── */
+    opLayer.clearLayers();
+    ops.filter(o => o.latitude && o.longitude).forEach(o => {
+        const col = o.online ? '#22c55e' : '#475569';
+        L.circleMarker([o.latitude, o.longitude],
+            { radius: o.online ? 7 : 5, color: col, fillColor: col, fillOpacity: .85, weight: 2 })
+         .bindPopup(`<b>${o.callsign}</b> [${o.rank}]<br>
+                    ${o.online ? '🟢 Online' : '⚫ Offline'}<br>
+                    <code>${_mgrs(o.latitude, o.longitude)}</code>`)
+         .addTo(opLayer);
     });
-    unitEl.innerHTML = companies.map(c => {
-      const online = ops.filter(o=>o.online).length;
-      const total  = ops.length;
-      return `<div class="tc-unit">
-        <span class="tc-unit-name">${c.name}</span>
-        <span class="tc-online">
-          <span class="dot-on">●</span> ${online}
-          <span style="color:#1e293b"> / </span>
-          <span class="dot-off">●</span> ${total - online}
-        </span>
-      </div>`;
-    }).join('');
-  } else {
-    const online = ops.filter(o=>o.online).length;
-    unitEl.innerHTML = `<div style="padding:10px 14px;font-size:.78rem;color:#94a3b8">
-      ${online} / ${ops.length} operators online</div>`;
-  }
 
-  // Alerts
-  const actAlerts = alerts.filter(a=>a.status==='ACTIVE'||a.status==='TRIGGERED');
-  document.getElementById('tc-alerts').innerHTML = actAlerts.length
-    ? actAlerts.map(a => {
-        const cl = 'al-'+(a.type||'other');
-        return `<div class="tc-alert">
-          <span class="al-type ${cl.replace(/[^a-z0-9_-]/gi,'')}">${a.type}</span>
-          <div class="al-info">
-            <div class="al-call">Operator #${a.operator_id}</div>
-            <div class="al-time">${_ago(a.timestamp)}</div>
-          </div>
-        </div>`;
-      }).join('')
-    : '<div style="padding:10px 14px;font-size:.78rem;color:#475569">No active alerts</div>';
+    objLayer.clearLayers();
+    objs.filter(o => o.latitude && o.longitude).forEach(o => {
+        const col = o.affiliation === 'ENEMY' ? '#ef4444' : '#3b82f6';
+        L.circleMarker([o.latitude, o.longitude],
+            { radius: 6, color: col, fillColor: col, fillOpacity: .7, weight: 1.5 })
+         .bindPopup(`<b>${o.type}</b><br>${o.affiliation}<br>
+                    <code>${_mgrs(o.latitude, o.longitude)}</code><br>${o.notes || ''}`)
+         .addTo(objLayer);
+    });
 
-  // Tactical objects summary
-  const friendly = objs.filter(o=>(o.affiliation||'FRIENDLY')==='FRIENDLY').length;
-  const enemy    = objs.filter(o=>(o.affiliation||'FRIENDLY')!=='FRIENDLY').length;
-  document.getElementById('tc-obj-summary').innerHTML =
-    `<span style="color:#34d399">● ${friendly} friendly</span>
-     &nbsp;&nbsp;<span style="color:#ef4444">● ${enemy} enemy/unknown</span>
-     &nbsp;&nbsp;<span style="color:#64748b">Total: ${objs.length}</span>`;
+    fmLayer.clearLayers();
+    fms.filter(f => f.latitude && f.longitude).forEach(f => {
+        L.circleMarker([f.latitude, f.longitude],
+            { radius: 8, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: .6, weight: 2 })
+         .bindPopup(`<b>🔥 ${f.mission_type.replace(/_/g,' ')}</b><br>
+                    ${f.ammunition} × ${f.quantity}<br>Status: ${f.status}`)
+         .addTo(fmLayer);
+    });
 
-  // Map — operators with positions
-  opLayer.clearLayers();
-  ops.filter(o=>o.latitude&&o.longitude).forEach(o => {
-    const col = o.online ? '#22c55e' : '#475569';
-    L.circleMarker([o.latitude,o.longitude],
-        {radius:6,color:col,fillColor:col,fillOpacity:.8,weight:2})
-     .bindPopup(`<b>${o.callsign}</b> [${o.rank}]<br>${o.online?'🟢 Online':'⚫ Offline'}`)
-     .addTo(opLayer);
-  });
-
-  // Map — tactical objects
-  objLayer.clearLayers();
-  objs.filter(o=>o.latitude&&o.longitude).forEach(o => {
-    const col = (o.affiliation||'FRIENDLY')==='FRIENDLY' ? '#3b82f6' : '#ef4444';
-    L.circleMarker([o.latitude,o.longitude],
-        {radius:5,color:col,fillColor:col,fillOpacity:.7,weight:1})
-     .bindPopup(`<b>${o.type}</b><br>${o.notes||''}`)
-     .addTo(objLayer);
-  });
-
-  document.getElementById('tc-counts').textContent =
-    `${ops.filter(o=>o.online).length}/${ops.length} online · ${actAlerts.length} alerts · ${objs.length} objects`;
+    /* Auto-fit if we have data */
+    const allPts = [
+        ...ops.filter(o=>o.latitude&&o.longitude).map(o=>[o.latitude,o.longitude]),
+        ...objs.filter(o=>o.latitude&&o.longitude).map(o=>[o.latitude,o.longitude]),
+    ];
+    if (allPts.length > 1) tcMap.fitBounds(L.latLngBounds(allPts).pad(0.1));
 }
+
+/* ── Clock ───────────────────────────────────────────────────────────────── */
+setInterval(() => {
+    const n=new Date(), p=x=>String(x).padStart(2,'0');
+    document.getElementById('tc-ts').textContent =
+        `${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())}Z`;
+}, 1000);
 
 document.addEventListener('DOMContentLoaded', load);
 window.addEventListener('arrow-mission-changed', load);
