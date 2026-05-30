@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}INTCOP — Arrow{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+<style>
+.ic-wrap { display:flex; flex-direction:column; height:calc(100vh - 52px);
+           background:#0d1117; color:#e2e8f0; font-size:.875rem; overflow:hidden; }
+.ic-bar  { display:flex; align-items:center; gap:10px; padding:7px 14px;
+           background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.ic-bar h1 { font-size:.95rem; font-weight:700; color:#818cf8; letter-spacing:.07em; margin:0; }
+.ic-link  { padding:4px 11px; border-radius:4px; font-size:.76rem; text-decoration:none;
+            border:1px solid #334155; color:#e2e8f0; background:#1e293b; }
+.ic-link:hover { background:#263040; }
+.ic-main { display:flex; flex:1; overflow:hidden; }
+#ic-map  { width:45%; flex-shrink:0; border-right:1px solid #1e293b; }
+.ic-data { flex:1; display:flex; flex-direction:column; overflow-y:auto; }
+.ic-sec  { padding:8px 14px 5px; font-size:.7rem; color:#64748b; letter-spacing:.08em;
+           text-transform:uppercase; font-weight:700; border-bottom:1px solid #1e293b;
+           display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.ic-sec span { color:#818cf8; }
+/* Threat summary */
+.ic-threat { display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid #1e293b; }
+.it-cell   { padding:10px 14px; border-right:1px solid #1e293b; }
+.it-cell:last-child { border-right:none; }
+.it-lbl    { font-size:.66rem; color:#475569; letter-spacing:.05em; text-transform:uppercase; }
+.it-val    { font-size:1.5rem; font-weight:700; font-family:monospace; }
+/* Report rows */
+.ic-rep    { padding:7px 14px; border-bottom:1px solid #0f172a; }
+.ic-rep:hover { background:#0f1a2e; }
+.ir-hdr    { display:flex; align-items:center; gap:8px; }
+.ir-type   { padding:1px 8px; border-radius:3px; font-size:.68rem; font-weight:700; }
+.t-CONTACT { background:#7c2d1244; color:#f97316; }
+.t-SALUTE  { background:#4c1d9544; color:#c4b5fd; }
+.t-OBSREP  { background:#1e3a5f44; color:#7dd3fc; }
+.t-INTSUM  { background:#1e3a5f; color:#7dd3fc; }
+.t-SIGINTREP { background:#3b0764; color:#d8b4fe; }
+.t-UAVREP  { background:#1c2a1c; color:#86efac; }
+.ir-time   { font-size:.7rem; color:#475569; font-family:monospace; margin-left:auto; }
+.ir-body   { font-size:.75rem; color:#94a3b8; margin-top:3px; overflow:hidden;
+             white-space:nowrap; text-overflow:ellipsis; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ic-wrap">
+  <div class="ic-bar">
+    <h1>🔍 INTCOP — Intelligence</h1>
+    <a href="{{ url_for('tactical_map.index') }}" class="ic-link">🗺 Map</a>
+    <a href="{{ url_for('reports.index') }}" class="ic-link">📝 Reports</a>
+    <a href="{{ url_for('cop_hub.index') }}" class="ic-link">⊞ Hub</a>
+  </div>
+  <div class="ic-main">
+    <div id="ic-map"></div>
+    <div class="ic-data">
+      <div class="ic-sec"><span>⚠</span> THREAT ASSESSMENT</div>
+      <div class="ic-threat">
+        <div class="it-cell">
+          <div class="it-lbl">Enemy Objects</div>
+          <div class="it-val" id="i-enemy" style="color:#ef4444">—</div>
+        </div>
+        <div class="it-cell">
+          <div class="it-lbl">Contact Reports</div>
+          <div class="it-val" id="i-contacts" style="color:#f97316">—</div>
+        </div>
+        <div class="it-cell">
+          <div class="it-lbl">Intel Summaries</div>
+          <div class="it-val" id="i-intsum" style="color:#818cf8">—</div>
+        </div>
+      </div>
+      <div class="ic-sec"><span>📡</span> INTELLIGENCE REPORTS</div>
+      <div id="ic-reports"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script>
+'use strict';
+const map = L.map('ic-map').setView([50.85,4.35],9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {attribution:'© OSM',maxZoom:18}).addTo(map);
+const enmLayer = L.layerGroup().addTo(map);
+
+function _ago(ts) {
+  const s=Math.floor((Date.now()-new Date(ts))/1000);
+  return s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h';
+}
+
+const INT_TYPES = ['CONTACT','SALUTE','OBSREP','INTSUM','SIGINTREP','UAVREP','DRONE_SPOT','BDA','TGTREP'];
+
+async function load() {
+  const [reps, objs] = await Promise.all([
+    arrowFetch('/reports').then(r=>r.ok?r.json():[]).catch(()=>[]),
+    arrowFetch('/tactical-objects').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  ]);
+
+  const intel   = reps.filter(r=>INT_TYPES.includes(r.type));
+  const enemies = objs.filter(o=>(o.affiliation||'FRIENDLY')!=='FRIENDLY');
+
+  document.getElementById('i-enemy').textContent    = enemies.length;
+  document.getElementById('i-contacts').textContent = intel.filter(r=>
+    ['CONTACT','SALUTE','OBSREP'].includes(r.type)).length;
+  document.getElementById('i-intsum').textContent   = intel.filter(r=>r.type==='INTSUM').length;
+
+  // Map — enemy / unknown objects
+  enmLayer.clearLayers();
+  enemies.filter(o=>o.latitude&&o.longitude).forEach(o => {
+    const col = '#ef4444';
+    L.circleMarker([o.latitude,o.longitude],{radius:7,color:col,fillColor:col,fillOpacity:.7,weight:2})
+     .bindPopup(`<b style="color:#ef4444">${o.type}</b><br>${o.notes||''}<br>
+                 <code>${window.mgrsEncode?window.mgrsEncode(o.latitude,o.longitude):''}</code>`)
+     .addTo(enmLayer);
+  });
+
+  // Reports list
+  const typeClass = t => 't-'+t;
+  document.getElementById('ic-reports').innerHTML = intel.length
+    ? intel.slice(0,30).map(r => {
+        let body='';
+        try{const p=JSON.parse(r.payload);body=Object.values(p).slice(0,3).join(' · ');}catch(_){}
+        return `<div class="ic-rep">
+          <div class="ir-hdr">
+            <span class="ir-type ${typeClass(r.type)}">${r.type}</span>
+            <span class="ir-time">${_ago(r.timestamp)} ago</span>
+          </div>
+          <div class="ir-body">${body||'No detail'}</div>
+        </div>`;
+      }).join('')
+    : '<div style="padding:10px 14px;color:#475569">No intelligence reports</div>';
+}
+
+document.addEventListener('DOMContentLoaded', load);
+window.addEventListener('arrow-mission-changed', load);
+setInterval(load, 20000);
+</script>
+{% endblock %}

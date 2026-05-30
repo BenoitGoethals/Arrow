@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}MEDCOP — Arrow{% endblock %}
+{% block head %}
+<style>
+.mc-wrap { display:flex; flex-direction:column; height:calc(100vh - 52px);
+           background:#0d1117; color:#e2e8f0; font-size:.875rem; overflow:hidden; }
+.mc-bar  { display:flex; align-items:center; gap:10px; padding:7px 14px;
+           background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.mc-bar h1 { font-size:.95rem; font-weight:700; color:#f472b6; letter-spacing:.07em; margin:0; }
+.mc-link  { padding:4px 11px; border-radius:4px; font-size:.76rem; text-decoration:none;
+            border:1px solid #334155; color:#e2e8f0; background:#1e293b; }
+.mc-link:hover { background:#263040; }
+.mc-main { flex:1; display:grid; grid-template-columns:1fr 1fr; overflow:hidden; }
+.mc-panel{ display:flex; flex-direction:column; border-right:1px solid #1e293b; overflow-y:auto; }
+.mc-panel:last-child { border-right:none; }
+.mc-sec  { padding:8px 14px 5px; font-size:.7rem; color:#64748b; letter-spacing:.08em;
+           text-transform:uppercase; font-weight:700; border-bottom:1px solid #1e293b;
+           display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.mc-sec span { color:#f472b6; }
+/* Stat cards */
+.mc-stats { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #1e293b; flex-shrink:0; }
+.mc-stat  { padding:12px 14px; border-right:1px solid #1e293b; border-bottom:1px solid #1e293b; }
+.mc-stat:nth-child(2n) { border-right:none; }
+.ms-lbl   { font-size:.68rem; color:#64748b; text-transform:uppercase; letter-spacing:.06em; }
+.ms-val   { font-size:1.6rem; font-weight:700; font-family:monospace; margin-top:2px; }
+/* Reports list */
+.mc-rep   { padding:8px 14px; border-bottom:1px solid #0f172a; }
+.mc-rep:hover { background:#0f1a2e; }
+.mr-hdr   { display:flex; align-items:center; gap:8px; margin-bottom:3px; }
+.mr-type  { padding:1px 8px; border-radius:3px; font-size:.68rem; font-weight:700; }
+.t-CASEVAC{ background:#7f1d1d; color:#fca5a5; }
+.t-MEDEVAC{ background:#1d4ed8; color:#93c5fd; }
+.t-other  { background:#1e293b; color:#94a3b8; }
+.mr-status{ padding:1px 7px; border-radius:3px; font-size:.65rem; font-weight:700;
+            background:#1e293b; color:#64748b; }
+.s-RECEIVED{ background:#78350f44; color:#fcd34d; }
+.s-ACKNOWLEDGED{background:#1e3a5f44;color:#60a5fa;}
+.s-PROCESSED{background:#14532d44;color:#4ade80;}
+.mr-payload{ font-size:.75rem; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mr-time  { font-size:.7rem; color:#475569; font-family:monospace; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mc-wrap">
+  <div class="mc-bar">
+    <h1>🏥 MEDCOP — Medical</h1>
+    <a href="{{ url_for('reports.index') }}" class="mc-link">📝 All Reports</a>
+    <a href="{{ url_for('cop_hub.index') }}" class="mc-link">⊞ Hub</a>
+    <span id="mc-upd" style="margin-left:auto;font-size:.72rem;color:#475569;font-family:monospace"></span>
+  </div>
+  <div class="mc-main">
+    <div class="mc-panel">
+      <!-- Stats -->
+      <div class="mc-sec"><span>📊</span> MEDICAL STATISTICS</div>
+      <div class="mc-stats">
+        <div class="mc-stat">
+          <div class="ms-lbl">CASEVAC Pending</div>
+          <div class="ms-val" id="m-casevac" style="color:#f87171">—</div>
+        </div>
+        <div class="mc-stat">
+          <div class="ms-lbl">MEDEVAC Pending</div>
+          <div class="ms-val" id="m-medevac" style="color:#93c5fd">—</div>
+        </div>
+        <div class="mc-stat">
+          <div class="ms-lbl">Total Medical</div>
+          <div class="ms-val" id="m-total" style="color:#f472b6">—</div>
+        </div>
+        <div class="mc-stat">
+          <div class="ms-lbl">Processed</div>
+          <div class="ms-val" id="m-proc" style="color:#4ade80">—</div>
+        </div>
+      </div>
+      <!-- CASEVAC Reports -->
+      <div class="mc-sec"><span>🚁</span> CASEVAC REPORTS</div>
+      <div id="mc-casevac-list"></div>
+    </div>
+    <div class="mc-panel">
+      <!-- MEDEVAC Reports -->
+      <div class="mc-sec"><span>🏥</span> MEDEVAC REPORTS</div>
+      <div id="mc-medevac-list"></div>
+      <!-- Medical Alerts -->
+      <div class="mc-sec"><span>⚡</span> MEDICAL ALERTS</div>
+      <div id="mc-alerts"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+function _ago(ts) {
+  const s = Math.floor((Date.now()-new Date(ts))/1000);
+  return s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h';
+}
+function _repHtml(r) {
+  let payload = '';
+  try { const p=JSON.parse(r.payload); payload=Object.entries(p).slice(0,3).map(([k,v])=>`${k}: ${v}`).join(' · '); } catch(_){}
+  return `<div class="mc-rep">
+    <div class="mr-hdr">
+      <span class="mr-type t-${r.type}">${r.type}</span>
+      <span class="mr-status s-${r.status}">${r.status}</span>
+      <span class="mr-time" style="margin-left:auto">${_ago(r.timestamp)} ago</span>
+    </div>
+    <div class="mr-payload">${payload||'No detail'}</div>
+  </div>`;
+}
+async function load() {
+  const [reps, alerts] = await Promise.all([
+    arrowFetch('/reports').then(r=>r.ok?r.json():[]).catch(()=>[]),
+    arrowFetch('/alerts').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  ]);
+  const med   = reps.filter(r=>['CASEVAC','MEDEVAC'].includes(r.type));
+  const casev = med.filter(r=>r.type==='CASEVAC');
+  const medev = med.filter(r=>r.type==='MEDEVAC');
+  document.getElementById('m-casevac').textContent = casev.filter(r=>r.status==='RECEIVED').length;
+  document.getElementById('m-medevac').textContent = medev.filter(r=>r.status==='RECEIVED').length;
+  document.getElementById('m-total').textContent   = med.length;
+  document.getElementById('m-proc').textContent    = med.filter(r=>r.status==='PROCESSED').length;
+
+  document.getElementById('mc-casevac-list').innerHTML =
+    casev.length ? casev.map(_repHtml).join('') :
+    '<div style="padding:10px 14px;color:#475569">No CASEVAC reports</div>';
+  document.getElementById('mc-medevac-list').innerHTML =
+    medev.length ? medev.map(_repHtml).join('') :
+    '<div style="padding:10px 14px;color:#475569">No MEDEVAC reports</div>';
+
+  const medAlerts = alerts.filter(a=>a.type==='MEDICAL'||a.type==='EVAC');
+  document.getElementById('mc-alerts').innerHTML = medAlerts.length
+    ? medAlerts.map(a=>`<div style="padding:8px 14px;border-bottom:1px solid #0f172a">
+        <span style="background:#1d4ed8;color:#93c5fd;padding:1px 8px;border-radius:3px;
+                     font-size:.68rem;font-weight:700">${a.type}</span>
+        <span style="margin-left:8px;font-size:.78rem">Op #${a.operator_id}</span>
+        <span style="float:right;font-size:.7rem;color:#475569;font-family:monospace">${_ago(a.timestamp)}</span>
+      </div>`).join('')
+    : '<div style="padding:10px 14px;color:#475569">No medical alerts</div>';
+
+  document.getElementById('mc-upd').textContent = 'Updated ' + new Date().toUTCString().slice(17,25)+'Z';
+}
+document.addEventListener('DOMContentLoaded', load);
+window.addEventListener('arrow-mission-changed', load);
+setInterval(load, 20000);
+</script>
+{% endblock %}

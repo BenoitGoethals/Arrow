@@ -15,9 +15,9 @@ from web.infrastructure.backend_client import BackendClient, HttpxBackendClient
 from web.infrastructure.template_renderer import FlaskTemplateRenderer, PageRenderer
 from web.presentation import proxy_routes, shell_routes
 from web.presentation.blueprints import (
-    admin, apk, cas, cbrn, cop, dashboard, fire_missions, history, logcop, logrep, messaging,
-    missions, objectives, opord, organisation, reports, streams, strike_packages, tactical_map,
-    tracks, weather,
+    admin, apk, cas, cbrn, cop, cop_hub, cbrncop, dashboard, fire_missions, firescop,
+    history, intcop, logcop, logrep, medcop, messaging, missions, objectives, opord,
+    organisation, reports, streams, strike_packages, taccop, tactical_map, tracks, weather,
 )
 
 
@@ -40,6 +40,7 @@ def create_app(
         dashboard, tactical_map, messaging, fire_missions, streams,
         reports, history, objectives, opord, admin, apk, tracks, missions,
         strike_packages, cas, organisation, cbrn, logrep, cop, weather, logcop,
+        cop_hub, taccop, medcop, intcop, firescop, cbrncop,
     ):
         app.register_blueprint(module.build_blueprint(service, renderer))
     shell_routes.register(app, service, renderer)
