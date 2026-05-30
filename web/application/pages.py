@@ -94,3 +94,6 @@ class PageService:
 
     def weather(self) -> PageView:
         return PageView("weather.html")
+
+    def logcop(self) -> PageView:
+        return PageView("logcop.html")
