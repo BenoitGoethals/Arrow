@@ -611,3 +611,77 @@ class CopDocument(Base):
     uploaded_by:  Mapped[int]          = mapped_column(ForeignKey("operators.id"))
     uploaded_at:  Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow)
     mission_id:   Mapped[int | None]   = mapped_column(ForeignKey("missions.id"), nullable=True)
+
+
+# ── LOGCOP ────────────────────────────────────────────────────────────────────
+
+class LogcopSupply(Base):
+    """Supply status for one NATO Class of Supply, scoped to a mission."""
+    __tablename__ = "logcop_supply"
+
+    id:              Mapped[int]        = mapped_column(primary_key=True)
+    mission_id:      Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
+    class_code:      Mapped[str]        = mapped_column(String(6))   # I II III IIIA IV V VI VII VIII IX X
+    label:           Mapped[str]        = mapped_column(String(120))
+    current_qty:     Mapped[float]      = mapped_column(Float, default=0.0)
+    unit:            Mapped[str]        = mapped_column(String(20), default="DOS")
+    threshold_amber: Mapped[float]      = mapped_column(Float, default=2.0)
+    threshold_red:   Mapped[float]      = mapped_column(Float, default=1.0)
+    notes:           Mapped[str]        = mapped_column(Text, default="")
+    updated_at:      Mapped[datetime]   = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    updated_by:      Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+
+
+class LogcopVehicle(Base):
+    """FMC / PMC / NMC vehicle status per unit."""
+    __tablename__ = "logcop_vehicles"
+
+    id:           Mapped[int]        = mapped_column(primary_key=True)
+    mission_id:   Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
+    unit_name:    Mapped[str]        = mapped_column(String(80))
+    vehicle_type: Mapped[str]        = mapped_column(String(80))
+    total:        Mapped[int]        = mapped_column(Integer, default=0)
+    fmc:          Mapped[int]        = mapped_column(Integer, default=0)  # Fully Mission Capable
+    pmc:          Mapped[int]        = mapped_column(Integer, default=0)  # Partially Mission Capable
+    notes:        Mapped[str]        = mapped_column(Text, default="")
+    updated_at:   Mapped[datetime]   = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    updated_by:   Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+
+
+class LogcopConvoy(Base):
+    """LOGPAC / convoy status."""
+    __tablename__ = "logcop_convoys"
+
+    id:          Mapped[int]          = mapped_column(primary_key=True)
+    mission_id:  Mapped[int | None]   = mapped_column(ForeignKey("missions.id"), nullable=True)
+    callsign:    Mapped[str]          = mapped_column(String(60))
+    status:      Mapped[str]          = mapped_column(String(20), default="LOADING")
+    # EN_ROUTE | LOADING | DELIVERED | DELAYED | CANCELLED
+    cargo:       Mapped[str]          = mapped_column(Text, default="")
+    origin:      Mapped[str]          = mapped_column(String(120), default="")
+    destination: Mapped[str]          = mapped_column(String(120), default="")
+    eta:         Mapped[str]          = mapped_column(String(20), default="")  # "HH:MMZ"
+    lat:         Mapped[float | None] = mapped_column(Float, nullable=True)
+    lng:         Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes:       Mapped[str]          = mapped_column(Text, default="")
+    updated_at:  Mapped[datetime]     = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    created_by:  Mapped[int | None]   = mapped_column(ForeignKey("operators.id"), nullable=True)
+
+
+class LogcopSupplyPoint(Base):
+    """Geographic supply point on the LOGCOP map (BSA, FARP, AMMO dump, etc.)."""
+    __tablename__ = "logcop_supply_points"
+
+    id:         Mapped[int]          = mapped_column(primary_key=True)
+    mission_id: Mapped[int | None]   = mapped_column(ForeignKey("missions.id"), nullable=True)
+    name:       Mapped[str]          = mapped_column(String(120))
+    point_type: Mapped[str]          = mapped_column(String(20))
+    # BSA | FARP | CTCP | AMMO_DUMP | FUEL_POINT | MED_POST | FSC | MSR
+    lat:        Mapped[float]        = mapped_column(Float)
+    lng:        Mapped[float]        = mapped_column(Float)
+    notes:      Mapped[str]          = mapped_column(Text, default="")
+    created_at: Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_by: Mapped[int | None]   = mapped_column(ForeignKey("operators.id"), nullable=True)

@@ -1,0 +1,962 @@
+{% extends "base.html" %}
+{% block title %}LOGCOP — Arrow{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+<style>
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.lc-wrap  { display:flex; flex-direction:column; height:calc(100vh - 52px);
+            background:#0d1117; color:#e2e8f0; font-size:.875rem; overflow:hidden; }
+
+/* ── Alert banner ────────────────────────────────────────────────────────── */
+#lc-alerts { display:none; align-items:center; gap:8px; padding:5px 14px;
+             background:#450a0a; border-bottom:1px solid #7f1d1d; flex-shrink:0; flex-wrap:wrap; }
+.lc-alert-chip { padding:2px 10px; border-radius:3px; font-size:.74rem; font-weight:700;
+                 letter-spacing:.04em; background:#7f1d1d; color:#fca5a5; white-space:nowrap; }
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+.lc-topbar { display:flex; align-items:center; gap:10px; padding:7px 14px;
+             background:#111827; border-bottom:1px solid #1e293b; flex-shrink:0; flex-wrap:wrap; }
+.lc-topbar h1 { font-size:.95rem; font-weight:700; color:#fb923c;
+                letter-spacing:.07em; margin:0; white-space:nowrap; }
+.lc-sep  { width:1px; height:20px; background:#1e293b; }
+.lc-time { font-family:monospace; font-size:.78rem; color:#64748b; }
+.lc-btn  { background:#1e293b; border:1px solid #334155; color:#e2e8f0; border-radius:4px;
+           padding:4px 11px; font-size:.78rem; cursor:pointer; white-space:nowrap; }
+.lc-btn:hover { background:#263040; }
+.lc-btn.primary { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+.lc-btn.primary:hover { background:#0284c7; }
+.lc-btn.danger  { background:#dc2626; border-color:#dc2626; color:#fff; }
+.lc-btn.danger:hover { background:#b91c1c; }
+.lc-btn.orange  { background:#ea580c; border-color:#ea580c; color:#fff; }
+.lc-btn.orange:hover { background:#c2410c; }
+
+/* ── Main split ──────────────────────────────────────────────────────────── */
+.lc-main { display:flex; flex:1; overflow:hidden; }
+
+/* ── Map column ──────────────────────────────────────────────────────────── */
+.lc-map-col { display:flex; flex-direction:column; width:42%; flex-shrink:0;
+              border-right:1px solid #1e293b; }
+#lc-map    { flex:1; }
+.lc-map-legend { padding:6px 10px; background:#111827; border-top:1px solid #1e293b;
+                 display:flex; gap:12px; flex-wrap:wrap; flex-shrink:0; }
+.leg-item  { display:flex; align-items:center; gap:5px; font-size:.72rem; color:#94a3b8; }
+.leg-dot   { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+/* ── Data column ─────────────────────────────────────────────────────────── */
+.lc-data-col { flex:1; display:flex; flex-direction:column; overflow-y:auto; }
+
+/* ── Section headers ─────────────────────────────────────────────────────── */
+.lc-sec  { padding:8px 14px 5px; font-size:.7rem; color:#64748b; letter-spacing:.08em;
+           text-transform:uppercase; font-weight:700; border-bottom:1px solid #1e293b;
+           display:flex; align-items:center; gap:8px; }
+.lc-sec span { color:#fb923c; font-size:.95rem; }
+.lc-sec .lc-sec-actions { margin-left:auto; display:flex; gap:6px; }
+
+/* ── Supply class table ──────────────────────────────────────────────────── */
+.lc-supply-grid { display:grid; border-bottom:1px solid #1e293b; }
+.lc-supply-row  { display:grid;
+                  grid-template-columns: 52px 1fr 130px 64px 64px 36px;
+                  align-items:center; gap:0; padding:6px 14px;
+                  border-bottom:1px solid #0f172a; cursor:pointer; }
+.lc-supply-row:hover { background:#0f1a2e; }
+.lc-cls-badge   { font-family:monospace; font-size:.75rem; font-weight:700; padding:2px 6px;
+                  background:#1e293b; border-radius:3px; color:#e2e8f0; white-space:nowrap; }
+.lc-cls-label   { font-size:.78rem; color:#94a3b8; padding:0 8px; }
+.lc-dos-bar     { display:flex; align-items:center; gap:6px; }
+.lc-bar-wrap    { flex:1; background:#0f172a; border-radius:3px; height:7px; overflow:hidden; }
+.lc-bar         { height:7px; border-radius:3px; transition:width .3s; }
+.lc-dos-val     { font-family:monospace; font-size:.78rem; font-weight:600;
+                  color:#e2e8f0; min-width:52px; text-align:right; }
+.lc-dos-unit    { font-size:.68rem; color:#475569; }
+.lc-traffic     { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+.tl-green { background:#22c55e; box-shadow:0 0 5px #22c55e88; }
+.tl-amber { background:#f59e0b; box-shadow:0 0 5px #f59e0b88; }
+.tl-red   { background:#ef4444; box-shadow:0 0 5px #ef444488; animation:pulse-red 1.5s infinite; }
+@keyframes pulse-red { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── Two-column lower panels ─────────────────────────────────────────────── */
+.lc-lower { display:grid; grid-template-columns:1fr 1fr; border-bottom:1px solid #1e293b; }
+.lc-panel { display:flex; flex-direction:column; border-right:1px solid #1e293b; }
+.lc-panel:last-child { border-right:none; }
+
+/* ── Vehicle table ───────────────────────────────────────────────────────── */
+.lc-vtbl { width:100%; border-collapse:collapse; font-size:.78rem; }
+.lc-vtbl th { background:#111827; color:#64748b; font-size:.68rem; letter-spacing:.06em;
+              text-transform:uppercase; padding:6px 10px; text-align:left;
+              border-bottom:1px solid #1e293b; position:sticky; top:0; }
+.lc-vtbl td { padding:5px 10px; border-bottom:1px solid #0f172a; }
+.lc-vtbl tr:hover td { background:#0f1a2e; }
+.fmc-bar { display:flex; align-items:center; gap:3px; }
+.fmc-s   { width:8px; height:8px; border-radius:2px; }
+.s-fmc   { background:#22c55e; }
+.s-pmc   { background:#f59e0b; }
+.s-nmc   { background:#ef4444; }
+.pct     { font-family:monospace; font-size:.72rem; color:#94a3b8; }
+.lc-vtbl .actions { display:flex; gap:4px; }
+.ic-btn  { background:none; border:1px solid #334155; border-radius:3px; color:#94a3b8;
+           font-size:.72rem; padding:1px 6px; cursor:pointer; }
+.ic-btn:hover { background:#1e293b; color:#e2e8f0; }
+
+/* ── Convoy list ─────────────────────────────────────────────────────────── */
+.lc-convoy { padding:6px 10px; border-bottom:1px solid #0f172a; display:flex;
+             align-items:center; gap:8px; cursor:pointer; }
+.lc-convoy:hover { background:#0f1a2e; }
+.cv-cs   { font-family:monospace; font-size:.8rem; font-weight:700; color:#e2e8f0;
+           min-width:80px; }
+.cv-status { padding:1px 8px; border-radius:3px; font-size:.68rem; font-weight:700; }
+.cs-EN_ROUTE  { background:#1e3a5f; color:#60a5fa; }
+.cs-LOADING   { background:#1c2a1c; color:#86efac; }
+.cs-DELIVERED { background:#14532d; color:#4ade80; }
+.cs-DELAYED   { background:#78350f; color:#fcd34d; }
+.cs-CANCELLED { background:#1c1917; color:#78716c; }
+.cv-info { flex:1; font-size:.75rem; color:#64748b; overflow:hidden; white-space:nowrap;
+           text-overflow:ellipsis; }
+.cv-eta  { font-family:monospace; font-size:.72rem; color:#94a3b8; white-space:nowrap; }
+
+/* ── Modals ──────────────────────────────────────────────────────────────── */
+.lc-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7);
+               z-index:3000; align-items:center; justify-content:center; }
+.lc-modal-bg.open { display:flex; }
+.lc-modal { background:#111827; border:1px solid #2a3142; border-radius:8px;
+            width:480px; max-width:96vw; max-height:88vh;
+            display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.85); }
+.lc-mhdr { display:flex; align-items:center; padding:13px 16px; border-bottom:1px solid #1e293b; }
+.lc-mhdr h2 { flex:1; margin:0; font-size:.9rem; color:#fb923c; }
+.lc-mx   { background:none; border:0; color:#64748b; font-size:1.2rem; cursor:pointer; padding:0 3px; }
+.lc-mx:hover { color:#e2e8f0; }
+.lc-mbody{ padding:14px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+.lc-mfoot{ padding:10px 16px; border-top:1px solid #1e293b; display:flex; gap:8px;
+           justify-content:flex-end; }
+.lc-field{ display:flex; flex-direction:column; gap:3px; }
+.lc-field label { font-size:.7rem; color:#64748b; letter-spacing:.05em; text-transform:uppercase; }
+.lc-field input, .lc-field select, .lc-field textarea {
+    background:#1e293b; border:1px solid #334155; color:#e2e8f0; border-radius:4px;
+    padding:6px 10px; font-size:.83rem; }
+.lc-field input:focus, .lc-field select:focus { outline:none; border-color:#fb923c; }
+.lc-row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.lc-row3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+
+/* ── LOGSTAT modal ───────────────────────────────────────────────────────── */
+#modal-logstat .lc-modal { width:560px; }
+#logstat-text { font-family:monospace; font-size:.77rem; background:#0d1117;
+                border:1px solid #1e293b; border-radius:4px; padding:10px;
+                color:#e2e8f0; white-space:pre; overflow-x:auto; min-height:200px;
+                max-height:50vh; overflow-y:auto; }
+
+/* ── Print ───────────────────────────────────────────────────────────────── */
+@media print {
+    .lc-map-col, .lc-topbar .lc-btn, #lc-alerts { display:none !important; }
+    .lc-main { flex-direction:column; overflow:visible; }
+    .lc-data-col { overflow:visible; }
+    .lc-lower { grid-template-columns:1fr 1fr; }
+    body, .lc-wrap { background:#fff; color:#000; }
+    .lc-sec { color:#555; }
+    .lc-cls-label { color:#333; }
+    .lc-vtbl td, .lc-vtbl th { border-color:#ccc; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lc-wrap">
+
+  <!-- Alert banner -->
+  <div id="lc-alerts"></div>
+
+  <!-- Top bar -->
+  <div class="lc-topbar">
+    <h1>📦 LOGCOP</h1>
+    <div class="lc-sep"></div>
+    <span class="lc-time" id="lc-ts">—</span>
+    <div class="lc-sep"></div>
+    <button class="lc-btn orange" onclick="openModal('modal-supply-point')">📍 + Supply Point</button>
+    <button class="lc-btn primary" onclick="openModal('modal-convoy')">🚚 + Convoy</button>
+    <button class="lc-btn primary" onclick="openModal('modal-vehicle')">🚗 + Vehicle</button>
+    <button class="lc-btn" onclick="generateLogstat()">📋 LOGSTAT</button>
+    <button class="lc-btn" onclick="loadAll()">↻ Refresh</button>
+  </div>
+
+  <!-- Main split -->
+  <div class="lc-main">
+
+    <!-- Map -->
+    <div class="lc-map-col">
+      <div id="lc-map"></div>
+      <div class="lc-map-legend">
+        <div class="leg-item"><div class="leg-dot" style="background:#fb923c"></div> BSA</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#ef4444"></div> FARP</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#eab308"></div> Ammo</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#3b82f6"></div> Fuel</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div> Med</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#a78bfa"></div> CTCP/FSC</div>
+        <div class="leg-item"><div class="leg-dot" style="background:#38bdf8"></div> Convoy</div>
+      </div>
+    </div>
+
+    <!-- Data panels -->
+    <div class="lc-data-col">
+
+      <!-- Supply classes -->
+      <div class="lc-sec">
+        <span>📊</span> SUPPLY STATUS (CLASS I – X)
+        <div class="lc-sec-actions">
+          <span style="font-size:.7rem;color:#475569">Click row to update quantity</span>
+        </div>
+      </div>
+      <div class="lc-supply-grid" id="lc-supply"></div>
+
+      <!-- Vehicles + Convoys -->
+      <div class="lc-lower">
+        <div class="lc-panel">
+          <div class="lc-sec"><span>🚗</span> MAINTENANCE STATUS</div>
+          <div style="overflow-y:auto;max-height:260px">
+            <table class="lc-vtbl">
+              <thead><tr>
+                <th>Unit / Type</th><th>FMC</th><th>PMC</th><th>NMC</th><th>Rate</th><th></th>
+              </tr></thead>
+              <tbody id="lc-vehicles"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="lc-panel">
+          <div class="lc-sec">
+            <span>🚚</span> CONVOYS / LOGPAC
+          </div>
+          <div style="overflow-y:auto;max-height:260px" id="lc-convoys"></div>
+        </div>
+      </div>
+
+      <!-- Supply points table -->
+      <div class="lc-sec"><span>📍</span> SUPPLY POINTS</div>
+      <div style="overflow-y:auto">
+        <table class="lc-vtbl">
+          <thead><tr><th>Name</th><th>Type</th><th>Lat</th><th>Lon</th><th>Notes</th><th></th></tr></thead>
+          <tbody id="lc-points"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ── Modals ──────────────────────────────────────────────────────────────── -->
+
+<!-- Edit supply -->
+<div class="lc-modal-bg" id="modal-supply">
+  <div class="lc-modal">
+    <div class="lc-mhdr">
+      <h2 id="modal-supply-title">Update Supply</h2>
+      <button class="lc-mx" onclick="closeModal('modal-supply')">✕</button>
+    </div>
+    <div class="lc-mbody">
+      <div class="lc-field">
+        <label>Class <span id="supply-cls-badge"></span></label>
+        <input id="supply-current" type="number" step="0.1" min="0" placeholder="Current quantity">
+      </div>
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>Amber threshold</label>
+          <input id="supply-amber" type="number" step="0.1" min="0">
+        </div>
+        <div class="lc-field">
+          <label>Red threshold</label>
+          <input id="supply-red" type="number" step="0.1" min="0">
+        </div>
+      </div>
+      <div class="lc-field">
+        <label>Notes</label>
+        <input id="supply-notes" type="text" placeholder="Resupply ETA, constraints…">
+      </div>
+    </div>
+    <div class="lc-mfoot">
+      <button class="lc-btn" onclick="closeModal('modal-supply')">Cancel</button>
+      <button class="lc-btn primary" onclick="saveSupply()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add vehicle -->
+<div class="lc-modal-bg" id="modal-vehicle">
+  <div class="lc-modal">
+    <div class="lc-mhdr">
+      <h2 id="modal-vehicle-title">Add Vehicle Status</h2>
+      <button class="lc-mx" onclick="closeModal('modal-vehicle')">✕</button>
+    </div>
+    <div class="lc-mbody">
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>Unit</label>
+          <input id="v-unit" type="text" placeholder="Alpha Company">
+        </div>
+        <div class="lc-field">
+          <label>Vehicle type</label>
+          <input id="v-type" type="text" placeholder="IFV / Truck / UAV">
+        </div>
+      </div>
+      <div class="lc-row3">
+        <div class="lc-field">
+          <label>Total</label>
+          <input id="v-total" type="number" min="0" value="0">
+        </div>
+        <div class="lc-field">
+          <label>FMC</label>
+          <input id="v-fmc" type="number" min="0" value="0">
+        </div>
+        <div class="lc-field">
+          <label>PMC</label>
+          <input id="v-pmc" type="number" min="0" value="0">
+        </div>
+      </div>
+      <div class="lc-field">
+        <label>Notes</label>
+        <input id="v-notes" type="text" placeholder="Faults, scheduled maintenance…">
+      </div>
+      <input type="hidden" id="v-id" value="">
+    </div>
+    <div class="lc-mfoot">
+      <button class="lc-btn" onclick="closeModal('modal-vehicle')">Cancel</button>
+      <button class="lc-btn primary" onclick="saveVehicle()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/edit convoy -->
+<div class="lc-modal-bg" id="modal-convoy">
+  <div class="lc-modal">
+    <div class="lc-mhdr">
+      <h2 id="modal-convoy-title">Add Convoy / LOGPAC</h2>
+      <button class="lc-mx" onclick="closeModal('modal-convoy')">✕</button>
+    </div>
+    <div class="lc-mbody">
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>Callsign</label>
+          <input id="cv-cs" type="text" placeholder="LOGPAC-21">
+        </div>
+        <div class="lc-field">
+          <label>Status</label>
+          <select id="cv-status">
+            <option value="LOADING">Loading</option>
+            <option value="EN_ROUTE">En Route</option>
+            <option value="DELAYED">Delayed</option>
+            <option value="DELIVERED">Delivered</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+        </div>
+      </div>
+      <div class="lc-field">
+        <label>Cargo (classes carried)</label>
+        <input id="cv-cargo" type="text" placeholder="Cl I x3 DOS, Cl III 5000L, Cl V 5.56mm">
+      </div>
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>Origin</label>
+          <input id="cv-origin" type="text" placeholder="BSA Alpha">
+        </div>
+        <div class="lc-field">
+          <label>Destination</label>
+          <input id="cv-dest" type="text" placeholder="CTCP Bravo">
+        </div>
+      </div>
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>ETA</label>
+          <input id="cv-eta" type="text" placeholder="14:30Z">
+        </div>
+        <div class="lc-field">
+          <label>Notes</label>
+          <input id="cv-notes" type="text" placeholder="Alternate route via ASR Falcon">
+        </div>
+      </div>
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>Latitude (optional)</label>
+          <input id="cv-lat" type="number" step="0.0001" placeholder="50.0028">
+        </div>
+        <div class="lc-field">
+          <label>Longitude (optional)</label>
+          <input id="cv-lng" type="number" step="0.0001" placeholder="5.7300">
+        </div>
+      </div>
+      <input type="hidden" id="cv-id" value="">
+    </div>
+    <div class="lc-mfoot">
+      <button class="lc-btn" onclick="closeModal('modal-convoy')">Cancel</button>
+      <button class="lc-btn primary" onclick="saveConvoy()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add supply point -->
+<div class="lc-modal-bg" id="modal-supply-point">
+  <div class="lc-modal">
+    <div class="lc-mhdr">
+      <h2>Add Supply Point</h2>
+      <button class="lc-mx" onclick="closeModal('modal-supply-point')">✕</button>
+    </div>
+    <div class="lc-mbody">
+      <p style="font-size:.78rem;color:#64748b;margin:0">
+        Click on the map to pick coordinates, or enter manually.
+      </p>
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>Name</label>
+          <input id="sp-name" type="text" placeholder="BSA Alpha">
+        </div>
+        <div class="lc-field">
+          <label>Type</label>
+          <select id="sp-type">
+            <option value="BSA">BSA — Brigade Support Area</option>
+            <option value="FARP">FARP — Fwd Arming/Refueling</option>
+            <option value="CTCP">CTCP — Combat Trains CP</option>
+            <option value="AMMO_DUMP">Ammo Dump</option>
+            <option value="FUEL_POINT">Fuel Point</option>
+            <option value="MED_POST">Medical Post</option>
+            <option value="FSC">FSC — Fwd Support Company</option>
+            <option value="MSR">MSR / Route</option>
+          </select>
+        </div>
+      </div>
+      <div class="lc-row2">
+        <div class="lc-field">
+          <label>Latitude</label>
+          <input id="sp-lat" type="number" step="0.0001">
+        </div>
+        <div class="lc-field">
+          <label>Longitude</label>
+          <input id="sp-lng" type="number" step="0.0001">
+        </div>
+      </div>
+      <div class="lc-field">
+        <label>Notes</label>
+        <input id="sp-notes" type="text" placeholder="10000L diesel, Class I x5 DOS">
+      </div>
+    </div>
+    <div class="lc-mfoot">
+      <button class="lc-btn" onclick="closeModal('modal-supply-point')">Cancel</button>
+      <button class="lc-btn primary" onclick="saveSupplyPoint()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOGSTAT -->
+<div class="lc-modal-bg" id="modal-logstat">
+  <div class="lc-modal">
+    <div class="lc-mhdr">
+      <h2>📋 LOGSTAT</h2>
+      <button class="lc-mx" onclick="closeModal('modal-logstat')">✕</button>
+    </div>
+    <div class="lc-mbody">
+      <pre id="logstat-text"></pre>
+    </div>
+    <div class="lc-mfoot">
+      <button class="lc-btn" onclick="copyLogstat()">📋 Copy</button>
+      <button class="lc-btn primary" onclick="window.print()">🖨 Print</button>
+      <button class="lc-btn" onclick="closeModal('modal-logstat')">Close</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script>
+'use strict';
+
+/* ── State ───────────────────────────────────────────────────────────────── */
+let supplyData  = [];
+let vehicleData = [];
+let convoyData  = [];
+let pointData   = [];
+let editSupplyId = null;
+let editVehicleId = null;
+let editConvoyId  = null;
+let mapPickMode  = false;
+
+/* ── Map ─────────────────────────────────────────────────────────────────── */
+const map = L.map('lc-map').setView([50.85, 4.35], 8);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 18,
+}).addTo(map);
+
+const pointMarkers  = L.layerGroup().addTo(map);
+const convoyMarkers = L.layerGroup().addTo(map);
+
+const POINT_COLORS = {
+    BSA:'#fb923c', FARP:'#ef4444', CTCP:'#a78bfa', FSC:'#a78bfa',
+    AMMO_DUMP:'#eab308', FUEL_POINT:'#3b82f6', MED_POST:'#22c55e', MSR:'#64748b',
+};
+const POINT_ICONS = {
+    BSA:'⬡', FARP:'⛽', CTCP:'⭐', FSC:'📦', AMMO_DUMP:'💥', FUEL_POINT:'🛢',
+    MED_POST:'🏥', MSR:'🛣',
+};
+
+function _makeIcon(type) {
+    const col = POINT_COLORS[type] || '#94a3b8';
+    const ico = POINT_ICONS[type]  || '📌';
+    return L.divIcon({
+        className:'',
+        iconSize:[32,32],
+        iconAnchor:[16,16],
+        html:`<div style="width:32px;height:32px;border-radius:50%;background:${col};
+              border:2px solid #fff;display:flex;align-items:center;justify-content:center;
+              font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.6)">${ico}</div>`,
+    });
+}
+
+map.on('click', e => {
+    if (!mapPickMode) return;
+    document.getElementById('sp-lat').value = e.latlng.lat.toFixed(5);
+    document.getElementById('sp-lng').value = e.latlng.lng.toFixed(5);
+    mapPickMode = false;
+    map.getContainer().style.cursor = '';
+});
+
+/* ── Time ticker ─────────────────────────────────────────────────────────── */
+function _tick() {
+    const n = new Date();
+    const p = x => String(x).padStart(2,'0');
+    document.getElementById('lc-ts').textContent =
+        `${n.getUTCFullYear()}-${p(n.getUTCMonth()+1)}-${p(n.getUTCDate())} ` +
+        `${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())}Z`;
+}
+_tick(); setInterval(_tick, 1000);
+
+/* ── API helpers ─────────────────────────────────────────────────────────── */
+const api = (path, opts={}) => arrowFetch(path, opts);
+
+async function _json(path, opts={}) {
+    const r = await api(path, opts);
+    if (!r.ok) throw new Error(`${r.status} ${await r.text().catch(()=>'')}`);
+    return r.status === 204 ? null : r.json();
+}
+
+/* ── Load all data ───────────────────────────────────────────────────────── */
+async function loadAll() {
+    try {
+        [supplyData, vehicleData, convoyData, pointData] = await Promise.all([
+            _json('/logcop/supply'),
+            _json('/logcop/vehicles'),
+            _json('/logcop/convoys'),
+            _json('/logcop/supply-points'),
+        ]);
+        renderSupply();
+        renderVehicles();
+        renderConvoys();
+        renderPoints();
+        renderAlerts();
+    } catch(e) { console.warn('LOGCOP load failed:', e.message); }
+}
+
+/* ── Supply status ───────────────────────────────────────────────────────── */
+function _trafficLight(qty, amber, red) {
+    if (qty <= 0 && amber <= 0 && red <= 0) return 'tl-green';  // VII / X (units, n/a)
+    if (qty < red)   return 'tl-red';
+    if (qty < amber) return 'tl-amber';
+    return 'tl-green';
+}
+function _barColor(cls) {
+    return {'tl-green':'#22c55e','tl-amber':'#f59e0b','tl-red':'#ef4444'}[cls];
+}
+
+function renderSupply() {
+    const el = document.getElementById('lc-supply');
+    el.innerHTML = supplyData.map(s => {
+        const tl  = _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red);
+        const max = Math.max(s.threshold_amber * 1.5, s.current_qty, 1);
+        const pct = Math.min(100, (s.current_qty / max) * 100);
+        const col = _barColor(tl);
+        return `<div class="lc-supply-row" onclick="openSupplyEdit(${s.id})">
+          <span class="lc-cls-badge">Cl ${s.class_code}</span>
+          <span class="lc-cls-label">${s.label}</span>
+          <div class="lc-dos-bar">
+            <div class="lc-bar-wrap">
+              <div class="lc-bar" style="width:${pct}%;background:${col}"></div>
+            </div>
+          </div>
+          <span class="lc-dos-val">${s.current_qty.toFixed(1)}</span>
+          <span class="lc-dos-unit">${s.unit}</span>
+          <div class="lc-traffic ${tl}"></div>
+        </div>`;
+    }).join('');
+}
+
+function renderAlerts() {
+    const critical = supplyData.filter(s =>
+        _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-red'
+    );
+    const amber = supplyData.filter(s =>
+        _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-amber'
+    );
+    const bar = document.getElementById('lc-alerts');
+    if (!critical.length && !amber.length) { bar.style.display='none'; return; }
+    bar.style.display = 'flex';
+    bar.innerHTML = '<span style="font-size:.72rem;font-weight:700;color:#fca5a5">⚠ CRITICAL:</span>' +
+        critical.map(s =>
+            `<span class="lc-alert-chip">Cl ${s.class_code} ${s.current_qty.toFixed(1)} ${s.unit}</span>`
+        ).join('') +
+        (amber.length ? `<span style="color:#fcd34d;font-size:.72rem;margin-left:4px">AMBER:</span>` +
+            amber.map(s => `<span class="lc-alert-chip" style="background:#78350f;color:#fcd34d">` +
+                `Cl ${s.class_code} ${s.current_qty.toFixed(1)} ${s.unit}</span>`).join('') : '');
+}
+
+/* ── Supply edit modal ───────────────────────────────────────────────────── */
+function openSupplyEdit(id) {
+    const s = supplyData.find(x => x.id === id);
+    if (!s) return;
+    editSupplyId = id;
+    document.getElementById('modal-supply-title').textContent =
+        `Update Cl ${s.class_code} — ${s.label}`;
+    document.getElementById('supply-cls-badge').textContent = `(${s.unit})`;
+    document.getElementById('supply-current').value = s.current_qty;
+    document.getElementById('supply-amber').value   = s.threshold_amber;
+    document.getElementById('supply-red').value     = s.threshold_red;
+    document.getElementById('supply-notes').value   = s.notes;
+    openModal('modal-supply');
+}
+async function saveSupply() {
+    if (!editSupplyId) return;
+    const body = {
+        current_qty:     parseFloat(document.getElementById('supply-current').value)||0,
+        threshold_amber: parseFloat(document.getElementById('supply-amber').value)||0,
+        threshold_red:   parseFloat(document.getElementById('supply-red').value)||0,
+        notes:           document.getElementById('supply-notes').value,
+    };
+    try {
+        await _json(`/logcop/supply/${editSupplyId}`, {
+            method:'PATCH', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(body),
+        });
+        closeModal('modal-supply');
+        loadAll();
+    } catch(e) { alert('Save failed: '+e.message); }
+}
+
+/* ── Vehicles ────────────────────────────────────────────────────────────── */
+function renderVehicles() {
+    const tb = document.getElementById('lc-vehicles');
+    if (!vehicleData.length) {
+        tb.innerHTML = '<tr><td colspan="6" style="color:#475569;padding:10px">No vehicle data — click + Vehicle</td></tr>';
+        return;
+    }
+    tb.innerHTML = vehicleData.map(v => {
+        const nmc  = v.total - v.fmc - v.pmc;
+        const pct  = v.total ? Math.round(v.fmc / v.total * 100) : 0;
+        const fmcPx = v.total ? Math.round(v.fmc / v.total * 48) : 0;
+        const pmcPx = v.total ? Math.round(v.pmc / v.total * 48) : 0;
+        const nmcPx = 48 - fmcPx - pmcPx;
+        return `<tr>
+          <td><div style="font-weight:600">${v.unit_name}</div>
+              <div style="font-size:.7rem;color:#64748b">${v.vehicle_type}</div></td>
+          <td style="color:#22c55e">${v.fmc}</td>
+          <td style="color:#f59e0b">${v.pmc}</td>
+          <td style="color:#ef4444">${nmc}</td>
+          <td>
+            <div class="fmc-bar" title="${v.fmc} FMC / ${v.pmc} PMC / ${nmc} NMC">
+              <div style="display:flex;height:8px;width:48px;border-radius:3px;overflow:hidden">
+                <div class="fmc-s s-fmc" style="width:${fmcPx}px"></div>
+                <div class="fmc-s s-pmc" style="width:${pmcPx}px"></div>
+                <div class="fmc-s s-nmc" style="width:${nmcPx}px"></div>
+              </div>
+              <span class="pct">${pct}%</span>
+            </div>
+          </td>
+          <td><div class="actions">
+            <button class="ic-btn" onclick="openVehicleEdit(${v.id})">✎</button>
+            <button class="ic-btn" onclick="deleteVehicle(${v.id})">✕</button>
+          </div></td>
+        </tr>`;
+    }).join('');
+}
+function openVehicleEdit(id) {
+    const v = vehicleData.find(x => x.id === id);
+    if (!v) return;
+    editVehicleId = id;
+    document.getElementById('modal-vehicle-title').textContent = 'Edit Vehicle Status';
+    document.getElementById('v-id').value    = id;
+    document.getElementById('v-unit').value  = v.unit_name;
+    document.getElementById('v-type').value  = v.vehicle_type;
+    document.getElementById('v-total').value = v.total;
+    document.getElementById('v-fmc').value   = v.fmc;
+    document.getElementById('v-pmc').value   = v.pmc;
+    document.getElementById('v-notes').value = v.notes;
+    openModal('modal-vehicle');
+}
+async function saveVehicle() {
+    const id = document.getElementById('v-id').value;
+    const body = {
+        unit_name: document.getElementById('v-unit').value,
+        vehicle_type: document.getElementById('v-type').value,
+        total: parseInt(document.getElementById('v-total').value)||0,
+        fmc:   parseInt(document.getElementById('v-fmc').value)||0,
+        pmc:   parseInt(document.getElementById('v-pmc').value)||0,
+        notes: document.getElementById('v-notes').value,
+    };
+    try {
+        if (id) {
+            await _json(`/logcop/vehicles/${id}`, {
+                method:'PATCH', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify(body),
+            });
+        } else {
+            await _json('/logcop/vehicles', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify(body),
+            });
+        }
+        closeModal('modal-vehicle');
+        document.getElementById('v-id').value='';
+        editVehicleId=null;
+        loadAll();
+    } catch(e) { alert('Save failed: '+e.message); }
+}
+async function deleteVehicle(id) {
+    if (!confirm('Delete vehicle entry?')) return;
+    await _json(`/logcop/vehicles/${id}`, {method:'DELETE'});
+    loadAll();
+}
+
+/* ── Convoys ─────────────────────────────────────────────────────────────── */
+const CV_LABEL = {
+    EN_ROUTE:'En Route', LOADING:'Loading', DELIVERED:'Delivered',
+    DELAYED:'Delayed',   CANCELLED:'Cancelled',
+};
+function renderConvoys() {
+    const el = document.getElementById('lc-convoys');
+    if (!convoyData.length) {
+        el.innerHTML = '<div style="padding:10px;color:#475569;font-size:.78rem">No convoys — click + Convoy</div>';
+        return;
+    }
+    el.innerHTML = convoyData.map(c =>
+        `<div class="lc-convoy" onclick="openConvoyEdit(${c.id})">
+          <span class="cv-cs">${c.callsign}</span>
+          <span class="cv-status cs-${c.status}">${CV_LABEL[c.status]||c.status}</span>
+          <span class="cv-info" title="${c.cargo}">${c.cargo||c.origin+' → '+c.destination}</span>
+          <span class="cv-eta">${c.eta ? c.eta+'Z' : ''}</span>
+          <button class="ic-btn" onclick="event.stopPropagation();deleteConvoy(${c.id})">✕</button>
+        </div>`
+    ).join('');
+    // Update map markers
+    convoyMarkers.clearLayers();
+    convoyData.filter(c => c.lat && c.lng).forEach(c => {
+        const col = {EN_ROUTE:'#38bdf8', LOADING:'#86efac', DELAYED:'#fcd34d',
+                     DELIVERED:'#4ade80', CANCELLED:'#78716c'}[c.status]||'#94a3b8';
+        const icon = L.divIcon({
+            className:'',
+            iconSize:[28,28], iconAnchor:[14,14],
+            html:`<div style="width:28px;height:28px;border-radius:4px;background:${col};
+                  border:2px solid #fff;display:flex;align-items:center;justify-content:center;
+                  font-size:11px;font-weight:700;color:#000;box-shadow:0 2px 6px rgba(0,0,0,.6)">🚚</div>`,
+        });
+        L.marker([c.lat, c.lng], {icon})
+          .bindPopup(`<b>${c.callsign}</b><br>${c.cargo}<br>→ ${c.destination}<br>ETA: ${c.eta||'—'}`)
+          .addTo(convoyMarkers);
+    });
+}
+function openConvoyEdit(id) {
+    const c = convoyData.find(x => x.id === id);
+    document.getElementById('modal-convoy-title').textContent = c ? 'Edit Convoy' : 'Add Convoy';
+    document.getElementById('cv-id').value     = c ? c.id : '';
+    document.getElementById('cv-cs').value     = c ? c.callsign    : '';
+    document.getElementById('cv-status').value = c ? c.status      : 'LOADING';
+    document.getElementById('cv-cargo').value  = c ? c.cargo       : '';
+    document.getElementById('cv-origin').value = c ? c.origin      : '';
+    document.getElementById('cv-dest').value   = c ? c.destination : '';
+    document.getElementById('cv-eta').value    = c ? c.eta         : '';
+    document.getElementById('cv-lat').value    = c?.lat || '';
+    document.getElementById('cv-lng').value    = c?.lng || '';
+    document.getElementById('cv-notes').value  = c ? c.notes       : '';
+    openModal('modal-convoy');
+}
+async function saveConvoy() {
+    const id = document.getElementById('cv-id').value;
+    const lat = parseFloat(document.getElementById('cv-lat').value) || null;
+    const lng = parseFloat(document.getElementById('cv-lng').value) || null;
+    const body = {
+        callsign:    document.getElementById('cv-cs').value,
+        status:      document.getElementById('cv-status').value,
+        cargo:       document.getElementById('cv-cargo').value,
+        origin:      document.getElementById('cv-origin').value,
+        destination: document.getElementById('cv-dest').value,
+        eta:         document.getElementById('cv-eta').value,
+        lat, lng,
+        notes:       document.getElementById('cv-notes').value,
+    };
+    try {
+        if (id) {
+            await _json(`/logcop/convoys/${id}`, {
+                method:'PATCH', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(body),
+            });
+        } else {
+            await _json('/logcop/convoys', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify(body),
+            });
+        }
+        closeModal('modal-convoy');
+        loadAll();
+    } catch(e) { alert('Save failed: '+e.message); }
+}
+async function deleteConvoy(id) {
+    if (!confirm('Delete convoy?')) return;
+    await _json(`/logcop/convoys/${id}`, {method:'DELETE'});
+    loadAll();
+}
+
+/* ── Supply points ───────────────────────────────────────────────────────── */
+function renderPoints() {
+    const tb = document.getElementById('lc-points');
+    tb.innerHTML = pointData.map(p =>
+        `<tr>
+          <td style="font-weight:600">${p.name}</td>
+          <td style="color:#94a3b8">${p.point_type}</td>
+          <td style="font-family:monospace;font-size:.75rem">${p.lat.toFixed(4)}</td>
+          <td style="font-family:monospace;font-size:.75rem">${p.lng.toFixed(4)}</td>
+          <td style="color:#64748b;font-size:.75rem">${p.notes||'—'}</td>
+          <td><button class="ic-btn" onclick="deletePoint(${p.id})">✕</button></td>
+        </tr>`
+    ).join('') || '<tr><td colspan="6" style="color:#475569;padding:10px">No points — click + Supply Point</td></tr>';
+
+    pointMarkers.clearLayers();
+    pointData.forEach(p => {
+        L.marker([p.lat, p.lng], {icon: _makeIcon(p.point_type)})
+         .bindPopup(`<b>${POINT_ICONS[p.point_type]||'📌'} ${p.name}</b><br>
+                    <i>${p.point_type}</i><br>${p.notes||''}`)
+         .addTo(pointMarkers);
+    });
+    if (pointData.length) {
+        const pts = pointData.map(p => [p.lat, p.lng]);
+        map.fitBounds(pts.length === 1
+            ? L.latLngBounds(pts).pad(2)
+            : L.latLngBounds(pts).pad(0.2));
+    }
+}
+async function saveSupplyPoint() {
+    const lat = parseFloat(document.getElementById('sp-lat').value);
+    const lng = parseFloat(document.getElementById('sp-lng').value);
+    if (isNaN(lat)||isNaN(lng)) { alert('Valid lat/lon required'); return; }
+    const body = {
+        name:       document.getElementById('sp-name').value,
+        point_type: document.getElementById('sp-type').value,
+        lat, lng,
+        notes: document.getElementById('sp-notes').value,
+    };
+    try {
+        await _json('/logcop/supply-points', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(body),
+        });
+        closeModal('modal-supply-point');
+        loadAll();
+    } catch(e) { alert('Save failed: '+e.message); }
+}
+async function deletePoint(id) {
+    if (!confirm('Delete supply point?')) return;
+    await _json(`/logcop/supply-points/${id}`, {method:'DELETE'});
+    loadAll();
+}
+
+/* ── LOGSTAT generator ───────────────────────────────────────────────────── */
+function generateLogstat() {
+    const now = new Date();
+    const p = x => String(x).padStart(2,'0');
+    const dtg = `${p(now.getUTCDate())}${p(now.getUTCHours())}${p(now.getUTCMinutes())}Z ` +
+                ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'][now.getUTCMonth()] +
+                ` ${now.getUTCFullYear()}`;
+    const TL = {'tl-green':'GREEN','tl-amber':'AMBER','tl-red':'RED'};
+    let t = `LOGISTICS STATUS REPORT (LOGSTAT)\n`;
+    t += `DTG: ${dtg}\n`;
+    t += `${'─'.repeat(50)}\n\n`;
+    t += `SUPPLY STATUS\n`;
+    supplyData.forEach(s => {
+        const tl = _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red);
+        const status = TL[tl] || '—';
+        t += `  CL ${s.class_code.padEnd(5)} ${s.label.padEnd(30)} `+
+             `${s.current_qty.toFixed(1).padStart(5)} ${s.unit.padEnd(6)} ${status}\n`;
+        if (s.notes) t += `         NOTE: ${s.notes}\n`;
+    });
+    t += `\n`;
+    if (vehicleData.length) {
+        t += `MAINTENANCE STATUS\n`;
+        vehicleData.forEach(v => {
+            const nmc = v.total - v.fmc - v.pmc;
+            const pct = v.total ? Math.round(v.fmc/v.total*100) : 0;
+            t += `  ${v.unit_name.padEnd(20)} ${v.vehicle_type.padEnd(12)} `+
+                 `FMC:${v.fmc} PMC:${v.pmc} NMC:${nmc} (${pct}% FMC)\n`;
+        });
+        t += `\n`;
+    }
+    if (convoyData.length) {
+        t += `CONVOY / LOGPAC STATUS\n`;
+        convoyData.forEach(c => {
+            t += `  ${c.callsign.padEnd(12)} ${c.status.padEnd(12)} ETA:${c.eta||'—'} `+
+                 `${c.origin} → ${c.destination}\n`;
+            if (c.cargo) t += `         CARGO: ${c.cargo}\n`;
+        });
+        t += `\n`;
+    }
+    const critical = supplyData.filter(s =>
+        _trafficLight(s.current_qty, s.threshold_amber, s.threshold_red) === 'tl-red');
+    if (critical.length) {
+        t += `CRITICAL ISSUES\n`;
+        critical.forEach(s => {
+            t += `  *** CLASS ${s.class_code} BELOW MINIMUM (${s.current_qty.toFixed(1)} ${s.unit}) ***\n`;
+            if (s.notes) t += `      ${s.notes}\n`;
+        });
+    }
+    document.getElementById('logstat-text').textContent = t;
+    openModal('modal-logstat');
+}
+function copyLogstat() {
+    navigator.clipboard.writeText(document.getElementById('logstat-text').textContent)
+        .then(()=>alert('Copied to clipboard'));
+}
+
+/* ── Modal helpers ───────────────────────────────────────────────────────── */
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+/* Map click picker for supply point modal */
+document.getElementById('modal-supply-point').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal-supply-point')) return;
+});
+document.addEventListener('keydown', e => {
+    if (e.key==='Escape') document.querySelectorAll('.lc-modal-bg.open')
+        .forEach(m => m.classList.remove('open'));
+});
+
+/* Allow clicking map to pick supply point location */
+document.getElementById('lc-map').addEventListener('mouseenter', () => {
+    const sp = document.getElementById('modal-supply-point');
+    if (sp.classList.contains('open')) {
+        mapPickMode = true;
+        map.getContainer().style.cursor = 'crosshair';
+    }
+});
+
+/* ── WebSocket live updates ──────────────────────────────────────────────── */
+window.addEventListener('arrow-logcop', () => loadAll());
+(function wsConnect() {
+    const wsUrl = window.ARROW_WS_URL;
+    if (!wsUrl) return;
+    const tok = localStorage.getItem('arrow_token')||'';
+    const mid = arrowGetMissionId();
+    const url = wsUrl + '?token=' + encodeURIComponent(tok) +
+                (mid ? '&mission_id=' + mid : '');
+    const ws  = new WebSocket(url);
+    ws.onmessage = e => {
+        try {
+            const d = JSON.parse(e.data);
+            if (d.channel === 'logcop') loadAll();
+        } catch(_){}
+    };
+    ws.onclose = () => setTimeout(wsConnect, 3000);
+})();
+
+/* ── Boot ────────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', loadAll);
+window.addEventListener('arrow-mission-changed', loadAll);
+</script>
+{% endblock %}
