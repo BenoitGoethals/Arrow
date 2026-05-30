@@ -1,0 +1,680 @@
+{% extends "base.html" %}
+{% block title %}CBRNCOP — Arrow{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+/* ── Shell ──────────────────────────────────────────────────────────── */
+.cop-shell { display:flex; flex-direction:column; height:calc(100vh - 60px);
+             background:#0d1117; overflow:hidden; }
+
+/* ── Top bar ────────────────────────────────────────────────────────── */
+.cop-topbar { display:flex; align-items:center; gap:.75rem; padding:.45rem .9rem;
+              background:#161b25; border-bottom:1px solid #2a3142; flex-shrink:0; }
+.cop-title  { display:flex; align-items:center; gap:.5rem; }
+.cop-title .cop-badge { background:#fbbf2422; border:1px solid #fbbf2466;
+                        border-radius:5px; padding:.18rem .55rem;
+                        font-size:.78rem; font-weight:700; color:#fbbf24; }
+.cop-title .cop-name  { font-size:.95rem; font-weight:700; color:#e2e8f0; }
+.cop-title .cop-sub   { font-size:.72rem; color:#64748b; }
+.cop-spacer { flex:1; }
+.btn-cop-import { display:flex; align-items:center; gap:.4rem; padding:.32rem .75rem;
+                  background:#2d1f0a; border:1px solid #78350f; border-radius:5px;
+                  color:#fbbf24; font:inherit; font-size:.82rem; cursor:pointer; }
+.btn-cop-import:hover { background:#3d2a0f; border-color:#fbbf24; }
+#cop-import-status { font-size:.72rem; color:#94a3b8; }
+
+/* ── Tab bar ────────────────────────────────────────────────────────── */
+.cop-tabs  { display:flex; gap:2px; padding:.3rem .7rem;
+             background:#0e1217; border-bottom:1px solid #1e2736; flex-shrink:0; }
+.cop-tab   { display:flex; align-items:center; gap:.35rem; padding:.28rem .75rem;
+             border-radius:5px; font-size:.8rem; color:#64748b; cursor:pointer;
+             border:1px solid transparent; transition:all .12s; background:none; font:inherit; }
+.cop-tab:hover  { background:#161b25; color:#94a3b8; }
+.cop-tab.active { background:#1f2937; border-color:#2a3142; color:#e2e8f0; }
+
+/* ── Main split ─────────────────────────────────────────────────────── */
+.cop-main  { display:flex; flex:1; min-height:0; overflow:hidden; }
+
+/* Map side */
+.cop-map-panel { flex:1 1 0; min-width:0; position:relative; display:flex;
+                 flex-direction:column; }
+#cop-map       { flex:1; background:#0a1018; }
+.cop-map-legend { position:absolute; bottom:28px; left:10px; z-index:500;
+                  background:rgba(13,17,23,.92); border:1px solid #2a3142;
+                  border-radius:6px; padding:.4rem .6rem; font-size:.7rem;
+                  pointer-events:none; }
+.cleg-hdr  { font-size:.6rem; font-weight:700; color:#64748b;
+             text-transform:uppercase; letter-spacing:.08em; margin-bottom:.2rem; }
+.cleg-row  { display:flex; align-items:center; gap:.35rem; margin:.1rem 0; color:#cbd5e1; }
+.cleg-dot  { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.cleg-zone { width:14px; height:8px; border-radius:2px; flex-shrink:0; }
+
+/* Stats side */
+.cop-stats-panel { flex:0 0 370px; display:flex; flex-direction:column;
+                   border-left:1px solid #2a3142; background:#0d1117;
+                   overflow-y:auto; }
+.csp-section { border-bottom:1px solid #1e2736; }
+.csp-hdr     { padding:.38rem .7rem; background:#0e1217;
+               font-size:.63rem; font-weight:700; color:#475569;
+               text-transform:uppercase; letter-spacing:.1em;
+               display:flex; align-items:center; gap:.4rem; }
+.csp-hdr-icon { font-size:.8rem; }
+
+/* Status chips */
+.stat-chips   { display:flex; }
+.stat-chip    { flex:1; padding:.55rem .5rem; text-align:center;
+                border-right:1px solid #1e2736; }
+.stat-chip:last-child { border-right:0; }
+.stat-chip .sv { font-size:1.35rem; font-weight:700; line-height:1; }
+.stat-chip .sl { font-size:.58rem; text-transform:uppercase; letter-spacing:.08em;
+                 color:#475569; margin-top:2px; }
+
+/* Type breakdown */
+.type-breakdown { padding:.45rem .7rem; display:flex; flex-direction:column; gap:.3rem; }
+.type-row       { display:flex; align-items:center; gap:.5rem; }
+.type-label     { font-size:.73rem; width:95px; flex-shrink:0; }
+.type-bar-wrap  { flex:1; background:#0a1018; border-radius:99px; height:7px; overflow:hidden; }
+.type-bar       { height:100%; border-radius:99px; transition:width .3s; }
+.type-count     { font-size:.72rem; color:#94a3b8; width:26px; text-align:right; flex-shrink:0; }
+.type-none      { font-size:.78rem; color:#475569; padding:.5rem .7rem; }
+
+/* Report list */
+.cop-report-list { display:flex; flex-direction:column; }
+.cop-report-item { padding:.42rem .7rem; border-bottom:1px solid #0f1928;
+                   cursor:pointer; transition:background .1s; }
+.cop-report-item:hover { background:#131a24; }
+.cop-report-item.selected { background:#1a2438; }
+.cri-top        { display:flex; align-items:center; gap:.4rem; margin-bottom:.18rem; }
+.cri-type-badge { display:inline-block; font-size:.6rem; font-weight:700;
+                  padding:1px 5px; border-radius:3px; }
+.cri-agent-badge { display:inline-block; font-size:.6rem; font-weight:700;
+                   padding:1px 5px; border-radius:3px; margin-left:2px; }
+.cri-status     { margin-left:auto; font-size:.6rem; font-weight:700;
+                  padding:1px 5px; border-radius:3px; }
+.cri-info       { font-size:.72rem; color:#64748b; font-family:monospace; }
+.cop-no-reports { padding:1rem .7rem; color:#475569; font-size:.8rem;
+                  display:flex; align-items:center; gap:.4rem; }
+
+/* Tab panels */
+.cop-tab-panel   { display:none; }
+.cop-tab-panel.active { display:flex; flex:1; min-height:0; overflow:hidden; }
+
+/* All-reports tab */
+.cop-rpt-panel   { flex:1; overflow-y:auto; background:#0d1117; }
+.cop-rpt-table   { width:100%; border-collapse:collapse; font-size:.82rem; }
+.cop-rpt-table th { padding:.32rem .5rem; background:#0a1018; color:#475569;
+                    font-size:.62rem; text-transform:uppercase; letter-spacing:.1em;
+                    border-bottom:1px solid #2a3142; text-align:left;
+                    position:sticky; top:0; }
+.cop-rpt-table td { padding:.38rem .5rem; border-bottom:1px solid #0f1928; vertical-align:top; }
+.cop-rpt-table tr:hover td { background:#131a24; cursor:pointer; }
+
+/* Map-only tab */
+#cop-map-only { flex:1; background:#0a1018; }
+
+/* Hub tab */
+.cop-hub-panel { flex:1; overflow-y:auto; padding:1rem; }
+.hub-grid      { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+                 gap:.75rem; }
+.hub-card      { background:#161b25; border:1px solid #2a3142; border-radius:6px;
+                 padding:.7rem .9rem; }
+.hub-card .hc-val  { font-size:1.6rem; font-weight:700; line-height:1; }
+.hub-card .hc-lbl  { font-size:.65rem; text-transform:uppercase; letter-spacing:.08em;
+                     color:#64748b; margin-top:.2rem; }
+
+/* Status badge helpers */
+.sb { display:inline-block; font-size:.6rem; font-weight:700; padding:1px 5px; border-radius:3px; }
+.s-RECEIVED     { background:rgba(100,116,139,.2); color:#94a3b8; border:1px solid #475569; }
+.s-ACKNOWLEDGED { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid #b45309; }
+.s-PROCESSED    { background:rgba(34,197,94,.15);  color:#22c55e; border:1px solid #16a34a; }
+.s-REJECTED     { background:rgba(239,68,68,.15);  color:#ef4444; border:1px solid #dc2626; }
+
+main { padding:0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cop-shell">
+
+    <!-- ── Top bar ────────────────────────────────────────────────────── -->
+    <div class="cop-topbar">
+        <div class="cop-title">
+            <span class="cop-badge">☢ CBRNCOP</span>
+            <span class="cop-name">CBRN Situation</span>
+            <span class="cop-sub" id="cop-last-updated"></span>
+        </div>
+        <div class="cop-spacer"></div>
+        <span id="cop-import-status"></span>
+        <input type="file" id="cop-file" accept=".txt,.cbrn,.msg,text/plain" multiple
+               style="display:none" onchange="copImportCbrn(this.files)">
+        <button class="btn-cop-import" onclick="document.getElementById('cop-file').click()">
+            ☢ Import CBRN msg…
+        </button>
+    </div>
+
+    <!-- ── Tab bar ───────────────────────────────────────────────────── -->
+    <div class="cop-tabs">
+        <button class="cop-tab active" id="tab-btn-detail"  onclick="showTab('detail')">☢ CBRN Detail</button>
+        <button class="cop-tab"        id="tab-btn-reports" onclick="showTab('reports')">📋 All Reports</button>
+        <button class="cop-tab"        id="tab-btn-map"     onclick="showTab('map')">🗺 Map</button>
+        <button class="cop-tab"        id="tab-btn-hub"     onclick="showTab('hub')">⬡ Hub</button>
+    </div>
+
+    <!-- ══ Tab: Detail (map + stats) ═══════════════════════════════════ -->
+    <div class="cop-tab-panel active" id="tab-detail">
+
+        <!-- Leaflet map -->
+        <div class="cop-map-panel">
+            <div id="cop-map"></div>
+            <div class="cop-map-legend">
+                <div class="cleg-hdr">Agent type</div>
+                <div class="cleg-row"><span class="cleg-dot" style="background:#fbbf24"></span>C — Chemical</div>
+                <div class="cleg-row"><span class="cleg-dot" style="background:#22c55e"></span>B — Biological</div>
+                <div class="cleg-row"><span class="cleg-dot" style="background:#06b6d4"></span>R — Radiological</div>
+                <div class="cleg-row"><span class="cleg-dot" style="background:#f97316"></span>N — Nuclear</div>
+                <div class="cleg-hdr" style="margin-top:.3rem">Hazard zones</div>
+                <div class="cleg-row">
+                    <span class="cleg-zone" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.45)"></span>
+                    Zone I (inner)
+                </div>
+                <div class="cleg-row">
+                    <span class="cleg-zone" style="background:rgba(255,255,255,.06);border:1px dashed rgba(255,255,255,.3)"></span>
+                    Zone II (downwind)
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats panel -->
+        <div class="cop-stats-panel">
+
+            <!-- Status chips -->
+            <div class="csp-section">
+                <div class="csp-hdr"><span class="csp-hdr-icon">📊</span>CBRN STATUS</div>
+                <div class="stat-chips">
+                    <div class="stat-chip">
+                        <div class="sv" id="st-active" style="color:#f59e0b">0</div>
+                        <div class="sl">Active Reports</div>
+                    </div>
+                    <div class="stat-chip">
+                        <div class="sv" id="st-total" style="color:#e2e8f0">0</div>
+                        <div class="sl">Total</div>
+                    </div>
+                    <div class="stat-chip">
+                        <div class="sv" id="st-processed" style="color:#22c55e">0</div>
+                        <div class="sl">Processed</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- By type -->
+            <div class="csp-section">
+                <div class="csp-hdr"><span class="csp-hdr-icon">☣</span>BY CBRN TYPE</div>
+                <div id="type-breakdown-wrap">
+                    <div class="type-none">No CBRN reports</div>
+                </div>
+            </div>
+
+            <!-- Report list -->
+            <div class="csp-section" style="border-bottom:0;flex:1">
+                <div class="csp-hdr"><span class="csp-hdr-icon">📄</span>CBRN REPORTS</div>
+                <div class="cop-report-list" id="cop-report-list">
+                    <div class="cop-no-reports">
+                        <span style="color:#22c55e">✓</span>
+                        No CBRN reports — area clear
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ══ Tab: All Reports ════════════════════════════════════════════ -->
+    <div class="cop-tab-panel" id="tab-reports">
+        <div class="cop-rpt-panel">
+            <table class="cop-rpt-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Agent</th>
+                        <th>DTG</th>
+                        <th>Location</th>
+                        <th>Wind</th>
+                        <th>Zone I</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="all-rpt-tbody">
+                    <tr><td colspan="7" style="color:#475569;text-align:center;padding:1.2rem">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ══ Tab: Map-only ══════════════════════════════════════════════ -->
+    <div class="cop-tab-panel" id="tab-map">
+        <div id="cop-map-only"></div>
+    </div>
+
+    <!-- ══ Tab: Hub ═══════════════════════════════════════════════════ -->
+    <div class="cop-tab-panel" id="tab-hub">
+        <div class="cop-hub-panel">
+            <div style="font-size:.78rem;color:#475569;margin-bottom:.75rem;
+                        text-transform:uppercase;letter-spacing:.08em">
+                CBRN Situation Overview
+            </div>
+            <div class="hub-grid">
+                <div class="hub-card">
+                    <div class="hc-val" id="hub-active" style="color:#f59e0b">0</div>
+                    <div class="hc-lbl">Active reports</div>
+                </div>
+                <div class="hub-card">
+                    <div class="hc-val" id="hub-chem" style="color:#fbbf24">0</div>
+                    <div class="hc-lbl">Chemical (C)</div>
+                </div>
+                <div class="hub-card">
+                    <div class="hc-val" id="hub-bio" style="color:#22c55e">0</div>
+                    <div class="hc-lbl">Biological (B)</div>
+                </div>
+                <div class="hub-card">
+                    <div class="hc-val" id="hub-rad" style="color:#06b6d4">0</div>
+                    <div class="hc-lbl">Radiological (R)</div>
+                </div>
+                <div class="hub-card">
+                    <div class="hc-val" id="hub-nuc" style="color:#f97316">0</div>
+                    <div class="hc-lbl">Nuclear (N)</div>
+                </div>
+                <div class="hub-card">
+                    <div class="hc-val" id="hub-unk" style="color:#94a3b8">0</div>
+                    <div class="hc-lbl">Unknown</div>
+                </div>
+            </div>
+            <div style="margin-top:1rem">
+                <button class="btn-cop-import" onclick="document.getElementById('cop-file').click()"
+                        style="width:100%;justify-content:center;padding:.5rem">
+                    ☢ Import NATO CBRN message files…
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: `Bearer ${token}` };
+    const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p,
+        { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+
+    // ── Constants ──────────────────────────────────────────────────────
+    const AGENT_COLOR  = { C:'#fbbf24', B:'#22c55e', R:'#06b6d4', N:'#f97316' };
+    const AGENT_LABEL  = { C:'Chemical', B:'Biological', R:'Radiological', N:'Nuclear' };
+    const CBRN_COLOR   = {
+        CBRN_1:'#fbbf24', CBRN_2:'#f59e0b', CBRN_3:'#f97316',
+        CBRN_4:'#22c55e', CBRN_5:'#06b6d4', CBRN_6:'#a78bfa',
+    };
+
+    function agentColor(a) { return AGENT_COLOR[a] || '#94a3b8'; }
+
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g,
+            c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    // ── State ──────────────────────────────────────────────────────────
+    let allReports  = [];
+    let selectedId  = null;
+
+    // ── Tab switching ──────────────────────────────────────────────────
+    window.showTab = function(name) {
+        document.querySelectorAll('.cop-tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.cop-tab').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + name).classList.add('active');
+        document.getElementById('tab-btn-' + name).classList.add('active');
+        if (name === 'map') {
+            // Invalidate size so Leaflet fills the new visible container
+            setTimeout(() => mapOnly.invalidateSize(), 50);
+        }
+    };
+
+    // ── Leaflet map (detail tab) ───────────────────────────────────────
+    const map = L.map('cop-map', { center: [50, 10], zoom: 5, preferCanvas: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors', maxZoom: 19,
+    }).addTo(map);
+
+    // ── Leaflet map (map-only tab) ─────────────────────────────────────
+    const mapOnly = L.map('cop-map-only', { center: [50, 10], zoom: 5, preferCanvas: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors', maxZoom: 19,
+    }).addTo(mapOnly);
+
+    // id → { marker, markerOnly, zoneI, zoneII, zoneIOnly, zoneIIOnly }
+    const mapLayers = new Map();
+
+    function makeIcon(color) {
+        return L.divIcon({
+            html: `<div style="width:13px;height:13px;border-radius:50%;
+                               background:${color};border:2px solid rgba(255,255,255,.8);
+                               box-shadow:0 0 10px ${color}88,0 0 3px #000"></div>`,
+            className: '',
+            iconSize: [13, 13],
+            iconAnchor: [6, 6],
+        });
+    }
+
+    function sectorPoly(center, radius, bearingDeg, halfAngle, color) {
+        const STEPS = 24;
+        const pts   = [[center[0], center[1]]];
+        const cosLat = Math.cos(center[0] * Math.PI / 180);
+        for (let i = 0; i <= STEPS; i++) {
+            const deg = bearingDeg - halfAngle + (2 * halfAngle) * i / STEPS;
+            const rad = deg * Math.PI / 180;
+            pts.push([
+                center[0] + (radius / 111320) * Math.cos(rad),
+                center[1] + (radius / (111320 * cosLat)) * Math.sin(rad),
+            ]);
+        }
+        pts.push([center[0], center[1]]);
+        return L.polygon(pts, {
+            color, fillColor: color, fillOpacity: 0.10,
+            weight: 1, dashArray: '5 4', interactive: false,
+        });
+    }
+
+    function buildPopup(rep, p) {
+        const tc  = CBRN_COLOR[rep.type] || '#fbbf24';
+        const ac  = agentColor(p.agent_category);
+        const wind = p.wind_direction != null
+            ? `${p.wind_direction}° / ${p.wind_speed ?? '?'} km/h` : '—';
+        const z1  = p.zone_inner_m    ? `${(p.zone_inner_m   / 1000).toFixed(1)} km` : '—';
+        const z2  = p.zone_downwind_m ? `${(p.zone_downwind_m / 1000).toFixed(1)} km` : '—';
+        const loc = (p.latitude != null && p.longitude != null && window.mgrsEncode)
+            ? window.mgrsEncode(p.latitude, p.longitude)
+            : (p.latitude != null ? `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}` : '—');
+        const ag  = p.agent_category
+            ? `<span style="background:${ac}22;color:${ac};border:1px solid ${ac}55;
+                            border-radius:3px;padding:0 4px;font-size:.7rem;margin-left:4px">
+                   ${esc(p.agent_category)}
+               </span>` : '';
+        return `<div style="font-size:.8rem;min-width:160px;line-height:1.5">
+            <div style="margin-bottom:.3rem">
+                <b style="color:${tc}">${esc(rep.type)}</b>${ag}
+            </div>
+            <table style="width:100%;border-collapse:collapse">
+                <tr><td style="color:#888;padding-right:8px;white-space:nowrap">DTG</td>
+                    <td style="font-family:monospace">${esc(p.dtg || '—')}</td></tr>
+                <tr><td style="color:#888">Location</td>
+                    <td style="font-family:monospace">${esc(loc)}</td></tr>
+                <tr><td style="color:#888">Wind</td><td>${esc(wind)}</td></tr>
+                <tr><td style="color:#888">Zone I</td><td>${esc(z1)}</td></tr>
+                <tr><td style="color:#888">Zone II</td><td>${esc(z2)}</td></tr>
+            </table>
+        </div>`;
+    }
+
+    function buildReportLayers(rep, p, targetMap) {
+        if (p.latitude == null || p.longitude == null) return null;
+        const center = [p.latitude, p.longitude];
+        const ac     = agentColor(p.agent_category);
+        const marker = L.marker(center, { icon: makeIcon(ac) });
+        marker.bindPopup(buildPopup(rep, p), { maxWidth: 220 });
+        marker.addTo(targetMap);
+
+        let zoneI = null, zoneII = null;
+        if (p.zone_inner_m) {
+            zoneI = L.circle(center, {
+                radius: p.zone_inner_m, color: ac,
+                fillColor: ac, fillOpacity: 0.13, weight: 1.5, interactive: false,
+            }).addTo(targetMap);
+        }
+        if (p.zone_downwind_m && p.wind_direction != null) {
+            const downwindBrg = (p.wind_direction + 180) % 360;
+            const halfAngle   = p.zone_downwind_angle_deg ?? 30;
+            zoneII = sectorPoly(center, p.zone_downwind_m, downwindBrg, halfAngle, ac);
+            zoneII.addTo(targetMap);
+        }
+        return { marker, zoneI, zoneII, center };
+    }
+
+    function clearMapLayers() {
+        mapLayers.forEach(({ detail, mapOnlyLayers }) => {
+            [detail, mapOnlyLayers].forEach(l => {
+                if (!l) return;
+                l.marker?.remove();
+                l.zoneI?.remove();
+                l.zoneII?.remove();
+            });
+        });
+        mapLayers.clear();
+    }
+
+    // ── Stats ──────────────────────────────────────────────────────────
+    function renderStats(list) {
+        const active    = list.filter(r => r.status !== 'PROCESSED' && r.status !== 'REJECTED').length;
+        const processed = list.filter(r => r.status === 'PROCESSED').length;
+        document.getElementById('st-active').textContent    = active;
+        document.getElementById('st-total').textContent     = list.length;
+        document.getElementById('st-processed').textContent = processed;
+        document.getElementById('hub-active').textContent   = active;
+
+        // By type
+        const byAgent = { C:0, B:0, R:0, N:0, U:0 };
+        list.forEach(rep => {
+            try {
+                const p  = JSON.parse(rep.payload);
+                const ag = p.agent_category || 'U';
+                byAgent[ag in byAgent ? ag : 'U']++;
+            } catch (_) { byAgent.U++; }
+        });
+        document.getElementById('hub-chem').textContent = byAgent.C;
+        document.getElementById('hub-bio').textContent  = byAgent.B;
+        document.getElementById('hub-rad').textContent  = byAgent.R;
+        document.getElementById('hub-nuc').textContent  = byAgent.N;
+        document.getElementById('hub-unk').textContent  = byAgent.U;
+
+        const wrap = document.getElementById('type-breakdown-wrap');
+        if (!list.length) {
+            wrap.innerHTML = '<div class="type-none">No CBRN reports</div>';
+            return;
+        }
+        const max = Math.max(1, ...Object.values(byAgent));
+        const rows = [
+            { key:'C', label:'Chemical (C)',     color:'#fbbf24', count:byAgent.C },
+            { key:'B', label:'Biological (B)',   color:'#22c55e', count:byAgent.B },
+            { key:'R', label:'Radiological (R)', color:'#06b6d4', count:byAgent.R },
+            { key:'N', label:'Nuclear (N)',       color:'#f97316', count:byAgent.N },
+            { key:'U', label:'Unknown',           color:'#94a3b8', count:byAgent.U },
+        ];
+        wrap.innerHTML = `<div class="type-breakdown">` +
+            rows.filter(r => r.count > 0).map(r => `
+            <div class="type-row">
+                <span class="type-label" style="color:${r.color}">${esc(r.label)}</span>
+                <div class="type-bar-wrap">
+                    <div class="type-bar"
+                         style="width:${(r.count / max * 100).toFixed(0)}%;background:${r.color}"></div>
+                </div>
+                <span class="type-count">${r.count}</span>
+            </div>`).join('') + '</div>';
+    }
+
+    // ── Report list (detail panel) ─────────────────────────────────────
+    function renderReportList(list) {
+        const container = document.getElementById('cop-report-list');
+        if (!list.length) {
+            container.innerHTML = `<div class="cop-no-reports">
+                <span style="color:#22c55e">✓</span>
+                No CBRN reports — area clear
+            </div>`;
+            return;
+        }
+        container.innerHTML = list.slice(0, 30).map(rep => {
+            const tc  = CBRN_COLOR[rep.type] || '#fbbf24';
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch (_) {}
+            const ac  = agentColor(p.agent_category);
+            const ag  = p.agent_category
+                ? `<span class="cri-agent-badge"
+                       style="background:${ac}22;color:${ac};border:1px solid ${ac}55">
+                       ${esc(p.agent_category)}
+                   </span>` : '';
+            const loc = (p.latitude != null && p.longitude != null && window.mgrsEncode)
+                ? window.mgrsEncode(p.latitude, p.longitude)
+                : (p.latitude != null ? `${p.latitude.toFixed(3)},${p.longitude.toFixed(3)}` : '—');
+            const st  = rep.status || 'RECEIVED';
+            const dtg = p.dtg ? `<span style="margin-left:.4rem">${esc(p.dtg)}</span>` : '';
+            return `<div class="cop-report-item${selectedId === rep.id ? ' selected' : ''}"
+                        data-id="${rep.id}" onclick="selectReport(${rep.id})">
+                <div class="cri-top">
+                    <span class="cri-type-badge"
+                          style="background:${tc}22;color:${tc}">${esc(rep.type)}</span>${ag}
+                    <span class="cri-status sb s-${esc(st)}">${esc(st.slice(0,4))}</span>
+                </div>
+                <div class="cri-info">${esc(loc)}${dtg}</div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── All-reports table ──────────────────────────────────────────────
+    function renderAllReports(list) {
+        const tbody = document.getElementById('all-rpt-tbody');
+        if (!list.length) {
+            tbody.innerHTML = '<tr><td colspan="7" style="color:#475569;text-align:center;padding:1.2rem">No CBRN reports</td></tr>';
+            return;
+        }
+        tbody.innerHTML = list.map(rep => {
+            const tc = CBRN_COLOR[rep.type] || '#fbbf24';
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch (_) {}
+            const ac  = agentColor(p.agent_category);
+            const loc = (p.latitude != null && p.longitude != null && window.mgrsEncode)
+                ? window.mgrsEncode(p.latitude, p.longitude)
+                : (p.latitude != null ? `${p.latitude.toFixed(3)},${p.longitude.toFixed(3)}` : '—');
+            const wind = p.wind_direction != null
+                ? `${p.wind_direction}°/${p.wind_speed ?? '?'}` : '—';
+            const z1  = p.zone_inner_m ? `${(p.zone_inner_m / 1000).toFixed(1)} km` : '—';
+            const st  = rep.status || 'RECEIVED';
+            const agBadge = p.agent_category
+                ? `<span style="background:${ac}22;color:${ac};border:1px solid ${ac}55;
+                               font-size:.6rem;font-weight:700;padding:1px 4px;border-radius:3px">
+                       ${esc(p.agent_category)}
+                   </span>` : '—';
+            return `<tr onclick="selectReport(${rep.id})">
+                <td><span style="background:${tc}22;color:${tc};font-size:.63rem;font-weight:700;
+                                 padding:1px 5px;border-radius:3px">${esc(rep.type)}</span></td>
+                <td>${agBadge}</td>
+                <td style="font-family:monospace;font-size:.74rem;color:#94a3b8">${esc(p.dtg || '—')}</td>
+                <td style="font-family:monospace;font-size:.71rem">${esc(loc)}</td>
+                <td style="font-size:.74rem;color:#64748b">${esc(wind)}</td>
+                <td style="font-size:.74rem;color:#94a3b8">${esc(z1)}</td>
+                <td><span class="sb s-${esc(st)}">${esc(st.slice(0,4))}</span></td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ── Select report → pan map + highlight ───────────────────────────
+    window.selectReport = function(id) {
+        if (selectedId === id) {
+            selectedId = null;
+        } else {
+            selectedId = id;
+            const layers = mapLayers.get(id);
+            if (layers?.detail?.center) {
+                map.setView(layers.detail.center, Math.max(map.getZoom(), 10));
+                layers.detail.marker?.openPopup();
+            }
+        }
+        // Re-render lists to update selected state
+        renderReportList(allReports);
+        renderAllReports(allReports);
+    };
+
+    // ── Load data ──────────────────────────────────────────────────────
+    async function load() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        const all = await r.json();
+        allReports = all.filter(rep => rep.type && rep.type.startsWith('CBRN_'));
+
+        renderStats(allReports);
+        renderReportList(allReports);
+        renderAllReports(allReports);
+
+        // Rebuild map layers — only from reports with valid coordinates
+        clearMapLayers();
+        const bounds = [];
+        allReports.forEach(rep => {
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch (_) {}
+            if (p.latitude == null || p.longitude == null) return;
+
+            const detail    = buildReportLayers(rep, p, map);
+            const mapOnlyLayers = buildReportLayers(rep, p, mapOnly);
+            mapLayers.set(rep.id, { detail, mapOnlyLayers });
+            if (detail?.center) bounds.push(detail.center);
+        });
+
+        if (bounds.length) {
+            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+            mapOnly.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+        }
+
+        // Update last-updated label
+        const now = new Date();
+        document.getElementById('cop-last-updated').textContent =
+            'Updated ' + now.toLocaleTimeString();
+    }
+
+    // ── File import ────────────────────────────────────────────────────
+    window.copImportCbrn = async function(fileList) {
+        const statusEl = document.getElementById('cop-import-status');
+        const files    = Array.from(fileList || []);
+        if (!files.length) return;
+        statusEl.style.color = '#94a3b8';
+        statusEl.textContent = `Uploading ${files.length} file(s)…`;
+        const form = new FormData();
+        files.forEach(f => form.append('files', f, f.name));
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/reports/cbrn/import',
+                { method: 'POST', headers, body: form });
+            if (r.ok) {
+                const list = await r.json();
+                statusEl.textContent = `✓ ${list.length} imported`;
+                statusEl.style.color = '#22c55e';
+                setTimeout(() => { statusEl.textContent = ''; }, 5000);
+                load();
+            } else {
+                const err = await r.text().catch(() => String(r.status));
+                statusEl.textContent = `✗ (${r.status}): ${err.slice(0, 80)}`;
+                statusEl.style.color = '#ef4444';
+            }
+        } catch (e) {
+            statusEl.textContent = '✗ ' + e.message;
+            statusEl.style.color = '#ef4444';
+        }
+        document.getElementById('cop-file').value = '';
+    };
+
+    // ── WebSocket ──────────────────────────────────────────────────────
+    function connectWS() {
+        const ws = new WebSocket(
+            window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
+        ws.onmessage = ev => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.channel === 'report' && msg.data?.type?.startsWith('CBRN_')) load();
+            } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+    connectWS();
+
+    load();
+    setInterval(load, 60000);
+})();
+</script>
+{% endblock %}

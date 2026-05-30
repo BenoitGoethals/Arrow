@@ -88,3 +88,6 @@ class PageService:
 
     def logrep(self) -> PageView:
         return PageView("logrep.html")
+
+    def cbrncop(self) -> PageView:
+        return PageView("cbrncop.html")
