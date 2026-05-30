@@ -43,6 +43,12 @@
 <div class="cb-wrap">
   <div class="cb-bar">
     <h1>☢ CBRNCOP — CBRN Situation</h1>
+    <!-- CBRN file import -->
+    <input type="file" id="cbrn-file" accept=".txt,.cbrn,.msg,text/plain"
+           multiple style="display:none" onchange="importCbrn(this.files)">
+    <button class="cb-link" style="background:#78350f;border-color:#92400e;color:#fcd34d;cursor:pointer"
+            onclick="document.getElementById('cbrn-file').click()">☢ Import CBRN msg…</button>
+    <span id="cb-import-status" style="font-size:.74rem;min-width:160px"></span>
     <a href="{{ url_for('cbrn.index') }}" class="cb-link">☢ CBRN Detail</a>
     <a href="{{ url_for('reports.index') }}" class="cb-link">📝 All Reports</a>
     <a href="{{ url_for('tactical_map.index') }}" class="cb-link">🗺 Map</a>
@@ -145,6 +151,49 @@ async function load() {
       }
     } catch(_){}
   });
+}
+
+/* ── CBRN file import ────────────────────────────────────────────────────── */
+async function importCbrn(fileList) {
+    const statusEl = document.getElementById('cb-import-status');
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    statusEl.style.color = '#94a3b8';
+    statusEl.textContent = `Uploading ${files.length} file(s)…`;
+
+    const tok  = localStorage.getItem('arrow_token') || '';
+    const form = new FormData();
+    files.forEach(f => form.append('files', f, f.name));
+
+    let r;
+    try {
+        r = await fetch(window.ARROW_BACKEND_URL + '/reports/cbrn/import', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${tok}` },
+            body: form,
+        });
+    } catch (e) {
+        statusEl.textContent = '✗ ' + e.message;
+        statusEl.style.color = '#ef4444';
+        return;
+    }
+
+    if (r.ok) {
+        const list = await r.json();
+        const byType = {};
+        list.forEach(x => { byType[x.type] = (byType[x.type] || 0) + 1; });
+        const summary = Object.entries(byType).map(([t, n]) => `${n}× ${t}`).join(', ');
+        statusEl.textContent = `✓ ${list.length} imported (${summary})`;
+        statusEl.style.color = '#22c55e';
+        setTimeout(() => { statusEl.textContent = ''; }, 6000);
+        load();
+    } else {
+        const err = await r.text().catch(() => String(r.status));
+        statusEl.textContent = `✗ (${r.status}): ${err.slice(0, 100)}`;
+        statusEl.style.color = '#ef4444';
+    }
+    document.getElementById('cbrn-file').value = '';
 }
 
 document.addEventListener('DOMContentLoaded', load);
