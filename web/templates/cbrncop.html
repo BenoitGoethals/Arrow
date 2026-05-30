@@ -137,24 +137,107 @@ async function load() {
       }).join('')
     : '<div style="padding:10px 14px;color:#4ade80">✓ No CBRN reports — area clear</div>';
 
-  // Map — CBRN contamination markers
+  // ── Map — ATP-45 CBRN tactical graphics ─────────────────────────────────
   cbrnLayer.clearLayers();
+  const bounds = [];
+
+  /* Agent-category colour palette (ATP-45 annex convention) */
+  const AGENT_COL = { C:'#f59e0b', B:'#22c55e', R:'#38bdf8', N:'#ef4444' };
+  const _col = cat => AGENT_COL[cat] || '#fbbf24';
+
+  /* Convert metres to approximate Leaflet degrees at a given latitude */
+  const _mToDeg = (metres, lat) => metres / (111320 * Math.cos(lat * Math.PI / 180));
+
+  /* Build a downwind sector polygon (ATP-45 Zone II):
+     origin = [lat,lng], dist_m = downwind reach, bearing_to = wind blows TO (°),
+     half_angle = ±degrees of sector */
+  function _downwindSector(lat, lng, dist_m, bearingTo, halfAngle) {
+    const pts = [[lat, lng]];
+    const steps = 12;
+    const startBear = bearingTo - halfAngle;
+    const endBear   = bearingTo + halfAngle;
+    for (let i = 0; i <= steps; i++) {
+      const bear = (startBear + i * (endBear - startBear) / steps) * Math.PI / 180;
+      const dLat = (dist_m / 111320) * Math.cos(bear);
+      const dLng = _mToDeg(dist_m, lat) * Math.sin(bear);
+      pts.push([lat + dLat, lng + dLng]);
+    }
+    pts.push([lat, lng]);
+    return pts;
+  }
+
   cbrn.forEach(r => {
     try {
       const p = JSON.parse(r.payload);
-      /* CBRN reports store location under several possible keys */
-      const lat = p.lat ?? p.latitude ?? p.location_lat ?? p.observer_lat ?? r.latitude ?? null;
-      const lng = p.lng ?? p.longitude ?? p.location_lng ?? p.observer_lng ?? r.longitude ?? null;
-      if (lat != null && lng != null) {
-        const mgrs = window.mgrsEncode ? window.mgrsEncode(lat, lng) : '';
-        L.circle([lat, lng], {radius:500, color:'#fbbf24', fillColor:'#fbbf2455', weight:2})
-         .bindPopup(`<b>${r.type}</b><br>Status: ${r.status}<br>
-                    <code>${mgrs}</code><br>
-                    ${p.agent||p.type_agent||''} ${p.remarks||''}`)
-         .addTo(cbrnLayer);
+
+      /* Location: parser always writes latitude/longitude; fallback to lines */
+      const lat = p.latitude ?? p.lat ?? null;
+      const lng = p.longitude ?? p.lon ?? p.lng ?? null;
+      if (lat == null || lng == null) return;
+
+      const cat    = (p.agent_category || '').toUpperCase().trim() || '?';
+      const col    = _col(cat);
+      const mgrs   = window.mgrsEncode ? window.mgrsEncode(lat, lng) : `${lat.toFixed(4)},${lng.toFixed(4)}`;
+
+      /* Zone I — immediate danger circle */
+      const zoneI_m = p.zone_inner_m || 500;
+      L.circle([lat, lng], {
+          radius: zoneI_m,
+          color: col, weight: 2,
+          fillColor: col, fillOpacity: 0.25,
+          dashArray: '6 4',
+      }).bindPopup(
+          `<b>${r.type}</b> — Zone I (immediate)<br>` +
+          `Agent: <b>${cat}</b> ${p.agent || ''}<br>` +
+          `<code>${mgrs}</code><br>` +
+          `Radius: ${zoneI_m} m · Status: ${r.status}`
+      ).addTo(cbrnLayer);
+
+      /* Zone II — downwind hazard sector */
+      const zoneII_m   = p.zone_downwind_m || 2000;
+      const windDir    = p.wind_direction;    // FROM direction (met convention)
+      const halfAngle  = p.zone_downwind_angle_deg || 30;
+      if (windDir != null) {
+          /* Wind blows FROM windDir, so hazard goes TO windDir + 180 */
+          const toDir = (windDir + 180) % 360;
+          const sector = _downwindSector(lat, lng, zoneII_m, toDir, halfAngle);
+          L.polygon(sector, {
+              color: col, weight: 1.5,
+              fillColor: col, fillOpacity: 0.15,
+          }).bindPopup(
+              `<b>${r.type}</b> — Zone II (downwind)<br>` +
+              `Wind: ${windDir}° @ ${p.wind_speed || '?'} km/h<br>` +
+              `Reach: ${zoneII_m} m  ±${halfAngle}°`
+          ).addTo(cbrnLayer);
       }
-    } catch(_){}
+
+      /* Centre marker */
+      const icon = L.divIcon({
+          className: '',
+          iconSize: [24, 24], iconAnchor: [12, 12],
+          html: `<div style="width:24px;height:24px;border-radius:50%;
+                 background:${col};border:2px solid #fff;
+                 display:flex;align-items:center;justify-content:center;
+                 font-size:11px;font-weight:700;color:#000;
+                 box-shadow:0 0 8px ${col}88">☢</div>`,
+      });
+      L.marker([lat, lng], { icon })
+       .bindPopup(`<b>${r.type}</b><br>` +
+                  `Agent: <b>${cat}</b> ${p.agent || ''}<br>` +
+                  `<code>${mgrs}</code><br>` +
+                  `DTG: ${p.dtg || '—'} · ${r.status}`)
+       .addTo(cbrnLayer);
+
+      bounds.push([lat, lng]);
+    } catch(e) { console.warn('CBRN map render:', e); }
   });
+
+  /* Auto-fit map to all CBRN points */
+  if (bounds.length === 1) {
+      map.setView(bounds[0], 11);
+  } else if (bounds.length > 1) {
+      map.fitBounds(L.latLngBounds(bounds).pad(0.3));
+  }
 }
 
 /* ── CBRN file import ────────────────────────────────────────────────────── */
