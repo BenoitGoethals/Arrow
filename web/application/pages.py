@@ -115,3 +115,51 @@ class PageService:
 
     def cbrncop(self) -> PageView:
         return PageView("cbrncop.html")
+
+    def cop_hub(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "⊞", "cop_name": "COP Hub",
+            "cop_desc": "Overview of all Common Operational Pictures.",
+        })
+
+    def taccop(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "🗺", "cop_name": "TACCOP — Tactical",
+            "cop_desc": "Tactical Common Operational Picture.",
+        })
+
+    def logcop(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "📦", "cop_name": "LOGCOP — Logistics",
+            "cop_desc": "Logistics Common Operational Picture.",
+        })
+
+    def medcop(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "🏥", "cop_name": "MEDCOP — Medical",
+            "cop_desc": "Medical Common Operational Picture.",
+        })
+
+    def intcop(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "🔍", "cop_name": "INTCOP — Intelligence",
+            "cop_desc": "Intelligence Common Operational Picture.",
+        })
+
+    def firescop(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "🔥", "cop_name": "FIRESCOP — Fire Support",
+            "cop_desc": "Fire Support Common Operational Picture.",
+        })
+
+    def cop_docs(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "🗂", "cop_name": "COP Documents",
+            "cop_desc": "Operational documents and annexes.",
+        })
+
+    def weather(self) -> PageView:
+        return PageView("cop_stub.html", {
+            "cop_icon": "⛅", "cop_name": "Weather",
+            "cop_desc": "Meteorological and METOC data.",
+        })
