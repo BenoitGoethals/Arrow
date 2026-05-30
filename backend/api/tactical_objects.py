@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import TacticalObjectIn, TacticalObjectOut
@@ -19,7 +20,10 @@ def list_objects(
 ) -> list[TacticalObject]:
     q = db.query(TacticalObject)
     if mission:
-        q = q.filter(TacticalObject.mission_id == mission.id)
+        # Always include global objects (mission_id=NULL) alongside mission-scoped ones
+        # so CBRN overlays, reference graphics, and KML-derived markers are always visible.
+        q = q.filter(or_(TacticalObject.mission_id == mission.id,
+                         TacticalObject.mission_id.is_(None)))
     return q.all()
 
 

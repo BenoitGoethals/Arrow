@@ -7,7 +7,7 @@ from web.infrastructure.template_renderer import PageRenderer
 
 
 def build_blueprint(service: PageService, renderer: PageRenderer) -> Blueprint:
-    bp = Blueprint("logcop", __name__, url_prefix="/logcop")
+    bp = Blueprint("logcop", __name__, url_prefix="/cops/logistics")
 
     @bp.route("/")
     def index() -> str:

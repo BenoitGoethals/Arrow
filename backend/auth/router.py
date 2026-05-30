@@ -60,7 +60,7 @@ def register_elevated(
 # ── Login ─────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenOut)
-@limiter.limit("10/minute")
+@limiter.limit("120/minute")
 def login(
     request: Request,
     form: OAuth2PasswordRequestForm = Depends(),

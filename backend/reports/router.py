@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import (
@@ -43,7 +44,10 @@ def list_reports(
 ) -> list[Report]:
     q = db.query(Report).order_by(Report.timestamp.desc())
     if mission:
-        q = q.filter(Report.mission_id == mission.id)
+        # Always include global reports (mission_id=NULL) alongside mission reports
+        # so CBRN imports, weather, and persistent intel are always visible.
+        q = q.filter(or_(Report.mission_id == mission.id,
+                         Report.mission_id.is_(None)))
     return q.limit(200).all()
 
 
@@ -84,6 +88,7 @@ async def import_cbrn(
     files: list[UploadFile] = File(..., description="One or more NATO CBRN 1..6 text files"),
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> list[Report]:
     """Parse uploaded NATO CBRN message files and store each as a Report.
 
@@ -113,6 +118,7 @@ async def import_cbrn(
         rep = Report(
             type=rtype, operator_id=current.id,
             payload=json.dumps(parsed), status="RECEIVED",
+            mission_id=mission.id if mission else None,
         )
         db.add(rep)
         db.commit()
@@ -121,6 +127,7 @@ async def import_cbrn(
         await broadcaster.broadcast({
             "channel": "report",
             "event":   "submitted",
+            "mission_id": rep.mission_id,
             "data": {
                 "id":          rep.id,
                 "type":        rep.type,
