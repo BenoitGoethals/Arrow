@@ -72,10 +72,23 @@
             <a href="{{ url_for('opord.index') }}" style="color:#60a5fa">📋 OPORDs</a>
             <a href="{{ url_for('strike_packages.index') }}" style="color:#f97316">⚡ Strike Packages</a>
             <a href="{{ url_for('cas_capacity.index') }}" style="color:#fb923c">✈ CAS Capacity</a>
-            <a href="{{ url_for('cbrn.index') }}" style="color:#fbbf24">☢ CBRN</a>
-            <a href="{{ url_for('cop.index') }}" style="color:#38bdf8">🗂 COP</a>
+            <a href="{{ url_for('cop.index') }}" style="color:#38bdf8">🗂 COP Docs</a>
             <a href="{{ url_for('weather.index') }}" style="color:#34d399">⛅ Weather</a>
-            <a href="{{ url_for('logcop.index') }}" style="color:#fb923c">📦 LOGCOP</a>
+        </div>
+    </div>
+
+    <!-- COPs dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">COPs ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('cop_hub.index') }}" style="color:#e2e8f0;font-weight:700">⊞ COP Hub</a>
+            <hr style="border-color:#1e293b;margin:4px 0">
+            <a href="{{ url_for('taccop.index') }}"  style="color:#34d399">🗺 TACCOP — Tactical</a>
+            <a href="{{ url_for('logcop.index') }}"  style="color:#fb923c">📦 LOGCOP — Logistics</a>
+            <a href="{{ url_for('medcop.index') }}"  style="color:#f472b6">🏥 MEDCOP — Medical</a>
+            <a href="{{ url_for('intcop.index') }}"  style="color:#818cf8">🔍 INTCOP — Intelligence</a>
+            <a href="{{ url_for('firescop.index') }}" style="color:#ef4444">🔥 FIRESCOP — Fire Spt</a>
+            <a href="{{ url_for('cbrncop.index') }}" style="color:#fbbf24">☢ CBRNCOP — CBRN</a>
         </div>
     </div>
 

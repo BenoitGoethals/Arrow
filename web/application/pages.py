@@ -97,3 +97,21 @@ class PageService:
 
     def logcop(self) -> PageView:
         return PageView("logcop.html")
+
+    def cop_hub(self) -> PageView:
+        return PageView("cop_hub.html")
+
+    def taccop(self) -> PageView:
+        return PageView("taccop.html")
+
+    def medcop(self) -> PageView:
+        return PageView("medcop.html")
+
+    def intcop(self) -> PageView:
+        return PageView("intcop.html")
+
+    def firescop(self) -> PageView:
+        return PageView("firescop.html")
+
+    def cbrncop(self) -> PageView:
+        return PageView("cbrncop.html")
