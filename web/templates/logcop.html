@@ -231,7 +231,7 @@
       <div class="lc-sec"><span>📍</span> SUPPLY POINTS</div>
       <div style="overflow-y:auto">
         <table class="lc-vtbl">
-          <thead><tr><th>Name</th><th>Type</th><th>Lat</th><th>Lon</th><th>Notes</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Type</th><th>MGRS</th><th>Notes</th><th></th></tr></thead>
           <tbody id="lc-points"></tbody>
         </table>
       </div>
@@ -369,15 +369,10 @@
           <input id="cv-notes" type="text" placeholder="Alternate route via ASR Falcon">
         </div>
       </div>
-      <div class="lc-row2">
-        <div class="lc-field">
-          <label>Latitude (optional)</label>
-          <input id="cv-lat" type="number" step="0.0001" placeholder="50.0028">
-        </div>
-        <div class="lc-field">
-          <label>Longitude (optional)</label>
-          <input id="cv-lng" type="number" step="0.0001" placeholder="5.7300">
-        </div>
+      <div class="lc-field">
+        <label>Current position MGRS (optional — right-click map)</label>
+        <input id="cv-mgrs" type="text" placeholder="31UDS 12345 67890"
+               style="font-family:monospace;letter-spacing:.04em" autocomplete="off" spellcheck="false">
       </div>
       <input type="hidden" id="cv-id" value="">
     </div>
@@ -396,9 +391,9 @@
       <button class="lc-mx" onclick="closeModal('modal-supply-point')">✕</button>
     </div>
     <div class="lc-mbody">
-      <p style="font-size:.78rem;color:#64748b;margin:0">
-        Click on the map to pick coordinates, or enter manually.
-      </p>
+      <div style="font-size:.75rem;color:#64748b;padding:4px 0;display:flex;align-items:center;gap:6px">
+        <span>🖱</span> Right-click anywhere on the map to drop a point instantly.
+      </div>
       <div class="lc-row2">
         <div class="lc-field">
           <label>Name</label>
@@ -418,15 +413,10 @@
           </select>
         </div>
       </div>
-      <div class="lc-row2">
-        <div class="lc-field">
-          <label>Latitude</label>
-          <input id="sp-lat" type="number" step="0.0001">
-        </div>
-        <div class="lc-field">
-          <label>Longitude</label>
-          <input id="sp-lng" type="number" step="0.0001">
-        </div>
+      <div class="lc-field">
+        <label>MGRS Grid</label>
+        <input id="sp-mgrs" type="text" placeholder="31UDS 12345 67890"
+               style="font-family:monospace;letter-spacing:.04em" autocomplete="off" spellcheck="false">
       </div>
       <div class="lc-field">
         <label>Notes</label>
@@ -472,7 +462,6 @@ let pointData   = [];
 let editSupplyId = null;
 let editVehicleId = null;
 let editConvoyId  = null;
-let mapPickMode  = false;
 
 /* ── Map ─────────────────────────────────────────────────────────────────── */
 const map = L.map('lc-map').setView([50.85, 4.35], 8);
@@ -505,13 +494,90 @@ function _makeIcon(type) {
     });
 }
 
-map.on('click', e => {
-    if (!mapPickMode) return;
-    document.getElementById('sp-lat').value = e.latlng.lat.toFixed(5);
-    document.getElementById('sp-lng').value = e.latlng.lng.toFixed(5);
-    mapPickMode = false;
-    map.getContainer().style.cursor = '';
+/* ── MGRS helpers ────────────────────────────────────────────────────────── */
+function _toMgrs(lat, lng) {
+    try { return window.mgrsEncode(lat, lng); } catch(_) { return ''; }
+}
+function _fromMgrs(str) {
+    if (!str || !str.trim()) return null;
+    const ll = window.mgrsDecode(str.trim());
+    return ll ? {lat: ll[0], lng: ll[1]} : null;
+}
+
+/* ── Map right-click context menu ────────────────────────────────────────── */
+let _ctxLatLng = null;
+const _ctxMenu = document.createElement('div');
+_ctxMenu.style.cssText = `
+    position:fixed;background:#111827;border:1px solid #334155;border-radius:6px;
+    z-index:5000;min-width:188px;box-shadow:0 8px 24px rgba(0,0,0,.8);display:none;
+    overflow:hidden;`;
+_ctxMenu.innerHTML = `
+    <div id="ctx-coord" style="padding:7px 12px;font-family:monospace;font-size:.75rem;
+         color:#64748b;border-bottom:1px solid #1e293b;letter-spacing:.04em"></div>
+    <div class="ctx-item" onclick="_ctxAddPoint()">📍 Add Supply Point here</div>
+    <div class="ctx-item" onclick="_ctxAddConvoy()">🚚 Add Convoy position here</div>
+    <div class="ctx-item" onclick="_ctxAddVehicle()">🚗 Add Vehicle entry</div>`;
+
+/* Shared ctx-item style via a <style> block */
+const _ctxStyle = document.createElement('style');
+_ctxStyle.textContent = `.ctx-item{padding:9px 14px;font-size:.82rem;color:#e2e8f0;
+    cursor:pointer;border-bottom:1px solid #0f172a;}
+    .ctx-item:last-child{border-bottom:none;}
+    .ctx-item:hover{background:#1e293b;}`;
+document.head.appendChild(_ctxStyle);
+document.body.appendChild(_ctxMenu);
+
+map.on('contextmenu', e => {
+    L.DomEvent.stopPropagation(e);
+    _ctxLatLng = e.latlng;
+    document.getElementById('ctx-coord').textContent = _toMgrs(e.latlng.lat, e.latlng.lng);
+    _ctxMenu.style.left = e.originalEvent.clientX + 'px';
+    _ctxMenu.style.top  = e.originalEvent.clientY + 'px';
+    _ctxMenu.style.display = 'block';
 });
+document.addEventListener('click',    () => { _ctxMenu.style.display = 'none'; });
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        _ctxMenu.style.display = 'none';
+        document.querySelectorAll('.lc-modal-bg.open').forEach(m => m.classList.remove('open'));
+    }
+});
+
+function _ctxAddPoint() {
+    _ctxMenu.style.display = 'none';
+    if (!_ctxLatLng) return;
+    document.getElementById('sp-mgrs').value  = _toMgrs(_ctxLatLng.lat, _ctxLatLng.lng);
+    document.getElementById('sp-name').value  = '';
+    document.getElementById('sp-notes').value = '';
+    openModal('modal-supply-point');
+}
+function _ctxAddConvoy() {
+    _ctxMenu.style.display = 'none';
+    if (!_ctxLatLng) return;
+    document.getElementById('cv-id').value   = '';
+    document.getElementById('cv-cs').value   = '';
+    document.getElementById('cv-status').value = 'EN_ROUTE';
+    document.getElementById('cv-cargo').value  = '';
+    document.getElementById('cv-origin').value = '';
+    document.getElementById('cv-dest').value   = '';
+    document.getElementById('cv-eta').value    = '';
+    document.getElementById('cv-mgrs').value   = _toMgrs(_ctxLatLng.lat, _ctxLatLng.lng);
+    document.getElementById('cv-notes').value  = '';
+    document.getElementById('modal-convoy-title').textContent = 'Add Convoy / LOGPAC';
+    openModal('modal-convoy');
+}
+function _ctxAddVehicle() {
+    _ctxMenu.style.display = 'none';
+    document.getElementById('v-id').value    = '';
+    document.getElementById('v-unit').value  = '';
+    document.getElementById('v-type').value  = '';
+    document.getElementById('v-total').value = '0';
+    document.getElementById('v-fmc').value   = '0';
+    document.getElementById('v-pmc').value   = '0';
+    document.getElementById('v-notes').value = '';
+    document.getElementById('modal-vehicle-title').textContent = 'Add Vehicle Status';
+    openModal('modal-vehicle');
+}
 
 /* ── Time ticker ─────────────────────────────────────────────────────────── */
 function _tick() {
@@ -764,15 +830,15 @@ function openConvoyEdit(id) {
     document.getElementById('cv-origin').value = c ? c.origin      : '';
     document.getElementById('cv-dest').value   = c ? c.destination : '';
     document.getElementById('cv-eta').value    = c ? c.eta         : '';
-    document.getElementById('cv-lat').value    = c?.lat || '';
-    document.getElementById('cv-lng').value    = c?.lng || '';
+    document.getElementById('cv-mgrs').value   = (c?.lat && c?.lng) ? _toMgrs(c.lat, c.lng) : '';
     document.getElementById('cv-notes').value  = c ? c.notes       : '';
     openModal('modal-convoy');
 }
 async function saveConvoy() {
     const id = document.getElementById('cv-id').value;
-    const lat = parseFloat(document.getElementById('cv-lat').value) || null;
-    const lng = parseFloat(document.getElementById('cv-lng').value) || null;
+    const _cvPos = _fromMgrs(document.getElementById('cv-mgrs').value);
+    const lat = _cvPos?.lat || null;
+    const lng = _cvPos?.lng || null;
     const body = {
         callsign:    document.getElementById('cv-cs').value,
         status:      document.getElementById('cv-status').value,
@@ -808,22 +874,24 @@ async function deleteConvoy(id) {
 /* ── Supply points ───────────────────────────────────────────────────────── */
 function renderPoints() {
     const tb = document.getElementById('lc-points');
-    tb.innerHTML = pointData.map(p =>
-        `<tr>
+    tb.innerHTML = pointData.map(p => {
+        const mgrs = _toMgrs(p.lat, p.lng);
+        return `<tr>
           <td style="font-weight:600">${p.name}</td>
           <td style="color:#94a3b8">${p.point_type}</td>
-          <td style="font-family:monospace;font-size:.75rem">${p.lat.toFixed(4)}</td>
-          <td style="font-family:monospace;font-size:.75rem">${p.lng.toFixed(4)}</td>
+          <td style="font-family:monospace;font-size:.75rem;color:#7dd3fc">${mgrs}</td>
           <td style="color:#64748b;font-size:.75rem">${p.notes||'—'}</td>
           <td><button class="ic-btn" onclick="deletePoint(${p.id})">✕</button></td>
-        </tr>`
-    ).join('') || '<tr><td colspan="6" style="color:#475569;padding:10px">No points — click + Supply Point</td></tr>';
+        </tr>`;
+    }).join('') || '<tr><td colspan="5" style="color:#475569;padding:10px">No points — right-click on the map</td></tr>';
 
     pointMarkers.clearLayers();
     pointData.forEach(p => {
+        const mgrs = _toMgrs(p.lat, p.lng);
         L.marker([p.lat, p.lng], {icon: _makeIcon(p.point_type)})
          .bindPopup(`<b>${POINT_ICONS[p.point_type]||'📌'} ${p.name}</b><br>
-                    <i>${p.point_type}</i><br>${p.notes||''}`)
+                    <i>${p.point_type}</i><br>
+                    <code style="font-size:.8rem">${mgrs}</code><br>${p.notes||''}`)
          .addTo(pointMarkers);
     });
     if (pointData.length) {
@@ -834,13 +902,12 @@ function renderPoints() {
     }
 }
 async function saveSupplyPoint() {
-    const lat = parseFloat(document.getElementById('sp-lat').value);
-    const lng = parseFloat(document.getElementById('sp-lng').value);
-    if (isNaN(lat)||isNaN(lng)) { alert('Valid lat/lon required'); return; }
+    const pos = _fromMgrs(document.getElementById('sp-mgrs').value);
+    if (!pos) { alert('Invalid MGRS grid — enter e.g. 31UDS 12345 67890'); return; }
     const body = {
         name:       document.getElementById('sp-name').value,
         point_type: document.getElementById('sp-type').value,
-        lat, lng,
+        lat: pos.lat, lng: pos.lng,
         notes: document.getElementById('sp-notes').value,
     };
     try {
@@ -918,23 +985,6 @@ function copyLogstat() {
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-/* Map click picker for supply point modal */
-document.getElementById('modal-supply-point').addEventListener('click', e => {
-    if (e.target === document.getElementById('modal-supply-point')) return;
-});
-document.addEventListener('keydown', e => {
-    if (e.key==='Escape') document.querySelectorAll('.lc-modal-bg.open')
-        .forEach(m => m.classList.remove('open'));
-});
-
-/* Allow clicking map to pick supply point location */
-document.getElementById('lc-map').addEventListener('mouseenter', () => {
-    const sp = document.getElementById('modal-supply-point');
-    if (sp.classList.contains('open')) {
-        mapPickMode = true;
-        map.getContainer().style.cursor = 'crosshair';
-    }
-});
 
 /* ── WebSocket live updates ──────────────────────────────────────────────── */
 window.addEventListener('arrow-logcop', () => loadAll());
