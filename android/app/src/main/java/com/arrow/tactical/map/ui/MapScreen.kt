@@ -1355,10 +1355,24 @@ fun MapScreen(
                 weatherOpen     = wxPanelOpen,
                 onToggleWeather = {
                     wxPanelOpen = !wxPanelOpen
-                    if (wxPanelOpen) { kmlPanelOpen = false; overlayPanelOpen = false }
-                    // Auto-enable radar on first open when data is available.
-                    if (wxPanelOpen && !wxRadarActive && wxFrames.isNotEmpty()) {
-                        wxRadarActive = true
+                    if (wxPanelOpen) {
+                        kmlPanelOpen = false; overlayPanelOpen = false
+                        if (wxFrames.isNotEmpty()) {
+                            // Frames already loaded — enable radar immediately.
+                            if (!wxRadarActive) wxRadarActive = true
+                        } else {
+                            // Frames not yet loaded (first open before fetch finished) —
+                            // trigger an immediate fetch then auto-enable.
+                            scope.launch {
+                                container.weatherRepository.fetchFrames().onSuccess { frames ->
+                                    wxFrames       = frames.radarFrames
+                                    wxNowcastStart = frames.nowcastStartIndex
+                                    wxSatFrame     = frames.satFrame
+                                    wxFrameIndex   = (frames.radarFrames.size - 1).coerceAtLeast(0)
+                                    if (!wxRadarActive) wxRadarActive = true
+                                }
+                            }
+                        }
                     }
                 },
                 onCollapseBar   = { topBarCollapsed = true },

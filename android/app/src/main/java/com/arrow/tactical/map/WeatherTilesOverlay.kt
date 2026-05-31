@@ -4,27 +4,23 @@ import android.content.Context
 import android.graphics.Canvas
 import org.osmdroid.tileprovider.MapTileProviderBase
 import org.osmdroid.tileprovider.tilesource.XYTileSource
-import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.TilesOverlay
 
+// RainViewer only serves real tiles at zoom 0-7.
+// maxZoomLevel=7 stops OSMdroid requesting zoom 8+ which returns an error image.
+// The standard XYTileSource URL mechanism generates the correct URL without any override:
+//   getBaseUrl() + z + "/" + x + "/" + y + imageFilenameEnding
+//   → https://tilecache.rainviewer.com{path}/256/{z}/{x}/{y}/1/1_0.png
 class RainViewerTileSource(
-    private val framePath: String,
-    private val isSatellite: Boolean = false,
+    framePath: String,
+    isSatellite: Boolean = false,
 ) : XYTileSource(
-    "RV${framePath.hashCode()}",
-    0, 18, 256, ".png", emptyArray(),
-) {
-    override fun getTileURLString(pMapTileIndex: Long): String {
-        val z = MapTileIndex.getZoom(pMapTileIndex)
-        val x = MapTileIndex.getX(pMapTileIndex)
-        val y = MapTileIndex.getY(pMapTileIndex)
-        return if (isSatellite)
-            "https://tilecache.rainviewer.com$framePath/256/$z/$x/$y/0/0_0.png"
-        else
-            "https://tilecache.rainviewer.com$framePath/256/$z/$x/$y/1/1_0.png"
-    }
-}
+    "RV${Math.abs(framePath.hashCode())}",
+    0, 7, 256,
+    if (isSatellite) "/0/0_0.png" else "/1/1_0.png",
+    arrayOf("https://tilecache.rainviewer.com$framePath/256/"),
+)
 
 /** TilesOverlay with configurable alpha so weather layers can be made semi-transparent. */
 class WeatherTilesOverlay(
