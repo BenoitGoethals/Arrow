@@ -24,6 +24,10 @@ dependencies = [
     "cryptography>=43",
     "reportlab>=4.2",
     "smbprotocol>=1.16.1",
+    "pyqt6-sip>=13.11.1",
+    "pyqt6>=6.11.0",
+    "pyqt6-webengine>=6.11.0",
+    "keyring>=25.7.0",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +40,13 @@ dev = [
 cot-sim = [
     "wxpython==4.2.4; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
+# Arrow Front — Python tactical desktop COP (Frontline-style). Requires Qt6 +
+# PyQt6-WebEngine. On Linux: apt install libgl1 libglib2.0-0 libegl1
+front = [
+    "pyqt6>=6.7",
+    "pyqt6-webengine>=6.7",
+    "keyring>=25",
+]
 
 [project.scripts]
 arrow = "run:main"
@@ -45,13 +56,14 @@ arrow-seed = "backend.storage.seed:main"
 arrow-battlefield = "simulate_battlefield:main"
 arrow-cot-sim = "tools.cot_simulator:main"
 arrow-nuts = "simulate_ranger_bastogne:main"
+arrow-front = "front.main:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["backend", "web", "tools"]
+packages = ["backend", "web", "tools", "front"]
 include = ["run.py", "simulate_battlefield.py"]
 
 [tool.pytest.ini_options]
