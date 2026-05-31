@@ -79,6 +79,15 @@ fun WeatherPanel(
 
         HorizontalDivider(color = panelBorder)
 
+        // ── Loading state ─────────────────────────────────────────────────
+        if (radarFrames.isEmpty()) {
+            Text(
+                "⏳ Fetching radar data…",
+                fontSize = 12.sp, color = textMuted,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+        }
+
         // ── Radar section ─────────────────────────────────────────────────
         Text("RADAR", fontSize = 10.sp, color = textMuted,
              letterSpacing = 1.sp, fontWeight = FontWeight.SemiBold)
