@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Arrow Front COP</title>
+<link  rel="stylesheet" href="lib/leaflet.css">
+<script src="lib/leaflet.js"></script>
+<link  rel="stylesheet" href="lib/leaflet.draw.css">
+<script src="lib/leaflet.draw.js"></script>
+<script src="lib/milsymbol.js"></script>
+<script src="lib/mgrs.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:'Courier New',monospace;}
+#map{width:100vw;height:100vh;background:#0d1117;}
+.leaflet-container{cursor:crosshair !important;}
+.mil-icon{background:transparent !important;border:none !important;}
+
+/* Popups */
+.leaflet-popup-content-wrapper{background:#161b22;border:1px solid #30363d;border-radius:2px;color:#c9d1d9;padding:0;box-shadow:0 4px 16px rgba(0,0,0,.7);}
+.leaflet-popup-content{margin:0;}
+.leaflet-popup-tip-container{display:none;}
+.leaflet-popup-close-button{color:#8b949e !important;right:6px !important;top:4px !important;}
+.graphic-label{background:rgba(0,0,0,.78) !important;border:1px solid rgba(255,255,255,.22) !important;color:#e6edf3 !important;font-family:'Courier New',monospace !important;font-size:9px !important;font-weight:bold !important;letter-spacing:1.5px !important;padding:1px 5px !important;white-space:nowrap !important;border-radius:0 !important;box-shadow:none !important;}
+.graphic-label::before{display:none !important;}
+.leaflet-control-scale-line{background:rgba(13,17,23,.88);border:1px solid #30363d;color:#8b949e;font-family:'Courier New',monospace;font-size:9px;}
+.leaflet-control-zoom a{background:#161b22 !important;border:1px solid #30363d !important;color:#c9d1d9 !important;}
+.leaflet-control-zoom a:hover{background:#21262d !important;}
+.leaflet-draw-toolbar a{background-color:#161b22 !important;border-color:#30363d !important;}
+
+/* ================================================================
+   RADIAL CONTEXT MENU
+   ================================================================ */
+#radial-backdrop{display:none;position:fixed;inset:0;z-index:1999;}
+#radial-backdrop.active{display:block;}
+#radial-menu{position:absolute;display:none;z-index:2000;pointer-events:none;}
+#radial-menu.active{display:block;pointer-events:all;}
+.radial-center{position:absolute;width:10px;height:10px;border:2px solid #3fb950;border-radius:50%;background:rgba(0,0,0,.8);transform:translate(-50%,-50%);}
+.radial-item{position:absolute;width:64px;height:64px;border-radius:50%;background:rgba(14,18,26,.95);border:1px solid #30363d;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transform:translate(-50%,-50%) scale(0);transition:transform .14s ease,background .1s,border-color .1s;user-select:none;text-align:center;}
+.radial-item.show{transform:translate(-50%,-50%) scale(1);}
+.radial-item:hover{background:rgba(31,111,235,.88);border-color:#388bfd;}
+.radial-item:hover .ri-label{color:#fff;}
+.ri-icon{font-size:18px;line-height:1;margin-bottom:2px;}
+.ri-label{font-size:7px;letter-spacing:.8px;color:#8b949e;text-transform:uppercase;}
+.radial-item.red{border-color:#f85149;}.radial-item.red:hover{background:rgba(248,81,73,.85);}
+.radial-item.amber{border-color:#d29922;}.radial-item.amber:hover{background:rgba(210,153,34,.85);}
+.radial-item.green{border-color:#3fb950;}.radial-item.green:hover{background:rgba(63,185,80,.85);}
+.radial-item.purple{border-color:#d2a8ff;}.radial-item.purple:hover{background:rgba(210,168,255,.85);}
+
+/* ================================================================
+   SYMBOL PICKER OVERLAY
+   ================================================================ */
+#sym-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;align-items:center;justify-content:center;}
+#sym-overlay.active{display:flex;}
+#sym-panel{background:#161b22;border:1px solid #30363d;border-radius:4px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.8);}
+#sym-header{background:#0d1117;padding:14px 18px 10px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:10px;}
+#sym-header h2{color:#e6edf3;font-size:15px;font-weight:700;flex:1;letter-spacing:.5px;}
+#sym-location{color:#6e7681;font-size:10px;font-family:'Courier New',monospace;}
+#sym-close{background:none;border:none;color:#8b949e;font-size:20px;cursor:pointer;padding:0 4px;}
+#sym-close:hover{color:#f85149;}
+#sym-controls{padding:10px 18px;border-bottom:1px solid #21262d;}
+.sym-ctrl-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.sym-ctrl-label{color:#8b949e;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;min-width:90px;}
+.aff-btn,.ech-btn{padding:5px 12px;border:1px solid #30363d;border-radius:2px;background:#21262d;color:#8b949e;font-size:10px;cursor:pointer;font-family:'Courier New',monospace;font-weight:600;letter-spacing:.5px;}
+.aff-btn:hover,.ech-btn:hover{background:#30363d;color:#c9d1d9;}
+.aff-btn.active{background:#1c2d3f;border-color:#1f6feb;color:#79c0ff;}
+.aff-btn.active.hostile{background:#3d1c1c;border-color:#f85149;color:#f85149;}
+.aff-btn.active.neutral{background:#2d2d1c;border-color:#d29922;color:#d29922;}
+.aff-btn.active.unknown{background:#2a2a2a;border-color:#8b949e;color:#c9d1d9;}
+.aff-btn.active.assumed{background:#1c2d3f;border-color:#79c0ff;color:#79c0ff;}
+.ech-btn.active{background:#1c2d3f;border-color:#1f6feb;color:#79c0ff;}
+#sym-body{overflow-y:auto;padding:14px 18px;flex:1;}
+#sym-body::-webkit-scrollbar{width:6px;}#sym-body::-webkit-scrollbar-track{background:#0d1117;}#sym-body::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
+.sym-category{margin-bottom:18px;}
+.sym-cat-title{font-size:10px;font-weight:700;color:#8b949e;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #21262d;}
+.sym-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.sym-card{border:1px solid #30363d;border-radius:3px;background:#0d1117;padding:6px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:border-color .1s,background .1s;}
+.sym-card:hover{background:#1c2d3f;border-color:#1f6feb;}
+.sym-card.selected{background:#1c2d3f;border-color:#1f6feb;box-shadow:0 0 0 1px #1f6feb;}
+.sym-card svg,.sym-card canvas{width:44px;height:44px;display:block;}
+.sym-name{font-size:9px;color:#8b949e;text-align:center;line-height:1.2;letter-spacing:.3px;}
+.sym-card:hover .sym-name{color:#c9d1d9;}
+.sym-card.selected .sym-name{color:#79c0ff;}
+#sym-footer{padding:12px 18px;border-top:1px solid #30363d;display:flex;align-items:center;gap:10px;}
+#sym-designation{flex:1;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:8px 12px;font-family:'Courier New',monospace;font-size:11px;border-radius:2px;}
+#sym-designation:focus{outline:none;border-color:#388bfd;}
+#sym-designation::placeholder{color:#484f58;}
+#sym-cancel{padding:8px 20px;background:#21262d;border:1px solid #30363d;color:#c9d1d9;cursor:pointer;border-radius:2px;font-family:'Courier New',monospace;}
+#sym-cancel:hover{background:#30363d;}
+#sym-place{padding:8px 22px;background:#1f6feb;border:1px solid #388bfd;color:#fff;cursor:pointer;border-radius:2px;font-family:'Courier New',monospace;font-weight:700;letter-spacing:.5px;}
+#sym-place:hover{background:#388bfd;}
+#sym-place:disabled{opacity:.4;cursor:default;}
+
+/* ================================================================
+   WEATHER PANEL
+   ================================================================ */
+/* Weather panel */
+#weather-panel{
+  display:none;position:absolute;bottom:48px;left:10px;z-index:900;
+  background:rgba(13,17,23,.94);border:1px solid #30363d;
+  border-radius:2px;min-width:220px;overflow:hidden;
+  box-shadow:0 4px 16px rgba(0,0,0,.6);
+  font-family:'Courier New',monospace;
+}
+#weather-panel.active{display:block;}
+#wx-header{
+  background:#161b22;padding:6px 12px 5px;
+  border-bottom:1px solid #30363d;
+  display:flex;align-items:center;justify-content:space-between;
+}
+#wx-header span{color:#8b949e;font-size:9px;font-weight:700;letter-spacing:1.5px;}
+#wx-close{background:none;border:none;color:#484f58;cursor:pointer;font-size:13px;padding:0 2px;}
+#wx-close:hover{color:#f85149;}
+#wx-body{padding:10px 12px;}
+.wx-row{display:flex;align-items:baseline;gap:8px;margin-bottom:4px;color:#c9d1d9;font-size:11px;}
+.wx-icon{font-size:14px;width:20px;text-align:center;}
+.wx-val{font-weight:700;color:#e6edf3;}
+.wx-lbl{color:#6e7681;font-size:9px;}
+#wx-radar-label{color:#3fb950;font-size:9px;margin-top:6px;padding-top:6px;border-top:1px solid #21262d;}
+#wx-location{color:#484f58;font-size:9px;margin-top:2px;}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- Radial menu -->
+<div id="radial-backdrop"></div>
+<div id="radial-menu"><div class="radial-center"></div></div>
+
+<!-- Symbol picker overlay -->
+<div id="sym-overlay">
+  <div id="sym-panel">
+    <div id="sym-header">
+      <span>📍</span>
+      <h2>Place MIL-STD-2525 / APP-6 Symbol</h2>
+      <span id="sym-location"></span>
+      <button id="sym-close" onclick="closeSymbolPicker()">✕</button>
+    </div>
+    <div id="sym-controls">
+      <div class="sym-ctrl-row">
+        <span class="sym-ctrl-label">AFFILIATION</span>
+        <button class="aff-btn active" data-aff="F">Friendly</button>
+        <button class="aff-btn hostile" data-aff="H">Hostile</button>
+        <button class="aff-btn neutral" data-aff="N">Neutral</button>
+        <button class="aff-btn unknown" data-aff="U">Unknown</button>
+        <button class="aff-btn assumed" data-aff="A">Assumed Friend</button>
+      </div>
+      <div class="sym-ctrl-row">
+        <span class="sym-ctrl-label">ECHELON</span>
+        <button class="ech-btn active" data-ech="--" data-echcode="--">—</button>
+        <button class="ech-btn" data-ech="TM"   data-echcode="A-">TM</button>
+        <button class="ech-btn" data-ech="SQD"  data-echcode="C-">SQD</button>
+        <button class="ech-btn" data-ech="SEC"  data-echcode="D-">SEC</button>
+        <button class="ech-btn" data-ech="PLT"  data-echcode="E-">PLT</button>
+        <button class="ech-btn" data-ech="COY"  data-echcode="F-">COY</button>
+        <button class="ech-btn" data-ech="BN"   data-echcode="G-">BN</button>
+        <button class="ech-btn" data-ech="RGT"  data-echcode="H-">RGT</button>
+        <button class="ech-btn" data-ech="BDE"  data-echcode="I-">BDE</button>
+        <button class="ech-btn" data-ech="DIV"  data-echcode="J-">DIV</button>
+        <button class="ech-btn" data-ech="CORPS" data-echcode="K-">CORPS</button>
+      </div>
+    </div>
+    <div id="sym-body"><!-- populated by JS --></div>
+    <div id="sym-footer">
+      <input id="sym-designation" type="text" placeholder="e.g.  2nd Plt · VIPER-2 · 3 MBT" maxlength="40">
+      <button id="sym-cancel" onclick="closeSymbolPicker()">Cancel</button>
+      <button id="sym-place" disabled onclick="placeSelectedSymbol()">Place Symbol</button>
+    </div>
+  </div>
+</div>
+
+<!-- Weather panel -->
+<div id="weather-panel">
+  <div id="wx-header">
+    <span>◈ WEATHER</span>
+    <button id="wx-close" onclick="hideWeatherPanel()">✕</button>
+  </div>
+  <div id="wx-body">
+    <div id="wx-rows"></div>
+    <div id="wx-radar-label" style="display:none">● Rain radar active</div>
+    <div id="wx-location"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ================================================================
+// GUARD
+// ================================================================
+if (typeof L === 'undefined') {
+  document.getElementById('map').innerHTML =
+    '<div style="color:#f85149;font-family:monospace;padding:40px;font-size:14px">⚠ Map libraries missing — run setup_libs</div>';
+  throw new Error('Leaflet not loaded');
+}
+
+// ================================================================
+// STATE
+// ================================================================
+const tracks={}, trails={}, graphics={}, cotTracks={}, fireMissions={}, alertMarkers={}, kmlLayers={}, cbrnZones={};
+let bridge=null, drawMode='pointer', drawHandler=null, measurePoints=[], measureLine=null;
+let radialLatLng=null, pickerLat=null, pickerLon=null, selectedFunc=null, selectedDim='G';
+let pickerAff='F', pickerEch='--', pickerEchCode='--';
+
+// ================================================================
+// MAP
+// ================================================================
+const map = L.map('map',{center:[50.85,4.35],zoom:13,zoomControl:false,attributionControl:false,preferCanvas:true});
+L.control.zoom({position:'bottomright'}).addTo(map);
+L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
+
+// Base layers
+const TILES={
+  OSM:      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}),
+  DARK:     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:20,subdomains:'abcd'}),
+  SATELLITE:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}),
+  TOPO:     L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}),
+};
+let mbtLayer=null, activeBase='OSM';
+TILES.OSM.addTo(map);
+
+// Weather overlay layers
+const WEATHER_LAYERS={};
+let weatherOwmKey='';
+
+// Tactical overlay layer groups
+const LAYERS={
+  operators:L.layerGroup().addTo(map), operTrails:L.layerGroup().addTo(map),
+  cotTracks:L.layerGroup().addTo(map), enemies:L.layerGroup().addTo(map),
+  tactObjs:L.layerGroup().addTo(map),  fireMissions:L.layerGroup().addTo(map),
+  alerts:L.layerGroup().addTo(map),    graphics:L.layerGroup().addTo(map),
+  kml:L.layerGroup().addTo(map),       cbrn:L.layerGroup().addTo(map),
+  weather:L.layerGroup().addTo(map),
+};
+
+// ================================================================
+// 15-CHAR SIDC HELPERS (milsymbol v1.x / APP-6B legacy)
+// ================================================================
+// buildSIDC(ident, dim, func6, echCode2) → 15 chars
+function buildSIDC(ident,dim,func6,echCode){
+  return `S${ident}${dim}P${func6}${echCode}---`;
+}
+
+// Affiliation identity char
+const AFF_CHAR={F:'F',H:'H',N:'N',U:'U',A:'A'};
+
+function sidcFromCotType(cotType){
+  const p=(cotType||'').split('-');
+  const a={f:'F',h:'H',u:'U',n:'N',j:'U',k:'U'}[p[1]]||'U';
+  const d={G:'G',A:'A',S:'S',U:'U',F:'G'}[p[2]]||'G';
+  let func='U-----';
+  const s=p.slice(3);
+  if(s[0]==='U'&&s[1]==='C'){
+    const leaf={I:'UCI---',A:'UCA---',F:'UCF---',R:'UCR---'}[s[2]]||'UC----';
+    func=leaf;
+  }
+  return buildSIDC(a,d,func,'--');
+}
+
+// ================================================================
+// SYMBOL CATEGORIES (for picker)
+// ================================================================
+const SYM_CATEGORIES=[
+  {name:'GROUND — COMBAT',icon:'⚔',dim:'G',items:[
+    {name:'Infantry',      func:'UCI---'},
+    {name:'Airborne',      func:'UCIA--'},
+    {name:'Air Assault',   func:'UCIAS-'},
+    {name:'Light Inf',     func:'UCIL--'},
+    {name:'Armor / Tank',  func:'UCA---'},
+    {name:'Mechanized',    func:'UCIM--'},
+    {name:'Armored Cav',   func:'UCAR--'},
+    {name:'Anti-Armor',    func:'UCJ---'},
+    {name:'Recon / Scout', func:'UCR---'},
+    {name:'Engineer',      func:'UCE---'},
+    {name:'Sniper',        func:'UCIS--'},
+    {name:'Special Forces',func:'USSF--'},
+    {name:'Aviation (AH)', func:'UCAA--'},
+  ]},
+  {name:'FIRE SUPPORT',icon:'🔥',dim:'G',items:[
+    {name:'Artillery SP',   func:'UCFS--'},
+    {name:'Artillery Towed',func:'UCF---'},
+    {name:'Mortar',         func:'UCFM--'},
+    {name:'MLRS / Rocket',  func:'UCFR--'},
+    {name:'Air Defense',    func:'UCAD--'},
+    {name:'AD (SHORAD)',    func:'UCADS-'},
+    {name:'AD (Gun)',       func:'UCADG-'},
+  ]},
+  {name:'C2 / SUPPORT',icon:'◉',dim:'G',items:[
+    {name:'Command Post',  func:'UH----'},
+    {name:'HQ Unit',       func:'UH----'},
+    {name:'Medical',       func:'UMH---'},
+    {name:'Supply / Log',  func:'USS---'},
+    {name:'Maintenance',   func:'USM---'},
+    {name:'Signal',        func:'USC---'},
+    {name:'Intelligence',  func:'USI---'},
+    {name:'CBRN / NBC',   func:'UCB---'},
+    {name:'MP / Police',   func:'UMP---'},
+    {name:'Vehicle',       func:'UCV---'},
+  ]},
+  {name:'AIR',icon:'✈',dim:'A',items:[
+    {name:'Fighter',       func:'MFF---'},
+    {name:'Bomber',        func:'MFB---'},
+    {name:'Attack Fixed',  func:'MFA---'},
+    {name:'Attack Helo',   func:'MFHA--'},
+    {name:'Utility Helo',  func:'MFHU--'},
+    {name:'UAV / Drone',   func:'MFQ---'},
+    {name:'Transport',     func:'MFT---'},
+  ]},
+];
+
+// ================================================================
+// SYMBOL PICKER
+// ================================================================
+function openSymbolPicker(lat,lon,defaultAff){
+  pickerLat=lat; pickerLon=lon;
+  pickerAff=(defaultAff==='HOSTILE'||defaultAff==='H')?'H':(defaultAff==='NEUTRAL'||defaultAff==='N')?'N':(defaultAff==='UNKNOWN'||defaultAff==='U')?'U':'F';
+  selectedFunc=null; selectedDim='G';
+  document.getElementById('sym-location').textContent=latLonToMGRS(lat,lon);
+  document.getElementById('sym-designation').value='';
+  document.getElementById('sym-place').disabled=true;
+  // Sync affiliation buttons
+  document.querySelectorAll('.aff-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.aff===pickerAff);
+  });
+  document.querySelectorAll('.ech-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.ech==='--');
+    if(b.dataset.ech==='--'){pickerEch='--';pickerEchCode='--';}
+  });
+  buildSymbolGrid();
+  document.getElementById('sym-overlay').classList.add('active');
+}
+
+function closeSymbolPicker(){
+  document.getElementById('sym-overlay').classList.remove('active');
+}
+
+function buildSymbolGrid(){
+  const body=document.getElementById('sym-body');
+  body.innerHTML='';
+  SYM_CATEGORIES.forEach(cat=>{
+    const sec=document.createElement('div');
+    sec.className='sym-category';
+    sec.innerHTML=`<div class="sym-cat-title">${cat.icon} ${cat.name}</div>`;
+    const grid=document.createElement('div');
+    grid.className='sym-grid';
+    cat.items.forEach(item=>{
+      const sidc=buildSIDC(pickerAff,cat.dim,item.func,pickerEchCode||'--');
+      const card=document.createElement('div');
+      card.className='sym-card';
+      card.dataset.func=item.func;
+      card.dataset.dim=cat.dim;
+      card.title=item.name;
+      // render milsymbol SVG
+      let svgHtml='';
+      if(typeof ms!=='undefined'){
+        try{
+          const sym=new ms.Symbol(sidc,{size:32});
+          svgHtml=sym.asSVG();
+        }catch(_){svgHtml='<div style="width:44px;height:44px;border:1px solid #30363d;display:flex;align-items:center;justify-content:center;color:#484f58;font-size:9px">?</div>';}
+      }
+      card.innerHTML=`${svgHtml}<span class="sym-name">${item.name}</span>`;
+      card.addEventListener('click',()=>selectSymbolCard(card,item.func,cat.dim));
+      grid.appendChild(card);
+    });
+    sec.appendChild(grid);
+    body.appendChild(sec);
+  });
+}
+
+function selectSymbolCard(card,func,dim){
+  document.querySelectorAll('.sym-card').forEach(c=>c.classList.remove('selected'));
+  card.classList.add('selected');
+  selectedFunc=func; selectedDim=dim;
+  document.getElementById('sym-place').disabled=false;
+}
+
+function placeSelectedSymbol(){
+  if(!selectedFunc||pickerLat==null) return;
+  const sidc=buildSIDC(pickerAff,selectedDim,selectedFunc,pickerEchCode||'--');
+  const desig=document.getElementById('sym-designation').value.trim();
+  if(bridge) bridge.onSymbolSelected(sidc,desig,pickerLat,pickerLon);
+  closeSymbolPicker();
+}
+
+// Affiliation buttons
+document.querySelectorAll('.aff-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    pickerAff=btn.dataset.aff;
+    document.querySelectorAll('.aff-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedFunc=null;
+    document.getElementById('sym-place').disabled=true;
+    buildSymbolGrid();
+  });
+});
+document.querySelectorAll('.ech-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    pickerEch=btn.dataset.ech; pickerEchCode=btn.dataset.echcode;
+    document.querySelectorAll('.ech-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    buildSymbolGrid();  // re-render with new echelon
+  });
+});
+
+// ================================================================
+// TRACK (OPERATOR)
+// ================================================================
+function updateTrack(t){
+  const layer=t.affiliation==='HOSTILE'?LAYERS.enemies:LAYERS.operators;
+  const icon=buildMilIcon(t.sidc,t.callsign,t.unit,t.heading);
+  const popup=buildTrackPopup(t);
+  if(tracks[t.id]){tracks[t.id].marker.setLatLng([t.lat,t.lon]).setIcon(icon).setPopupContent(popup);}
+  else{const m=L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).bindPopup(popup,{maxWidth:260}).on('click',()=>{if(bridge)bridge.onTrackClicked(String(t.id));}).addTo(layer);tracks[t.id]={marker:m,layer};}
+  addTrailSeg(LAYERS.operTrails,trails,t.id,t.lat,t.lon,t.online===false?'#6e7681':t.affiliation==='HOSTILE'?'#f85149':'#3fb950');
+}
+function removeTrack(id){if(tracks[id]){tracks[id].layer.removeLayer(tracks[id].marker);delete tracks[id];}if(trails[id]){LAYERS.operTrails.removeLayer(trails[id]);delete trails[id];}}
+
+// ================================================================
+// COT TRACKS
+// ================================================================
+function updateCotTrack(t){
+  const sidc=sidcFromCotType(t.cot_type);
+  const icon=buildMilIcon(sidc,t.callsign||t.cot_uid,t.team,t.course);
+  const pop=`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px">
+    <div style="font-weight:bold;color:#79c0ff;border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">CoT: ${esc(t.callsign||t.cot_uid)}</div>
+    <div>TYPE ${esc(t.cot_type||'—')}</div><div>MGRS ${latLonToMGRS(t.latitude,t.longitude)}</div>
+    ${t.speed?`<div>SPD ${Math.round(t.speed)} kt</div>`:''}${t.course?`<div>HDG ${Math.round(t.course)}°</div>`:''}
+  </div>`;
+  if(cotTracks[t.cot_uid]){cotTracks[t.cot_uid].setLatLng([t.latitude,t.longitude]).setIcon(icon).setPopupContent(pop);}
+  else{cotTracks[t.cot_uid]=L.marker([t.latitude,t.longitude],{icon}).bindPopup(pop,{maxWidth:250}).addTo(LAYERS.cotTracks);}
+}
+function removeCotTrack(uid){if(cotTracks[uid]){LAYERS.cotTracks.removeLayer(cotTracks[uid]);delete cotTracks[uid];}}
+
+// ================================================================
+// TACTICAL OBJECTS
+// ================================================================
+const TOBJ_SIDC={ENEMY:'SHGPUCI---D----',HOSTILE:'SHGPUCI---D----',FRIENDLY:'SFGPUCI---D----',UNKNOWN:'SUGPUU----D----',VEHICLE:'SHGPUCA---D----',ARTILLERY:'SHGPUCF---D----',POI:'SFGPUUOO-------',MARKER:'SFGPUUOO-------',OBJECTIVE:'SFGPUH----F----',ZONE:'SNGPUU----E----',ROUTE:'SFGPUCI---E----'};
+function addTacticalObject(obj){
+  const sidc=obj.symbol_code||TOBJ_SIDC[obj.type]||'SUGPUU----D----';
+  const aff=obj.affiliation||'UNKNOWN';
+  const layer=aff==='ENEMY'||aff==='HOSTILE'?LAYERS.enemies:LAYERS.tactObjs;
+  const geom=obj.geometry;
+  let lyr;
+  if(geom&&geom.type==='line'&&geom.coords){lyr=L.polyline(geom.coords.map(c=>[c[0],c[1]]),{color:aff==='HOSTILE'?'#f85149':'#3fb950',weight:2}).addTo(layer);}
+  else if(geom&&geom.type==='polygon'&&geom.coords){lyr=L.polygon(geom.coords.map(c=>[c[0],c[1]]),{color:'#d29922',fillOpacity:.1}).addTo(layer);}
+  else{
+    const lat=obj.latitude||(geom&&geom.coords?.[0]?.[0]);
+    const lon=obj.longitude||(geom&&geom.coords?.[0]?.[1]);
+    if(!lat||!lon) return;
+    lyr=L.marker([lat,lon],{icon:buildMilIcon(sidc,obj.notes||obj.type,'',obj.rotation)}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
+  }
+  if(graphics[obj.id]) layer.removeLayer(graphics[obj.id]);
+  graphics[obj.id]=lyr;
+}
+function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);delete graphics[id];}}
+function buildObjPopup(obj){const c=obj.affiliation==='HOSTILE'?'#f85149':'#d29922';return `<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:${c};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">${esc(obj.type)} ${obj.echelon?'['+esc(obj.echelon)+']':''}</div>${obj.notes?`<div>${esc(obj.notes)}</div>`:''}${obj.latitude?`<div>MGRS ${latLonToMGRS(obj.latitude,obj.longitude)}</div>`:''}<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(obj.timestamp||'')}</div></div>`;}
+
+// ================================================================
+// FIRE MISSIONS
+// ================================================================
+function addFireMission(fm){
+  if(!fm.latitude||!fm.longitude) return;
+  const c=fm.status==='COMPLETED'?'#6e7681':fm.status==='FIRED'?'#ff8800':'#f85149';
+  const icon=L.divIcon({html:`<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="none" stroke="${c}" stroke-width="2.5"/><line x1="14" y1="4" x2="14" y2="24" stroke="${c}" stroke-width="2"/><line x1="4" y1="14" x2="24" y2="14" stroke="${c}" stroke-width="2"/></svg>`,className:'mil-icon',iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-16]});
+  const pop=`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:#f85149;border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">FIRE MISSION</div><div>TYPE ${esc(fm.mission_type||'—')}</div><div>AMMO ${esc(fm.ammunition||'—')} × ${fm.quantity||'?'}</div><div>MGRS ${latLonToMGRS(fm.latitude,fm.longitude)}</div><div>STATUS ${esc(fm.status||'PENDING')}</div></div>`;
+  if(fireMissions[fm.id]) LAYERS.fireMissions.removeLayer(fireMissions[fm.id]);
+  fireMissions[fm.id]=L.marker([fm.latitude,fm.longitude],{icon}).bindPopup(pop,{maxWidth:260}).addTo(LAYERS.fireMissions);
+}
+
+// ================================================================
+// ALERTS
+// ================================================================
+const ALERT_COLOR={TIC:'#f85149',MEDICAL:'#ff9e64',EVAC:'#ffa500',LOST_COMMS:'#d29922',DRONE_SPOTTED:'#d2a8ff'};
+function addAlertMarker(alert){
+  if(alert.lat==null||alert.lon==null) return;
+  const c=ALERT_COLOR[alert.type]||'#f85149';
+  const m=L.circleMarker([alert.lat,alert.lon],{radius:20,color:c,weight:3,fillColor:c,fillOpacity:.2}).bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px"><b style="color:${c}">${esc(alert.type)}</b><br>${esc(alert.operator||'')}<br><small style="color:#6e7681">${esc(alert.timestamp||'')}</small></div>`).addTo(LAYERS.alerts);
+  if(alertMarkers[alert.id]) LAYERS.alerts.removeLayer(alertMarkers[alert.id]);
+  alertMarkers[alert.id]=m;
+  let n=0;const iv=setInterval(()=>{m.setStyle({fillOpacity:n%2===0?.05:.35});if(++n>16){clearInterval(iv);m.setStyle({fillOpacity:.2});}},450);
+}
+
+// ================================================================
+// KML
+// ================================================================
+function addKmlLayer(kml){
+  if(kmlLayers[kml.id]){LAYERS.kml.removeLayer(kmlLayers[kml.id]);delete kmlLayers[kml.id];}
+  if(!kml.visible||!kml.features?.length) return;
+  const grp=L.layerGroup();
+  kml.features.forEach(f=>{
+    const g=f.geometry||{},nm=(f.properties||{}).name||'',desc=(f.properties||{}).description||'',c=(f.style||{}).color||'#79c0ff',pop=`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px"><b>${esc(nm)}</b>${desc?`<br>${esc(desc)}`:''}</div>`;
+    if(g.type==='Point') L.circleMarker([g.coordinates[1],g.coordinates[0]],{radius:5,color:c,fillColor:c,fillOpacity:.8}).bindPopup(pop).addTo(grp);
+    else if(g.type==='LineString') L.polyline(g.coordinates.map(c=>[c[1],c[0]]),{color:c,weight:2}).bindPopup(pop).addTo(grp);
+    else if(g.type==='MultiLineString') g.coordinates.forEach(l=>L.polyline(l.map(c=>[c[1],c[0]]),{color:c,weight:2}).bindPopup(pop).addTo(grp));
+    else if(g.type==='Polygon') L.polygon(g.coordinates[0].map(c=>[c[1],c[0]]),{color:c,fillColor:c,fillOpacity:.1,weight:2}).bindPopup(pop).addTo(grp);
+  });
+  grp.addTo(LAYERS.kml); kmlLayers[kml.id]=grp;
+}
+function removeKmlLayer(id){if(kmlLayers[id]){LAYERS.kml.removeLayer(kmlLayers[id]);delete kmlLayers[id];}}
+
+// ================================================================
+// CBRN ZONES
+// ================================================================
+function addCbrnZone(report){
+  const p=report.payload||{};
+  const lat=parseFloat(p.latitude||p.lat||0),lon=parseFloat(p.longitude||p.lon||0);
+  if(!lat||!lon) return;
+  if(cbrnZones[report.id]){LAYERS.cbrn.removeLayer(cbrnZones[report.id]);delete cbrnZones[report.id];}
+  const grp=L.layerGroup();
+  const z1r=parseFloat(p.zone1_radius_km||p.radius_km||1)*1000;
+  L.circle([lat,lon],{radius:z1r,color:'#ff0000',fillColor:'#ff0000',fillOpacity:.15,weight:2,dashArray:'6,4'}).bindTooltip(`CBRN ZONE I — ${p.agent||'?'}`,{className:'graphic-label'}).addTo(grp);
+  const z2d=parseFloat(p.zone2_direction||p.wind_direction||0),z2dist=parseFloat(p.zone2_distance_km||p.downwind_km||5)*1000;
+  if(z2dist>0){L.polygon(buildSector([lat,lon],z2d,45,z2dist),{color:'#ff8800',fillColor:'#ff8800',fillOpacity:.1,weight:1.5,dashArray:'8,4'}).bindTooltip('CBRN ZONE II',{className:'graphic-label'}).addTo(grp);}
+  L.circleMarker([lat,lon],{radius:6,color:'#ff0000',fillColor:'#ff4400',fillOpacity:.9}).bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px"><b style="color:#f85149">☢ CBRN ${esc(report.type)}</b><br>Agent: ${esc(p.agent||'—')}<br>MGRS: ${latLonToMGRS(lat,lon)}</div>`).addTo(grp);
+  grp.addTo(LAYERS.cbrn); cbrnZones[report.id]=grp;
+}
+function buildSector(ctr,brg,half,r){const pts=[ctr];for(let a=brg-half;a<=brg+half;a+=5)pts.push(destPoint(ctr[0],ctr[1],a,r));pts.push(ctr);return pts;}
+function destPoint(lat,lon,b,d){const R=6371000,br=b*Math.PI/180,dr=d/R,φ1=lat*Math.PI/180,λ1=lon*Math.PI/180,φ2=Math.asin(Math.sin(φ1)*Math.cos(dr)+Math.cos(φ1)*Math.sin(dr)*Math.cos(br)),λ2=λ1+Math.atan2(Math.sin(br)*Math.sin(dr)*Math.cos(φ1),Math.cos(dr)-Math.sin(φ1)*Math.sin(φ2));return[φ2*180/Math.PI,λ2*180/Math.PI];}
+
+// ================================================================
+// TACTICAL GRAPHICS (drawn overlays)
+// ================================================================
+const GFX_STYLE={
+  // Friendly (blue)
+  ATK_F:    {color:'#00aaff',weight:3,dashArray:null,fill:false,arrow:true},
+  CTR_F:    {color:'#00aaff',weight:2.5,dashArray:'8,4',fill:false},
+  DEF_F:    {color:'#00aaff',weight:2.5,dashArray:null,fill:false},
+  AMB_F:    {color:'#00aaff',weight:2,dashArray:null,fill:true,fillOpacity:.08},
+  OBJ_F:    {color:'#00aaff',weight:2,fill:true,fillOpacity:.06},
+  BND_F:    {color:'#ffff00',weight:1.5,dashArray:'5,4',fill:false},
+  FLOT:     {color:'#00ff66',weight:2,dashArray:null,fill:false},
+  FLET:     {color:'#f85149',weight:2,dashArray:null,fill:false},
+  PL:       {color:'#00ff66',weight:2.5,dashArray:'12,6',fill:false},
+  PHASE_LINE:{color:'#00ff66',weight:2.5,dashArray:'12,6',fill:false},
+  // Hostile (red)
+  ATK_H:    {color:'#f85149',weight:3,dashArray:null,fill:false},
+  CTR_H:    {color:'#f85149',weight:2.5,dashArray:'8,4',fill:false},
+  DEF_H:    {color:'#f85149',weight:2.5,fill:false},
+  AMB_H:    {color:'#f85149',weight:2,fill:true,fillOpacity:.08},
+  OBJ_H:    {color:'#f85149',weight:2,fill:true,fillOpacity:.06},
+  BND_H:    {color:'#f85149',weight:1.5,dashArray:'5,4',fill:false},
+  // FSCMs
+  FSCL:     {color:'#ff8800',weight:2.5,dashArray:'14,5',fill:false},
+  CFL:      {color:'#ff4400',weight:2,dashArray:'10,8',fill:false},
+  NFL:      {color:'#ff0000',weight:2,dashArray:'5,5',fill:false},
+  NFA:      {color:'#ff0000',weight:1.5,fill:true,fillOpacity:.12},
+  FFA:      {color:'#00cc00',weight:1.5,fill:true,fillOpacity:.10},
+  ENGAGEMENT_AREA:{color:'#ff3300',weight:1.5,fill:true,fillOpacity:.10},
+  NAI:      {color:'#aa44ff',weight:1.5,dashArray:'5,5',fill:true,fillOpacity:.06},
+  TAI:      {color:'#ff44aa',weight:1.5,dashArray:'5,5',fill:true,fillOpacity:.06},
+  AXIS:     {color:'#00aaff',weight:3,fill:false},
+  ROUTE:    {color:'#88ff00',weight:2,dashArray:'8,4',fill:false},
+  OBJECTIVE:{color:'#e6edf3',weight:2,fill:true,fillOpacity:.05},
+  BOUNDARY: {color:'#ffff00',weight:1.5,dashArray:'5,4',fill:false},
+};
+
+function setDrawGraphic(type, aff){
+  drawMode=type;
+  if(drawHandler){drawHandler.disable();drawHandler=null;}
+  map.off('click',onMeasureClick);
+  if(measureLine){map.removeLayer(measureLine);measureLine=null;}
+  measurePoints=[];
+  if(type==='pointer'||type==='none') return;
+  if(type==='measure'){map.on('click',onMeasureClick);return;}
+  const s=GFX_STYLE[type]||{color:aff==='H'?'#f85149':'#00aaff',weight:2,fill:false};
+  const polyTypes=['NFA','FFA','OBJECTIVE','ENGAGEMENT_AREA','NAI','TAI','OBJ_F','OBJ_H','AMB_F','AMB_H'];
+  if(polyTypes.includes(type)){
+    drawHandler=new L.Draw.Polygon(map,{shapeOptions:{color:s.color,weight:s.weight,fillColor:s.color,fillOpacity:s.fillOpacity||.1}});
+  } else {
+    drawHandler=new L.Draw.Polyline(map,{shapeOptions:{color:s.color,weight:s.weight,dashArray:s.dashArray}});
+  }
+  drawHandler.enable();
+  map.once(L.Draw.Event.CREATED,function(e){
+    const gj=JSON.stringify(e.layer.toGeoJSON().geometry);
+    if(bridge) bridge.onGraphicDrawn(type,gj);
+    drawMode='pointer';if(drawHandler){drawHandler.disable();drawHandler=null;}
+  });
+}
+
+function setDrawMode(mode){setDrawGraphic(mode,'F');}  // legacy compat
+
+function addGraphic(g){
+  if(!g||!g.geojson) return;
+  const s=GFX_STYLE[g.type]||{color:'#e6edf3',weight:1.5,fill:false};
+  const geo=typeof g.geojson==='string'?JSON.parse(g.geojson):g.geojson;
+  let lyr;
+  if(geo.type==='Feature'){addGraphic({...g,geojson:geo.geometry});return;}
+  if(geo.type==='FeatureCollection'){geo.features.forEach(f=>addGraphic({...g,id:g.id+'_'+Math.random(),geojson:f}));return;}
+  if(geo.type==='LineString') lyr=L.polyline(geo.coordinates.map(c=>[c[1],c[0]]),{color:s.color,weight:s.weight,dashArray:s.dashArray});
+  else if(geo.type==='Polygon') lyr=L.polygon(geo.coordinates[0].map(c=>[c[1],c[0]]),{color:s.color,weight:s.weight,dashArray:s.dashArray,fill:s.fill!==false,fillColor:s.color,fillOpacity:s.fillOpacity||0});
+  else if(geo.type==='Point') lyr=L.circleMarker([geo.coordinates[1],geo.coordinates[0]],{radius:7,color:s.color,fillColor:s.color,fillOpacity:.7});
+  if(!lyr) return;
+  if(g.label) lyr.bindTooltip(g.label,{permanent:true,direction:'center',className:'graphic-label'});
+  lyr.addTo(LAYERS.graphics);
+  if(graphics['gfx_'+g.id]) LAYERS.graphics.removeLayer(graphics['gfx_'+g.id]);
+  graphics['gfx_'+g.id]=lyr;
+}
+function removeGraphic(id){if(graphics['gfx_'+id]){LAYERS.graphics.removeLayer(graphics['gfx_'+id]);delete graphics['gfx_'+id];}}
+
+// ================================================================
+// WEATHER
+// ================================================================
+// ---- RainViewer live radar (no API key needed) -----------------------
+let _radarLayer = null;
+let _radarFrames = [];
+let _radarIdx = 0;
+let _radarTimer = null;
+
+async function loadRainRadar() {
+  try {
+    const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const data = await resp.json();
+    const host  = data.host || 'https://tilecache.rainviewer.com';
+    const past  = data.radar?.past || [];
+    if (!past.length) return;
+
+    // Build frames (past 3 + nowcast 2)
+    const nowcast = data.radar?.nowcast || [];
+    _radarFrames = [...past.slice(-4), ...nowcast.slice(0,2)];
+
+    function showFrame(idx) {
+      if (_radarLayer) { LAYERS.weather.removeLayer(_radarLayer); _radarLayer=null; }
+      const frame = _radarFrames[idx];
+      if (!frame) return;
+      const url = `${host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+      _radarLayer = L.tileLayer(url, {
+        opacity: 0.65,
+        minZoom: 0, maxZoom: 20, maxNativeZoom: 8,
+        attribution: '© RainViewer',
+      });
+      _radarLayer.addTo(LAYERS.weather);
+      WEATHER_LAYERS['rain_radar'] = _radarLayer;
+    }
+
+    _radarIdx = _radarFrames.length - 3; // start near latest
+    showFrame(_radarIdx);
+
+    // Animate through past frames every 600ms, then pause on latest
+    if (_radarTimer) clearInterval(_radarTimer);
+    let animCount = 0;
+    _radarTimer = setInterval(() => {
+      _radarIdx = (_radarIdx + 1) % _radarFrames.length;
+      showFrame(_radarIdx);
+      animCount++;
+      if (animCount >= _radarFrames.length * 2) {
+        clearInterval(_radarTimer);
+        _radarTimer = null;
+        // Settle on latest past frame
+        _radarIdx = _radarFrames.filter(f=>!f.path.includes('nowcast')).length - 1;
+        showFrame(Math.max(0,_radarIdx));
+      }
+    }, 550);
+
+    // Show label
+    document.getElementById('wx-radar-label').style.display = 'block';
+    document.getElementById('weather-panel').classList.add('active');
+
+  } catch(e) {
+    console.warn('[Weather] RainViewer load failed:', e);
+  }
+}
+
+function stopRainRadar() {
+  if (_radarTimer) { clearInterval(_radarTimer); _radarTimer = null; }
+  if (_radarLayer) { LAYERS.weather.removeLayer(_radarLayer); _radarLayer = null; }
+  delete WEATHER_LAYERS['rain_radar'];
+  document.getElementById('wx-radar-label').style.display = 'none';
+}
+
+// ---- OWM tile layers (needs API key) ----------------------------------
+async function setWeatherLayer(name, visible) {
+  if (visible) {
+    if (name === 'rain_radar') {
+      await loadRainRadar();
+      await fetchWeatherAtCenter();
+      return;
+    }
+    if (!weatherOwmKey) {
+      console.warn('[Weather] OWM API key not set');
+      return;
+    }
+    if (WEATHER_LAYERS[name]) { LAYERS.weather.removeLayer(WEATHER_LAYERS[name]); }
+    const url = `https://tile.openweathermap.org/map/${name}/{z}/{x}/{y}.png?appid=${weatherOwmKey}`;
+    WEATHER_LAYERS[name] = L.tileLayer(url, { opacity: 0.6, maxZoom: 18, minZoom: 1 });
+    WEATHER_LAYERS[name].addTo(LAYERS.weather);
+    await fetchWeatherAtCenter();
+  } else {
+    if (name === 'rain_radar') { stopRainRadar(); return; }
+    if (WEATHER_LAYERS[name]) {
+      LAYERS.weather.removeLayer(WEATHER_LAYERS[name]);
+      delete WEATHER_LAYERS[name];
+    }
+  }
+}
+
+function setWeatherApiKey(key) { weatherOwmKey = key; }
+
+// ---- Open-Meteo point weather (free, no key) ---------------------------
+const WX_CODE = {
+  0:'Clear',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+  45:'Fog',48:'Rime fog',
+  51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',
+  80:'Rain showers',81:'Showers',82:'Heavy showers',
+  95:'Thunderstorm',96:'Thunderstorm+hail',99:'Severe thunderstorm',
+};
+
+async function fetchWeatherAtCenter() {
+  const c = map.getCenter();
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast`
+      + `?latitude=${c.lat.toFixed(4)}&longitude=${c.lng.toFixed(4)}`
+      + `&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m`
+      + `,wind_gusts_10m,precipitation,weather_code,cloud_cover,visibility`
+      + `&wind_speed_unit=kmh&timezone=auto`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const cur  = data.current || {};
+
+    const code  = cur.weather_code;
+    const desc  = WX_CODE[code] || `Code ${code}`;
+    const temp  = cur.temperature_2m;
+    const feel  = cur.apparent_temperature;
+    const wind  = cur.wind_speed_10m;
+    const gust  = cur.wind_gusts_10m;
+    const wdir  = cur.wind_direction_10m;
+    const prec  = cur.precipitation;
+    const cloud = cur.cloud_cover;
+    const vis   = cur.visibility;
+    const card  = degToCardinal(wdir);
+
+    document.getElementById('wx-rows').innerHTML = `
+      <div class="wx-row"><span class="wx-icon">☁</span><span class="wx-val">${desc}</span></div>
+      <div class="wx-row"><span class="wx-icon">🌡</span><span class="wx-lbl">TEMP</span><span class="wx-val">${temp??'—'}°C</span><span class="wx-lbl">(feels ${feel??'—'}°C)</span></div>
+      <div class="wx-row"><span class="wx-icon">💨</span><span class="wx-lbl">WIND</span><span class="wx-val">${wind??'—'} km/h ${card}</span><span class="wx-lbl">gusts ${gust??'—'}</span></div>
+      <div class="wx-row"><span class="wx-icon">🌧</span><span class="wx-lbl">PREC</span><span class="wx-val">${prec??'—'} mm/h</span></div>
+      <div class="wx-row"><span class="wx-icon">☁</span><span class="wx-lbl">CLOUD</span><span class="wx-val">${cloud??'—'}%</span></div>
+      ${vis!=null?`<div class="wx-row"><span class="wx-icon">👁</span><span class="wx-lbl">VIS</span><span class="wx-val">${vis>=1000?(vis/1000).toFixed(1)+' km':vis+' m'}</span></div>`:''}
+    `;
+    document.getElementById('wx-location').textContent = latLonToMGRS(c.lat, c.lng);
+    document.getElementById('weather-panel').classList.add('active');
+  } catch(e) {
+    console.warn('[Weather] Open-Meteo failed:', e);
+  }
+}
+
+function hideWeatherPanel() {
+  document.getElementById('weather-panel').classList.remove('active');
+}
+
+function degToCardinal(d){if(d==null)return'—';const dirs=['N','NE','E','SE','S','SW','W','NW'];return dirs[Math.round(d/45)%8];}
+
+// ================================================================
+// LAYER / VIEW CONTROLS
+// ================================================================
+function loadMBTiles(url,minZ,maxZ){if(mbtLayer)map.removeLayer(mbtLayer);mbtLayer=L.tileLayer(url,{minZoom:minZ||0,maxZoom:maxZ||18});if(TILES[activeBase])map.removeLayer(TILES[activeBase]);activeBase='MBTILES';mbtLayer.addTo(map);}
+function setBaseLayer(name){if(name==='MBTILES'){if(mbtLayer){if(TILES[activeBase])map.removeLayer(TILES[activeBase]);mbtLayer.addTo(map);activeBase='MBTILES';}return;}if(name===activeBase)return;if(activeBase==='MBTILES'&&mbtLayer)map.removeLayer(mbtLayer);else if(TILES[activeBase])map.removeLayer(TILES[activeBase]);if(TILES[name]){TILES[name].addTo(map);activeBase=name;}}
+function toggleLayer(name,visible){if(!LAYERS[name])return;visible?LAYERS[name].addTo(map):map.removeLayer(LAYERS[name]);}
+function fitTracks(){const all=[...Object.values(tracks).map(t=>t.marker),...Object.values(cotTracks)];if(!all.length)return;map.fitBounds(L.featureGroup(all).getBounds().pad(.15));}
+function centerOn(lat,lon,zoom){map.setView([lat,lon],zoom||map.getZoom());}
+
+// ================================================================
+// ICON BUILDERS
+// ================================================================
+function buildMilIcon(sidc,label,unit,heading){
+  if(typeof ms!=='undefined'){
+    try{
+      const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,uniqueDesignation:label||'',higherFormation:unit||'',direction:heading!=null?heading:undefined});
+      const sz=sym.getSize(),an=sym.getAnchor();
+      return L.divIcon({html:sym.asSVG(),className:'mil-icon',iconSize:[sz.width,sz.height],iconAnchor:[an.x,an.y],popupAnchor:[0,-an.y+6]});
+    }catch(_){}
+  }
+  const c=sidc&&sidc[1]==='H'?'#f85149':sidc&&sidc[1]==='N'?'#3fb950':sidc&&sidc[1]==='U'?'#d29922':'#3fb950';
+  return L.divIcon({html:`<svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="${c}" fill-opacity=".85" stroke="#0d1117" stroke-width="1.5"/></svg>`,className:'mil-icon',iconSize:[18,18],iconAnchor:[9,9],popupAnchor:[0,-11]});
+}
+
+function buildTrackPopup(t){
+  return `<div style="font-family:'Courier New',monospace;font-size:11px;color:#c9d1d9;padding:10px 14px;min-width:200px">
+    <div style="font-weight:bold;font-size:13px;color:${t.affiliation==='HOSTILE'?'#f85149':'#3fb950'};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:7px">${esc(t.callsign)}</div>
+    <div style="line-height:1.75"><span style="color:#8b949e">UNIT </span>${esc(t.unit||'—')}<br><span style="color:#8b949e">MGRS </span>${latLonToMGRS(t.lat,t.lon)}<br>${t.heading!=null?`<span style="color:#8b949e">HDG  </span>${Math.round(t.heading)}°<br>`:''}</div>
+    ${t.last_seen?`<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(t.last_seen)}</div>`:''}
+  </div>`;
+}
+
+function addTrailSeg(layerGroup,store,id,lat,lon,color){
+  if(!store[id]){store[id]=L.polyline([],{color,weight:1.5,opacity:.55,dashArray:'3,6'}).addTo(layerGroup);}
+  const pts=store[id].getLatLngs();pts.push(L.latLng(lat,lon));if(pts.length>30)pts.shift();store[id].setLatLngs(pts);
+}
+
+// ================================================================
+// MEASURE TOOL
+// ================================================================
+function onMeasureClick(e){
+  measurePoints.push(e.latlng);
+  if(measureLine) map.removeLayer(measureLine);
+  if(measurePoints.length>=2) measureLine=L.polyline(measurePoints,{color:'#ffff00',weight:2,dashArray:'6,4'}).addTo(map);
+  if(measurePoints.length===2){
+    const p1=measurePoints[0],p2=measurePoints[1];
+    const dist=p1.distanceTo(p2),brg=calcBearing(p1.lat,p1.lng,p2.lat,p2.lng);
+    const ds=dist>=1000?`${(dist/1e3).toFixed(2)} km`:`${Math.round(dist)} m`,bs=`${brg.toFixed(1)}° / ${Math.round(brg*17.7778)} mil`;
+    L.popup().setLatLng(p2).setContent(`<div style="font-family:monospace;color:#c9d1d9;font-size:11px;padding:8px 12px">
+      <div><span style="color:#8b949e">DIST </span><b>${ds}</b></div>
+      <div><span style="color:#8b949e">BRG  </span><b>${bs}</b></div>
+      <div><span style="color:#8b949e">FROM </span>${latLonToMGRS(p1.lat,p1.lng)}</div>
+      <div><span style="color:#8b949e">TO   </span>${latLonToMGRS(p2.lat,p2.lng)}</div>
+    </div>`).openOn(map);
+    if(bridge) bridge.onMeasureComplete(ds,bs);
+    measurePoints=[];if(measureLine){map.removeLayer(measureLine);measureLine=null;}
+    map.off('click',onMeasureClick);drawMode='pointer';
+  }
+}
+function calcBearing(la1,lo1,la2,lo2){const r=Math.PI/180,dL=(lo2-lo1)*r,y=Math.sin(dL)*Math.cos(la2*r),x=Math.cos(la1*r)*Math.sin(la2*r)-Math.sin(la1*r)*Math.cos(la2*r)*Math.cos(dL);return((Math.atan2(y,x)*180/Math.PI)+360)%360;}
+
+// ================================================================
+// RADIAL CONTEXT MENU
+// ================================================================
+const RADIAL_ITEMS=[
+  [  0,'FRIENDLY','🔵','green',  ()=>{closeRadial();openSymbolPicker(radialLatLng.lat,radialLatLng.lng,'FRIENDLY');}],
+  [ 45,'ENEMY',   '🔴','red',   ()=>{closeRadial();openSymbolPicker(radialLatLng.lat,radialLatLng.lng,'HOSTILE');}],
+  [ 90,'FIRE MSN','🎯','red',   ()=>{closeRadial();if(bridge)bridge.onRadialAction('fire',radialLatLng.lat,radialLatLng.lng);}],
+  [135,'MEDEVAC', '🚁','amber', ()=>{closeRadial();if(bridge)bridge.onRadialAction('medevac',radialLatLng.lat,radialLatLng.lng);}],
+  [180,'TIC',     '⚡','red',   ()=>{closeRadial();if(bridge)bridge.onRadialAction('tic',radialLatLng.lat,radialLatLng.lng);}],
+  [225,'POI',     '📍','',      ()=>{closeRadial();if(bridge)bridge.onRadialAction('poi',radialLatLng.lat,radialLatLng.lng);}],
+  [270,'MEASURE', '⟷','',      ()=>{closeRadial();setDrawMode('measure');}],
+  [315,'REPORT',  '📋','',      ()=>{closeRadial();if(bridge)bridge.onRadialAction('report',radialLatLng.lat,radialLatLng.lng);}],
+];
+const RADIAL_R=90;
+const radialMenu=document.getElementById('radial-menu');
+const radialBD=document.getElementById('radial-backdrop');
+RADIAL_ITEMS.forEach(([ang,label,icon,cls,action])=>{
+  const div=document.createElement('div');
+  div.className='radial-item'+(cls?' '+cls:'');
+  div.innerHTML=`<span class="ri-icon">${icon}</span><span class="ri-label">${label}</span>`;
+  const r=ang*Math.PI/180;
+  div.style.left=(RADIAL_R*Math.sin(r))+'px';div.style.top=(-RADIAL_R*Math.cos(r))+'px';
+  div.addEventListener('click',e=>{e.stopPropagation();action();});
+  radialMenu.appendChild(div);
+});
+function openRadial(pt,latlng){
+  radialLatLng=latlng;
+  radialMenu.style.left=pt.x+'px';radialMenu.style.top=pt.y+'px';
+  radialMenu.classList.add('active');radialBD.classList.add('active');
+  const items=radialMenu.querySelectorAll('.radial-item');
+  items.forEach((el,i)=>{el.classList.remove('show');setTimeout(()=>el.classList.add('show'),i*16);});
+}
+function closeRadial(){
+  radialMenu.classList.remove('active');radialBD.classList.remove('active');
+  radialMenu.querySelectorAll('.radial-item').forEach(el=>el.classList.remove('show'));
+}
+radialBD.addEventListener('click',closeRadial);
+map.on('contextmenu',function(e){e.originalEvent.preventDefault();e.originalEvent.stopPropagation();openRadial(e.containerPoint,e.latlng);});
+// Long-press support for tabletop touch
+let pressTimer=null;
+map.getContainer().addEventListener('touchstart',function(e){if(e.touches.length!==1)return;const t=e.touches[0];pressTimer=setTimeout(()=>{const cp=map.mouseEventToContainerPoint({clientX:t.clientX,clientY:t.clientY});const ll=map.containerPointToLatLng(cp);openRadial(cp,ll);},600);},{passive:true});
+map.getContainer().addEventListener('touchend',()=>{clearTimeout(pressTimer);},{passive:true});
+map.getContainer().addEventListener('touchmove',()=>{clearTimeout(pressTimer);},{passive:true});
+
+// ================================================================
+// MAP EVENTS
+// ================================================================
+map.on('mousemove',function(e){const mg=latLonToMGRS(e.latlng.lat,e.latlng.lng);if(bridge)bridge.onCoordsChanged(e.latlng.lat,e.latlng.lng,mg);});
+map.on('click',function(e){if(drawMode==='pointer'&&bridge)bridge.onMapClicked(e.latlng.lat,e.latlng.lng);});
+
+// ================================================================
+// UTILITY
+// ================================================================
+function latLonToMGRS(lat,lon){try{if(typeof mgrs!=='undefined')return mgrs.forward([lon,lat],5);}catch(_){}return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// ================================================================
+// BRIDGE
+// ================================================================
+function initBridge(){
+  if(typeof QWebChannel==='undefined'){console.warn('[ArrowFront] No bridge');return;}
+  new QWebChannel(qt.webChannelTransport,function(channel){
+    bridge=channel.objects.bridge;bridge.onReady();console.log('[ArrowFront] Bridge ready');
+  });
+}
+document.addEventListener('DOMContentLoaded',initBridge);
+</script>
+</body>
+</html>
