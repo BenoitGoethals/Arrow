@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from typing import Optional
 
+import sys
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QSplitter,
+    QMainWindow, QWidget, QSplitter, QMessageBox,
 )
 from front.app.right_info_panel import RightInfoPanel
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QKeySequence, QShortcut, QAction
 
 from front.map.view       import MapView
 from front.map.symbology  import SIDC
@@ -69,6 +70,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"ARROW FRONT  —  {self._callsign.upper()}  —  {mode}")
         self.setMinimumSize(1024, 700)
         self.resize(1600, 960)
+
+        # ---- Menu bar -------------------------------------------------
+        self._build_menu()
 
         # ---- Toolbar --------------------------------------------------
         self._toolbar = MainToolbar(self)
@@ -228,12 +232,176 @@ class MainWindow(QMainWindow):
         self._load_reports()
         self._load_messages()
 
+    # ================================================================
+    # MENU BAR
+    # ================================================================
+
+    def _build_menu(self):
+        mb = self.menuBar()
+
+        # ── File ────────────────────────────────────────────────────
+        file_menu = mb.addMenu("File")
+        act_exit = QAction("Exit Arrow Front", self)
+        act_exit.setShortcut("Ctrl+Q")
+        act_exit.triggered.connect(self._confirm_exit)
+        file_menu.addAction(act_exit)
+
+        # ── View ────────────────────────────────────────────────────
+        view_menu = mb.addMenu("View")
+
+        act_left = QAction("Toggle ORBAT Panel", self)
+        act_left.setShortcut("[")
+        act_left.triggered.connect(lambda: self._left_panel.toggle())
+        view_menu.addAction(act_left)
+
+        act_right = QAction("Toggle Info Panel", self)
+        act_right.setShortcut("]")
+        act_right.triggered.connect(lambda: self._right_panel.toggle())
+        view_menu.addAction(act_right)
+
+        view_menu.addSeparator()
+
+        act_fit = QAction("Fit Tracks on Map", self)
+        act_fit.setShortcut("Ctrl+F")
+        act_fit.triggered.connect(self._map.fit_tracks)
+        view_menu.addAction(act_fit)
+
+        view_menu.addSeparator()
+
+        for name, panel in [
+            ("Missions",         "missions"),
+            ("Strike Packages",  "strike"),
+            ("Reports",          "reports"),
+            ("Messages",         "messages"),
+            ("Alerts",           "alerts"),
+            ("Draw",             "draw"),
+        ]:
+            act = QAction(name, self)
+            act.triggered.connect(
+                lambda _, p=panel: (self._right_panel.expand(), self._info.activate(p))
+            )
+            view_menu.addAction(act)
+
+        # ── Admin ───────────────────────────────────────────────────
+        self._admin_menu = mb.addMenu("Admin")
+        self._admin_menu.setEnabled(False)   # unlocked after role resolved
+
+        act_del_missions = QAction("Delete All Missions…", self)
+        act_del_missions.setStatusTip("Permanently delete every mission from the server (ADMIN only)")
+        act_del_missions.triggered.connect(self._confirm_delete_all_missions)
+        self._admin_menu.addAction(act_del_missions)
+
+        act_del_packages = QAction("Delete All Strike Packages…", self)
+        act_del_packages.setStatusTip("Permanently delete all strike packages (ADMIN only)")
+        act_del_packages.triggered.connect(self._confirm_delete_all_packages)
+        self._admin_menu.addAction(act_del_packages)
+
+        self._admin_menu.addSeparator()
+
+        act_reload = QAction("Reload All Data", self)
+        act_reload.setShortcut("F5")
+        act_reload.triggered.connect(self._reload_all)
+        self._admin_menu.addAction(act_reload)
+
+        # ── Help ────────────────────────────────────────────────────
+        help_menu = mb.addMenu("Help")
+        act_about = QAction("About Arrow Front", self)
+        act_about.triggered.connect(self._show_about)
+        help_menu.addAction(act_about)
+
+    def _unlock_admin_menu(self):
+        if self._role in ("ADMIN", "BATTLE_CAPTAIN"):
+            self._admin_menu.setEnabled(True)
+
+    # ── Menu actions ────────────────────────────────────────────────
+
+    def _confirm_exit(self):
+        ans = QMessageBox.question(
+            self, "Exit", "Exit Arrow Front?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            sys.exit(0)
+
+    def _confirm_delete_all_missions(self):
+        missions = []
+        try:
+            missions = self._client.missions()
+        except Exception:
+            pass
+        n = len(missions)
+        if n == 0:
+            QMessageBox.information(self, "Delete Missions", "No missions on server.")
+            return
+        ans = QMessageBox.question(
+            self,
+            "Delete All Missions",
+            f"Permanently delete ALL {n} mission{'s' if n!=1 else ''} from the server?\n\n"
+            f"This cannot be undone. Requires ADMIN role.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            self._on_delete_all_missions()
+
+    def _confirm_delete_all_packages(self):
+        pkgs = []
+        try:
+            pkgs = self._client.strike_packages()
+        except Exception:
+            pass
+        n = len(pkgs)
+        if n == 0:
+            QMessageBox.information(self, "Delete Strike Packages", "No packages on server.")
+            return
+        ans = QMessageBox.question(
+            self,
+            "Delete All Strike Packages",
+            f"Permanently delete ALL {n} strike package{'s' if n!=1 else ''}?\n\n"
+            f"This cannot be undone. Requires ADMIN role.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            failed = 0
+            for p in pkgs:
+                try:
+                    import httpx
+                    httpx.delete(
+                        f"{self._server_url}/strike-packages/{p['id']}",
+                        headers={"Authorization": f"Bearer {self._token}"},
+                        timeout=8.0,
+                    ).raise_for_status()
+                except Exception:
+                    failed += 1
+            self._load_strike_packages()
+            if failed:
+                self.statusBar().showMessage(
+                    f"Deleted {n-failed}/{n} packages — {failed} failed", 5000)
+            else:
+                self._toasts.show("info", "PACKAGES DELETED", f"{n} removed")
+
+    def _reload_all(self):
+        self._loaded = False
+        self._load_all()
+        self.statusBar().showMessage("Data reloaded", 3000)
+
+    def _show_about(self):
+        QMessageBox.about(
+            self,
+            "Arrow Front",
+            "<b>Arrow Front</b> — Tactical Desktop COP<br><br>"
+            "Common Operational Picture client for the Arrow platform.<br>"
+            "Built with PyQt6 · Leaflet · milsymbol.js<br><br>"
+            "<small style='color:#6e7681'>Press F5 to reload all data<br>"
+            "[ / ] or F1 / F2 to toggle panels</small>",
+        )
+
     def _resolve_role(self):
         try:
             me = self._client.me()
             self._role     = me.get("role", "OPERATOR")
             self._callsign = me.get("callsign", self._callsign)
             self._messages_panel.set_my_callsign(self._callsign)
+            self._unlock_admin_menu()
             mode = "READ-ONLY" if not self._token else "COP"
             self.setWindowTitle(
                 f"ARROW FRONT  —  {self._callsign.upper()}"
