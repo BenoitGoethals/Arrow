@@ -205,7 +205,7 @@ let pickerAff='F', pickerEch='--', pickerEchCode='--';
 // ================================================================
 // MAP
 // ================================================================
-const map = L.map('map',{center:[50.85,4.35],zoom:13,zoomControl:false,attributionControl:false,preferCanvas:true});
+const map = L.map('map',{center:[50.85,4.35],zoom:11,zoomControl:false,attributionControl:false,preferCanvas:true});
 L.control.zoom({position:'bottomright'}).addTo(map);
 L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
@@ -767,7 +767,7 @@ function centerOn(lat,lon,zoom){map.setView([lat,lon],zoom||map.getZoom());}
 function buildMilIcon(sidc,label,unit,heading){
   if(typeof ms!=='undefined'){
     try{
-      const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,uniqueDesignation:label||'',higherFormation:unit||'',direction:(typeof heading==='number'&&isFinite(heading))?heading:''});
+      const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,direction:(typeof heading==='number'&&isFinite(heading))?heading:''});
       const sz=sym.getSize(),an=sym.getAnchor();
       return L.divIcon({html:sym.asSVG(),className:'mil-icon',iconSize:[sz.width,sz.height],iconAnchor:[an.x,an.y],popupAnchor:[0,-an.y+6]});
     }catch(_){}

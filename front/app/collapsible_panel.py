@@ -143,9 +143,18 @@ class CollapsibleSidePanel(QWidget):
 
     def _collapse(self):
         sizes = self._splitter.sizes()
-        self._default_w = max(sizes[self._splitter_idx], 100)
+        # Guard: splitter not yet laid out (all zeros before window shown)
+        if sum(sizes) == 0:
+            sizes = [270, 900, 360]
+
+        current = sizes[self._splitter_idx]
+        if current > 18:
+            self._default_w = current
+        # Only redistribute if map index exists
+        delta = self._default_w - 18
         sizes[self._splitter_idx] = 18
-        sizes[1] += (self._default_w - 18)   # give space to map
+        if len(sizes) > 1:
+            sizes[1] = max(sizes[1] + delta, 200)
         self._splitter.setSizes(sizes)
         self._content.setVisible(False)
         self._strip.set_collapsed(True)
@@ -154,9 +163,12 @@ class CollapsibleSidePanel(QWidget):
 
     def _expand(self):
         sizes = self._splitter.sizes()
+        if sum(sizes) == 0:
+            sizes = [270, 900, 18]
         gained = self._default_w - 18
         sizes[self._splitter_idx] = self._default_w
-        sizes[1] = max(sizes[1] - gained, 200)   # shrink map
+        if len(sizes) > 1:
+            sizes[1] = max(sizes[1] - gained, 200)
         self._splitter.setSizes(sizes)
         self._content.setVisible(True)
         self._strip.set_collapsed(False)

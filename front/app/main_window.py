@@ -4,8 +4,9 @@ import json
 from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QTabWidget, QWidget, QSplitter,
+    QMainWindow, QWidget, QSplitter,
 )
+from front.app.right_info_panel import RightInfoPanel
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 
@@ -19,10 +20,13 @@ from front.panels.messages.panel  import MessagesPanel
 from front.panels.alerts.panel    import AlertsPanel
 from front.panels.draw.panel      import DrawPanel
 from front.panels.missions.panel  import MissionsPanel
+from front.panels.strike.panel    import StrikePackagePanel
+from front.windows.strike_planner import StrikePlannerWindow
 from front.client.arrow_client    import ArrowClient
 from front.client.ws_listener    import WSListener
 from front.map.tile_server       import MBTilesServer
 from front.app.collapsible_panel import CollapsibleSidePanel
+from front.app.toast_manager     import ToastManager
 
 CBRN_TYPES = {"CBRN_1","CBRN_2","CBRN_3","CBRN_4","CBRN_5","CBRN_6"}
 
@@ -46,7 +50,9 @@ class MainWindow(QMainWindow):
         self._token      = token
         self._callsign   = callsign
         self._client     = ArrowClient(server_url, token)
+        self._role       = "OPERATOR"
         self._ws: Optional[WSListener] = None
+        self._toasts     = ToastManager(self)
         self._tile_server = MBTilesServer()
         self._tile_server.start()
 
@@ -75,15 +81,16 @@ class MainWindow(QMainWindow):
         self._alerts_panel   = AlertsPanel()
         self._draw_panel     = DrawPanel()
         self._missions_panel = MissionsPanel()
+        self._strike_panel   = StrikePackagePanel()
+        self._planner_windows: list[StrikePlannerWindow] = []
 
-        self._right_tabs = QTabWidget()
-        self._right_tabs.setTabPosition(QTabWidget.TabPosition.North)
-        self._right_tabs.setDocumentMode(True)
-        self._right_tabs.addTab(self._missions_panel, "MISSIONS")
-        self._right_tabs.addTab(self._reports_panel,  "REPORTS")
-        self._right_tabs.addTab(self._messages_panel, "MESSAGES")
-        self._right_tabs.addTab(self._alerts_panel,   "ALERTS")
-        self._right_tabs.addTab(self._draw_panel,     "DRAW")
+        self._info = RightInfoPanel()
+        self._info.add_panel("missions", "◈",  "MISS",   self._missions_panel, "1")
+        self._info.add_panel("strike",   "◆",  "STRK",   self._strike_panel,   "2")
+        self._info.add_panel("reports",  "≡",  "RPTS",   self._reports_panel,  "3")
+        self._info.add_panel("messages", "◎",  "MSG",    self._messages_panel, "4")
+        self._info.add_panel("alerts",   "⚡", "ALRT",   self._alerts_panel,   "5")
+        self._info.add_panel("draw",     "✚",  "DRAW",   self._draw_panel,     "6")
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
@@ -93,7 +100,7 @@ class MainWindow(QMainWindow):
             self._orbat_panel, "ORBAT", side="left", default_width=270
         )
         self._right_panel = CollapsibleSidePanel(
-            self._right_tabs, "INFO", side="right", default_width=360
+            self._info, "INFO", side="right", default_width=360
         )
 
         # ---- Splitter (fills the whole central area) ------------------
@@ -111,6 +118,9 @@ class MainWindow(QMainWindow):
         # Bind splitter references (needed for resize logic)
         self._left_panel.bind_splitter(self._splitter, 0)
         self._right_panel.bind_splitter(self._splitter, 2)
+
+        # Defer collapse until after window is shown and splitter has real px dimensions
+        QTimer.singleShot(0, self._right_panel.collapse)
 
         # Map always stretches; panels have fixed initial sizes
         self._splitter.setStretchFactor(0, 0)
@@ -154,17 +164,25 @@ class MainWindow(QMainWindow):
 
         self._orbat_panel.operator_focus_requested.connect(self._focus_operator)
         self._orbat_panel.message_requested.connect(
-            lambda _: self._right_tabs.setCurrentWidget(self._messages_panel)
+            lambda _: self._info.activate("messages")
         )
         self._reports_panel.locate_requested.connect(
             lambda lat, lon: self._map.center_on(lat, lon, zoom=14)
         )
-        self._messages_panel.message_send_requested.connect(self._send_message)
+        self._messages_panel.message_send_requested.connect(self._send_message_scoped)
         self._draw_panel.draw_mode_changed.connect(self._map.set_draw_mode)
         self._draw_panel.draw_graphic.connect(self._map.set_draw_graphic)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
         self._missions_panel.mission_selected.connect(self._on_mission_selected)
         self._missions_panel.mission_cleared.connect(self._on_mission_cleared)
+        self._missions_panel.refresh_requested.connect(self._load_missions)
+        self._missions_panel.delete_all_requested.connect(self._on_delete_all_missions)
+
+        self._strike_panel.refresh_requested.connect(self._load_strike_packages)
+        self._strike_panel.package_selected.connect(self._on_strike_selected)
+        self._strike_panel.package_cleared.connect(self._on_strike_cleared)
+        self._strike_panel.overlay_requested.connect(self._on_strike_overlay)
+        self._strike_panel.planner_requested.connect(self._on_strike_planner)
 
     # ================================================================
     # WEBSOCKET
@@ -178,12 +196,13 @@ class MainWindow(QMainWindow):
         self._ws.cot_received.connect(self._on_cot)
         self._ws.alert_received.connect(self._on_alert)
         self._ws.report_received.connect(self._on_report)
-        self._ws.message_received.connect(self._messages_panel.add_message)
+        self._ws.message_received.connect(self._on_message)
         self._ws.graphic_received.connect(self._on_tact_obj_event)
         self._ws.fire_mission_received.connect(self._on_fm_event)
         self._ws.kml_received.connect(self._on_kml_event)
         self._ws.presence_changed.connect(self._on_presence)
         self._ws.mission_received.connect(self._on_mission_event)
+        self._ws.strike_package_received.connect(self._on_strike_ws)
         self._ws.connection_changed.connect(self._statusbar.set_connected)
         self._ws.start()
 
@@ -196,8 +215,10 @@ class MainWindow(QMainWindow):
         if self._loaded:
             return
         self._loaded = True
+        self._resolve_role()
         self._load_hierarchy()
         self._load_missions()
+        self._load_strike_packages()
         self._load_live_operators()
         self._load_cot_tracks()
         self._load_tactical_objects()
@@ -206,6 +227,20 @@ class MainWindow(QMainWindow):
         self._load_alerts()
         self._load_reports()
         self._load_messages()
+
+    def _resolve_role(self):
+        try:
+            me = self._client.me()
+            self._role     = me.get("role", "OPERATOR")
+            self._callsign = me.get("callsign", self._callsign)
+            self._messages_panel.set_my_callsign(self._callsign)
+            mode = "READ-ONLY" if not self._token else "COP"
+            self.setWindowTitle(
+                f"ARROW FRONT  —  {self._callsign.upper()}"
+                f"  [{self._role}]  —  {mode}"
+            )
+        except Exception:
+            pass
 
     def _load_hierarchy(self):
         try:
@@ -222,7 +257,9 @@ class MainWindow(QMainWindow):
 
     def _load_live_operators(self):
         try:
-            for op in self._client.live_operators():
+            ops = self._client.live_operators()
+            self._messages_panel.set_operators(ops)
+            for op in ops:
                 if op.get("latitude") and op.get("longitude"):
                     self._push_track({
                         "id":        op.get("operator_id") or op.get("id"),
@@ -304,12 +341,13 @@ class MainWindow(QMainWindow):
         try:
             missions = self._client.missions()
             import sys
-            print(f"[MISSIONS] count={len(missions)}", file=sys.stderr)
-            self._missions_panel.load_missions(missions)
+            print(f"[MISSIONS] role={self._role} count={len(missions)}", file=sys.stderr)
+            self._missions_panel.load_missions(missions, self._role)
+            self._messages_panel.set_missions(missions)
         except Exception as e:
             import sys
             print(f"[MISSIONS] error: {e}", file=sys.stderr)
-            self._missions_panel.load_missions([])
+            self._missions_panel.load_missions([], self._role)
 
     # ================================================================
     # WS EVENT HANDLERS
@@ -333,15 +371,20 @@ class MainWindow(QMainWindow):
         lon = data.get("longitude") or data.get("lon")
         if lat and lon:
             self._map.add_alert_marker({**data, "lat": lat, "lon": lon})
-        idx = self._right_tabs.indexOf(self._alerts_panel)
-        self._right_tabs.setTabText(idx, "ALERTS ●")
-        if data.get("type") in ("TIC", "DRONE_SPOTTED"):
-            self._right_tabs.setCurrentWidget(self._alerts_panel)
+        self._info.inc_badge("alerts")
+        alert_type = data.get("type", "ALERT")
+        operator   = data.get("operator") or data.get("callsign") or ""
+        self._toasts.alert(alert_type, operator)
+        if alert_type in ("TIC", "DRONE_SPOTTED"):
+            self._right_panel.expand()
+            self._info.activate("alerts")
 
     def _on_report(self, data: dict):
         self._reports_panel.add_report(data)
-        idx = self._right_tabs.indexOf(self._reports_panel)
-        self._right_tabs.setTabText(idx, "REPORTS ●")
+        self._info.inc_badge("reports")
+        rtype  = data.get("type", "REPORT")
+        sender = data.get("sender") or data.get("callsign") or ""
+        self._toasts.report(rtype, sender)
         if data.get("type", "") in CBRN_TYPES:
             p = data.get("payload", {})
             if isinstance(p, str):
@@ -372,6 +415,74 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
+    def _on_message(self, data: dict):
+        self._messages_panel.add_message(data)
+        sender = data.get("sender") or data.get("callsign") or "?"
+        if sender != self._callsign:
+            preview = (data.get("content") or "")[:60]
+            self._toasts.message(sender, preview)
+            self._info.inc_badge("messages")
+
+    def _load_strike_packages(self):
+        try:
+            pkgs = self._client.strike_packages()
+            self._strike_panel.load_packages(pkgs)
+            # Badge if any ACTIVE package exists
+            active = sum(1 for p in pkgs if p.get("status") == "ACTIVE")
+            if active:
+                self._info.set_badge("strike", active)
+        except Exception as e:
+            import sys
+            print(f"[STRIKE] error: {e}", file=sys.stderr)
+
+    def _on_strike_selected(self, pkg: dict):
+        """Fetch full bundle and show detail."""
+        try:
+            bundle = self._client.strike_package_bundle(pkg["id"])
+            self._strike_panel.update_package(bundle)
+        except Exception:
+            self._strike_panel.update_package(pkg)
+
+    def _on_strike_cleared(self):
+        pass
+
+    def _on_strike_overlay(self, pkg: dict):
+        """Load all tactical objects from the strike package onto the map."""
+        try:
+            bundle = self._client.strike_package_bundle(pkg["id"])
+        except Exception:
+            bundle = pkg
+        tact_objs = bundle.get("_tactical_objects_expanded", [])
+        for obj in tact_objs:
+            self._map.add_tactical_object(obj)
+        # Center map on target if available
+        tlat = bundle.get("target_lat")
+        tlon = bundle.get("target_lon")
+        if tlat and tlon:
+            self._map.center_on(float(tlat), float(tlon), zoom=13)
+        name = bundle.get("name", "package")
+        self._toasts.show("mission", f"OVERLAY LOADED", name.upper())
+
+    def _on_strike_planner(self, pkg: dict):
+        """Open the Strike Package planning window."""
+        try:
+            bundle = self._client.strike_package_bundle(pkg["id"])
+        except Exception:
+            bundle = pkg
+        win = StrikePlannerWindow(bundle, parent=self)
+        win.overlay_load_requested.connect(self._on_strike_overlay)
+        win.show()
+        self._planner_windows.append(win)
+
+    def _on_strike_ws(self, data: dict):
+        self._load_strike_packages()
+        event = data.get("event", "")
+        name  = data.get("name", "Strike package")
+        if event in ("activated",):
+            self._toasts.show("mission", "STRIKE PKG ACTIVATED", name.upper())
+        elif event in ("created",):
+            self._toasts.show("info", "NEW STRIKE PKG", name.upper())
+
     def _on_mission_event(self, data: dict):
         self._load_missions()
 
@@ -397,9 +508,29 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _on_delete_all_missions(self):
+        missions = self._client.missions() if self._token else []
+        failed = 0
+        for m in missions:
+            try:
+                self._client.delete_mission(m["id"])
+            except Exception:
+                failed += 1
+        self._missions_panel.set_active_mission(None)
+        self._load_missions()
+        if failed:
+            self.statusBar().showMessage(
+                f"Deleted {len(missions)-failed}/{len(missions)} missions"
+                f" — {failed} failed (ADMIN required)", 6000
+            )
+        else:
+            self._toasts.show("info", "ALL MISSIONS DELETED",
+                              f"{len(missions)} mission{'s' if len(missions)!=1 else ''} removed")
+
     def _on_mission_cleared(self):
         mode = "READ-ONLY" if not self._token else "COP"
         self.setWindowTitle(f"ARROW FRONT  —  {self._callsign.upper()}  —  {mode}")
+
 
     def _on_symbol_placed(self, sidc: str, designation: str, lat: float, lon: float):
         """User placed a symbol via the picker — save to server as tactical object."""
@@ -437,14 +568,17 @@ class MainWindow(QMainWindow):
         elif action in ("friendly",):
             pass  # symbol picker handles placement
         elif action == "medevac":
-            self._right_tabs.setCurrentWidget(self._reports_panel)
+            self._right_panel.expand()
+            self._info.activate("reports")
             self._place_radial_marker("MARKER", lat, lon, notes="MEDEVAC", affiliation="FRIENDLY")
         elif action == "poi":
             self._place_radial_marker("POI", lat, lon, notes="POI", affiliation="NEUTRAL")
         elif action == "fire":
-            self._right_tabs.setCurrentWidget(self._draw_panel)
+            self._right_panel.expand()
+            self._info.activate("draw")
         elif action == "report":
-            self._right_tabs.setCurrentWidget(self._reports_panel)
+            self._right_panel.expand()
+            self._info.activate("reports")
 
     def _place_radial_marker(self, obj_type: str, lat: float, lon: float,
                              notes: str = "", affiliation: str = "UNKNOWN"):
@@ -481,9 +615,16 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.statusBar().showMessage(f"Alert failed: {e}", 3000)
 
-    def _send_message(self, content: str):
+    def _send_message_scoped(self, content: str, scope: str,
+                             receiver_id: object, mission_id: object):
         try:
-            self._client.send_message(content)
+            if scope == "DIRECT" and receiver_id is not None:
+                self._client.send_message(content, receiver_id=int(receiver_id))
+            elif scope == "MISSION" and mission_id is not None:
+                # Mission-scoped: send as group message using mission_id as group_id
+                self._client.send_message_group(content, group_id=int(mission_id))
+            else:
+                self._client.send_message(content)
         except Exception as e:
             self.statusBar().showMessage(f"Message failed: {e}", 3000)
 
@@ -540,6 +681,10 @@ class MainWindow(QMainWindow):
     # ================================================================
     # CLOSE
     # ================================================================
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._toasts.restack()
+
     def closeEvent(self, event):
         if self._ws:
             self._ws.stop()

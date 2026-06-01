@@ -48,13 +48,21 @@ class ORBATPanel(QWidget):
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setColumnCount(2)
-        self._tree.setColumnWidth(0, 170)
-        self._tree.setColumnWidth(1, 40)
+        self._tree.setRootIsDecorated(False)   # no ▸ arrows on company rows
+        self._tree.setIndentation(14)           # compact indent for sub-levels
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._context_menu)
         self._tree.itemDoubleClicked.connect(self._on_double_click)
+        self._tree.itemClicked.connect(self._on_click)
         self._tree.setAlternatingRowColors(True)
         self._tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Column 0 stretches, column 1 (count) is fixed width
+        from PyQt6.QtWidgets import QHeaderView
+        self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._tree.setColumnWidth(1, 48)
+
         layout.addWidget(self._tree)
 
         self._summary = QLabel("No data")
@@ -110,7 +118,11 @@ class ORBATPanel(QWidget):
             self._tree.addTopLevelItem(ua_item)
             total_all += len(unassigned)
 
-        self._tree.expandAll()
+        # Collapse everything, then expand only top-level company nodes
+        self._tree.collapseAll()
+        for i in range(self._tree.topLevelItemCount()):
+            self._tree.topLevelItem(i).setExpanded(True)
+
         self._summary.setText(f"■ {total_online} ONLINE  ·  {total_all} TOTAL")
 
     def update_operator_presence(self, operator_id: int, online: bool, last_seen: str = ""):
@@ -199,6 +211,12 @@ class ORBATPanel(QWidget):
             return visible
         for i in range(self._tree.topLevelItemCount()):
             visit(self._tree.topLevelItem(i))
+
+    def _on_click(self, item: QTreeWidgetItem, _col):
+        """Single-click: toggle expand/collapse for non-operator rows."""
+        op_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if op_id is None and item.childCount() > 0:
+            item.setExpanded(not item.isExpanded())
 
     def _on_double_click(self, item: QTreeWidgetItem, _col):
         op_id = item.data(0, Qt.ItemDataRole.UserRole)
