@@ -37,8 +37,26 @@ class MainToolbar(QToolBar):
 
     def _build(self):
         # ---- Pointer / Measure -----------------------------------------
-        self._add_mode_btn("⊹", "pointer",  "Pointer (navigate)")
-        self._add_mode_btn("⟷", "measure",  "Measure distance & bearing")
+        self._add_mode_btn("⊹", "pointer", "Pointer (navigate)")
+        self.addSeparator()
+
+        # ---- Measure dropdown ------------------------------------------
+        meas_btn = QToolButton()
+        meas_btn.setText("📏 MEASURE ▾")
+        meas_btn.setObjectName("toolButton")
+        meas_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        meas_menu = QMenu(self)
+        for label, mode, tip in [
+            ("⟷  Distance chain",    "measure_dist",  "Click points to measure distance"),
+            ("↗  Azimuth (2 points)", "measure_az",    "Click 2 points for bearing + mils"),
+            ("⊙  Range circles",      "measure_range", "Draw range rings from a center"),
+            ("✕  Clear measurements", "meas_clear",    "Remove all measurements"),
+        ]:
+            act = meas_menu.addAction(label)
+            act.setToolTip(tip)
+            act.triggered.connect(lambda checked, m=mode: self.mode_changed.emit(m))
+        meas_btn.setMenu(meas_menu)
+        self.addWidget(meas_btn)
         self.addSeparator()
 
         # ---- Draw drop-down -----------------------------------------

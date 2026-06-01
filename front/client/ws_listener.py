@@ -26,6 +26,7 @@ class WSListener(QThread):
     # Missions
     mission_received        = pyqtSignal(dict)
     strike_package_received = pyqtSignal(dict)
+    stream_received         = pyqtSignal(dict)
     # Connection
     connection_changed = pyqtSignal(bool)
 
@@ -79,6 +80,7 @@ class WSListener(QThread):
             "overlay":         self.overlay_received,
             "mission":         self.mission_received,
             "strike-package":  self.strike_package_received,
+            "stream":          self.stream_received,
         }
         if sig := routing.get(ch):
             sig.emit(data)
