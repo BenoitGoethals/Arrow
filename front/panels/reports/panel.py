@@ -4,6 +4,8 @@ import json
 from datetime import datetime
 from typing import List
 
+from front.utils.mgrs_util import to_mgrs
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
     QLabel, QComboBox, QTextEdit, QPushButton, QDialog, QDialogButtonBox,
@@ -23,8 +25,9 @@ class ReportItem(QListWidgetItem):
 
     def _render(self):
         ts = self.report.timestamp[:16] if len(self.report.timestamp) >= 16 else self.report.timestamp
+        pin = "📍" if self.report.has_position else "  "
         self.setText(
-            f"{self.report.icon}  {self.report.type:<12}  {self.report.sender:<10}  {ts}"
+            f"{pin}{self.report.icon}  {self.report.type:<12}  {self.report.sender:<10}  {ts}"
         )
         self.setForeground(QColor(self.report.priority_color))
         if not self.report.read:
@@ -36,7 +39,8 @@ class ReportItem(QListWidgetItem):
 class ReportsPanel(QWidget):
     """Right-dock reports queue."""
 
-    report_selected = pyqtSignal(object)  # Report
+    report_selected  = pyqtSignal(object)        # Report
+    locate_requested = pyqtSignal(float, float)  # lat, lon
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -70,6 +74,7 @@ class ReportsPanel(QWidget):
         self._list = QListWidget()
         self._list.setFont(QFont("Courier New", 9))
         self._list.setAlternatingRowColors(True)
+        self._list.itemClicked.connect(self._on_click)
         self._list.itemDoubleClicked.connect(self._show_detail)
         layout.addWidget(self._list, 1)
 
@@ -122,6 +127,13 @@ class ReportsPanel(QWidget):
         total  = len(self._reports)
         self._counter.setText(f"{unread} unread  ·  {total} total")
 
+    def _on_click(self, item: QListWidgetItem):
+        if not isinstance(item, ReportItem):
+            return
+        r = item.report
+        if r.has_position:
+            self.locate_requested.emit(r.latitude, r.longitude)
+
     def _show_detail(self, item: QListWidgetItem):
         if not isinstance(item, ReportItem):
             return
@@ -133,6 +145,32 @@ class ReportsPanel(QWidget):
 
         dlg = ReportDetailDialog(item.report, self)
         dlg.exec()
+
+
+_LAT_KEYS = {"latitude", "lat", "observer_lat", "event_lat", "target_lat"}
+_LON_KEYS = {"longitude", "lon", "observer_lon", "event_lon", "target_lon"}
+
+def _coords_to_mgrs(d: dict) -> dict:
+    """Return a copy of d with lat/lon float pairs replaced by MGRS strings."""
+    out = {}
+    skip = set()
+    # Pair up lat/lon keys and replace with MGRS
+    lat_keys = {k for k in d if k.lower() in _LAT_KEYS and isinstance(d[k], (int, float))}
+    for lk in lat_keys:
+        base = lk.lower().replace("lat", "").replace("itude", "").strip("_")
+        lon_candidates = [k for k in d if k.lower().replace("lon", "").replace("gitude", "").strip("_") == base
+                          and k.lower() in _LON_KEYS and isinstance(d[k], (int, float))]
+        if lon_candidates:
+            lonk = lon_candidates[0]
+            mgrs_str = to_mgrs(d[lk], d[lonk])
+            label = f"GRID_{base}".upper().strip("_") if base else "GRID"
+            out[label] = mgrs_str
+            skip.add(lk)
+            skip.add(lonk)
+    for k, v in d.items():
+        if k not in skip:
+            out[k] = v
+    return out
 
 
 class ReportDetailDialog(QDialog):
@@ -168,14 +206,15 @@ class ReportDetailDialog(QDialog):
 
     @staticmethod
     def _format_payload(payload) -> str:
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                return payload
         if isinstance(payload, dict):
+            payload = _coords_to_mgrs(payload)
             lines = []
             for k, v in payload.items():
                 lines.append(f"{str(k).upper():<24} {v}")
             return "\n".join(lines)
-        if isinstance(payload, str):
-            try:
-                return json.dumps(json.loads(payload), indent=2)
-            except Exception:
-                return payload
         return str(payload)

@@ -44,6 +44,25 @@ class Report:
     timestamp: str
     payload: dict = field(default_factory=dict)
     read: bool = False
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+    def __post_init__(self):
+        if self.latitude is None:
+            p = self.payload
+            if isinstance(p, str):
+                try:
+                    import json as _json
+                    p = _json.loads(p)
+                except Exception:
+                    p = {}
+            if isinstance(p, dict):
+                self.latitude  = p.get("latitude")  or p.get("lat")
+                self.longitude = p.get("longitude") or p.get("lon")
+
+    @property
+    def has_position(self) -> bool:
+        return self.latitude is not None and self.longitude is not None
 
     @property
     def priority(self) -> str:

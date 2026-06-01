@@ -439,7 +439,8 @@ function addTacticalObject(obj){
   const sidc=obj.symbol_code||TOBJ_SIDC[obj.type]||'SUGPUU----D----';
   const aff=obj.affiliation||'UNKNOWN';
   const layer=aff==='ENEMY'||aff==='HOSTILE'?LAYERS.enemies:LAYERS.tactObjs;
-  const geom=obj.geometry;
+  let geom=obj.geometry;
+  if(typeof geom==='string'&&geom){try{geom=JSON.parse(geom);}catch(_){geom=null;}}
   let lyr;
   if(geom&&geom.type==='line'&&geom.coords){lyr=L.polyline(geom.coords.map(c=>[c[0],c[1]]),{color:aff==='HOSTILE'?'#f85149':'#3fb950',weight:2}).addTo(layer);}
   else if(geom&&geom.type==='polygon'&&geom.coords){lyr=L.polygon(geom.coords.map(c=>[c[0],c[1]]),{color:'#d29922',fillOpacity:.1}).addTo(layer);}
@@ -681,7 +682,7 @@ async function setWeatherLayer(name, visible) {
     }
     if (WEATHER_LAYERS[name]) { LAYERS.weather.removeLayer(WEATHER_LAYERS[name]); }
     const url = `https://tile.openweathermap.org/map/${name}/{z}/{x}/{y}.png?appid=${weatherOwmKey}`;
-    WEATHER_LAYERS[name] = L.tileLayer(url, { opacity: 0.6, maxZoom: 18, minZoom: 1 });
+    WEATHER_LAYERS[name] = L.tileLayer(url, { opacity: 0.6, minZoom: 1, maxZoom: 18, maxNativeZoom: 8 });
     WEATHER_LAYERS[name].addTo(LAYERS.weather);
     await fetchWeatherAtCenter();
   } else {
@@ -766,7 +767,7 @@ function centerOn(lat,lon,zoom){map.setView([lat,lon],zoom||map.getZoom());}
 function buildMilIcon(sidc,label,unit,heading){
   if(typeof ms!=='undefined'){
     try{
-      const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,uniqueDesignation:label||'',higherFormation:unit||'',direction:heading!=null?heading:undefined});
+      const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,uniqueDesignation:label||'',higherFormation:unit||'',direction:(typeof heading==='number'&&isFinite(heading))?heading:''});
       const sz=sym.getSize(),an=sym.getAnchor();
       return L.divIcon({html:sym.asSVG(),className:'mil-icon',iconSize:[sz.width,sz.height],iconAnchor:[an.x,an.y],popupAnchor:[0,-an.y+6]});
     }catch(_){}

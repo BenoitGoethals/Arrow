@@ -28,6 +28,7 @@ dependencies = [
     "pyqt6>=6.11.0",
     "pyqt6-webengine>=6.11.0",
     "keyring>=25.7.0",
+    "mgrs>=1.5.4",
 ]
 
 [project.optional-dependencies]

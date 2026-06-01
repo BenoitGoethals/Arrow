@@ -19,17 +19,8 @@ class StatusBar(QStatusBar):
         # MGRS coordinate (left)
         self._mgrs = QLabel("MGRS: —")
         self._mgrs.setFont(mono)
-        self._mgrs.setMinimumWidth(240)
+        self._mgrs.setMinimumWidth(200)
         self.addWidget(self._mgrs)
-
-        self._sep1 = _sep()
-        self.addWidget(self._sep1)
-
-        # DD coordinates
-        self._dd = QLabel("—, —")
-        self._dd.setFont(mono)
-        self._dd.setMinimumWidth(180)
-        self.addWidget(self._dd)
 
         self.addWidget(_sep())
 
@@ -55,7 +46,6 @@ class StatusBar(QStatusBar):
 
     def update_coords(self, lat: float, lon: float, mgrs: str):
         self._mgrs.setText(f"MGRS: {mgrs}")
-        self._dd.setText(f"{lat:.5f},  {lon:.5f}")
 
     def set_connected(self, connected: bool):
         if connected:
