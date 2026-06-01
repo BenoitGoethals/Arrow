@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import (
     QToolBar, QToolButton, QLabel, QComboBox, QMenu, QSizePolicy,
-    QCheckBox, QWidgetAction, QWidget, QVBoxLayout, QFileDialog,
+    QCheckBox, QWidgetAction, QWidget, QVBoxLayout, QFileDialog, QMessageBox,
 )
+import sys
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QIcon
 
@@ -163,6 +164,19 @@ class MainToolbar(QToolBar):
         alert_btn.setMenu(alert_menu)
         self.addWidget(alert_btn)
 
+        # ---- Exit button -----------------------------------------------
+        self.addSeparator()
+        exit_btn = QToolButton()
+        exit_btn.setText("✕")
+        exit_btn.setToolTip("Exit Arrow Front")
+        exit_btn.setStyleSheet(
+            "QToolButton{background:transparent;border:none;color:#484f58;"
+            "font-size:16px;font-weight:bold;padding:4px 10px;}"
+            "QToolButton:hover{color:#f85149;background:#21262d;}"
+        )
+        exit_btn.clicked.connect(self._confirm_exit)
+        self.addWidget(exit_btn)
+
         # Set pointer as default
         self._set_mode("pointer", emit=False)
 
@@ -184,6 +198,14 @@ class MainToolbar(QToolBar):
             btn.setChecked(m == mode)
         if emit:
             self.mode_changed.emit(mode)
+
+    def _confirm_exit(self):
+        ans = QMessageBox.question(
+            None, "Exit Arrow Front", "Exit Arrow Front?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if ans == QMessageBox.StandardButton.Yes:
+            sys.exit(0)
 
     def _load_mbtiles(self):
         path, _ = QFileDialog.getOpenFileName(

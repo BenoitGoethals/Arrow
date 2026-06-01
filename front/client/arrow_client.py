@@ -112,6 +112,13 @@ class ArrowClient:
             body["message_type"] = "DIRECT"
         return self._post("/messages", body)
 
+    def send_message_group(self, content: str, group_id: int) -> dict:
+        return self._post("/messages", {
+            "content": content,
+            "message_type": "GROUP",
+            "group_id": group_id,
+        })
+
     # ---- Missions ---------------------------------------------------
     def missions(self) -> list:
         return self._get("/missions")
@@ -121,6 +128,30 @@ class ArrowClient:
 
     def mission_operators(self, mission_id: int) -> list:
         return self._get(f"/missions/{mission_id}/operators")
+
+    def delete_mission(self, mission_id: int) -> None:
+        r = httpx.delete(
+            f"{self.base_url}/missions/{mission_id}",
+            headers=self._headers(), timeout=8.0,
+        )
+        r.raise_for_status()
+
+    def create_mission(self, name: str, description: str = "") -> dict:
+        return self._post("/missions", {"name": name, "description": description})
+
+    def start_mission(self, mission_id: int) -> dict:
+        return self._post(f"/missions/{mission_id}/start")
+
+    def end_mission(self, mission_id: int) -> dict:
+        return self._post(f"/missions/{mission_id}/end")
+
+    # ---- Strike packages --------------------------------------------
+    def strike_packages(self) -> list:
+        return self._get("/strike-packages")
+
+    def strike_package_bundle(self, pkg_id: int) -> dict:
+        """Returns the fully expanded bundle (all IDs resolved to objects)."""
+        return self._get(f"/strike-packages/{pkg_id}/bundle")
 
     # ---- Overlays ---------------------------------------------------
     def overlays(self) -> list:
