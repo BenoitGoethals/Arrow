@@ -183,16 +183,58 @@
             document.querySelectorAll('.nav-item').forEach(el => { el.style.display = ''; });
         }
         // Role-based nav restrictions.
+        // Role-based nav access.
+        // ADMIN and BATTLE_CAPTAIN see everything — no restrictions.
+        // All other roles get a filtered view; paths listed are what they CAN access.
+        // Roles not in this table see all nav (fallback = no restriction).
         const ROLE_ACCESS = {
-            OPERATOR: { home: '/download/', allowed: ['/download', '/logout', '/login'] },
-            LOG:      { home: '/map/',      allowed: ['/map', '/logrep', '/logout', '/login'] },
-            CBRN:     { home: '/map/',      allowed: ['/map', '/cbrn',   '/logout', '/login'] },
-            MED:      { home: '/map/',      allowed: ['/map', '/reports','/logout', '/login'] },
+            OPERATOR: {
+                home:    '/dashboard/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/cops', '/taccop', '/logout', '/login'],
+            },
+            FO: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/fire-missions', '/cops', '/taccop', '/logout', '/login'],
+            },
+            CAS: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/fire-missions', '/cas', '/cops', '/taccop', '/logout', '/login'],
+            },
+            LOG: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/logrep',
+                          '/cops', '/logcop', '/logout', '/login'],
+            },
+            MED: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/cops', '/medcop', '/logout', '/login'],
+            },
+            CBRN: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/cops', '/cbrncop', '/logout', '/login'],
+            },
+            INTEL: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/streams', '/cops', '/intcop', '/taccop', '/logout', '/login'],
+            },
+            OPS: {
+                home:    '/dashboard/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports', '/missions',
+                          '/fire-missions', '/objectives', '/opord', '/strike-packages',
+                          '/streams', '/cops', '/taccop', '/history', '/tracks',
+                          '/logout', '/login'],
+            },
         };
+
         const access = ROLE_ACCESS[role];
         if (token && access) {
             document.querySelectorAll('.nav-item').forEach(navItem => {
-                if (role === 'OPERATOR') { navItem.style.display = 'none'; return; }
                 // For dropdown nav-items: hide individual links that aren't permitted.
                 const dropdown = navItem.querySelector('.nav-dropdown');
                 if (dropdown) {
@@ -210,8 +252,6 @@
                     if (!access.allowed.some(p => href.startsWith(p))) navItem.style.display = 'none';
                 }
             });
-            const path = location.pathname;
-            if (!access.allowed.some(p => path.startsWith(p))) location.replace(access.home);
         }
     })();
 </script>

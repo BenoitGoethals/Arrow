@@ -71,9 +71,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1024, 700)
         self.resize(1600, 960)
 
-        # ---- Menu bar -------------------------------------------------
-        self._build_menu()
-
         # ---- Toolbar --------------------------------------------------
         self._toolbar = MainToolbar(self)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._toolbar)
@@ -137,6 +134,9 @@ class MainWindow(QMainWindow):
         # ---- Status bar -----------------------------------------------
         self._statusbar = StatusBar(self)
         self.setStatusBar(self._statusbar)
+
+        # ---- Menu bar (after all widgets exist) -----------------------
+        self._build_menu()
 
         # ---- Keyboard shortcuts [ = toggle left,  ] = toggle right ---
         QShortcut(QKeySequence("["), self).activated.connect(self._left_panel.toggle)
@@ -242,28 +242,24 @@ class MainWindow(QMainWindow):
         # ── File ────────────────────────────────────────────────────
         file_menu = mb.addMenu("File")
         act_exit = QAction("Exit Arrow Front", self)
-        act_exit.setShortcut("Ctrl+Q")
         act_exit.triggered.connect(self._confirm_exit)
         file_menu.addAction(act_exit)
 
         # ── View ────────────────────────────────────────────────────
         view_menu = mb.addMenu("View")
 
-        act_left = QAction("Toggle ORBAT Panel", self)
-        act_left.setShortcut("[")
+        act_left = QAction("Toggle ORBAT Panel  [ F1 ]", self)
         act_left.triggered.connect(lambda: self._left_panel.toggle())
         view_menu.addAction(act_left)
 
-        act_right = QAction("Toggle Info Panel", self)
-        act_right.setShortcut("]")
+        act_right = QAction("Toggle Info Panel  [ F2 ]", self)
         act_right.triggered.connect(lambda: self._right_panel.toggle())
         view_menu.addAction(act_right)
 
         view_menu.addSeparator()
 
-        act_fit = QAction("Fit Tracks on Map", self)
-        act_fit.setShortcut("Ctrl+F")
-        act_fit.triggered.connect(self._map.fit_tracks)
+        act_fit = QAction("Fit Tracks on Map  [ Ctrl+F ]", self)
+        act_fit.triggered.connect(lambda: self._map.fit_tracks())
         view_menu.addAction(act_fit)
 
         view_menu.addSeparator()
@@ -299,7 +295,6 @@ class MainWindow(QMainWindow):
         self._admin_menu.addSeparator()
 
         act_reload = QAction("Reload All Data", self)
-        act_reload.setShortcut("F5")
         act_reload.triggered.connect(self._reload_all)
         self._admin_menu.addAction(act_reload)
 
