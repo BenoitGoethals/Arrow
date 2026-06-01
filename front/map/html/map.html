@@ -752,46 +752,390 @@ const GFX_STYLE={
   BOUNDARY: {color:'#ffff00',weight:1.5,dashArray:'5,4',fill:false},
 };
 
+// ── Native click-based tactical-graphic drawing ───────────────────────────
+// (Leaflet.draw 1.0.4 is incompatible with Leaflet 1.9 — we draw natively.)
+const POLY_DRAW_TYPES = new Set([
+  'NFA','FFA','OBJECTIVE','OBJ_AREA','ENGAGEMENT_AREA','NAI','TAI',
+  'OBJ_F','OBJ_H','AMB_F','AMB_H','ASSEMBLY_AREA','ZONE'
+]);
+
+let _drawType   = null;     // active graphic type
+let _drawAff    = 'F';
+let _drawIsPoly = false;
+let _drawPts    = [];       // clicked LatLngs
+let _drawTemp   = [];       // temporary marker/preview layers
+let _drawPreview= null;     // live preview line/poly
+
 function setDrawGraphic(type, aff){
-  drawMode=type;
-  if(drawHandler){drawHandler.disable();drawHandler=null;}
-  map.off('click',onMeasureClick);
-  if(measureLine){map.removeLayer(measureLine);measureLine=null;}
-  measurePoints=[];
-  if(type==='pointer'||type==='none') return;
+  cancelDraw();                       // clear any prior draw session
+  if(type==='pointer'||type==='none'){drawMode='pointer';return;}
   if(type==='measure'){startMeasure('distance');return;}
-  const s=GFX_STYLE[type]||{color:aff==='H'?'#f85149':'#00aaff',weight:2,fill:false};
-  const polyTypes=['NFA','FFA','OBJECTIVE','ENGAGEMENT_AREA','NAI','TAI','OBJ_F','OBJ_H','AMB_F','AMB_H'];
-  if(polyTypes.includes(type)){
-    drawHandler=new L.Draw.Polygon(map,{shapeOptions:{color:s.color,weight:s.weight,fillColor:s.color,fillOpacity:s.fillOpacity||.1}});
-  } else {
-    drawHandler=new L.Draw.Polyline(map,{shapeOptions:{color:s.color,weight:s.weight,dashArray:s.dashArray}});
-  }
-  drawHandler.enable();
-  map.once(L.Draw.Event.CREATED,function(e){
-    const gj=JSON.stringify(e.layer.toGeoJSON().geometry);
-    if(bridge) bridge.onGraphicDrawn(type,gj);
-    drawMode='pointer';if(drawHandler){drawHandler.disable();drawHandler=null;}
-  });
+
+  _drawType   = type;
+  _drawAff    = aff || 'F';
+  _drawIsPoly = POLY_DRAW_TYPES.has(type);
+  _drawPts    = [];
+  drawMode    = 'draw';
+  map.doubleClickZoom.disable();
+  map.getContainer().style.cursor = 'crosshair';
+
+  // Show instruction banner
+  _setDrawBanner((_drawIsPoly?'AREA':'LINE')+' — '+type+
+    ' · click to add points · double-click / right-click to finish · ESC cancels');
+
+  map.on('click',     _drawClick);
+  map.on('mousemove', _drawMove);
+  map.on('dblclick',  _drawFinish);
+  map.on('contextmenu', _drawFinishCtx);
+}
+function setDrawMode(mode){ setDrawGraphic(mode,'F'); }
+
+function _drawStyle(){
+  return GFX_STYLE[_drawType] || {color:_drawAff==='H'?'#f85149':'#00aaff',weight:2,fill:false};
 }
 
-function setDrawMode(mode){setDrawGraphic(mode,'F');}  // legacy compat
+function _drawClick(e){
+  // prevent the pointer-mode map click handler
+  _drawPts.push(e.latlng);
+  const s=_drawStyle();
+  const dot=L.circleMarker(e.latlng,{radius:4,color:s.color,fillColor:s.color,fillOpacity:1,weight:1}).addTo(map);
+  _drawTemp.push(dot);
+  _renderPreview(e.latlng);
+}
+
+function _drawMove(e){
+  if(_drawPts.length===0) return;
+  _renderPreview(e.latlng);
+}
+
+function _renderPreview(cursorLL){
+  const s=_drawStyle();
+  const pts=cursorLL?[..._drawPts,cursorLL]:[..._drawPts];
+  if(_drawPreview){map.removeLayer(_drawPreview);_drawPreview=null;}
+  if(pts.length<2 && !_drawIsPoly) {
+    if(pts.length<1) return;
+  }
+  if(_drawIsPoly && pts.length>=2){
+    _drawPreview=L.polygon(pts,{color:s.color,weight:s.weight,dashArray:s.dashArray,
+      fill:true,fillColor:s.color,fillOpacity:(s.fillOpacity||.08)}).addTo(map);
+  } else if(pts.length>=2){
+    _drawPreview=L.polyline(pts,{color:s.color,weight:s.weight,dashArray:s.dashArray}).addTo(map);
+  }
+}
+
+function _drawFinishCtx(e){
+  if(e&&e.originalEvent){e.originalEvent.preventDefault();e.originalEvent.stopPropagation();}
+  _drawFinish();
+}
+
+function _drawFinish(){
+  const type=_drawType, isPoly=_drawIsPoly, pts=[..._drawPts];
+  const minPts=isPoly?3:2;
+  if(pts.length<minPts){ cancelDraw(); return; }
+
+  // Build the proper APP-6 tactical graphic
+  const _affName=_drawAff==='H'?'HOSTILE':_drawAff==='N'?'NEUTRAL':_drawAff==='U'?'UNKNOWN':'FRIENDLY';
+  const grp=buildTacticalGraphic(type, pts, '', _affName);
+  grp.addTo(LAYERS.graphics);
+  const lid='draw_'+Date.now();
+  graphics['gfx_'+lid]=grp;
+
+  // Backend format: {type:'line'|'polygon', coords:[[lat,lon],...]}
+  const coords = pts.map(p=>[p.lat, p.lng]);
+  const geom = isPoly ? {type:'polygon', coords:coords}
+                      : {type:'line',    coords:coords};
+  const affName = _drawAff==='H' ? 'HOSTILE' : _drawAff==='N' ? 'NEUTRAL' : _drawAff==='U' ? 'UNKNOWN' : 'FRIENDLY';
+  if(bridge) bridge.onGraphicDrawn(type, JSON.stringify(geom), affName);
+
+  cancelDraw();
+}
+
+function cancelDraw(){
+  map.off('click',     _drawClick);
+  map.off('mousemove', _drawMove);
+  map.off('dblclick',  _drawFinish);
+  map.off('contextmenu', _drawFinishCtx);
+  _drawTemp.forEach(l=>map.removeLayer(l)); _drawTemp=[];
+  if(_drawPreview){map.removeLayer(_drawPreview);_drawPreview=null;}
+  _drawPts=[]; _drawType=null; drawMode='pointer';
+  map.doubleClickZoom.enable();
+  map.getContainer().style.cursor='';
+  _setDrawBanner('');
+}
+
+function _setDrawBanner(txt){
+  let b=document.getElementById('draw-banner');
+  if(!txt){ if(b) b.style.display='none'; return; }
+  if(!b){
+    b=document.createElement('div'); b.id='draw-banner';
+    b.style.cssText='position:absolute;top:8px;left:50%;transform:translateX(-50%);'+
+      'z-index:1500;background:rgba(13,17,23,.95);border:1px solid #388bfd;'+
+      'color:#79c0ff;font-family:Courier New,monospace;font-size:11px;font-weight:700;'+
+      'padding:6px 14px;border-radius:3px;pointer-events:none;white-space:nowrap;';
+    document.getElementById('map').appendChild(b);
+  }
+  b.textContent=txt; b.style.display='block';
+}
+
+// ESC cancels drawing
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&_drawType) cancelDraw(); });
+
+// ================================================================
+// APP-6 / MIL-STD-2525C TACTICAL GRAPHICS RENDERER
+// Renders proper control-measure geometry (arrows, scallops, hatching,
+// FSCM bracket labels, echelon boundaries) — milsymbol does NOT do these.
+// ================================================================
+
+// type → render spec
+const TG = {
+  // ── Canonical SHARED vocabulary (web + front + android) ──────
+  // affByAff:true → colour comes from the AFFILIATION (blue/red); otherwise
+  // the control measure has a fixed standard colour.
+  // Offensive manoeuvre (affiliation-coloured)
+  ATK_AXIS:     {kind:'arrow',   w:3,   affByAff:true},
+  AXIS:         {kind:'axis',    w:3,   affByAff:true},
+  COUNTERATTACK:{kind:'arrow',   w:2.5, dash:'10,6', affByAff:true},
+  BYPASS:       {kind:'arrow',   w:2.5, affByAff:true},
+  WITHDRAW:     {kind:'arrow',   w:2.5, dash:'4,4',  affByAff:true},
+  DEF_AREA:     {kind:'line',    w:2.5, affByAff:true},
+  BLOCK:        {kind:'block',   w:2.5, affByAff:true},
+  AMBUSH:       {kind:'ambush',  w:2.5, affByAff:true},
+  OBJ_AREA:     {kind:'area',    w:2,   tag:'OBJ', affByAff:true},
+  OBJECTIVE:    {kind:'area',    w:2,   tag:'OBJ', affByAff:true},
+  BOUNDARY:     {kind:'boundary',w:1.5, affByAff:true},
+  PHASE_LINE:   {kind:'linelabel',w:2.5,tag:'PL', affByAff:true},
+  ROUTE:        {kind:'linelabel',w:2,  tag:'RTE', dash:'10,5', affByAff:true},
+  // Forward lines (fixed colours: FLOT green, FLET red)
+  FLOT:         {kind:'scallop', color:'#00ff66', w:2, label:'FLOT'},
+  FLET:         {kind:'scallop', color:'#f85149', w:2, label:'FLET'},
+  // Fire-support coordination measures (fixed FSCM colours)
+  FSCL:         {kind:'fscm',  color:'#ff8800', w:2.5, tag:'FSCL'},
+  CFL:          {kind:'fscm',  color:'#ff4400', w:2,   tag:'CFL'},
+  NFL:          {kind:'fscm',  color:'#ff0000', w:2,   tag:'NFL'},
+  NFA:          {kind:'hatch', color:'#ff0000', w:1.5, tag:'NFA'},
+  FFA:          {kind:'area',  color:'#00cc00', w:1.5, tag:'FFA'},
+  ENGAGEMENT_AREA:{kind:'area',color:'#ff3300', w:1.5, tag:'EA'},
+  ASSEMBLY_AREA:{kind:'area',  color:'#44aaff', w:1.5, tag:'AA'},
+  ZONE:         {kind:'area',  color:'#d29922', w:1.5, tag:''},
+  // Intel
+  NAI:          {kind:'areadash', color:'#aa44ff', w:1.5, tag:'NAI'},
+  TAI:          {kind:'areadash', color:'#ff44aa', w:1.5, tag:'TAI'},
+};
+// affiliation → manoeuvre-graphic colour
+function _affColor(aff){
+  const a=(aff||'FRIENDLY').toUpperCase();
+  return a==='HOSTILE'||a==='ENEMY' ? '#f85149'
+       : a==='NEUTRAL' ? '#3fb950'
+       : a==='UNKNOWN' ? '#d29922' : '#00aaff';
+}
+
+// distance (m) between two LatLng
+function _distLL(a,b){
+  const R=6371000, dLat=(b.lat-a.lat)*Math.PI/180, dLon=(b.lng-a.lng)*Math.PI/180;
+  const la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function _polyLen(pts){let d=0;for(let i=1;i<pts.length;i++)d+=_distLL(pts[i-1],pts[i]);return d;}
+
+// arrowhead triangle (filled) at tip, pointing along p_prev→p_tip
+function _arrowHeadPts(prev, tip, sizeM){
+  const brg=_bearing(prev,tip);
+  const l=destPoint(tip.lat,tip.lng,brg+148,sizeM);
+  const r=destPoint(tip.lat,tip.lng,brg-148,sizeM);
+  return [[l[0],l[1]],[tip.lat,tip.lng],[r[0],r[1]]];
+}
+
+// boxed text label as a divIcon marker
+function _tgLabel(latlng, text, color){
+  return L.marker(latlng,{interactive:false,icon:L.divIcon({
+    className:'',
+    html:`<div style="background:rgba(0,0,0,.82);border:1px solid ${color};color:${color};
+          font-family:'Courier New',monospace;font-size:10px;font-weight:700;letter-spacing:1px;
+          padding:1px 6px;border-radius:2px;white-space:nowrap;transform:translate(-50%,-50%)">${text}</div>`,
+    iconSize:[0,0]
+  })});
+}
+
+// scalloped (semicircle) line — bumps to the LEFT of travel direction
+function _scallopPts(pts, radiusM){
+  const out=[];
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i], b=pts[i+1];
+    const segLen=_distLL(a,b);
+    const n=Math.max(1, Math.round(segLen/(radiusM*2)));
+    const brg=_bearing(a,b);
+    for(let k=0;k<n;k++){
+      const t0=k/n, t1=(k+1)/n;
+      const s=[a.lat+(b.lat-a.lat)*t0, a.lng+(b.lng-a.lng)*t0];
+      const e=[a.lat+(b.lat-a.lat)*t1, a.lng+(b.lng-a.lng)*t1];
+      out.push(s);
+      // semicircle arc bulging left (brg-90)
+      const midLat=(s[0]+e[0])/2, midLng=(s[1]+e[1])/2;
+      const c=destPoint(midLat,midLng,brg-90,radiusM);
+      for(let a2=0;a2<=180;a2+=30){
+        const ang=brg-90 + (180-a2);   // sweep
+        const p=destPoint(c[0],c[1],ang,radiusM);
+        out.push([p[0],p[1]]);
+      }
+    }
+  }
+  out.push([pts[pts.length-1].lat,pts[pts.length-1].lng]);
+  return out;
+}
+
+// Build a tactical graphic. pts = array of L.latLng. Returns L.layerGroup.
+function buildTacticalGraphic(type, pts, label, aff){
+  const spec = TG[type] || {kind:'line', color:'#e6edf3', w:2};
+  const grp  = L.layerGroup();
+  const C = spec.affByAff ? _affColor(aff) : (spec.color || _affColor(aff));
+  const W=spec.w||2;
+  const isArea = ['area','areadash','hatch'].includes(spec.kind);
+  const head = Math.min(Math.max(_polyLen(pts)*0.10, 120), 1500); // arrowhead ground size
+
+  if(spec.kind==='arrow'){
+    // Direction/main attack: single shaft + filled chevron head
+    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
+    if(pts.length>=2){
+      const tri=_arrowHeadPts(pts[pts.length-2],pts[pts.length-1],head);
+      L.polygon(tri,{color:C,weight:W,fillColor:C,fillOpacity:.95}).addTo(grp);
+    }
+  }
+  else if(spec.kind==='axis'){
+    // Axis of Advance: APP-6 wide arrow — two parallel offset rails that
+    // converge into a large open arrowhead at the objective end.
+    const wM=head*0.45;                       // corridor half-width (ground m)
+    const left=[], right=[];
+    for(let i=0;i<pts.length;i++){
+      // bearing of travel at this vertex
+      let b;
+      if(i===0)               b=_bearing(pts[0],pts[1]);
+      else if(i===pts.length-1) b=_bearing(pts[i-1],pts[i]);
+      else                    b=_bearing(pts[i-1],pts[i+1]);
+      const lp=destPoint(pts[i].lat,pts[i].lng,b-90,wM);
+      const rp=destPoint(pts[i].lat,pts[i].lng,b+90,wM);
+      left.push([lp[0],lp[1]]); right.push([rp[0],rp[1]]);
+    }
+    // Stop the rails short of the tip so the arrowhead is open
+    const tip=pts[pts.length-1], prev=pts[pts.length-2];
+    const bEnd=_bearing(prev,tip);
+    const baseC=destPoint(tip.lat,tip.lng,bEnd+180,head);          // arrowhead base centre
+    const baseL=destPoint(baseC[0],baseC[1],bEnd-90,wM);
+    const baseR=destPoint(baseC[0],baseC[1],bEnd+90,wM);
+    left[left.length-1]=[baseL[0],baseL[1]];
+    right[right.length-1]=[baseR[0],baseR[1]];
+    // Wide-open arrowhead barbs (1.8× corridor width)
+    const barbL=destPoint(tip.lat,tip.lng,bEnd-90,wM*1.8);
+    const barbR=destPoint(tip.lat,tip.lng,bEnd+90,wM*1.8);
+    L.polyline(left ,{color:C,weight:W}).addTo(grp);
+    L.polyline(right,{color:C,weight:W}).addTo(grp);
+    L.polyline([[barbL[0],barbL[1]],[tip.lat,tip.lng],[barbR[0],barbR[1]]],
+               {color:C,weight:W}).addTo(grp);
+    // close the head base to the barbs
+    L.polyline([[baseL[0],baseL[1]],[barbL[0],barbL[1]]],{color:C,weight:W}).addTo(grp);
+    L.polyline([[baseR[0],baseR[1]],[barbR[0],barbR[1]]],{color:C,weight:W}).addTo(grp);
+  }
+  else if(spec.kind==='scallop'){
+    L.polyline(_scallopPts(pts,head*0.4),{color:C,weight:W}).addTo(grp);
+    if(spec.label) grp.addLayer(_tgLabel(pts[0], spec.label, C));
+  }
+  else if(spec.kind==='linelabel'||spec.kind==='fscm'){
+    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
+    const name=(label||'').replace(/_/g,' ');
+    const txt = spec.tag + (name && name!==type ? ' '+name : '');
+    // FSCM/control lines label both ends, bracketed
+    grp.addLayer(_tgLabel(pts[0], txt, C));
+    grp.addLayer(_tgLabel(pts[pts.length-1], txt, C));
+  }
+  else if(spec.kind==='boundary'){
+    L.polyline(pts,{color:C,weight:W}).addTo(grp);
+    // echelon tick box at midpoint
+    const mid=pts[Math.floor(pts.length/2)];
+    grp.addLayer(_tgLabel(mid, '╫', C));
+    if(label) grp.addLayer(_tgLabel(pts[0], label, C));
+  }
+  else if(spec.kind==='block'){
+    L.polyline(pts,{color:C,weight:W}).addTo(grp);
+    // perpendicular cap at the end (block obstacle)
+    if(pts.length>=2){
+      const b=_bearing(pts[pts.length-2],pts[pts.length-1]);
+      const t=pts[pts.length-1];
+      const a1=destPoint(t.lat,t.lng,b+90,head*0.5), a2=destPoint(t.lat,t.lng,b-90,head*0.5);
+      L.polyline([[a1[0],a1[1]],[a2[0],a2[1]]],{color:C,weight:W}).addTo(grp);
+    }
+  }
+  else if(spec.kind==='ambush'){
+    // open arc/V pointing along the line toward the kill zone
+    L.polyline(pts,{color:C,weight:W}).addTo(grp);
+    if(pts.length>=2){
+      const tip=pts[pts.length-1], b=_bearing(pts[pts.length-2],tip);
+      const l=destPoint(tip.lat,tip.lng,b+135,head), r=destPoint(tip.lat,tip.lng,b-135,head);
+      L.polyline([[l[0],l[1]],[tip.lat,tip.lng],[r[0],r[1]]],{color:C,weight:W}).addTo(grp);
+    }
+  }
+  else if(isArea){
+    const dash = spec.kind==='areadash' ? '6,5' : null;
+    const fillOp = spec.kind==='hatch' ? 0 : 0.06;
+    const poly=L.polygon(pts,{color:C,weight:W,dashArray:dash,fill:true,fillColor:C,fillOpacity:fillOp}).addTo(grp);
+    if(spec.kind==='hatch') _addHatch(grp, pts, C);
+    // centroid label
+    const c=_centroid(pts);
+    const name=(label||'').replace(/_/g,' ');
+    const txt=(spec.tag||'') + (name && name!==type ? ' '+name : '');
+    if(txt.trim()) grp.addLayer(_tgLabel(L.latLng(c[0],c[1]), txt, C));
+  }
+  else { // plain line
+    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
+    if(label) grp.addLayer(_tgLabel(pts[Math.floor(pts.length/2)], label.replace(/_/g,' '), C));
+  }
+  return grp;
+}
+
+function _centroid(pts){
+  let lat=0,lng=0;pts.forEach(p=>{lat+=p.lat;lng+=p.lng;});
+  return [lat/pts.length, lng/pts.length];
+}
+
+// diagonal hatch fill for NFA
+function _addHatch(grp, pts, color){
+  let minLat=90,maxLat=-90,minLng=180,maxLng=-180;
+  pts.forEach(p=>{minLat=Math.min(minLat,p.lat);maxLat=Math.max(maxLat,p.lat);
+                   minLng=Math.min(minLng,p.lng);maxLng=Math.max(maxLng,p.lng);});
+  const step=(maxLat-minLat)/8 || 0.001;
+  for(let off=-(maxLng-minLng); off<(maxLng-minLng); off+=step*1.4){
+    const l=L.polyline([[minLat,minLng+off],[maxLat,minLng+off+(maxLng-minLng)]],
+      {color:color,weight:1,opacity:.5});
+    // clip visually by bounding (simple — full diagonal lines across bbox)
+    l.addTo(grp);
+  }
+}
 
 function addGraphic(g){
   if(!g||!g.geojson) return;
-  const s=GFX_STYLE[g.type]||{color:'#e6edf3',weight:1.5,fill:false};
-  const geo=typeof g.geojson==='string'?JSON.parse(g.geojson):g.geojson;
-  let lyr;
+  let geo=typeof g.geojson==='string'?JSON.parse(g.geojson):g.geojson;
   if(geo.type==='Feature'){addGraphic({...g,geojson:geo.geometry});return;}
   if(geo.type==='FeatureCollection'){geo.features.forEach(f=>addGraphic({...g,id:g.id+'_'+Math.random(),geojson:f}));return;}
-  if(geo.type==='LineString') lyr=L.polyline(geo.coordinates.map(c=>[c[1],c[0]]),{color:s.color,weight:s.weight,dashArray:s.dashArray});
-  else if(geo.type==='Polygon') lyr=L.polygon(geo.coordinates[0].map(c=>[c[1],c[0]]),{color:s.color,weight:s.weight,dashArray:s.dashArray,fill:s.fill!==false,fillColor:s.color,fillOpacity:s.fillOpacity||0});
-  else if(geo.type==='Point') lyr=L.circleMarker([geo.coordinates[1],geo.coordinates[0]],{radius:7,color:s.color,fillColor:s.color,fillOpacity:.7});
-  if(!lyr) return;
-  if(g.label) lyr.bindTooltip(g.label,{permanent:true,direction:'center',className:'graphic-label'});
-  lyr.addTo(LAYERS.graphics);
+
+  // Normalise geometry → array of L.latLng + isArea flag
+  let pts=null, isArea=false;
+  if(geo.type==='line'||geo.type==='LineString'){
+    const cc = geo.coords || (geo.coordinates ? geo.coordinates.map(c=>[c[1],c[0]]) : null);
+    if(cc) pts=cc.map(c=>L.latLng(c[0],c[1]));
+  } else if(geo.type==='polygon'||geo.type==='Polygon'){
+    isArea=true;
+    let ring = geo.coords || (geo.coordinates ? geo.coordinates[0].map(c=>[c[1],c[0]]) : null);
+    if(ring) pts=ring.map(c=>L.latLng(c[0],c[1]));
+  } else if(geo.type==='Point'){
+    const c=geo.coordinates; const lyr=L.circleMarker([c[1],c[0]],{radius:7,color:'#e6edf3',fillColor:'#e6edf3',fillOpacity:.7}).addTo(LAYERS.graphics);
+    if(graphics['gfx_'+g.id]) LAYERS.graphics.removeLayer(graphics['gfx_'+g.id]);
+    graphics['gfx_'+g.id]=lyr; return;
+  }
+  if(!pts||pts.length<2) return;
+
+  const grp=buildTacticalGraphic(g.type, pts, g.label, g.affiliation);
+  grp.addTo(LAYERS.graphics);
   if(graphics['gfx_'+g.id]) LAYERS.graphics.removeLayer(graphics['gfx_'+g.id]);
-  graphics['gfx_'+g.id]=lyr;
+  graphics['gfx_'+g.id]=grp;
 }
 function removeGraphic(id){if(graphics['gfx_'+id]){LAYERS.graphics.removeLayer(graphics['gfx_'+id]);delete graphics['gfx_'+id];}}
 
@@ -1310,6 +1654,7 @@ function _radialAct(key) {
 map.on('contextmenu', function(e) {
   e.originalEvent.preventDefault();
   e.originalEvent.stopPropagation();
+  if (_drawType)   { _drawFinishCtx(e); return; }  // finish active drawing
   if (_measActive) { _stopMeasure(null); return; }
   if (_rangeMode)  { return; }  // range tool: right-click does nothing
   openRadial(e.containerPoint, e.latlng);

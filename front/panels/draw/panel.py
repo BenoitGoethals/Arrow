@@ -10,34 +10,36 @@ from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QColor
 
 # (display_name, graphic_type_key, affiliation F/H, icon_char)
+# Canonical tactical-graphic type vocabulary — SHARED with web + android.
+# affiliation is a SEPARATE field (FRIENDLY/HOSTILE), NOT baked into the type.
 FRIENDLY_GRAPHICS = [
-    ("Attack",         "ATK_F",  "F", "▶"),
-    ("Counterattack",  "CTR_F",  "F", "↺"),
-    ("Defense",        "DEF_F",  "F", "⊢"),
-    ("Ambush",         "AMB_F",  "F", "∨"),
-    ("Block",          "BND_F",  "F", "⊥"),
-    ("Bypass",         "CTR_F",  "F", "↗"),
-    ("Withdraw",       "DEF_F",  "F", "↩"),
-    ("Objective area", "OBJ_F",  "F", "⊡"),
-    ("Boundary",       "BOUNDARY","F", "+"),
-    ("FLOT",           "FLOT",   "F", "—"),
-    ("FLET",           "FLET",   "H", "—"),
-    ("Phase line",     "PHASE_LINE","F","—"),
+    ("Attack",         "ATK_AXIS",      "F", "▶"),
+    ("Counterattack",  "COUNTERATTACK", "F", "↺"),
+    ("Defense",        "DEF_AREA",      "F", "⊢"),
+    ("Ambush",         "AMBUSH",        "F", "∨"),
+    ("Block",          "BLOCK",         "F", "⊥"),
+    ("Bypass",         "BYPASS",        "F", "↗"),
+    ("Withdraw",       "WITHDRAW",      "F", "↩"),
+    ("Objective area", "OBJ_AREA",      "F", "⊡"),
+    ("Boundary",       "BOUNDARY",      "F", "+"),
+    ("FLOT",           "FLOT",          "F", "—"),
+    ("FLET",           "FLET",          "F", "—"),
+    ("Phase line",     "PHASE_LINE",    "F", "—"),
 ]
 
 ENEMY_GRAPHICS = [
-    ("Attack",         "ATK_H",  "H", "▶"),
-    ("Counterattack",  "CTR_H",  "H", "↺"),
-    ("Defense",        "DEF_H",  "H", "⊢"),
-    ("Ambush",         "AMB_H",  "H", "∨"),
-    ("Block",          "BND_H",  "H", "⊥"),
-    ("Bypass",         "CTR_H",  "H", "↗"),
-    ("Withdraw",       "DEF_H",  "H", "↩"),
-    ("Objective area", "OBJ_H",  "H", "⊡"),
-    ("Boundary",       "BOUNDARY","H", "+"),
-    ("FLOT",           "FLOT",   "H", "—"),
-    ("FLET",           "FLET",   "H", "—"),
-    ("Phase line",     "PHASE_LINE","H","—"),
+    ("Attack",         "ATK_AXIS",      "H", "▶"),
+    ("Counterattack",  "COUNTERATTACK", "H", "↺"),
+    ("Defense",        "DEF_AREA",      "H", "⊢"),
+    ("Ambush",         "AMBUSH",        "H", "∨"),
+    ("Block",          "BLOCK",         "H", "⊥"),
+    ("Bypass",         "BYPASS",        "H", "↗"),
+    ("Withdraw",       "WITHDRAW",      "H", "↩"),
+    ("Objective area", "OBJ_AREA",      "H", "⊡"),
+    ("Boundary",       "BOUNDARY",      "H", "+"),
+    ("FLOT",           "FLOT",          "H", "—"),
+    ("FLET",           "FLET",          "H", "—"),
+    ("Phase line",     "PHASE_LINE",    "H", "—"),
 ]
 
 CONTROL_GRAPHICS = [

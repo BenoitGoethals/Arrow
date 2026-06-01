@@ -7,7 +7,7 @@ class MapBridge(QObject):
     coords_changed   = pyqtSignal(float, float, str)
     track_clicked    = pyqtSignal(str)
     map_clicked      = pyqtSignal(float, float)
-    graphic_drawn    = pyqtSignal(str, str)
+    graphic_drawn    = pyqtSignal(str, str, str)   # type, geojson, affiliation
     measure_done     = pyqtSignal(str, str)
     radial_action    = pyqtSignal(str, float, float)
     symbol_selected  = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
@@ -28,9 +28,9 @@ class MapBridge(QObject):
     def onMapClicked(self, lat, lon):
         self.map_clicked.emit(lat, lon)
 
-    @pyqtSlot(str, str)
-    def onGraphicDrawn(self, graphic_type, geojson):
-        self.graphic_drawn.emit(graphic_type, geojson)
+    @pyqtSlot(str, str, str)
+    def onGraphicDrawn(self, graphic_type, geojson, affiliation):
+        self.graphic_drawn.emit(graphic_type, geojson, affiliation)
 
     @pyqtSlot(str, str)
     def onMeasureComplete(self, distance_str, bearing_str):
