@@ -177,7 +177,6 @@ async function loadMissions() {
 }
 
 async function deleteAllMissions() {
-    // Fetch current list so we know how many & can name them
     const r = await api('GET', '/missions');
     if (!r.ok) return;
     const missions = await r.json();
@@ -187,6 +186,7 @@ async function deleteAllMissions() {
     const confirmed = confirm(
         `⚠ DELETE ALL ${missions.length} MISSION${missions.length === 1 ? '' : 'S'}?\n\n` +
         `${names}\n\n` +
+        `ACTIVE missions will be ended automatically before deletion.\n` +
         `This action is permanent and cannot be undone.\n` +
         `Requires ADMIN role.`
     );
@@ -196,19 +196,36 @@ async function deleteAllMissions() {
     if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
 
     let failed = 0;
+    const errors = [];
+
     for (const m of missions) {
+        // Backend rejects DELETE on ACTIVE missions — end it first
+        if (m.status === 'ACTIVE') {
+            const er = await api('POST', `/missions/${m.id}/end`);
+            if (!er.ok) {
+                const txt = await er.text().catch(() => er.status);
+                errors.push(`${m.name}: end failed (${txt})`);
+                failed++;
+                continue;
+            }
+        }
         const dr = await api('DELETE', `/missions/${m.id}`);
-        if (!dr.ok) failed++;
+        if (!dr.ok) {
+            const txt = await dr.text().catch(() => dr.status);
+            errors.push(`${m.name}: delete failed (${txt})`);
+            failed++;
+        }
     }
 
-    // Deselect active mission if it was deleted
+    // Deselect if the active mission was among deleted ones
     if (missions.some(m => m.id === arrowGetMissionId())) {
         arrowSwitchMission(null);
     }
 
     if (failed) {
-        alert(`Deleted ${missions.length - failed}/${missions.length} missions.\n${failed} failed — ADMIN role required.`);
+        alert(`Deleted ${missions.length - failed} of ${missions.length} missions.\n\nErrors:\n${errors.join('\n')}`);
     }
+
     await loadMissions();
     if (btn) { btn.disabled = false; btn.textContent = '🗑 Delete All'; }
 }
