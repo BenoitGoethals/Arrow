@@ -57,17 +57,6 @@ class MissionsPanel(QWidget):
         refresh_btn.clicked.connect(self.refresh_requested.emit)
         top.addWidget(refresh_btn)
 
-        del_btn = QPushButton("DELETE ALL")
-        del_btn.setFixedHeight(24)
-        del_btn.setStyleSheet(
-            "QPushButton{background:#3d1c1c;border:1px solid #da3633;"
-            "color:#f85149;font-size:9px;font-weight:700;padding:0 6px;border-radius:2px;}"
-            "QPushButton:hover{background:#da3633;color:#fff;}"
-        )
-        del_btn.setToolTip("Delete ALL missions from server (ADMIN only)")
-        del_btn.clicked.connect(self._confirm_delete_all)
-        top.addWidget(del_btn)
-
         clear_btn = QPushButton("CLEAR")
         clear_btn.setFixedHeight(24)
         clear_btn.setFixedWidth(52)
