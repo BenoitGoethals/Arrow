@@ -57,10 +57,23 @@ class ArrowClient:
         return self._get("/tactical-objects")
 
     def post_tactical_object(self, obj_type: str, geometry: dict, notes: str = "",
-                              affiliation: str = "UNKNOWN") -> dict:
+                              affiliation: str = "UNKNOWN", symbol_code: str = "",
+                              echelon: str = "") -> dict:
+        import json as _json
+        coords = geometry.get("coords", [])
+        lat = float(coords[0][0]) if coords else 0.0
+        lon = float(coords[0][1]) if coords else 0.0
+        # store geometry string only for non-point shapes
+        geom_str = _json.dumps(geometry) if geometry.get("type") in ("line", "polygon") else ""
         return self._post("/tactical-objects", {
-            "type": obj_type, "position": geometry,
-            "notes": notes, "affiliation": affiliation,
+            "type":        obj_type,
+            "latitude":    lat,
+            "longitude":   lon,
+            "geometry":    geom_str,
+            "notes":       notes,
+            "affiliation": affiliation,
+            "symbol_code": symbol_code,
+            "echelon":     echelon,
         })
 
     # ---- KML --------------------------------------------------------

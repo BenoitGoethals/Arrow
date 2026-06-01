@@ -8,6 +8,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFont, QIcon
 
+from front.panels.layers.panel import LayersDialog
+
 
 class MainToolbar(QToolBar):
     # Emitted when the user picks a map tool/draw mode
@@ -78,7 +80,10 @@ class MainToolbar(QToolBar):
         self.addWidget(draw_btn)
         self.addSeparator()
 
-        # ---- Layers drop-down ----------------------------------------
+        # ---- Layers button → opens visibility panel ---------------------
+        self._layers_dialog = LayersDialog()
+        self._layers_dialog.layer_toggled.connect(self.layer_toggled)
+
         layers_btn = QToolButton()
         layers_btn.setText("LAYERS ▾")
         layers_btn.setObjectName("toolButton")
@@ -90,35 +95,14 @@ class MainToolbar(QToolBar):
             act = layers_menu.addAction(name)
             act.triggered.connect(lambda checked, n=name: self.base_changed.emit(n))
 
-        layers_menu.addSection("Base Map")
+        layers_menu.addSeparator()
         mbt_act = layers_menu.addAction("📂  Load MBTiles…")
         mbt_act.triggered.connect(self._load_mbtiles)
 
-        layers_menu.addSection("Online Tiles")
-        for layer, default in [
-            ("operators",    True),
-            ("operTrails",   True),
-            ("cotTracks",    True),
-            ("enemies",      True),
-            ("tactObjs",     True),
-            ("fireMissions", True),
-            ("alerts",       True),
-            ("graphics",     True),
-            ("kml",          True),
-            ("cbrn",         True),
-        ]:
-            cb = QCheckBox(layer.upper())
-            cb.setChecked(default)
-            cb.stateChanged.connect(
-                lambda state, l=layer: self.layer_toggled.emit(l, state == 2)
-            )
-            wa = QWidgetAction(layers_menu)
-            container = QWidget()
-            vb = QVBoxLayout(container)
-            vb.setContentsMargins(16, 2, 8, 2)
-            vb.addWidget(cb)
-            wa.setDefaultWidget(container)
-            layers_menu.addAction(wa)
+        layers_menu.addSeparator()
+        vis_act = layers_menu.addAction("🗂  Map Visibility…")
+        vis_act.triggered.connect(self._layers_dialog.show)
+        vis_act.triggered.connect(self._layers_dialog.raise_)
 
         layers_btn.setMenu(layers_menu)
         self.addWidget(layers_btn)

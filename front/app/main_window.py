@@ -26,6 +26,18 @@ from front.app.collapsible_panel import CollapsibleSidePanel
 
 CBRN_TYPES = {"CBRN_1","CBRN_2","CBRN_3","CBRN_4","CBRN_5","CBRN_6"}
 
+_SIDC_ECH_MAP = {
+    "A-": "TM", "B-": "CREW", "C-": "SQD", "D-": "SEC",
+    "E-": "PLT", "F-": "COY", "G-": "BN",  "H-": "RGT",
+    "I-": "BDE", "J-": "DIV", "K-": "CORPS",
+}
+
+def _sidc_echelon(sidc: str) -> str:
+    """Extract echelon label from a 15-char SIDC (positions 10-11)."""
+    if len(sidc) >= 12:
+        return _SIDC_ECH_MAP.get(sidc[10:12], "")
+    return ""
+
 
 class MainWindow(QMainWindow):
     def __init__(self, server_url: str, token: str, callsign: str):
@@ -143,6 +155,9 @@ class MainWindow(QMainWindow):
         self._orbat_panel.operator_focus_requested.connect(self._focus_operator)
         self._orbat_panel.message_requested.connect(
             lambda _: self._right_tabs.setCurrentWidget(self._messages_panel)
+        )
+        self._reports_panel.locate_requested.connect(
+            lambda lat, lon: self._map.center_on(lat, lon, zoom=14)
         )
         self._messages_panel.message_send_requested.connect(self._send_message)
         self._draw_panel.draw_mode_changed.connect(self._map.set_draw_mode)
@@ -388,20 +403,21 @@ class MainWindow(QMainWindow):
 
     def _on_symbol_placed(self, sidc: str, designation: str, lat: float, lon: float):
         """User placed a symbol via the picker — save to server as tactical object."""
-        # Determine affiliation from SIDC char[1]
         aff_map = {"F": "FRIENDLY", "H": "HOSTILE", "N": "NEUTRAL", "U": "UNKNOWN", "A": "FRIENDLY"}
         affiliation = aff_map.get(sidc[1] if len(sidc) > 1 else "U", "UNKNOWN")
         obj_type = "ENEMY" if affiliation == "HOSTILE" else "MARKER"
+        echelon = _sidc_echelon(sidc)
         try:
             self._client.post_tactical_object(
                 obj_type,
                 {"type": "point", "coords": [[lat, lon]]},
-                notes=designation or sidc,
+                notes=designation or "",
                 affiliation=affiliation,
+                symbol_code=sidc,
+                echelon=echelon,
             )
         except Exception as e:
             self.statusBar().showMessage(f"Symbol not saved: {e}", 3000)
-        # Show immediately on map without waiting for WS echo
         self._map.add_tactical_object({
             "id": f"local_{id(sidc)}",
             "type": obj_type,
@@ -409,30 +425,52 @@ class MainWindow(QMainWindow):
             "latitude": lat, "longitude": lon,
             "affiliation": affiliation,
             "notes": designation,
+            "echelon": echelon,
         })
 
     def _on_radial_action(self, action: str, lat: float, lon: float):
         if action == "tic":
             self._send_alert("TIC")
+            self._place_radial_marker("HOSTILE", lat, lon, notes="TIC", affiliation="HOSTILE")
         elif action in ("enemy", "hostile"):
-            # Symbol picker handles placement — already fired from JS radial
-            pass
+            pass  # symbol picker handles placement
         elif action in ("friendly",):
-            pass
+            pass  # symbol picker handles placement
         elif action == "medevac":
             self._right_tabs.setCurrentWidget(self._reports_panel)
+            self._place_radial_marker("MARKER", lat, lon, notes="MEDEVAC", affiliation="FRIENDLY")
         elif action == "poi":
-            try:
-                self._client.post_tactical_object(
-                    "POI", {"type": "point", "coords": [[lat, lon]]},
-                    notes="POI", affiliation="NEUTRAL",
-                )
-            except Exception as e:
-                self.statusBar().showMessage(f"Could not place POI: {e}", 3000)
+            self._place_radial_marker("POI", lat, lon, notes="POI", affiliation="NEUTRAL")
         elif action == "fire":
             self._right_tabs.setCurrentWidget(self._draw_panel)
         elif action == "report":
             self._right_tabs.setCurrentWidget(self._reports_panel)
+
+    def _place_radial_marker(self, obj_type: str, lat: float, lon: float,
+                             notes: str = "", affiliation: str = "UNKNOWN"):
+        from front.map.symbology import build as build_sidc
+        aff_sidc = {"FRIENDLY": "F", "HOSTILE": "H", "NEUTRAL": "N"}.get(affiliation, "U")
+        type_func = {
+            "HOSTILE": "infantry", "ENEMY": "infantry",
+            "MARKER": "unit", "POI": "observer",
+        }.get(obj_type, "unit")
+        sidc = build_sidc(aff_sidc, type_func, "none")
+        try:
+            self._client.post_tactical_object(
+                obj_type, {"type": "point", "coords": [[lat, lon]]},
+                notes=notes, affiliation=affiliation,
+                symbol_code=sidc,
+            )
+        except Exception:
+            pass
+        self._map.add_tactical_object({
+            "id": f"radial_{notes}_{lat:.4f}_{lon:.4f}",
+            "type": obj_type,
+            "symbol_code": sidc,
+            "latitude": lat, "longitude": lon,
+            "affiliation": affiliation,
+            "notes": notes,
+        })
 
     # ================================================================
     # TOOLBAR HANDLERS
