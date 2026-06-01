@@ -180,7 +180,8 @@
             user.textContent = role ? `Signed in (${role})` : 'Signed in';
             auth.textContent = 'Sign out';
             auth.href = '/logout';
-            document.querySelectorAll('.nav-item').forEach(el => { el.style.display = ''; });
+            // Use 'flex' explicitly — overrides the CSS class display:none
+            document.querySelectorAll('.nav-item').forEach(el => { el.style.display = 'flex'; });
         }
         // Role-based nav restrictions.
         // Role-based nav access.
