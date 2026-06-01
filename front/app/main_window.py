@@ -916,12 +916,24 @@ class MainWindow(QMainWindow):
         self._map.load_mbtiles(tile_url, db.min_zoom, db.max_zoom)
         self.statusBar().showMessage(f"MBTiles: {db.name}", 3000)
 
-    def _on_graphic_drawn(self, gtype: str, geojson_str: str):
+    def _on_graphic_drawn(self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY"):
+        """Persist a drawn tactical graphic to the backend (synced to web + android).
+
+        Uses the SHARED canonical type vocabulary + separate affiliation field,
+        and geometry {type:'line'|'polygon', coords:[[lat,lon],...]} — identical
+        format to the web client, so all three render each other's graphics.
+        """
         try:
             geom = json.loads(geojson_str)
-            self._client.post_tactical_object(gtype, geom)
-        except Exception:
-            pass
+            if not (geom.get("coords") or []):
+                return
+            self._client.post_tactical_object(
+                gtype, geom,
+                notes="",
+                affiliation=affiliation or "FRIENDLY",
+            )
+        except Exception as e:
+            self.statusBar().showMessage(f"Graphic not saved: {e}", 3000)
 
     def _focus_operator(self, operator_id: int):
         try:
