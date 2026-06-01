@@ -4,9 +4,10 @@ import os
 
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox")
 
+from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QSettings
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 
 from front.app.theme import TACTICAL_DARK
 from front.app.login_dialog import LoginDialog
@@ -41,6 +42,11 @@ def main():
     app.setOrganizationName("Arrow")
     app.setStyleSheet(TACTICAL_DARK)
     app.setFont(QFont("Ubuntu", 10))
+
+    # Application icon
+    icon_path = Path(__file__).parent / "resources" / "arrow_icon.png"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     # Download Leaflet / milsymbol / mgrs if not already bundled
     ensure_libs()

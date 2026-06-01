@@ -71,6 +71,12 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1024, 700)
         self.resize(1600, 960)
 
+        from pathlib import Path
+        from PyQt6.QtGui import QIcon
+        icon_path = Path(__file__).parent.parent / "resources" / "arrow_icon.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
         # ---- Toolbar --------------------------------------------------
         self._toolbar = MainToolbar(self)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._toolbar)
@@ -615,7 +621,7 @@ class MainWindow(QMainWindow):
             bundle = self._client.strike_package_bundle(pkg["id"])
         except Exception:
             bundle = pkg
-        tact_objs = bundle.get("_tactical_objects_expanded", [])
+        tact_objs = bundle.get("tactical_objects") or bundle.get("_tactical_objects_expanded", [])
         for obj in tact_objs:
             self._map.add_tactical_object(obj)
         # Center map on target if available

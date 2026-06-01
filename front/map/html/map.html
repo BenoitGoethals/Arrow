@@ -434,9 +434,35 @@ function removeCotTrack(uid){if(cotTracks[uid]){LAYERS.cotTracks.removeLayer(cot
 // ================================================================
 // TACTICAL OBJECTS
 // ================================================================
-const TOBJ_SIDC={ENEMY:'SHGPUCI---D----',HOSTILE:'SHGPUCI---D----',FRIENDLY:'SFGPUCI---D----',UNKNOWN:'SUGPUU----D----',VEHICLE:'SHGPUCA---D----',ARTILLERY:'SHGPUCF---D----',POI:'SFGPUUOO-------',MARKER:'SFGPUUOO-------',OBJECTIVE:'SFGPUH----F----',ZONE:'SNGPUU----E----',ROUTE:'SFGPUCI---E----'};
+// Types that use APP-6B unit symbols (milsymbol frames)
+const UNIT_SIDC={
+  ENEMY:'SHGPUCI---D----', HOSTILE:'SHGPUCI---D----',
+  FRIENDLY:'SFGPUCI---D----', UNKNOWN:'SUGPUU----D----',
+  VEHICLE:'SHGPUCA---D----', ARTILLERY:'SHGPUCF---D----',
+  OBJECTIVE:'SFGPUH----F----', ZONE:'SNGPUU----E----', ROUTE:'SFGPUCI---E----',
+};
+// Control/named positions — render as pin icons, NOT unit symbols
+const PIN_TYPES=new Set(['POI','MARKER','WAYPOINT']);
+
+function _pinIcon(notes, aff){
+  const n=(notes||'').toUpperCase();
+  // Colour by content
+  let c='#c9d1d9';
+  if(n.includes('DZ ')||n.includes('DZ FALCON')||n.includes('DZ EAGLE')) c='#3fb950';
+  else if(n.includes('AA ')||n.includes('ASSEMBLY')) c='#79c0ff';
+  else if(n.includes('RP ')||n.includes('RELEASE')) c='#d29922';
+  else if(n.includes('MEDEVAC')||n.includes('CCP')) c='#ff9e64';
+  else if(aff==='HOSTILE'||aff==='ENEMY') c='#f85149';
+  // DZ/LZ → diamond  | waypoint → circle
+  const isDZ=n.includes('DZ ')||n.includes('LZ ');
+  const svg=isDZ
+    ?`<svg width="22" height="22" viewBox="0 0 22 22"><polygon points="11,1 21,11 11,21 1,11" fill="${c}" fill-opacity=".9" stroke="#0d1117" stroke-width="1.5"/></svg>`
+    :`<svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="${c}" fill-opacity=".9" stroke="#0d1117" stroke-width="1.5"/></svg>`;
+  return L.divIcon({html:svg,className:'mil-icon',iconSize:[22,22],iconAnchor:[11,11],popupAnchor:[0,-13]});
+}
+
 function addTacticalObject(obj){
-  const sidc=obj.symbol_code||TOBJ_SIDC[obj.type]||'SUGPUU----D----';
+  const type=obj.type||'UNKNOWN';
   const aff=obj.affiliation||'UNKNOWN';
   const layer=aff==='ENEMY'||aff==='HOSTILE'?LAYERS.enemies:LAYERS.tactObjs;
   let geom=obj.geometry;
@@ -448,7 +474,16 @@ function addTacticalObject(obj){
     const lat=obj.latitude||(geom&&geom.coords?.[0]?.[0]);
     const lon=obj.longitude||(geom&&geom.coords?.[0]?.[1]);
     if(!lat||!lon) return;
-    lyr=L.marker([lat,lon],{icon:buildMilIcon(sidc,obj.notes||obj.type,'',obj.rotation)}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
+    let icon;
+    if(PIN_TYPES.has(type)){
+      // Named positions / waypoints → clean pin, no unit frame
+      icon=_pinIcon(obj.notes, aff);
+    }else{
+      // Military units / vehicles / objectives → APP-6B milsymbol frame
+      const sidc=obj.symbol_code||UNIT_SIDC[type]||'SUGPUU----D----';
+      icon=buildMilIcon(sidc,'','',obj.rotation);
+    }
+    lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
   }
   if(graphics[obj.id]) layer.removeLayer(graphics[obj.id]);
   graphics[obj.id]=lyr;
