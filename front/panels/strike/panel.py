@@ -173,11 +173,15 @@ class StrikePackagePanel(QWidget):
         self.package_selected.emit(pkg)
 
     def _show_detail(self, bundle: dict):
-        # Clear previous detail
-        while self._detail_layout.count():
-            child = self._detail_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        # Clear ALL previous widgets recursively (nested layouts survive takeAt)
+        def _clear_layout(lay):
+            while lay.count():
+                child = lay.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+                elif child.layout():
+                    _clear_layout(child.layout())
+        _clear_layout(self._detail_layout)
 
         name    = bundle.get("name", "?")
         status  = bundle.get("status", "PLANNING")
@@ -185,9 +189,10 @@ class StrikePackagePanel(QWidget):
         tdesc   = bundle.get("target_description", "")
         tlat    = bundle.get("target_lat")
         tlon    = bundle.get("target_lon")
-        ops     = bundle.get("operator_ids", [])
-        tobjs   = bundle.get("tactical_object_ids", [])
-        fms     = bundle.get("fire_mission_ids", [])
+        # Bundle endpoint returns expanded lists; list endpoint returns id lists
+        ops   = bundle.get("operators")   or bundle.get("operator_ids",         [])
+        tobjs = bundle.get("tactical_objects") or bundle.get("tactical_object_ids", [])
+        fms   = bundle.get("fire_missions")    or bundle.get("fire_mission_ids",    [])
         assets  = bundle.get("assets", {})
 
         def _lbl(txt, style="color:#8b949e;font-size:9px;"):

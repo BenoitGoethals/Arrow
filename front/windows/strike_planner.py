@@ -195,13 +195,16 @@ class StrikePlannerWindow(QMainWindow):
         # Stats
         lay.addWidget(_section_header("PACKAGE CONTENTS"))
         stats_grid = QGridLayout(); stats_grid.setSpacing(6)
-        ops     = b.get("operator_ids", [])
-        assets  = b.get("assets", {})
+        ops    = b.get("operators")        or b.get("operator_ids",        [])
+        tobjs  = b.get("tactical_objects") or b.get("tactical_object_ids", [])
+        fms_   = b.get("fire_missions")    or b.get("fire_mission_ids",    [])
+        reps_  = b.get("reports")          or b.get("report_ids",          [])
+        assets = b.get("assets", {})
         stats   = [
-            ("OPERATORS",   len(ops)),
-            ("TACT OBJECTS",len(b.get("tactical_object_ids", []))),
-            ("FIRE MISSIONS",len(b.get("fire_mission_ids", []))),
-            ("REPORTS",     len(b.get("report_ids", []))),
+            ("OPERATORS",    len(ops)),
+            ("TACT OBJECTS", len(tobjs)),
+            ("FIRE MISSIONS",len(fms_)),
+            ("REPORTS",      len(reps_)),
             ("DRONES",      len(assets.get("drones", []))),
             ("AIR SUPPORT", len(assets.get("air_support", []))),
             ("SNIPERS",     len(assets.get("sniper_overwatch", []))),
@@ -220,13 +223,13 @@ class StrikePlannerWindow(QMainWindow):
     def _build_task_org(self, b: dict) -> QWidget:
         scroll = _scroll()
         lay = _vlayout(scroll.widget())
-        lay.addWidget(_section_header(
-            f"TASK ORGANIZATION  —  {len(b.get('operator_ids', []))} OPERATORS"))
-
-        operators = b.get("_operators_expanded", [])
-        if not operators and b.get("operator_ids"):
+        operators = b.get("operators") or b.get("_operators_expanded", [])
+        if not operators:
             operators = [{"id": oid, "callsign": f"OP-{oid}", "role": "OPERATOR"}
-                         for oid in b.get("operator_ids", [])]
+                         for oid in (b.get("operator_ids") or [])]
+
+        lay.addWidget(_section_header(
+            f"TASK ORGANIZATION  —  {len(operators)} OPERATORS"))
 
         buckets = _categorize_operators(operators)
 
@@ -397,7 +400,7 @@ class StrikePlannerWindow(QMainWindow):
 
         fire_missions = b.get("_fire_missions_expanded", [])
         if not fire_missions:
-            fm_ids = b.get("fire_mission_ids", [])
+            fm_ids = b.get("fire_mission_ids") or []
             if fm_ids:
                 fire_missions = [{"id": fid, "mission_type": "PLANNED",
                                   "status": "PENDING"} for fid in fm_ids]
