@@ -5,11 +5,20 @@
 <div style="padding:24px;max-width:960px;margin:0 auto">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
         <h2 style="color:#f8fafc;margin:0;font-size:1.4rem">🎯 Mission Management</h2>
-        <button onclick="showCreateModal()"
-                style="background:#1d4ed8;color:#fff;border:0;border-radius:6px;
-                       padding:8px 18px;cursor:pointer;font-size:.9rem">
-            + New Mission
-        </button>
+        <div style="display:flex;gap:8px">
+            <button onclick="deleteAllMissions()"
+                    id="btn-delete-all"
+                    style="background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;
+                           border-radius:6px;padding:8px 16px;cursor:pointer;font-size:.85rem;
+                           display:none">
+                🗑 Delete All
+            </button>
+            <button onclick="showCreateModal()"
+                    style="background:#1d4ed8;color:#fff;border:0;border-radius:6px;
+                           padding:8px 18px;cursor:pointer;font-size:.9rem">
+                + New Mission
+            </button>
+        </div>
     </div>
 
     <div id="mission-list" style="display:grid;gap:12px"></div>
@@ -104,6 +113,11 @@ async function loadMissions() {
     const missions = await r.json();
     const cur = arrowGetMissionId();
     const list = document.getElementById('mission-list');
+
+    // Show/hide Delete All button based on whether missions exist
+    const delBtn = document.getElementById('btn-delete-all');
+    if (delBtn) delBtn.style.display = missions.length ? 'inline-block' : 'none';
+
     if (!missions.length) {
         list.innerHTML = '<p style="color:#64748b;text-align:center">No missions yet.</p>';
         return;
@@ -160,6 +174,43 @@ async function loadMissions() {
             </div>
         </div>`;
     }).join('');
+}
+
+async function deleteAllMissions() {
+    // Fetch current list so we know how many & can name them
+    const r = await api('GET', '/missions');
+    if (!r.ok) return;
+    const missions = await r.json();
+    if (!missions.length) return;
+
+    const names = missions.map(m => `• ${m.name} [${m.status}]`).join('\n');
+    const confirmed = confirm(
+        `⚠ DELETE ALL ${missions.length} MISSION${missions.length === 1 ? '' : 'S'}?\n\n` +
+        `${names}\n\n` +
+        `This action is permanent and cannot be undone.\n` +
+        `Requires ADMIN role.`
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('btn-delete-all');
+    if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+
+    let failed = 0;
+    for (const m of missions) {
+        const dr = await api('DELETE', `/missions/${m.id}`);
+        if (!dr.ok) failed++;
+    }
+
+    // Deselect active mission if it was deleted
+    if (missions.some(m => m.id === arrowGetMissionId())) {
+        arrowSwitchMission(null);
+    }
+
+    if (failed) {
+        alert(`Deleted ${missions.length - failed}/${missions.length} missions.\n${failed} failed — ADMIN role required.`);
+    }
+    await loadMissions();
+    if (btn) { btn.disabled = false; btn.textContent = '🗑 Delete All'; }
 }
 
 function showCreateModal() {
