@@ -145,6 +145,54 @@ class ArrowClient:
     def end_mission(self, mission_id: int) -> dict:
         return self._post(f"/missions/{mission_id}/end")
 
+    # ---- Streams ----------------------------------------------------
+    def live_streams(self) -> list:
+        return self._get("/streams")
+
+    def external_streams(self) -> list:
+        return self._get("/streams/external")
+
+    def add_external_stream(self, name: str, url: str, stream_type: str,
+                            description: str = "") -> dict:
+        return self._post("/streams/external", {
+            "name": name, "url": url,
+            "stream_type": stream_type, "description": description,
+        })
+
+    def recordings(self) -> list:
+        return self._get("/streams/recordings")
+
+    def octopus_streams(self) -> list:
+        try:
+            return self._get("/octopus/streams")
+        except Exception:
+            return []
+
+    # ---- OPORDs -----------------------------------------------------
+    def opords(self) -> list:
+        return self._get("/opord")
+
+    def opord(self, opord_id: int) -> dict:
+        return self._get(f"/opord/{opord_id}")
+
+    def create_opord(self, data: dict) -> dict:
+        return self._post("/opord", data)
+
+    def update_opord(self, opord_id: int, data: dict) -> dict:
+        import httpx
+        r = httpx.put(
+            f"{self.base_url}/opord/{opord_id}",
+            json=data, headers=self._headers(), timeout=10.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def publish_opord(self, opord_id: int) -> dict:
+        return self._post(f"/opord/{opord_id}/publish")
+
+    def send_opord(self, opord_id: int, recipient_ids: list) -> dict:
+        return self._post(f"/opord/{opord_id}/send", {"recipient_ids": recipient_ids})
+
     # ---- Strike packages --------------------------------------------
     def strike_packages(self) -> list:
         return self._get("/strike-packages")

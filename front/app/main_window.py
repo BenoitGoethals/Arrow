@@ -22,7 +22,11 @@ from front.panels.alerts.panel    import AlertsPanel
 from front.panels.draw.panel      import DrawPanel
 from front.panels.missions.panel  import MissionsPanel
 from front.panels.strike.panel    import StrikePackagePanel
+from front.panels.opord.panel     import OpordPanel
+from front.panels.streams.panel   import StreamsPanel
 from front.windows.strike_planner import StrikePlannerWindow
+from front.windows.opord_window   import OpordWindow
+from front.windows.stream_viewer  import StreamViewerWindow
 from front.client.arrow_client    import ArrowClient
 from front.client.ws_listener    import WSListener
 from front.map.tile_server       import MBTilesServer
@@ -89,15 +93,21 @@ class MainWindow(QMainWindow):
         self._draw_panel     = DrawPanel()
         self._missions_panel = MissionsPanel()
         self._strike_panel   = StrikePackagePanel()
+        self._opord_panel    = OpordPanel()
+        self._streams_panel  = StreamsPanel()
         self._planner_windows: list[StrikePlannerWindow] = []
+        self._opord_windows:   list[OpordWindow]         = []
+        self._stream_viewers:  list[StreamViewerWindow]  = []
 
         self._info = RightInfoPanel()
         self._info.add_panel("missions", "◈",  "MISS",   self._missions_panel, "1")
         self._info.add_panel("strike",   "◆",  "STRK",   self._strike_panel,   "2")
-        self._info.add_panel("reports",  "≡",  "RPTS",   self._reports_panel,  "3")
-        self._info.add_panel("messages", "◎",  "MSG",    self._messages_panel, "4")
-        self._info.add_panel("alerts",   "⚡", "ALRT",   self._alerts_panel,   "5")
-        self._info.add_panel("draw",     "✚",  "DRAW",   self._draw_panel,     "6")
+        self._info.add_panel("opord",    "📋", "OPORD",  self._opord_panel,    "3")
+        self._info.add_panel("streams",  "📡", "STRMS",  self._streams_panel,  "4")
+        self._info.add_panel("reports",  "≡",  "RPTS",   self._reports_panel,  "5")
+        self._info.add_panel("messages", "◎",  "MSG",    self._messages_panel, "6")
+        self._info.add_panel("alerts",   "⚡", "ALRT",   self._alerts_panel,   "7")
+        self._info.add_panel("draw",     "✚",  "DRAW",   self._draw_panel,     "8")
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
@@ -155,7 +165,7 @@ class MainWindow(QMainWindow):
     # ================================================================
     def _connect_signals(self):
         tb = self._toolbar
-        tb.mode_changed.connect(self._map.set_draw_mode)
+        tb.mode_changed.connect(self._on_mode_from_toolbar)
         tb.layer_toggled.connect(self._map.toggle_layer)
         tb.base_changed.connect(self._map.set_base_layer)
         tb.fit_requested.connect(self._map.fit_tracks)
@@ -189,6 +199,13 @@ class MainWindow(QMainWindow):
         self._missions_panel.delete_all_requested.connect(self._on_delete_all_missions)
 
         self._strike_panel.refresh_requested.connect(self._load_strike_packages)
+        self._opord_panel.refresh_requested.connect(self._load_opords)
+        self._opord_panel.open_requested.connect(self._open_opord)
+        self._opord_panel.create_requested.connect(self._new_opord)
+
+        self._streams_panel.stream_open_requested.connect(self._open_stream)
+        self._streams_panel.recording_open_requested.connect(self._open_recording)
+        self._streams_panel.refresh_requested.connect(self._load_streams)
         self._strike_panel.package_selected.connect(self._on_strike_selected)
         self._strike_panel.package_cleared.connect(self._on_strike_cleared)
         self._strike_panel.overlay_requested.connect(self._on_strike_overlay)
@@ -213,6 +230,7 @@ class MainWindow(QMainWindow):
         self._ws.presence_changed.connect(self._on_presence)
         self._ws.mission_received.connect(self._on_mission_event)
         self._ws.strike_package_received.connect(self._on_strike_ws)
+        self._ws.stream_received.connect(self._on_stream_ws)
         self._ws.connection_changed.connect(self._statusbar.set_connected)
         self._ws.start()
 
@@ -228,6 +246,8 @@ class MainWindow(QMainWindow):
         self._resolve_role()
         self._load_hierarchy()
         self._load_missions()
+        self._load_opords()
+        self._load_streams()
         self._load_strike_packages()
         self._load_live_operators()
         self._load_cot_tracks()
@@ -273,6 +293,7 @@ class MainWindow(QMainWindow):
         for name, panel in [
             ("Missions",         "missions"),
             ("Strike Packages",  "strike"),
+            ("OPORDs",           "opord"),
             ("Reports",          "reports"),
             ("Messages",         "messages"),
             ("Alerts",           "alerts"),
@@ -652,6 +673,85 @@ class MainWindow(QMainWindow):
         elif event in ("created",):
             self._toasts.show("info", "NEW STRIKE PKG", name.upper())
 
+    def _load_opords(self):
+        try:
+            self._opord_panel.load_opords(self._client.opords())
+        except Exception as e:
+            import sys; print(f"[OPORD] error: {e}", file=sys.stderr)
+
+    def _open_opord(self, opord_data: dict):
+        """Open existing OPORD in editor window."""
+        try:
+            full = self._client.opord(opord_data["id"])
+        except Exception:
+            full = opord_data
+        win = OpordWindow(self._client, full, parent=self)
+        win.saved.connect(lambda _: self._load_opords())
+        win.published.connect(lambda _: self._load_opords())
+        win.show()
+        self._opord_windows.append(win)
+
+    def _new_opord(self):
+        """Open blank OPORD editor."""
+        win = OpordWindow(self._client, None, parent=self)
+        win.saved.connect(lambda _: self._load_opords())
+        win.show()
+        self._opord_windows.append(win)
+
+    def _load_streams(self):
+        try:
+            live = self._client.live_streams()
+            self._streams_panel.load_live_streams(live)
+        except Exception:
+            pass
+        try:
+            ext = self._client.external_streams()
+            self._streams_panel.load_external_streams(ext)
+        except Exception:
+            pass
+        try:
+            oct_streams = self._client.octopus_streams()
+            self._streams_panel.load_octopus_streams(oct_streams)
+        except Exception:
+            pass
+        try:
+            recs = self._client.recordings()
+            self._streams_panel.load_recordings(recs)
+        except Exception:
+            pass
+
+    def _open_stream(self, stream: dict, stream_type: str):
+        if stream_type in ("ws_jpeg", "android", "live"):
+            win = StreamViewerWindow.open_android(
+                stream, self._server_url, self._token, parent=self)
+        elif stream_type == "hls":
+            win = StreamViewerWindow.open_octopus(
+                stream, self._server_url, self._token, parent=self)
+        else:
+            win = StreamViewerWindow.open_external(
+                stream, self._server_url, self._token, parent=self)
+        win.show()
+        self._stream_viewers.append(win)
+        self._toasts.show("info", "STREAM OPENED",
+                          stream.get("callsign") or stream.get("name", ""))
+
+    def _open_recording(self, rec: dict):
+        win = StreamViewerWindow.open_recording(
+            rec, self._server_url, self._token, parent=self)
+        win.show()
+        self._stream_viewers.append(win)
+
+    def _on_stream_ws(self, data: dict):
+        event = data.get("event", "")
+        if event == "started":
+            self._streams_panel.add_live_stream(data.get("data", data))
+            self._info.inc_badge("streams")
+            cs = (data.get("data") or data).get("callsign", "")
+            self._toasts.show("info", "STREAM STARTED", cs)
+        elif event == "ended":
+            sid = (data.get("data") or data).get("id", "")
+            self._streams_panel.remove_live_stream(str(sid))
+
     def _on_mission_event(self, data: dict):
         self._load_missions()
 
@@ -727,6 +827,19 @@ class MainWindow(QMainWindow):
             "notes": designation,
             "echelon": echelon,
         })
+
+    def _on_mode_from_toolbar(self, mode: str):
+        """Route toolbar mode changes — handle measure modes separately."""
+        if mode == "measure_dist":
+            self._map._js("startMeasure('distance')")
+        elif mode == "measure_az":
+            self._map._js("startMeasure('azimuth')")
+        elif mode == "measure_range":
+            self._map._js("startRangeMode()")
+        elif mode == "meas_clear":
+            self._map._js("clearMeasure(); clearRangeCircles(); closeRangePanel()")
+        else:
+            self._map.set_draw_mode(mode)
 
     def _on_radial_action(self, action: str, lat: float, lon: float):
         if action == "tic":

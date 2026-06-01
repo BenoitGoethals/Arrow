@@ -29,23 +29,61 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 .leaflet-draw-toolbar a{background-color:#161b22 !important;border-color:#30363d !important;}
 
 /* ================================================================
-   RADIAL CONTEXT MENU
+   RADIAL MENU (circular, large touch targets)
    ================================================================ */
 #radial-backdrop{display:none;position:fixed;inset:0;z-index:1999;}
 #radial-backdrop.active{display:block;}
-#radial-menu{position:absolute;display:none;z-index:2000;pointer-events:none;}
-#radial-menu.active{display:block;pointer-events:all;}
-.radial-center{position:absolute;width:10px;height:10px;border:2px solid #3fb950;border-radius:50%;background:rgba(0,0,0,.8);transform:translate(-50%,-50%);}
-.radial-item{position:absolute;width:64px;height:64px;border-radius:50%;background:rgba(14,18,26,.95);border:1px solid #30363d;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transform:translate(-50%,-50%) scale(0);transition:transform .14s ease,background .1s,border-color .1s;user-select:none;text-align:center;}
-.radial-item.show{transform:translate(-50%,-50%) scale(1);}
-.radial-item:hover{background:rgba(31,111,235,.88);border-color:#388bfd;}
-.radial-item:hover .ri-label{color:#fff;}
-.ri-icon{font-size:18px;line-height:1;margin-bottom:2px;}
-.ri-label{font-size:7px;letter-spacing:.8px;color:#8b949e;text-transform:uppercase;}
-.radial-item.red{border-color:#f85149;}.radial-item.red:hover{background:rgba(248,81,73,.85);}
-.radial-item.amber{border-color:#d29922;}.radial-item.amber:hover{background:rgba(210,153,34,.85);}
-.radial-item.green{border-color:#3fb950;}.radial-item.green:hover{background:rgba(63,185,80,.85);}
-.radial-item.purple{border-color:#d2a8ff;}.radial-item.purple:hover{background:rgba(210,168,255,.85);}
+#radial-menu{
+  display:none;position:absolute;z-index:2000;
+  width:300px;height:300px;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+#radial-menu.active{display:block;}
+/* central hub */
+#radial-hub{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:54px;height:54px;border-radius:50%;
+  background:rgba(10,13,18,.96);border:2px solid #30363d;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:all;cursor:pointer;z-index:5;
+  box-shadow:0 2px 12px rgba(0,0,0,.7);
+}
+#radial-hub:hover{border-color:#f85149;}
+#radial-hub .hub-x{color:#6e7681;font-size:20px;line-height:1;}
+#radial-hub:hover .hub-x{color:#f85149;}
+/* each petal */
+.radial-petal{
+  --tx:0px; --ty:0px; --scale:.4;
+  position:absolute;left:50%;top:50%;
+  width:72px;height:72px;
+  margin:-36px 0 0 -36px;
+  border-radius:50%;
+  background:rgba(14,18,26,.97);
+  border:2px solid #30363d;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;
+  cursor:pointer;pointer-events:all;user-select:none;
+  opacity:0;
+  transform:translate(var(--tx),var(--ty)) scale(var(--scale));
+  transition:opacity .18s ease,
+             transform .18s cubic-bezier(.34,1.56,.64,1),
+             border-color .12s, background .12s;
+  box-shadow:0 3px 14px rgba(0,0,0,.6);
+}
+#radial-menu.active .radial-petal{opacity:1;--scale:1;}
+.radial-petal .rp-icon{font-size:26px;line-height:1;pointer-events:none;}
+.radial-petal .rp-lbl{
+  font-family:'Courier New',monospace;font-size:8px;font-weight:700;
+  letter-spacing:.6px;color:#8b949e;text-transform:uppercase;pointer-events:none;
+}
+/* hover only changes --scale, so the translate is preserved */
+#radial-menu.active .radial-petal:hover{--scale:1.14;background:rgba(31,111,235,.9);border-color:#388bfd;}
+.radial-petal:hover .rp-lbl{color:#fff;}
+#radial-menu.active .radial-petal.red:hover   {background:rgba(248,81,73,.9);border-color:#f85149;}
+#radial-menu.active .radial-petal.green:hover {background:rgba(63,185,80,.9);border-color:#3fb950;}
+#radial-menu.active .radial-petal.amber:hover {background:rgba(210,153,34,.9);border-color:#d29922;}
+#radial-menu.active .radial-petal.purple:hover{background:rgba(210,168,255,.9);border-color:#d2a8ff;}
 
 /* ================================================================
    SYMBOL PICKER OVERLAY
@@ -92,6 +130,74 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 #sym-place:disabled{opacity:.4;cursor:default;}
 
 /* ================================================================
+   MEASUREMENT TOOLKIT
+   ================================================================ */
+#meas-panel{
+  display:none;position:absolute;top:54px;right:10px;z-index:900;
+  background:rgba(13,17,23,.95);border:1px solid #388bfd;border-radius:3px;
+  min-width:240px;box-shadow:0 4px 16px rgba(0,0,0,.7);
+  font-family:'Courier New',monospace;font-size:10px;color:#c9d1d9;overflow:hidden;
+}
+#meas-panel.active{display:block;}
+#meas-header{background:#161b22;padding:6px 12px;border-bottom:1px solid #21262d;
+  display:flex;align-items:center;gap:8px;}
+#meas-header span{color:#388bfd;font-size:9px;font-weight:700;letter-spacing:1.5px;flex:1;}
+#meas-body{padding:8px 12px;}
+.meas-row{display:grid;grid-template-columns:80px 1fr;gap:4px;padding:2px 0;line-height:1.5;}
+.meas-k{color:#6e7681;font-size:9px;font-weight:700;letter-spacing:1px;align-self:center;}
+.meas-v{color:#e6edf3;font-size:11px;font-weight:700;}
+.meas-v.az{color:#d29922;}
+.meas-v.dist{color:#3fb950;}
+.meas-v.mgrs{color:#8b949e;font-size:9px;}
+#meas-sep{height:1px;background:#21262d;margin:6px 0;}
+#meas-footer{padding:6px 12px;border-top:1px solid #21262d;display:flex;gap:6px;}
+.meas-foot-btn{flex:1;background:#21262d;border:1px solid #30363d;color:#8b949e;
+  font-family:'Courier New',monospace;font-size:9px;cursor:pointer;padding:4px;border-radius:2px;}
+.meas-foot-btn:hover{background:#30363d;color:#c9d1d9;}
+.meas-foot-btn.primary{background:#1c2d3f;border-color:#1f6feb;color:#79c0ff;}
+
+/* Range circle panel */
+#range-panel{
+  display:none;position:absolute;top:54px;right:10px;z-index:900;
+  background:rgba(13,17,23,.95);border:1px solid #3fb950;border-radius:3px;
+  min-width:260px;box-shadow:0 4px 16px rgba(0,0,0,.7);
+  font-family:'Courier New',monospace;font-size:10px;color:#c9d1d9;overflow:hidden;
+}
+#range-panel.active{display:block;}
+#range-header{background:#161b22;padding:6px 12px;border-bottom:1px solid #21262d;
+  display:flex;align-items:center;gap:8px;}
+#range-header span{color:#3fb950;font-size:9px;font-weight:700;letter-spacing:1.5px;flex:1;}
+#range-center-label{color:#6e7681;font-size:9px;padding:6px 12px 4px;}
+#range-presets{display:flex;flex-wrap:wrap;gap:4px;padding:4px 12px 8px;}
+.rng-btn{background:#21262d;border:1px solid #30363d;color:#8b949e;
+  font-family:'Courier New',monospace;font-size:9px;cursor:pointer;padding:4px 8px;border-radius:2px;}
+.rng-btn:hover{background:#1a3020;border-color:#3fb950;color:#3fb950;}
+#range-custom-row{display:flex;gap:6px;padding:0 12px 8px;align-items:center;}
+#range-input{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;
+  font-family:'Courier New',monospace;font-size:10px;padding:4px 8px;border-radius:2px;
+  width:100px;}
+#range-input:focus{outline:none;border-color:#3fb950;}
+.range-unit{color:#6e7681;font-size:9px;}
+#range-footer{padding:6px 12px;border-top:1px solid #21262d;display:flex;gap:6px;}
+
+/* Measure label tooltips on map */
+.meas-label{
+  background:rgba(0,0,0,.8) !important;border:1px solid #388bfd !important;
+  color:#79c0ff !important;font-family:'Courier New',monospace !important;
+  font-size:9px !important;font-weight:700 !important;
+  padding:1px 6px !important;border-radius:2px !important;white-space:nowrap !important;
+  box-shadow:none !important;
+}
+.meas-label::before{display:none !important;}
+.range-label{
+  background:rgba(0,0,0,.8) !important;border:1px solid #3fb950 !important;
+  color:#3fb950 !important;font-family:'Courier New',monospace !important;
+  font-size:9px !important;font-weight:700 !important;
+  padding:1px 6px !important;border-radius:2px !important;box-shadow:none !important;
+}
+.range-label::before{display:none !important;}
+
+/* ================================================================
    WEATHER PANEL
    ================================================================ */
 /* Weather panel */
@@ -123,10 +229,14 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 <body>
 <div id="map"></div>
 
-<!-- Radial menu -->
+<!-- Radial menu (circular) -->
 <div id="radial-backdrop"></div>
-<div id="radial-menu"><div class="radial-center"></div></div>
+<div id="radial-menu">
+  <div id="radial-hub" onclick="closeRadial()"><span class="hub-x">✕</span></div>
+  <!-- petals injected by JS -->
+</div>
 
+<!-- Symbol picker overlay -->
 <!-- Symbol picker overlay -->
 <div id="sym-overlay">
   <div id="sym-panel">
@@ -166,6 +276,54 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
       <button id="sym-cancel" onclick="closeSymbolPicker()">Cancel</button>
       <button id="sym-place" disabled onclick="placeSelectedSymbol()">Place Symbol</button>
     </div>
+  </div>
+</div>
+
+<!-- Measurement result panel -->
+<div id="meas-panel">
+  <div id="meas-header"><span>📏 MEASUREMENT</span>
+    <button class="meas-foot-btn" style="flex:none;padding:1px 6px;" onclick="clearMeasure()">✕</button>
+  </div>
+  <div id="meas-body">
+    <div id="m-mode" style="color:#484f58;font-size:9px;padding:0 0 4px;font-family:'Courier New',monospace;">Click points on map</div>
+    <div style="height:1px;background:#21262d;margin:4px 0;"></div>
+    <div class="meas-row"><span class="meas-k">DIST</span><span class="meas-v dist" id="m-dist">—</span></div>
+    <div class="meas-row"><span class="meas-k">AZIMUTH</span><span class="meas-v az" id="m-az">—</span></div>
+    <div class="meas-row"><span class="meas-k">BACK AZ</span><span class="meas-v az" id="m-baz">—</span></div>
+    <div style="height:1px;background:#21262d;margin:4px 0;"></div>
+    <div class="meas-row"><span class="meas-k">FROM</span><span class="meas-v mgrs" id="m-from">—</span></div>
+    <div class="meas-row"><span class="meas-k">TO</span><span class="meas-v mgrs" id="m-to">—</span></div>
+  </div>
+  <div id="meas-footer">
+    <button class="meas-foot-btn primary" onclick="continueMeasure()">+ Continue</button>
+    <button class="meas-foot-btn" onclick="clearMeasure()">Clear</button>
+  </div>
+</div>
+
+<!-- Range circle panel -->
+<div id="range-panel">
+  <div id="range-header"><span>⊙ RANGE CIRCLES</span>
+    <button class="meas-foot-btn" style="flex:none;padding:1px 6px;" onclick="clearRangeCircles();closeRangePanel()">✕</button>
+  </div>
+  <div id="range-center-label">Center: click map to set</div>
+  <div id="range-presets">
+    <button class="rng-btn" onclick="addRangeCircle(100)">100 m</button>
+    <button class="rng-btn" onclick="addRangeCircle(300)">300 m</button>
+    <button class="rng-btn" onclick="addRangeCircle(500)">500 m</button>
+    <button class="rng-btn" onclick="addRangeCircle(1000)">1 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(2000)">2 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(3000)">3 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(5000)">5 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(10000)">10 km</button>
+  </div>
+  <div id="range-custom-row">
+    <input id="range-input" type="number" placeholder="Custom m" min="1" max="100000">
+    <span class="range-unit">m</span>
+    <button class="rng-btn" style="flex:none" onclick="addCustomRange()">Add</button>
+  </div>
+  <div id="range-footer">
+    <button class="meas-foot-btn" onclick="clearRangeCircles()">Clear Circles</button>
+    <button class="meas-foot-btn" onclick="closeRangePanel()">Close</button>
   </div>
 </div>
 
@@ -264,37 +422,37 @@ const SYM_CATEGORIES=[
   {name:'GROUND — COMBAT',icon:'⚔',dim:'G',items:[
     {name:'Infantry',      func:'UCI---'},
     {name:'Airborne',      func:'UCIA--'},
-    {name:'Air Assault',   func:'UCIAS-'},
+    {name:'Air Assault',   func:'UCIZ--'},
     {name:'Light Inf',     func:'UCIL--'},
     {name:'Armor / Tank',  func:'UCA---'},
     {name:'Mechanized',    func:'UCIM--'},
-    {name:'Armored Cav',   func:'UCAR--'},
-    {name:'Anti-Armor',    func:'UCJ---'},
+    {name:'Armored Cav',   func:'UCRVA-'},
+    {name:'Anti-Armor',    func:'UCAA--'},
     {name:'Recon / Scout', func:'UCR---'},
     {name:'Engineer',      func:'UCE---'},
     {name:'Sniper',        func:'UCIS--'},
-    {name:'Special Forces',func:'USSF--'},
-    {name:'Aviation (AH)', func:'UCAA--'},
+    {name:'Special Forces',func:'UCFS--'},
+    {name:'Aviation (AH)', func:'UCVF--'},
   ]},
   {name:'FIRE SUPPORT',icon:'🔥',dim:'G',items:[
-    {name:'Artillery SP',   func:'UCFS--'},
-    {name:'Artillery Towed',func:'UCF---'},
+    {name:'Artillery SP',   func:'UCFHE-'},
+    {name:'Artillery Towed',func:'UCFHA-'},
     {name:'Mortar',         func:'UCFM--'},
     {name:'MLRS / Rocket',  func:'UCFR--'},
-    {name:'Air Defense',    func:'UCAD--'},
-    {name:'AD (SHORAD)',    func:'UCADS-'},
-    {name:'AD (Gun)',       func:'UCADG-'},
+    {name:'Air Defense',    func:'UCD---'},
+    {name:'AD (SHORAD)',    func:'UCDMH-'},
+    {name:'AD (Gun)',       func:'UCDG--'},
   ]},
   {name:'C2 / SUPPORT',icon:'◉',dim:'G',items:[
-    {name:'Command Post',  func:'UH----'},
-    {name:'HQ Unit',       func:'UH----'},
-    {name:'Medical',       func:'UMH---'},
+    {name:'HQ / Cmd Post', func:'UH----'},
+    {name:'Medical',       func:'USM---'},
     {name:'Supply / Log',  func:'USS---'},
-    {name:'Maintenance',   func:'USM---'},
-    {name:'Signal',        func:'USC---'},
-    {name:'Intelligence',  func:'USI---'},
-    {name:'CBRN / NBC',   func:'UCB---'},
-    {name:'MP / Police',   func:'UMP---'},
+    {name:'Transport',     func:'UST---'},
+    {name:'Maintenance',   func:'USX---'},
+    {name:'Signal',        func:'UUS---'},
+    {name:'Intelligence',  func:'UUMA--'},
+    {name:'CBRN / NBC',    func:'UUAC--'},
+    {name:'MP / Police',   func:'UUL---'},
     {name:'Vehicle',       func:'UCV---'},
   ]},
   {name:'AIR',icon:'✈',dim:'A',items:[
@@ -475,12 +633,16 @@ function addTacticalObject(obj){
     const lon=obj.longitude||(geom&&geom.coords?.[0]?.[1]);
     if(!lat||!lon) return;
     let icon;
-    if(PIN_TYPES.has(type)){
-      // Named positions / waypoints → clean pin, no unit frame
+    // If an explicit MIL-STD symbol_code is present (from the symbol picker),
+    // ALWAYS render the APP-6B military frame — even for MARKER/POI types.
+    if(obj.symbol_code && obj.symbol_code.length>=10){
+      icon=buildMilIcon(obj.symbol_code,'','',obj.rotation);
+    } else if(PIN_TYPES.has(type)){
+      // Bare named positions / waypoints with no symbol → clean coloured pin
       icon=_pinIcon(obj.notes, aff);
-    }else{
+    } else {
       // Military units / vehicles / objectives → APP-6B milsymbol frame
-      const sidc=obj.symbol_code||UNIT_SIDC[type]||'SUGPUU----D----';
+      const sidc=UNIT_SIDC[type]||'SUGPUU----D----';
       icon=buildMilIcon(sidc,'','',obj.rotation);
     }
     lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
@@ -597,7 +759,7 @@ function setDrawGraphic(type, aff){
   if(measureLine){map.removeLayer(measureLine);measureLine=null;}
   measurePoints=[];
   if(type==='pointer'||type==='none') return;
-  if(type==='measure'){map.on('click',onMeasureClick);return;}
+  if(type==='measure'){startMeasure('distance');return;}
   const s=GFX_STYLE[type]||{color:aff==='H'?'#f85149':'#00aaff',weight:2,fill:false};
   const polyTypes=['NFA','FFA','OBJECTIVE','ENGAGEMENT_AREA','NAI','TAI','OBJ_F','OBJ_H','AMB_F','AMB_H'];
   if(polyTypes.includes(type)){
@@ -825,72 +987,346 @@ function addTrailSeg(layerGroup,store,id,lat,lon,color){
 }
 
 // ================================================================
-// MEASURE TOOL
+// MEASUREMENT TOOLKIT — Distance, Azimuth, Range Circles
 // ================================================================
-function onMeasureClick(e){
-  measurePoints.push(e.latlng);
-  if(measureLine) map.removeLayer(measureLine);
-  if(measurePoints.length>=2) measureLine=L.polyline(measurePoints,{color:'#ffff00',weight:2,dashArray:'6,4'}).addTo(map);
-  if(measurePoints.length===2){
-    const p1=measurePoints[0],p2=measurePoints[1];
-    const dist=p1.distanceTo(p2),brg=calcBearing(p1.lat,p1.lng,p2.lat,p2.lng);
-    const ds=dist>=1000?`${(dist/1e3).toFixed(2)} km`:`${Math.round(dist)} m`,bs=`${brg.toFixed(1)}° / ${Math.round(brg*17.7778)} mil`;
-    L.popup().setLatLng(p2).setContent(`<div style="font-family:monospace;color:#c9d1d9;font-size:11px;padding:8px 12px">
-      <div><span style="color:#8b949e">DIST </span><b>${ds}</b></div>
-      <div><span style="color:#8b949e">BRG  </span><b>${bs}</b></div>
-      <div><span style="color:#8b949e">FROM </span>${latLonToMGRS(p1.lat,p1.lng)}</div>
-      <div><span style="color:#8b949e">TO   </span>${latLonToMGRS(p2.lat,p2.lng)}</div>
-    </div>`).openOn(map);
-    if(bridge) bridge.onMeasureComplete(ds,bs);
-    measurePoints=[];if(measureLine){map.removeLayer(measureLine);measureLine=null;}
-    map.off('click',onMeasureClick);drawMode='pointer';
+
+let _measActive = false;   // is a measure tool running?
+let _measPts    = [];      // clicked points
+let _measLayers = [];      // all drawn measure layers
+let _rangeCtr   = null;    // range circle center LatLng
+let _rangeLyrs  = [];      // range circle layers
+
+// ── Distance / Azimuth measurement ────────────────────────────────────────
+function _fmtDist(m) {
+  if (m >= 10000) return (m/1000).toFixed(1) + ' km';
+  if (m >= 1000)  return (m/1000).toFixed(2) + ' km';
+  return Math.round(m) + ' m';
+}
+function _bearing(p1, p2) {
+  const r  = Math.PI / 180;
+  const dL = (p2.lng - p1.lng) * r;
+  const y  = Math.sin(dL) * Math.cos(p2.lat * r);
+  const x  = Math.cos(p1.lat * r) * Math.sin(p2.lat * r)
+              - Math.sin(p1.lat * r) * Math.cos(p2.lat * r) * Math.cos(dL);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+function startMeasure(mode) {
+  // Clean up previous
+  _stopMeasure();
+  _measActive = true;
+  _measPts    = [];
+  document.getElementById('meas-panel').classList.add('active');
+  document.getElementById('range-panel').classList.remove('active');
+  _clearMeasPanel();
+  document.getElementById('m-mode').textContent =
+    mode === 'azimuth' ? 'AZIMUTH — click 2 points'
+                       : 'DISTANCE — click points, right-click to stop';
+  map.on('click',        _measClick);
+  map.getContainer().style.cursor = 'crosshair';
+}
+
+function _measClick(e) {
+  const pt = e.latlng;
+  _measPts.push(pt);
+
+  // Yellow dot marker
+  const mk = L.circleMarker(pt, {
+    radius:6, color:'#ffff00', fillColor:'#ffff00', fillOpacity:.95, weight:2, zIndexOffset:500
+  }).addTo(map);
+  _measLayers.push(mk);
+
+  if (_measPts.length >= 2) {
+    const p1  = _measPts[_measPts.length - 2];
+    const p2  = _measPts[_measPts.length - 1];
+    const d   = p1.distanceTo(p2);
+    const brg = _bearing(p1, p2);
+    const bk  = (brg + 180) % 360;
+
+    // Draw segment line
+    const seg = L.polyline([p1, p2], {
+      color:'#ffff00', weight:2.5, dashArray:'8,4', opacity:.9
+    }).addTo(map);
+    _measLayers.push(seg);
+
+    // Label at midpoint
+    const mid  = L.latLng((p1.lat+p2.lat)/2, (p1.lng+p2.lng)/2);
+    const lb   = L.marker(mid, {
+      icon: L.divIcon({
+        html: `<div style="background:rgba(0,0,0,.82);border:1px solid #ffff00;
+               color:#ffff00;font-family:'Courier New',monospace;font-size:10px;
+               font-weight:700;padding:2px 8px;border-radius:2px;white-space:nowrap">
+               ${_fmtDist(d)}</div>`,
+        className:'', iconAnchor:[0,-8]
+      })
+    }).addTo(map);
+    _measLayers.push(lb);
+
+    // Update panel
+    document.getElementById('m-dist').textContent = _fmtDist(d);
+    document.getElementById('m-az').textContent   =
+      brg.toFixed(1) + '°   /   ' + Math.round(brg * 17.7778) + ' mil';
+    document.getElementById('m-baz').textContent  =
+      bk.toFixed(1)  + '°   /   ' + Math.round(bk  * 17.7778) + ' mil';
+    document.getElementById('m-from').textContent = latLonToMGRS(p1.lat, p1.lng);
+    document.getElementById('m-to').textContent   = latLonToMGRS(p2.lat, p2.lng);
+
+    if (bridge) bridge.onMeasureComplete(
+      _fmtDist(d),
+      brg.toFixed(1)+'° / '+Math.round(brg*17.7778)+' mil'
+    );
+
+    // Azimuth mode: stop after 2 points
+    if (document.getElementById('m-mode').textContent.startsWith('AZIMUTH')) {
+      _stopMeasure(null);
+    }
   }
 }
-function calcBearing(la1,lo1,la2,lo2){const r=Math.PI/180,dL=(lo2-lo1)*r,y=Math.sin(dL)*Math.cos(la2*r),x=Math.cos(la1*r)*Math.sin(la2*r)-Math.sin(la1*r)*Math.cos(la2*r)*Math.cos(dL);return((Math.atan2(y,x)*180/Math.PI)+360)%360;}
+
+function _measStop(e) {
+  if (e) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
+  _stopMeasure(e);
+  // Reopen context menu after a short delay if it was a right-click
+}
+
+function _stopMeasure(e) {
+  map.off('click', _measClick);
+  map.getContainer().style.cursor = '';
+  _measActive = false;
+}
+
+function clearMeasure() {
+  _stopMeasure(null);
+  _measLayers.forEach(l => map.removeLayer(l));
+  _measLayers = [];
+  _measPts    = [];
+  document.getElementById('meas-panel').classList.remove('active');
+  _clearMeasPanel();
+}
+
+function continueMeasure() {
+  if (!_measActive && _measPts.length > 0) {
+    _measActive = true;
+    map.on('click', _measClick);
+    map.getContainer().style.cursor = 'crosshair';
+  }
+}
+
+function _clearMeasPanel() {
+  ['m-dist','m-az','m-baz','m-from','m-to'].forEach(id=>{
+    document.getElementById(id).textContent = '—';
+  });
+}
+
+// ── Range circles ──────────────────────────────────────────────────────────
+let _rangeMode = false;   // true while range tool is active
+
+function startRangeMode() {
+  _stopMeasure(null);                 // stop any distance measuring
+  _rangeMode = true;
+  document.getElementById('range-panel').classList.add('active');
+  document.getElementById('meas-panel').classList.remove('active');
+  // Always (re)bind a single center-click handler
+  map.off('click', _rangeCenterClick);
+  map.off('click', _rangeRadiusClick);
+  if (!_rangeCtr) {
+    _setRangeStatus('① Click map to set CENTER');
+    map.on('click', _rangeCenterClick);
+  } else {
+    _setRangeStatus('② Pick a radius, or click map for distance');
+    map.on('click', _rangeRadiusClick);
+  }
+  map.getContainer().style.cursor = 'crosshair';
+}
+
+function _setRangeStatus(txt) {
+  document.getElementById('range-center-label').textContent = txt;
+}
+
+function _rangeCenterClick(e) {
+  map.off('click', _rangeCenterClick);
+  _rangeCtr = e.latlng;
+  // Center marker
+  const cm = L.circleMarker(_rangeCtr, {
+    radius:7, color:'#3fb950', fillColor:'#3fb950', fillOpacity:.95, weight:2, zIndexOffset:600
+  }).addTo(map);
+  _rangeLyrs.push(cm);
+  _setRangeStatus('CTR ' + latLonToMGRS(_rangeCtr.lat, _rangeCtr.lng) + '  · pick radius');
+  // Now allow distance-based radius by clicking the map again
+  map.on('click', _rangeRadiusClick);
+}
+
+function _rangeRadiusClick(e) {
+  if (!_rangeCtr) return;
+  const r = Math.round(_rangeCtr.distanceTo(e.latlng));
+  if (r > 0) addRangeCircle(r);
+}
+
+function addRangeCircle(r) {
+  if (!_rangeCtr) {
+    _setRangeStatus('⚠ Set a CENTER first (click map)');
+    return;
+  }
+  const circle = L.circle(_rangeCtr, {
+    radius: r, color:'#3fb950', weight:2, fillColor:'#3fb950',
+    fillOpacity:0.04, dashArray:'8,4'
+  }).addTo(map);
+  // Label placed at the north edge of the ring
+  const edge = L.latLng(_rangeCtr.lat + r/111320, _rangeCtr.lng);
+  const lbl = L.marker(edge, {
+    icon: L.divIcon({
+      html:`<div style="background:rgba(0,0,0,.82);border:1px solid #3fb950;color:#3fb950;
+            font-family:'Courier New',monospace;font-size:10px;font-weight:700;
+            padding:1px 7px;border-radius:2px;white-space:nowrap">${_fmtDist(r)}</div>`,
+      className:'', iconAnchor:[0,8]
+    })
+  }).addTo(map);
+  _rangeLyrs.push(circle, lbl);
+  _setRangeStatus(_rangeLyrs.length > 1 ?
+    'Ring added · ' + _fmtDist(r) : '');
+}
+
+function addCustomRange() {
+  const inp = document.getElementById('range-input');
+  const v = parseFloat(inp.value);
+  if (v > 0) { addRangeCircle(v); inp.value=''; }
+}
+
+function clearRangeCircles() {
+  map.off('click', _rangeCenterClick);
+  map.off('click', _rangeRadiusClick);
+  _rangeLyrs.forEach(l => map.removeLayer(l));
+  _rangeLyrs = [];
+  _rangeCtr  = null;
+  _rangeMode = false;
+  _setRangeStatus('Center: click map to set');
+  map.getContainer().style.cursor = '';
+}
+
+function closeRangePanel() {
+  map.off('click', _rangeCenterClick);
+  map.off('click', _rangeRadiusClick);
+  _rangeMode = false;
+  document.getElementById('range-panel').classList.remove('active');
+  map.getContainer().style.cursor = '';
+}
+
+// ── Legacy compat wrapper ──────────────────────────────────────────────────
+// Overwrite the old setDrawMode 'measure' compat
+function onMeasureClick(e) { _measClick(e); }
 
 // ================================================================
-// RADIAL CONTEXT MENU
+// RADIAL MENU (circular — 8 petals around a central hub)
 // ================================================================
-const RADIAL_ITEMS=[
-  [  0,'FRIENDLY','🔵','green',  ()=>{closeRadial();openSymbolPicker(radialLatLng.lat,radialLatLng.lng,'FRIENDLY');}],
-  [ 45,'ENEMY',   '🔴','red',   ()=>{closeRadial();openSymbolPicker(radialLatLng.lat,radialLatLng.lng,'HOSTILE');}],
-  [ 90,'FIRE MSN','🎯','red',   ()=>{closeRadial();if(bridge)bridge.onRadialAction('fire',radialLatLng.lat,radialLatLng.lng);}],
-  [135,'MEDEVAC', '🚁','amber', ()=>{closeRadial();if(bridge)bridge.onRadialAction('medevac',radialLatLng.lat,radialLatLng.lng);}],
-  [180,'TIC',     '⚡','red',   ()=>{closeRadial();if(bridge)bridge.onRadialAction('tic',radialLatLng.lat,radialLatLng.lng);}],
-  [225,'POI',     '📍','',      ()=>{closeRadial();if(bridge)bridge.onRadialAction('poi',radialLatLng.lat,radialLatLng.lng);}],
-  [270,'MEASURE', '⟷','',      ()=>{closeRadial();setDrawMode('measure');}],
-  [315,'REPORT',  '📋','',      ()=>{closeRadial();if(bridge)bridge.onRadialAction('report',radialLatLng.lat,radialLatLng.lng);}],
+let _radialLatLng = null;
+
+// [icon, label, css-class, action-key]
+const RADIAL_PETALS = [
+  ['🔵', 'FRIENDLY', 'green',  'friendly'],
+  ['🔴', 'ENEMY',    'red',    'enemy'],
+  ['📍', 'POI',      '',       'poi'],
+  ['⚡', 'TIC',      'red',    'tic'],
+  ['🚁', 'MEDEVAC',  'amber',  'medevac'],
+  ['⟷', 'DISTANCE', '',       'dist'],
+  ['⊙', 'RANGE',    'green',  'range'],
+  ['🛸', 'DRONE',    'purple', 'drone'],
 ];
-const RADIAL_R=90;
-const radialMenu=document.getElementById('radial-menu');
-const radialBD=document.getElementById('radial-backdrop');
-RADIAL_ITEMS.forEach(([ang,label,icon,cls,action])=>{
-  const div=document.createElement('div');
-  div.className='radial-item'+(cls?' '+cls:'');
-  div.innerHTML=`<span class="ri-icon">${icon}</span><span class="ri-label">${label}</span>`;
-  const r=ang*Math.PI/180;
-  div.style.left=(RADIAL_R*Math.sin(r))+'px';div.style.top=(-RADIAL_R*Math.cos(r))+'px';
-  div.addEventListener('click',e=>{e.stopPropagation();action();});
-  radialMenu.appendChild(div);
+const _RADIAL_RADIUS = 104;   // px from hub centre to petal centre
+
+// Build petals once
+(function _buildPetals(){
+  const menu = document.getElementById('radial-menu');
+  const n    = RADIAL_PETALS.length;
+  RADIAL_PETALS.forEach((p, i) => {
+    const [icon, label, cls, key] = p;
+    const el = document.createElement('div');
+    el.className = 'radial-petal' + (cls ? ' ' + cls : '');
+    el.dataset.key = key;
+    el.dataset.index = i;
+    el.innerHTML = `<span class="rp-icon">${icon}</span><span class="rp-lbl">${label}</span>`;
+    el.addEventListener('click', ev => { ev.stopPropagation(); _radialAct(key); });
+    menu.appendChild(el);
+  });
+})();
+
+function openRadial(containerPoint, latlng) {
+  _radialLatLng = latlng;
+  const menu = document.getElementById('radial-menu');
+  const bd   = document.getElementById('radial-backdrop');
+
+  // Position menu centre at the click, clamped so all petals stay on-screen
+  const mapSize = map.getSize();
+  const pad = _RADIAL_RADIUS + 44;
+  let cx = Math.max(pad, Math.min(containerPoint.x, mapSize.x - pad));
+  let cy = Math.max(pad, Math.min(containerPoint.y, mapSize.y - pad));
+  menu.style.left = cx + 'px';
+  menu.style.top  = cy + 'px';
+  menu.classList.add('active');
+  bd.classList.add('active');
+
+  // Position petals around the ring via CSS vars (hover-safe)
+  const petals = menu.querySelectorAll('.radial-petal');
+  const n = petals.length;
+  petals.forEach((el, i) => {
+    const ang = (-90 + i * (360 / n)) * Math.PI / 180;  // top, clockwise
+    const tx  = Math.cos(ang) * _RADIAL_RADIUS;
+    const ty  = Math.sin(ang) * _RADIAL_RADIUS;
+    // collapsed start
+    el.style.setProperty('--tx', '0px');
+    el.style.setProperty('--ty', '0px');
+    // expand to ring position (staggered)
+    setTimeout(() => {
+      el.style.setProperty('--tx', tx + 'px');
+      el.style.setProperty('--ty', ty + 'px');
+    }, 20 + i * 22);
+  });
+}
+
+function closeRadial() {
+  const menu = document.getElementById('radial-menu');
+  menu.classList.remove('active');
+  document.getElementById('radial-backdrop').classList.remove('active');
+  menu.querySelectorAll('.radial-petal').forEach(el => {
+    el.style.setProperty('--tx', '0px');
+    el.style.setProperty('--ty', '0px');
+  });
+}
+
+document.getElementById('radial-backdrop').addEventListener('click', closeRadial);
+
+function _radialAct(key) {
+  closeRadial();
+  const ll = _radialLatLng;
+  if (!ll) return;
+  if (key === 'friendly')      openSymbolPicker(ll.lat, ll.lng, 'FRIENDLY');
+  else if (key === 'enemy')    openSymbolPicker(ll.lat, ll.lng, 'HOSTILE');
+  else if (key === 'dist')     startMeasure('distance');
+  else if (key === 'range')    startRangeMode();
+  else if (bridge)             bridge.onRadialAction(key, ll.lat, ll.lng);
+}
+
+// Right-click opens the radial — UNLESS a measure tool is active
+// (in which case right-click finishes the current measurement instead).
+map.on('contextmenu', function(e) {
+  e.originalEvent.preventDefault();
+  e.originalEvent.stopPropagation();
+  if (_measActive) { _stopMeasure(null); return; }
+  if (_rangeMode)  { return; }  // range tool: right-click does nothing
+  openRadial(e.containerPoint, e.latlng);
 });
-function openRadial(pt,latlng){
-  radialLatLng=latlng;
-  radialMenu.style.left=pt.x+'px';radialMenu.style.top=pt.y+'px';
-  radialMenu.classList.add('active');radialBD.classList.add('active');
-  const items=radialMenu.querySelectorAll('.radial-item');
-  items.forEach((el,i)=>{el.classList.remove('show');setTimeout(()=>el.classList.add('show'),i*16);});
-}
-function closeRadial(){
-  radialMenu.classList.remove('active');radialBD.classList.remove('active');
-  radialMenu.querySelectorAll('.radial-item').forEach(el=>el.classList.remove('show'));
-}
-radialBD.addEventListener('click',closeRadial);
-map.on('contextmenu',function(e){e.originalEvent.preventDefault();e.originalEvent.stopPropagation();openRadial(e.containerPoint,e.latlng);});
-// Long-press support for tabletop touch
-let pressTimer=null;
-map.getContainer().addEventListener('touchstart',function(e){if(e.touches.length!==1)return;const t=e.touches[0];pressTimer=setTimeout(()=>{const cp=map.mouseEventToContainerPoint({clientX:t.clientX,clientY:t.clientY});const ll=map.containerPointToLatLng(cp);openRadial(cp,ll);},600);},{passive:true});
-map.getContainer().addEventListener('touchend',()=>{clearTimeout(pressTimer);},{passive:true});
-map.getContainer().addEventListener('touchmove',()=>{clearTimeout(pressTimer);},{passive:true});
+
+// Long-press (touch / tabletop)
+let _pressTimer = null;
+map.getContainer().addEventListener('touchstart', function(e) {
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  _pressTimer = setTimeout(() => {
+    const cp = map.mouseEventToContainerPoint({clientX:t.clientX, clientY:t.clientY});
+    openRadial(cp, map.containerPointToLatLng(cp));
+  }, 550);
+}, {passive:true});
+map.getContainer().addEventListener('touchend',  ()=>clearTimeout(_pressTimer), {passive:true});
+map.getContainer().addEventListener('touchmove', ()=>clearTimeout(_pressTimer), {passive:true});
 
 // ================================================================
 // MAP EVENTS
