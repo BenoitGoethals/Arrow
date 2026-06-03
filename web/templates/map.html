@@ -1159,6 +1159,7 @@
     const TG_TYPES = Object.keys(TG_SPEC);
 
     function isTgType(type) { return TG_SPEC[type] != null; }
+    function isFdType(type) { return type === 'FREEDRAW_LINE' || type === 'FREEDRAW_TEXT'; }
 
     // NATO size designators rendered above the unit symbol. Each entry returns
     // an SVG <g> string positioned to sit centred above (40, 4).
@@ -1362,6 +1363,7 @@
     function placeEnemy(obj) {
         const key = `to-${obj.id}`;
         if (isTgType(obj.type)) { placeGraphic(obj); return; }
+        if (isFdType(obj.type)) { fdPlaceObject(obj); return; }
         const existing = state.markers.get(key);
         if (existing) {
             existing.setLatLng([obj.latitude, obj.longitude]);
@@ -1431,7 +1433,7 @@
     function refreshEnemies() {
         const cnt = document.getElementById('enemies-count');
         if (cnt) cnt.textContent = [...state.tacticalObjects.values()]
-            .filter(x => !isTgType(x.type)).length;
+            .filter(x => !isTgType(x.type) && !isFdType(x.type)).length;
         const tgCnt = document.getElementById('tg-count');
         if (tgCnt) tgCnt.textContent = [...state.tacticalObjects.values()]
             .filter(x => isTgType(x.type)).length;
@@ -4193,8 +4195,15 @@
             } else if (msg.channel === 'tactical-object') {
                 const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
                 if (_mid && msg.data.mission_id && msg.data.mission_id !== _mid) return;
-                if (msg.event === 'created') { state.tacticalObjects.set(msg.data.id, msg.data); schedRefreshEnemies(); }
-                else if (msg.event === 'deleted') { state.tacticalObjects.delete(msg.data.id); schedRefreshEnemies(); }
+                if (msg.event === 'created') {
+                    state.tacticalObjects.set(msg.data.id, msg.data);
+                    if (isFdType(msg.data.type)) fdPlaceObject(msg.data);
+                    else schedRefreshEnemies();
+                } else if (msg.event === 'deleted') {
+                    state.tacticalObjects.delete(msg.data.id);
+                    if (isFdType(msg.data.type)) fdRemoveObject(msg.data.id);
+                    else schedRefreshEnemies();
+                }
             } else if (msg.channel === 'alert') {
                 if (msg.event === 'triggered') handleAlertTriggered(msg.data);
                 else if (msg.event === 'ack')  removeAlertLayer(msg.data.id);
@@ -4569,31 +4578,71 @@
     document.getElementById('mgal-btn').addEventListener('click', openMediaGallery);
 
     // ════════════════════════════════════════════════════════════════════
-    // FREE DRAW
-    // Pen: Leaflet mousedown → document mousemove/mouseup for accuracy.
-    // Text: Leaflet click → inline overlay input at click position.
-    // Local-only (not persisted to server — annotation layer only).
+    // FREE DRAW — persisted as tactical objects, broadcast via WS
+    // FREEDRAW_LINE : geometry {type:'line', coords:[[lat,lon],...]}
+    //                 notes    JSON {color, thick}
+    // FREEDRAW_TEXT : geometry {type:'point', coords:[[lat,lon]]}
+    //                 notes    JSON {color, text}
     // ════════════════════════════════════════════════════════════════════
     const fdLayer = L.layerGroup().addTo(map);
 
     let fdColor   = '#ef4444';
     let fdThick   = 2;
-    let fdTool    = 'none';   // 'pen' | 'text' | 'none'
+    let fdTool    = 'none';
     let fdDown    = false;
     let fdPts     = [];
     let fdCurLyr  = null;
-    let fdHistory = [];
+    let fdHistory = [];   // local undo stack (layer refs only)
     let fdPendLL  = null;
 
-    // ── helpers ──────────────────────────────────────────────────────────
     function fdEsc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+    // ── Rendering helpers (used for both local draw + WS inbound) ────────
+    function fdRenderLine(coords, color, thick) {
+        const pts = coords.map(c => L.latLng(c[0], c[1]));
+        return L.polyline(pts, {
+            color, weight: thick, opacity: .92,
+            lineCap: 'round', lineJoin: 'round', interactive: false
+        }).addTo(fdLayer);
+    }
+
+    function fdRenderText(lat, lon, color, text) {
+        const sh = '1px 1px 3px #000,-1px -1px 3px #000,1px -1px 3px #000,-1px 1px 3px #000';
+        return L.marker([lat, lon], {
+            interactive: false,
+            icon: L.divIcon({
+                className: '',
+                html: `<div style="color:${color};font-family:monospace;font-size:13px;
+                       font-weight:700;white-space:nowrap;text-shadow:${sh};
+                       pointer-events:none">${fdEsc(text)}</div>`,
+                iconSize: [0, 0], iconAnchor: [0, 8]
+            })
+        }).addTo(fdLayer);
+    }
+
+    // ── Save to backend ───────────────────────────────────────────────────
+    async function fdSave(type, geometry, notes) {
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
+                method: 'POST',
+                headers: missionHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ type, geometry: JSON.stringify(geometry),
+                                       notes: JSON.stringify(notes), affiliation: 'NEUTRAL' }),
+            });
+            if (r.ok) {
+                const o = await r.json();
+                state.tacticalObjects.set(o.id, o);
+                // Don't call refreshEnemies — we already rendered locally
+            }
+        } catch (e) { console.warn('[freedraw] save failed', e); }
+    }
+
+    // ── Tool management ───────────────────────────────────────────────────
     function fdSetTool(tool) {
         fdStopAll();
         fdTool = tool;
         document.getElementById('fd-pen-btn').classList.toggle('active', tool === 'pen');
         document.getElementById('fd-text-btn').classList.toggle('active', tool === 'text');
-
         if (tool === 'pen') {
             map.dragging.disable();
             map.on('mousedown', fdLeafletDown);
@@ -4617,23 +4666,20 @@
         fdCloseText();
     }
 
-    function fdLeafletDown(e) {
-        fdDown = true;
-        fdPts  = [e.latlng];
-    }
+    // ── Pen handlers ──────────────────────────────────────────────────────
+    function fdLeafletDown(e) { fdDown = true; fdPts = [e.latlng]; }
 
     function fdDocMove(e) {
         if (!fdDown) return;
         const rect = map.getContainer().getBoundingClientRect();
-        const ll   = map.containerPointToLatLng(L.point(e.clientX - rect.left, e.clientY - rect.top));
+        const ll = map.containerPointToLatLng(L.point(e.clientX - rect.left, e.clientY - rect.top));
         fdPts.push(ll);
         if (fdCurLyr) fdLayer.removeLayer(fdCurLyr);
-        if (fdPts.length >= 2) {
+        if (fdPts.length >= 2)
             fdCurLyr = L.polyline(fdPts.slice(), {
                 color: fdColor, weight: fdThick, opacity: .92,
                 lineCap: 'round', lineJoin: 'round', interactive: false
             }).addTo(fdLayer);
-        }
     }
 
     function fdDocUp() {
@@ -4641,22 +4687,22 @@
         fdDown = false;
         if (fdCurLyr) { fdLayer.removeLayer(fdCurLyr); fdCurLyr = null; }
         if (fdPts.length >= 2) {
-            const lyr = L.polyline(fdPts.slice(), {
-                color: fdColor, weight: fdThick, opacity: .92,
-                lineCap: 'round', lineJoin: 'round', interactive: false
-            }).addTo(fdLayer);
+            const coords = fdPts.map(ll => [ll.lat, ll.lng]);
+            const lyr = fdRenderLine(coords, fdColor, fdThick);
             fdHistory.push(lyr);
+            fdSave('FREEDRAW_LINE', {type:'line', coords}, {color: fdColor, thick: fdThick});
         }
         fdPts = [];
     }
 
+    // ── Text handlers ─────────────────────────────────────────────────────
     function fdTextClick(e) {
         if (fdTool !== 'text') return;
         fdPendLL = e.latlng;
         const pt = map.latLngToContainerPoint(e.latlng);
         const rc = map.getContainer().getBoundingClientRect();
         const ov = document.getElementById('fd-text-overlay');
-        ov.style.left = Math.min(rc.left + pt.x + 8, window.innerWidth  - 320) + 'px';
+        ov.style.left = Math.min(rc.left + pt.x + 8,  window.innerWidth  - 320) + 'px';
         ov.style.top  = Math.min(rc.top  + pt.y - 18, window.innerHeight -  60) + 'px';
         ov.classList.add('active');
         const inp = document.getElementById('fd-text-input');
@@ -4664,43 +4710,64 @@
         setTimeout(() => inp.focus(), 40);
     }
 
-    function fdPlaceText() {
+    // exposed globally so onclick="" attributes in HTML can reach them
+    window.fdPlaceText = function() {
         const text = (document.getElementById('fd-text-input').value || '').trim();
         if (text && fdPendLL) {
-            const sh = '1px 1px 3px #000,-1px -1px 3px #000,1px -1px 3px #000,-1px 1px 3px #000';
-            const lyr = L.marker(fdPendLL, {
-                interactive: false,
-                icon: L.divIcon({
-                    className: '',
-                    html: `<div style="color:${fdColor};font-family:monospace;font-size:13px;
-                           font-weight:700;white-space:nowrap;text-shadow:${sh};
-                           pointer-events:none">${fdEsc(text)}</div>`,
-                    iconSize: [0, 0], iconAnchor: [0, 8]
-                })
-            }).addTo(fdLayer);
+            const lyr = fdRenderText(fdPendLL.lat, fdPendLL.lng, fdColor, text);
             fdHistory.push(lyr);
+            fdSave('FREEDRAW_TEXT',
+                   {type:'point', coords:[[fdPendLL.lat, fdPendLL.lng]]},
+                   {color: fdColor, text});
         }
         fdCloseText();
-    }
+    };
 
-    function fdCloseText() {
+    window.fdCloseText = function() {
         const ov = document.getElementById('fd-text-overlay');
         if (ov) ov.classList.remove('active');
         fdPendLL = null;
-    }
+    };
+    // keep short local alias
+    function fdCloseText() { window.fdCloseText(); }
 
-    function fdUndo() {
+    window.fdUndo = function() {
         if (!fdHistory.length) return;
         fdLayer.removeLayer(fdHistory.pop());
-    }
+        // Note: undo is local-only — we don't delete from server to keep simplicity
+    };
 
-    function fdClear() {
+    window.fdClear = function() {
         fdLayer.clearLayers();
         fdHistory = [];
         fdCurLyr  = null;
+    };
+
+    // ── Handle inbound FREEDRAW objects (load + WS) ───────────────────────
+    function fdPlaceObject(obj) {
+        const key = `fd-${obj.id}`;
+        if (state.markers.has(key)) return;  // already rendered
+        try {
+            const geom  = JSON.parse(obj.geometry || '{}');
+            const notes = JSON.parse(obj.notes    || '{}');
+            let lyr;
+            if (obj.type === 'FREEDRAW_LINE' && geom.coords?.length >= 2) {
+                lyr = fdRenderLine(geom.coords, notes.color || '#ef4444', notes.thick || 2);
+            } else if (obj.type === 'FREEDRAW_TEXT' && geom.coords?.[0]) {
+                const [lat, lon] = geom.coords[0];
+                lyr = fdRenderText(lat, lon, notes.color || '#ef4444', notes.text || '?');
+            }
+            if (lyr) state.markers.set(key, lyr);
+        } catch (e) { console.warn('[freedraw] render failed', e); }
     }
 
-    // ── UI wiring ─────────────────────────────────────────────────────────
+    function fdRemoveObject(id) {
+        const key = `fd-${id}`;
+        const lyr = state.markers.get(key);
+        if (lyr) { fdLayer.removeLayer(lyr); state.markers.delete(key); }
+    }
+
+    // ── UI wiring ──────────────────────────────────────────────────────────
     document.getElementById('fd-pen-btn').addEventListener('click', () => {
         fdSetTool(fdTool === 'pen' ? 'none' : 'pen');
     });
@@ -4708,17 +4775,14 @@
         fdSetTool(fdTool === 'text' ? 'none' : 'text');
     });
 
-    // Color swatches
     document.getElementById('fd-colors').addEventListener('click', e => {
         const btn = e.target.closest('[data-color]');
         if (!btn) return;
         fdColor = btn.dataset.color;
         document.querySelectorAll('.fd-color-swatch').forEach(b => b.classList.toggle('active', b === btn));
     });
-    // Select first color by default
     document.querySelector('.fd-color-swatch').classList.add('active');
 
-    // Thickness buttons
     document.querySelectorAll('.fd-thick-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             fdThick = parseInt(btn.dataset.thick);
@@ -4726,13 +4790,11 @@
         });
     });
 
-    // Enter/Escape in text overlay
     document.getElementById('fd-text-input').addEventListener('keydown', e => {
-        if (e.key === 'Enter')  { fdPlaceText(); e.preventDefault(); }
-        if (e.key === 'Escape') { fdCloseText(); e.preventDefault(); }
+        if (e.key === 'Enter')  { window.fdPlaceText(); e.preventDefault(); }
+        if (e.key === 'Escape') { fdCloseText();        e.preventDefault(); }
     });
 
-    // ESC also stops free draw pen
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && fdTool !== 'none') fdSetTool('none');
     });
