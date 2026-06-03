@@ -4320,6 +4320,16 @@
                 } else if (msg.event === 'submitted' &&
                         ['MEDEVAC','CASEVAC','CAS','DRONE_SPOT','IED'].includes(msg.data?.type)) {
                     showReportToast(msg.data);
+                    // Auto-zoom for MEDEVAC / CASEVAC if coordinates are present
+                    if (['MEDEVAC','CASEVAC'].includes(msg.data?.type)) {
+                        try {
+                            const rp = JSON.parse(msg.data.payload || '{}');
+                            const rlat = parseFloat(rp.latitude || rp.line_5_lat);
+                            const rlon = parseFloat(rp.longitude || rp.line_5_lon);
+                            if (!isNaN(rlat) && !isNaN(rlon))
+                                map.setView([rlat, rlon], 16, { animate: true });
+                        } catch(_) {}
+                    }
                 } else if (msg.event === 'logrep_routed') {
                     showLogrepToast(`📦 LOGREP routed → ${(msg.data?.destinations||[]).join(', ')}`, '#0ea5e9');
                 } else if (msg.event === 'logrep_feedback') {
@@ -4374,6 +4384,26 @@
     setInterval(loadMapMessages, 30000);
     setInterval(loadHierarchy, 15000);  // refresh online flags
     connectWS();
+
+    // ── URL param auto-zoom (/map/?lat=X&lon=Y&zoom=16) ──────────────────
+    // Used by "View on Map" links in reports / medcop / alerts.
+    (function() {
+        const q = new URLSearchParams(window.location.search);
+        const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon'));
+        const zoom = parseInt(q.get('zoom')) || 16;
+        if (!isNaN(lat) && !isNaN(lon)) {
+            // Wait for tiles to settle before flying in
+            setTimeout(() => map.setView([lat, lon], zoom, { animate: true }), 600);
+            // Drop a brief pulsing highlight so the point is obvious
+            const ring = L.circleMarker([lat, lon], {
+                color:'#3b82f6', fill:false, radius:18, weight:3, opacity:.9
+            }).addTo(map);
+            let f=0; const t=setInterval(()=>{
+                f++; ring.setRadius(18+f*2); ring.setStyle({opacity:1-f/10});
+                if(f>=10){clearInterval(t);map.removeLayer(ring);}
+            }, 200);
+        }
+    })();
 
     // ── Weather overlays ─────────────────────────────────────────────────
     // RainViewer : animated radar (past + nowcast) + IR satellite — no key needed.

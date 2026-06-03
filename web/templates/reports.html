@@ -794,45 +794,143 @@
         renderTable(filtered);
     };
 
+    // ── 9-liner renderer for MEDEVAC / CASEVAC ───────────────────────
+    // Handles BOTH the web-form format (line_1 … line_9 + label_N)
+    // and the Front desktop format (line1_location, line2_frequency …)
+    function renderMedevac9liner(p, c) {
+        const h = s => escHtml(String(s ?? ''));
+        const dlRow = (num, lbl, val) => val
+            ? `<div class="dl-grid">
+                   <span class="dl-num" style="color:${c}">${num}</span>
+                   <span class="dl-lbl">${h(lbl)}</span>
+                   <span class="dl-val">${h(val)}</span>
+               </div>` : '';
+
+        // Detect Front desktop payload (keys like line1_location)
+        if ('line1_location' in p || 'line2_frequency' in p) {
+            const l2 = [p.line2_frequency, p.line2_callsign, p.line2_suffix].filter(Boolean).join(' / ');
+            const l3 = [p.line3_precedence, p.line3_count ? p.line3_count + ' pat' : ''].filter(Boolean).join(' · ');
+            const l5 = [p.line5_litter   && p.line5_litter   + ' litter',
+                        p.line5_ambulatory && p.line5_ambulatory + ' ambulatory'].filter(Boolean).join(', ');
+            const l7 = [p.line7_marking, p.line7_color].filter(Boolean).join(' — ');
+            let html = [
+                dlRow(1, 'Location (PZ MGRS)',    p.line1_location),
+                dlRow(2, 'Radio / Call sign',      l2),
+                dlRow(3, 'Precedence / Count',     l3),
+                dlRow(4, 'Special equipment',      p.line4_equipment),
+                dlRow(5, 'Patients by type',       l5),
+                dlRow(6, 'Security at PZ',         p.line6_security),
+                dlRow(7, 'Marking / Colour',       l7),
+                dlRow(8, 'Nationality / Status',   p.line8_nationality),
+                dlRow(9, 'NBC contamination',      p.line9_nbc),
+            ].join('');
+            if (p.notes) html += `<div style="margin-top:.4rem;border-top:1px solid #1e2736;
+                padding-top:.35rem;color:#94a3b8;font-size:.78rem">
+                <strong style="color:#64748b">Notes:</strong> ${h(p.notes)}</div>`;
+            return html;
+        }
+
+        // Web-form format: line_1 … line_9
+        const MEDEVAC_LABELS = ['', 'Location (PZ)', 'Radio / Call sign', 'Patients by precedence',
+            'Special equipment', 'Patients by type', 'Security at PZ',
+            'Marking method', 'Nationality / Status', 'NBC contamination'];
+        return [1,2,3,4,5,6,7,8,9]
+            .filter(n => p[`line_${n}`])
+            .map(n => dlRow(n, p[`label_${n}`] || MEDEVAC_LABELS[n] || `Line ${n}`, p[`line_${n}`]))
+            .join('');
+    }
+
+    // ── Generic full-payload renderer ─────────────────────────────────
+    function renderGenericPayload(p, c) {
+        const h = s => escHtml(String(s ?? ''));
+        const rows = [];
+        // Numbered lines first (line_1 … or line1_xxx)
+        for (let n = 1; n <= 9; n++) {
+            const webKey   = `line_${n}`;
+            const webVal   = p[webKey];
+            if (webVal) {
+                rows.push(`<div class="dl-grid">
+                    <span class="dl-num" style="color:${c}">${n}</span>
+                    <span class="dl-lbl">${h(p[`label_${n}`] || `Line ${n}`)}</span>
+                    <span class="dl-val">${h(webVal)}</span>
+                </div>`);
+            }
+        }
+        // Any remaining non-internal keys
+        const skip = new Set(['label_1','label_2','label_3','label_4','label_5',
+                              'label_6','label_7','label_8','label_9',
+                              'line_5_lat','line_5_lon','latitude','longitude']);
+        Object.keys(p).filter(k =>
+            !k.startsWith('line_') && !skip.has(k) && p[k] !== '' && p[k] != null
+        ).forEach(k => {
+            const lbl = k.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase());
+            rows.push(`<div style="display:flex;gap:.5rem;font-size:.78rem;padding:.1rem 0">
+                <span style="color:#64748b;min-width:140px">${h(lbl)}</span>
+                <span style="color:#e2e8f0;font-family:monospace">${h(String(p[k]))}</span>
+            </div>`);
+        });
+        return rows.join('') || '<em style="color:#475569">No detail available</em>';
+    }
+
+    // ── Map zoom link ─────────────────────────────────────────────────
+    function mapZoomBtn(lat, lon, label) {
+        if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return '';
+        const url = `/map/?lat=${lat}&lon=${lon}&zoom=16`;
+        return `<a href="${url}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:4px;margin-top:.4rem;
+                   padding:3px 10px;background:#1c2d3f;border:1px solid #1f6feb;
+                   color:#79c0ff;font-size:.72rem;border-radius:4px;text-decoration:none">
+            📍 View on Map${label ? ' · ' + escHtml(label) : ''}
+        </a>`;
+    }
+
     // ── Build one report table row ───────────────────────────────────
     function buildReportRow(rep) {
         const c  = TYPE_COLORS[rep.type] || '#64748b';
         const st = rep.status || 'RECEIVED';
-        const isCas = rep.type === 'CAS';
-        let line1 = '—', detail = '', foLabel = '—';
+        const isCas     = rep.type === 'CAS';
+        const isMedEvac = rep.type === 'MEDEVAC' || rep.type === 'CASEVAC';
+        let line1 = '—', detail = '', foLabel = '—', mapBtn = '';
         try {
             const p = JSON.parse(rep.payload);
+
+            // ── Summary line (table cell) ──────────────────────────────
             if (rep.type === 'LOGREP') {
-                const g = p.section_g || {};
-                const a = p.section_a || {};
-                line1 = [g.assessment, a.present ? `Strength: ${a.present}` : ''].filter(Boolean).join(' · ') || '—';
+                const g = p.section_g || {}, a = p.section_a || {};
+                line1 = [g.assessment, a.present ? `Str: ${a.present}` : ''].filter(Boolean).join(' · ') || '—';
             } else if (isCas) {
                 line1 = p.line_5_mgrs || p.line_5 || p.line_4 || '—';
+            } else if (isMedEvac) {
+                line1 = p.line1_location || p.line_1 || '—';
             } else {
-                line1 = p.line_1 || '—';
+                line1 = p.line_1 || p.line_3 || '—';
             }
             if (isCas && p.fo_callsign) foLabel = p.fo_callsign;
 
+            // ── Full detail ────────────────────────────────────────────
             if (rep.type === 'LOGREP') {
                 detail = renderLogrep(p, c);
+            } else if (isMedEvac) {
+                detail = renderMedevac9liner(p, c);
+            } else if (isCas) {
+                detail = renderGenericPayload(p, c);
+                if (p.line_5_mgrs) detail += `<div style="margin-top:.35rem;font-size:.78rem;color:#fbbf24">
+                    📍 MGRS: <span style="font-family:monospace">${escHtml(p.line_5_mgrs)}</span></div>`;
+                if (p.fo_callsign) detail += `<div style="font-size:.78rem;color:#94a3b8;margin-top:.2rem">
+                    FO: <strong>${escHtml(p.fo_callsign)}</strong></div>`;
             } else {
-                detail = Object.keys(p)
-                    .filter(k => k.startsWith('line_') && p[k] && !k.includes('_lat') && !k.includes('_lon') && !k.includes('_mgrs'))
-                    .map(k => {
-                        const n   = k.slice(5);
-                        const lbl = p[`label_${n}`] || `Line ${n}`;
-                        return `<div class="dl-grid">
-                            <span class="dl-num" style="color:${c}">${n}</span>
-                            <span class="dl-lbl">${escHtml(lbl)}</span>
-                            <span class="dl-val">${escHtml(p[k])}</span>
-                        </div>`;
-                    }).join('');
+                detail = renderGenericPayload(p, c);
             }
-            if (isCas) {
-                if (p.line_5_mgrs) detail += `<div style="margin-top:.35rem;font-size:.78rem;color:#fbbf24">📍 MGRS: <span style="font-family:monospace">${escHtml(p.line_5_mgrs)}</span></div>`;
-                if (p.line_5_lat && p.line_5_lon) detail += `<div style="font-size:.75rem;color:#64748b">Lat/Lon: ${p.line_5_lat.toFixed(5)}, ${p.line_5_lon.toFixed(5)}</div>`;
-                if (p.fo_callsign) detail += `<div style="font-size:.78rem;color:#94a3b8;margin-top:.3rem">FO: <strong>${escHtml(p.fo_callsign)}</strong></div>`;
-            }
+
+            // ── Map-zoom button ────────────────────────────────────────
+            const lat = parseFloat(p.latitude  || p.line_5_lat);
+            const lon = parseFloat(p.longitude || p.line_5_lon);
+            const mgrsHint = p.line1_location || p.line_5_mgrs || '';
+            mapBtn = mapZoomBtn(lat, lon, mgrsHint);
+            // Also try CAS target coordinates
+            if (!mapBtn && isCas && p.line_5_lat && p.line_5_lon)
+                mapBtn = mapZoomBtn(p.line_5_lat, p.line_5_lon, p.line_5_mgrs || '');
+
         } catch(_){}
 
         const ticBadge = (rep.tic || false)
@@ -908,7 +1006,7 @@
                 <button onclick="toggleDetail(this)"
                         style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
                 <div class="rep-detail" data-id="${rep.id}">
-                    ${detail}${note}${actionPanel}${routingPanel}${feedbackPanel}
+                    ${detail}${mapBtn}${note}${actionPanel}${routingPanel}${feedbackPanel}
                 </div>
             </td>
         </tr>`;

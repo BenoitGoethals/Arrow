@@ -80,9 +80,11 @@ class StrikePlannerWindow(QMainWindow):
     # ── Window setup ────────────────────────────────────────────────────────
 
     def _setup_window(self):
+        from PyQt6.QtCore import Qt
         name   = self._bundle.get("name", "UNKNOWN")
         status = self._bundle.get("status", "PLANNING")
         self.setWindowTitle(f"◆ STRIKE PACKAGE  —  {name.upper()}  [{status}]")
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.resize(1100, 760)
         self.setMinimumSize(900, 640)
         self.setStyleSheet("""

@@ -94,16 +94,62 @@ function _ago(ts) {
   const s = Math.floor((Date.now()-new Date(ts))/1000);
   return s<60?s+'s':s<3600?Math.floor(s/60)+'m':Math.floor(s/3600)+'h';
 }
+function _esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// Full 9-liner: handles both Front (line1_location) and web (line_1) formats
+function _nineliner(p) {
+  const ROW = (n,lbl,v)=>v?`<div style="display:grid;grid-template-columns:22px 140px 1fr;gap:2px 6px;font-size:.73rem;padding:2px 0">
+    <span style="color:#f472b6;font-weight:700">${n}</span>
+    <span style="color:#64748b">${_esc(lbl)}</span>
+    <span style="color:#e2e8f0;font-family:monospace">${_esc(v)}</span></div>`:'';
+  if('line1_location' in p||'line2_frequency' in p) {
+    const l2=[p.line2_frequency,p.line2_callsign,p.line2_suffix].filter(Boolean).join(' / ');
+    const l5=[p.line5_litter&&p.line5_litter+' litter',p.line5_ambulatory&&p.line5_ambulatory+' amb'].filter(Boolean).join(', ');
+    const l7=[p.line7_marking,p.line7_color].filter(Boolean).join(' — ');
+    return [
+      ROW(1,'Location (PZ)',p.line1_location),ROW(2,'Radio / Call sign',l2),
+      ROW(3,'Precedence',p.line3_precedence+(p.line3_count?' · '+p.line3_count+' pat':'')),
+      ROW(4,'Equipment',p.line4_equipment),ROW(5,'Patients',l5),ROW(6,'Security',p.line6_security),
+      ROW(7,'Marking',l7),ROW(8,'Nationality',p.line8_nationality),ROW(9,'NBC',p.line9_nbc),
+      p.notes?`<div style="margin-top:4px;font-size:.72rem;color:#94a3b8"><em>${_esc(p.notes)}</em></div>`:''
+    ].join('');
+  }
+  const LBL=['','Location','Radio / Call sign','Precedence','Equipment','Patients','Security','Marking','Nationality','NBC'];
+  return [1,2,3,4,5,6,7,8,9].filter(n=>p[`line_${n}`])
+    .map(n=>ROW(n,p[`label_${n}`]||LBL[n]||'Line '+n,p[`line_${n}`])).join('');
+}
+
+function _mapBtn(p) {
+  const lat=parseFloat(p.latitude);const lon=parseFloat(p.longitude);
+  if(isNaN(lat)||isNaN(lon))return '';
+  const mgrs=p.line1_location||p.line_1||'';
+  return `<a href="/map/?lat=${lat}&lon=${lon}&zoom=16" target="_blank"
+    style="display:inline-flex;align-items:center;gap:4px;margin-top:5px;
+           padding:2px 8px;background:#1c2d3f;border:1px solid #1f6feb;
+           color:#79c0ff;font-size:.7rem;border-radius:3px;text-decoration:none">
+    📍 View on Map${mgrs?' · '+_esc(mgrs):''}</a>`;
+}
+
 function _repHtml(r) {
-  let payload = '';
-  try { const p=JSON.parse(r.payload); payload=Object.entries(p).slice(0,3).map(([k,v])=>`${k}: ${v}`).join(' · '); } catch(_){}
+  const id='mc-rep-'+r.id;
+  let nineliner='', mapBtn='';
+  try {
+    const p=JSON.parse(r.payload);
+    nineliner=_nineliner(p);
+    mapBtn=_mapBtn(p);
+  } catch(_){}
   return `<div class="mc-rep">
     <div class="mr-hdr">
       <span class="mr-type t-${r.type}">${r.type}</span>
       <span class="mr-status s-${r.status}">${r.status}</span>
       <span class="mr-time" style="margin-left:auto">${_ago(r.timestamp)} ago</span>
+      <button onclick="var d=document.getElementById('${id}');d.style.display=d.style.display==='none'?'block':'none'"
+        style="background:none;border:0;color:#64748b;cursor:pointer;font-size:.75rem;padding:0 4px">▼ Details</button>
     </div>
-    <div class="mr-payload">${payload||'No detail'}</div>
+    <div id="${id}" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid #1e293b">
+      ${nineliner||'<em style="color:#475569;font-size:.75rem">No detail</em>'}
+      ${mapBtn}
+    </div>
   </div>`;
 }
 async function load() {
