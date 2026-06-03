@@ -24,11 +24,7 @@ import sounddevice as sd
 
 try:
     import pymumble_py3 as pymumble
-    from pymumble_py3.callbacks import (
-        PYMUMBLE_CLBK_CONNECTED,
-        PYMUMBLE_CLBK_DISCONNECTED,
-        PYMUMBLE_CLBK_SOUNDRECEIVED,
-    )
+    from pymumble_py3.callbacks import PYMUMBLE_CLBK_SOUNDRECEIVED
     MUMBLE_AVAILABLE = True
     _MUMBLE_ERR = ""
 except Exception as _e:
@@ -241,11 +237,15 @@ class MumbleClient(QObject):
                 )
                 m.set_application_string("Arrow Front")
                 m.callbacks.set_callback(PYMUMBLE_CLBK_SOUNDRECEIVED, self._on_sound)
-                m.callbacks.set_callback(PYMUMBLE_CLBK_CONNECTED,     self._on_connected)
-                m.callbacks.set_callback(PYMUMBLE_CLBK_DISCONNECTED,  self._on_disconnected)
                 m.start()
                 m.is_ready()           # blocks until connected (or raises)
                 self._mumble = m
+
+                # Emit "connected" here — is_ready() returning is the authoritative
+                # "fully connected" signal.  The CLBK_CONNECTED callback is unreliable
+                # (it fires from inside connect() before is_ready() unblocks, racing
+                # with Qt's queued event processing).
+                self.state_changed.emit("connected")
 
                 # Join requested channel
                 if channel:
@@ -256,7 +256,7 @@ class MumbleClient(QObject):
 
                 self._start_audio()
                 self._start_poll()
-                # timer started via state_changed → _on_state_for_timer (main thread)
+                # speak timer started via state_changed → _on_state_for_timer (main thread)
 
             except Exception as exc:
                 msg = str(exc)
@@ -319,12 +319,6 @@ class MumbleClient(QObject):
                 pass
 
     # ── Callbacks (called from pymumble thread) ───────────────────────────────
-
-    def _on_connected(self):
-        self.state_changed.emit("connected")
-
-    def _on_disconnected(self):
-        self.state_changed.emit("disconnected")
 
     def _on_sound(self, user, soundchunk):
         """Received audio from a remote user."""
