@@ -1767,11 +1767,13 @@ window.mvJoin = function mvJoin() {
     const f   = document.getElementById('mv-join-form');
     const msg = document.getElementById('mv-msg');
 
-    // Warn immediately if mic will not be available
+    // Note if mic won't be available (listen-only mode will be used)
     if (!window.isSecureContext || !navigator.mediaDevices) {
-        msg.textContent = '⚠ Voice requires HTTPS. Access Arrow via https:// to enable mic.';
+        msg.textContent = 'ℹ HTTP: listen-only mode (HTTPS needed for mic).';
+        msg.style.color = '#d97706';
     } else {
         msg.textContent = '';
+        msg.style.color = '#f87171';
     }
 
     // Pre-fill host from monitor config
@@ -1799,47 +1801,49 @@ window.mvConnect = async function mvConnect() {
 
     if (!hostFull || !uname) { msg.textContent = 'Host and username required'; return; }
 
-    const [host, portStr] = hostFull.includes(':') ? hostFull.split(':') : [hostFull, '64738'];
-    const port = parseInt(portStr) || 64738;
+    // Strip any protocol prefix — Mumble uses raw TCP, not HTTP
+    const cleanHost = hostFull.replace(/^https?:\/\//i, '').replace(/^mumble:\/\//i, '');
+    const colonIdx  = cleanHost.lastIndexOf(':');
+    const host      = colonIdx > 0 ? cleanHost.slice(0, colonIdx) : cleanHost;
+    const port      = colonIdx > 0 ? (parseInt(cleanHost.slice(colonIdx + 1)) || 64738) : 64738;
 
-    // Mic requires a secure context (HTTPS or localhost)
-    if (!window.isSecureContext || !navigator.mediaDevices) {
-        msg.textContent = '⚠ Mic requires HTTPS. Open Arrow via https:// to use voice.';
-        return;
+    // Try mic — degrade gracefully to listen-only if HTTP or permission denied
+    const _canMic = window.isSecureContext && !!navigator.mediaDevices;
+    if (_canMic) {
+        msg.textContent = 'Requesting microphone…';
+        try {
+            _mvStream = await navigator.mediaDevices.getUserMedia({
+                audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+            });
+        } catch (e) {
+            msg.textContent = '⚠ Mic denied — connecting listen-only.';
+            _mvStream = null;
+        }
+    } else {
+        msg.textContent = '⚠ HTTP: listen-only (HTTPS needed for mic).';
+        _mvStream = null;
     }
 
-    msg.textContent = 'Requesting microphone…';
+    msg.textContent = msg.textContent.replace('Requesting microphone…', '') || 'Connecting…';
 
-    // Request mic access
-    try {
-        _mvStream = await navigator.mediaDevices.getUserMedia({
-            audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
-        });
-    } catch (e) {
-        msg.textContent = 'Mic denied: ' + e.message;
-        return;
-    }
-
-    msg.textContent = 'Connecting to server…';
-
-    // AudioContext
+    // AudioContext — playback works over HTTP, only capture needs HTTPS
     _mvAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
     _mvGainNode = _mvAudioCtx.createGain();
     _mvGainNode.gain.value = _mvVol;
     _mvGainNode.connect(_mvAudioCtx.destination);
 
-    // Mic capture — ScriptProcessor (deprecated but universally supported)
-    const src = _mvAudioCtx.createMediaStreamSource(_mvStream);
+    // Mic capture — only if we have a stream
+    const src = _mvStream ? _mvAudioCtx.createMediaStreamSource(_mvStream) : null;
     _mvProcessor = _mvAudioCtx.createScriptProcessor(4096, 1, 1);
     _mvProcessor.onaudioprocess = e => {
-        if (!_mvPtt || !_mvWs || _mvWs.readyState !== WebSocket.OPEN) return;
+        if (!_mvStream || !_mvPtt || !_mvWs || _mvWs.readyState !== WebSocket.OPEN) return;
         const f32 = e.inputBuffer.getChannelData(0);
         const i16 = new Int16Array(f32.length);
         for (let i = 0; i < f32.length; i++)
             i16[i] = Math.max(-32768, Math.min(32767, f32[i] * 32768));
         _mvWs.send(i16.buffer);
     };
-    src.connect(_mvProcessor);
+    if (src) { src.connect(_mvProcessor); }
     _mvProcessor.connect(_mvAudioCtx.destination);
 
     // WebSocket
@@ -1956,6 +1960,16 @@ function _mvPlayPCM(buffer) {
 function _mvSetupPTT() {
     const btn = document.getElementById('mv-ptt');
     if (!btn) return;
+
+    if (!_mvStream) {
+        // Listen-only — disable PTT and show reason
+        btn.textContent      = '🎙 PTT — HTTPS required for mic';
+        btn.style.background = '#1e293b';
+        btn.style.color      = '#475569';
+        btn.style.cursor     = 'not-allowed';
+        btn.style.border     = '1px solid #334155';
+        return;
+    }
 
     const press = () => {
         _mvPtt = true;
