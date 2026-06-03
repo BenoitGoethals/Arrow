@@ -20,6 +20,7 @@ from front.panels.reports.panel   import ReportsPanel
 from front.panels.messages.panel  import MessagesPanel
 from front.panels.alerts.panel    import AlertsPanel
 from front.panels.draw.panel      import DrawPanel
+from front.mumble.panel           import MumblePanel
 from front.panels.missions.panel  import MissionsPanel
 from front.panels.strike.panel    import StrikePackagePanel
 from front.panels.opord.panel     import OpordPanel
@@ -32,8 +33,9 @@ from front.windows.medevac_window import MedevacWindow
 from front.client.arrow_client    import ArrowClient
 from front.client.ws_listener    import WSListener
 from front.map.tile_server       import MBTilesServer
-from front.app.collapsible_panel import CollapsibleSidePanel
-from front.app.toast_manager     import ToastManager
+from front.app.collapsible_panel  import CollapsibleSidePanel
+from front.app.toast_manager      import ToastManager
+from front.app.settings_dialog    import ConfigDialog, read_gps_config
 
 CBRN_TYPES = {"CBRN_1","CBRN_2","CBRN_3","CBRN_4","CBRN_5","CBRN_6"}
 
@@ -98,6 +100,7 @@ class MainWindow(QMainWindow):
         self._opord_panel    = OpordPanel()
         self._streams_panel  = StreamsPanel()
         self._media_panel    = MediaPanel()
+        self._mumble_panel   = MumblePanel()
         self._planner_windows: list[StrikePlannerWindow] = []
         self._opord_windows:   list[OpordWindow]         = []
         self._stream_viewers:  list[StreamViewerWindow]  = []
@@ -113,6 +116,7 @@ class MainWindow(QMainWindow):
         self._info.add_panel("alerts",   "⚡", "ALRT",   self._alerts_panel,   "7")
         self._info.add_panel("draw",     "✚",  "DRAW",   self._draw_panel,     "8")
         self._info.add_panel("media",    "🖼",  "MEDIA",  self._media_panel,    "9")
+        self._info.add_panel("mumble",   "🎙",  "VOICE",  self._mumble_panel,   "0")
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
@@ -160,11 +164,12 @@ class MainWindow(QMainWindow):
         self._build_menu()
 
         # ---- Keyboard shortcuts [ = toggle left,  ] = toggle right ---
-        QShortcut(QKeySequence("["), self).activated.connect(self._left_panel.toggle)
-        QShortcut(QKeySequence("]"), self).activated.connect(self._right_panel.toggle)
-        QShortcut(QKeySequence("F1"), self).activated.connect(self._left_panel.toggle)
-        QShortcut(QKeySequence("F2"), self).activated.connect(self._right_panel.toggle)
-        QShortcut(QKeySequence("F10"), self).activated.connect(self._take_screenshot)
+        QShortcut(QKeySequence("["),    self).activated.connect(self._left_panel.toggle)
+        QShortcut(QKeySequence("]"),    self).activated.connect(self._right_panel.toggle)
+        QShortcut(QKeySequence("F1"),   self).activated.connect(self._left_panel.toggle)
+        QShortcut(QKeySequence("F2"),   self).activated.connect(self._right_panel.toggle)
+        QShortcut(QKeySequence("F10"),  self).activated.connect(self._take_screenshot)
+        QShortcut(QKeySequence("Ctrl+,"), self).activated.connect(self._open_settings)
 
     # ================================================================
     # SIGNALS
@@ -180,6 +185,7 @@ class MainWindow(QMainWindow):
         tb.weather_toggled.connect(self._map.set_weather_layer)
         tb.weather_fetch.connect(lambda: self._map._js("fetchWeatherAtCenter()"))
         tb.screenshot_requested.connect(self._take_screenshot)
+        tb.config_requested.connect(self._open_settings)
 
         self._map.bridge.coords_changed.connect(self._statusbar.update_coords)
         self._map.bridge.map_ready.connect(self._load_all)
@@ -255,6 +261,7 @@ class MainWindow(QMainWindow):
         if self._loaded:
             return
         self._loaded = True
+        self._apply_gps_config()
         self._resolve_role()
         self._load_hierarchy()
         self._load_missions()
@@ -279,6 +286,13 @@ class MainWindow(QMainWindow):
 
         # ── File ────────────────────────────────────────────────────
         file_menu = mb.addMenu("File")
+
+        act_settings = QAction("Configuration…", self)
+        act_settings.triggered.connect(self._open_settings)
+        file_menu.addAction(act_settings)
+
+        file_menu.addSeparator()
+
         act_exit = QAction("Exit Arrow Front", self)
         act_exit.triggered.connect(self._confirm_exit)
         file_menu.addAction(act_exit)
@@ -429,6 +443,26 @@ class MainWindow(QMainWindow):
             "<small style='color:#6e7681'>Press F5 to reload all data<br>"
             "[ / ] or F1 / F2 to toggle panels</small>",
         )
+
+    # ================================================================
+    # SETTINGS / CONFIGURATION
+    # ================================================================
+    def _open_settings(self):
+        dlg = ConfigDialog(self)
+        dlg.gps_config_changed.connect(self._on_gps_config)
+        dlg.base_layer_changed.connect(self._map.set_base_layer)
+        dlg.trails_changed.connect(
+            lambda on: self._map.toggle_layer("operTrails", on)
+        )
+        dlg.exec()
+
+    def _apply_gps_config(self):
+        enabled, high_acc, max_age, center, show_acc = read_gps_config()
+        self._map.set_gps_config(enabled, high_acc, max_age, center, show_acc)
+
+    def _on_gps_config(self, enabled: bool, high_acc: bool,
+                        max_age: int, center: bool, show_acc: bool):
+        self._map.set_gps_config(enabled, high_acc, max_age, center, show_acc)
 
     def _resolve_role(self):
         try:

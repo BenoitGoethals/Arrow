@@ -29,6 +29,7 @@ class MainToolbar(QToolBar):
     alert_requested  = pyqtSignal(str)        # alert type
     # Screenshot
     screenshot_requested = pyqtSignal()
+    config_requested     = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -159,6 +160,14 @@ class MainToolbar(QToolBar):
         wx_fetch.triggered.connect(self.weather_fetch.emit)
         wx_btn.setMenu(wx_menu)
         self.addWidget(wx_btn)
+
+        # ---- Config button --------------------------------------------
+        cfg_btn = QToolButton()
+        cfg_btn.setText("⚙ CONFIG")
+        cfg_btn.setToolTip("Configuration  (Ctrl+,)")
+        cfg_btn.setObjectName("toolButton")
+        cfg_btn.clicked.connect(self.config_requested.emit)
+        self.addWidget(cfg_btn)
         self.addSeparator()
 
         # ---- Spacer ---------------------------------------------------

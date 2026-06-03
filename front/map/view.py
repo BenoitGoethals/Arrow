@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QUrl, QFile, QIODevice, Qt, QEvent, pyqtSignal
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineScript, QWebEnginePage, QWebEngineSettings
+from PyQt6.QtWebEngineCore import QWebEngineScript, QWebEnginePage, QWebEngineSettings, QWebEnginePermission
 from PyQt6.QtWebChannel import QWebChannel
 
 from front.map.bridge import MapBridge
@@ -43,6 +43,9 @@ class MapView(QWebEngineView):
         self._page = _DebugPage(self)
         self.setPage(self._page)
 
+        # Grant geolocation permission so navigator.geolocation works
+        self._page.permissionRequested.connect(self._on_permission_requested)
+
         # Allow file:// pages to fetch remote tile URLs (OSM, etc.)
         s = self._page.settings()
         s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
@@ -65,6 +68,13 @@ class MapView(QWebEngineView):
         map_html = Path(__file__).parent / "html" / "map.html"
         print(f"[MapView] Loading: {map_html.resolve()}", file=sys.stderr)
         self.load(QUrl.fromLocalFile(str(map_html.resolve())))
+
+    def _on_permission_requested(self, permission):
+        try:
+            if permission.permissionType() == QWebEnginePermission.PermissionType.Geolocation:
+                permission.grant()
+        except Exception:
+            pass
 
     def _on_load_finished(self, ok: bool):
         if ok:
@@ -187,6 +197,13 @@ class MapView(QWebEngineView):
 
     def open_symbol_picker(self, lat: float, lon: float, affiliation: str = "FRIENDLY"):
         self._js(f"openSymbolPicker({lat}, {lon}, {json.dumps(affiliation)})")
+
+    def set_gps_config(self, enabled: bool, high_accuracy: bool, max_age_ms: int,
+                       center_on_fix: bool, show_accuracy: bool):
+        self._js(
+            f"setGPSConfig({json.dumps(enabled)}, {json.dumps(high_accuracy)}, "
+            f"{int(max_age_ms)}, {json.dumps(center_on_fix)}, {json.dumps(show_accuracy)})"
+        )
 
     def set_weather_layer(self, layer_name: str, visible: bool):
         self._js(f"setWeatherLayer({json.dumps(layer_name)}, {json.dumps(visible)})")
