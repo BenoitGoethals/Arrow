@@ -2,22 +2,117 @@
 
 Opens in view mode for existing OPORDs or edit mode for new ones.
 Paragraphs: Header · 1.Situation · 2.Mission · 3.Execution ·
-            4.Sustainment · 5.Command & Signal · Distribution
+            4.Sustainment · 5.Command & Signal · Snapshots · Distribution
 """
 from __future__ import annotations
+import base64
 import json
+import urllib.request
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Callable, Optional
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit, QLineEdit, QComboBox,
     QListWidget, QListWidgetItem, QFrame, QScrollArea,
     QStackedWidget, QSplitter, QMessageBox, QCheckBox,
-    QFormLayout, QSizePolicy,
+    QFormLayout, QSizePolicy, QFileDialog, QInputDialog,
+    QGridLayout,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QShortcut, QFont, QColor
+from PyQt6.QtCore import Qt, QThread, QBuffer, pyqtSignal
+from PyQt6.QtGui import QKeySequence, QShortcut, QFont, QColor, QPixmap
+
+
+def _pixmap_to_b64(px: "QPixmap") -> str:
+    """Encode a QPixmap as a base64 PNG string."""
+    buf = QBuffer()
+    buf.open(QBuffer.OpenModeFlag.WriteOnly)
+    px.save(buf, "PNG")
+    return base64.b64encode(bytes(buf.data())).decode("ascii")
+
+
+class _SnapCard(QFrame):
+    """Thumbnail card for a single OPORD snapshot."""
+    delete_requested = pyqtSignal(int)   # snap_id
+
+    _CARD_W = 240
+    _THUMB_H = 160
+
+    def __init__(self, snap: dict, parent=None):
+        super().__init__(parent)
+        self._snap_id = snap.get("id", 0)
+        self.setFixedWidth(self._CARD_W)
+        self.setStyleSheet(
+            "QFrame{background:#161b22;border:1px solid #30363d;border-radius:4px;}"
+        )
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 6)
+        lay.setSpacing(4)
+
+        # Thumbnail area
+        self._thumb_lbl = QLabel()
+        self._thumb_lbl.setFixedSize(self._CARD_W - 2, self._THUMB_H)
+        self._thumb_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._thumb_lbl.setStyleSheet(
+            "background:#0d1117;border:none;border-radius:3px 3px 0 0;"
+            "color:#484f58;font-size:20px;"
+        )
+        self._thumb_lbl.setText("🖼")
+        lay.addWidget(self._thumb_lbl)
+
+        # Label + delete row
+        row = QHBoxLayout()
+        row.setContentsMargins(6, 0, 6, 0)
+        row.setSpacing(4)
+
+        label_text = snap.get("label") or snap.get("annotations") or "Snapshot"
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet("color:#c9d1d9;font-size:9px;border:none;background:transparent;")
+        lbl.setWordWrap(True)
+        row.addWidget(lbl, 1)
+
+        del_btn = QPushButton("✕")
+        del_btn.setFixedSize(18, 18)
+        del_btn.setStyleSheet(
+            "QPushButton{background:transparent;color:#484f58;border:none;font-size:10px;}"
+            "QPushButton:hover{color:#f85149;}"
+        )
+        del_btn.clicked.connect(lambda: self.delete_requested.emit(self._snap_id))
+        row.addWidget(del_btn)
+        lay.addLayout(row)
+
+    def set_pixmap(self, px: "QPixmap"):
+        scaled = px.scaled(
+            self._CARD_W - 2, self._THUMB_H,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._thumb_lbl.setPixmap(scaled)
+        self._thumb_lbl.setText("")
+
+
+class _ThumbLoader(QThread):
+    """Download one image with Bearer auth; emit raw bytes on main thread."""
+    loaded = pyqtSignal(int, bytes)   # snap_id, data
+
+    def __init__(self, snap_id: int, url: str, token: str):
+        super().__init__()
+        self._snap_id = snap_id
+        self._url     = url
+        self._token   = token
+
+    def run(self):
+        try:
+            req = urllib.request.Request(
+                self._url,
+                headers={"Authorization": f"Bearer {self._token}"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = resp.read()
+            self.loaded.emit(self._snap_id, data)
+        except Exception:
+            pass
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -107,12 +202,16 @@ class OpordWindow(QMainWindow):
     saved    = pyqtSignal(dict)    # emitted after successful save
     published = pyqtSignal(dict)   # emitted after publish
 
-    def __init__(self, client, opord_data: Optional[dict] = None, parent=None):
+    def __init__(self, client, opord_data: Optional[dict] = None,
+                 map_capture_fn: Optional[Callable] = None, parent=None):
         super().__init__(parent)
-        self._client = client
-        self._opord  = opord_data or {}
+        self._client         = client
+        self._opord          = opord_data or {}
         self._opord_id: Optional[int] = opord_data.get("id") if opord_data else None
-        self._is_new = self._opord_id is None
+        self._is_new         = self._opord_id is None
+        self._map_capture_fn = map_capture_fn   # callable → QPixmap | None
+        self._thumb_loaders: list[_ThumbLoader] = []
+        self._snap_cards: dict[int, _SnapCard] = {}   # snap_id → card widget
 
         title = self._opord.get("title", "New OPORD") if opord_data else "New OPORD"
         self.setWindowTitle(f"OPORD — {title}")
@@ -203,6 +302,7 @@ class OpordWindow(QMainWindow):
             ("3.  EXECUTION",       self._build_execution()),
             ("4.  SUSTAINMENT",     self._build_sustainment()),
             ("5.  CMD & SIGNAL",    self._build_cs()),
+            ("📸  SNAPSHOTS",       self._build_snapshots()),
             ("📤  DISTRIBUTION",   self._build_distribution()),
         ]
         for i, (label, page) in enumerate(pages):
@@ -388,6 +488,210 @@ class OpordWindow(QMainWindow):
         lay.addStretch()
         return w
 
+    def _build_snapshots(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(10)
+
+        lay.addWidget(QLabel("MAP SNAPSHOTS & ATTACHMENTS",
+            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
+
+        # ── Action buttons ────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+
+        _btn_style = (
+            "QPushButton{background:#21262d;border:1px solid #30363d;"
+            "color:#c9d1d9;font-size:10px;padding:5px 10px;border-radius:2px;}"
+            "QPushButton:hover{border-color:#388bfd;color:#79c0ff;}"
+            "QPushButton:disabled{color:#484f58;border-color:#21262d;}"
+        )
+
+        self._snap_capture_btn = QPushButton("📸  Capture Map")
+        self._snap_capture_btn.setStyleSheet(_btn_style)
+        self._snap_capture_btn.setEnabled(self._map_capture_fn is not None)
+        self._snap_capture_btn.setToolTip("Screenshot the current map view")
+        self._snap_capture_btn.clicked.connect(self._capture_map)
+
+        self._snap_file_btn = QPushButton("📂  From File")
+        self._snap_file_btn.setStyleSheet(_btn_style)
+        self._snap_file_btn.setToolTip("Attach an existing image file")
+        self._snap_file_btn.clicked.connect(self._attach_file)
+
+        self._snap_refresh_btn = QPushButton("↻")
+        self._snap_refresh_btn.setFixedWidth(30)
+        self._snap_refresh_btn.setStyleSheet(_btn_style)
+        self._snap_refresh_btn.clicked.connect(self._refresh_snapshots)
+
+        btn_row.addWidget(self._snap_capture_btn)
+        btn_row.addWidget(self._snap_file_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(self._snap_refresh_btn)
+        lay.addLayout(btn_row)
+
+        lay.addWidget(QLabel(
+            "Save the OPORD first before adding snapshots.",
+            styleSheet="color:#6e7681;font-size:9px;",
+            objectName="snap_hint",
+        ))
+        lay.addWidget(_sep())
+
+        # ── Scrollable snapshot grid ──────────────────────────────────
+        self._snap_scroll = QScrollArea()
+        self._snap_scroll.setWidgetResizable(True)
+        self._snap_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._snap_scroll.setStyleSheet("QScrollArea{background:#0d1117;}")
+
+        self._snap_container = QWidget()
+        self._snap_container.setStyleSheet("background:#0d1117;")
+        self._snap_grid = QGridLayout(self._snap_container)
+        self._snap_grid.setContentsMargins(0, 0, 0, 0)
+        self._snap_grid.setSpacing(8)
+
+        self._snap_scroll.setWidget(self._snap_container)
+        lay.addWidget(self._snap_scroll, 1)
+        return w
+
+    # ── Snapshot management ───────────────────────────────────────────────────
+
+    def _ensure_saved(self) -> bool:
+        if not self._opord_id:
+            if not self._f_title.text().strip():
+                QMessageBox.information(
+                    self, "Title Required",
+                    "Please fill in the OPORD title (Header page) before saving."
+                )
+                self._switch(0)   # jump to HEADER
+                return False
+            ans = QMessageBox.question(
+                self, "Save First",
+                "The OPORD must be saved before adding snapshots. Save now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if ans == QMessageBox.StandardButton.Yes:
+                self._save()
+            return self._opord_id is not None
+        return True
+
+    def _capture_map(self):
+        if not self._ensure_saved():
+            return
+        label, ok = QInputDialog.getText(self, "Snapshot Label", "Label for this snapshot:")
+        if not ok:
+            return
+        label = label.strip() or "Map Snapshot"
+        try:
+            px = self._map_capture_fn()
+            if px is None or px.isNull():
+                QMessageBox.warning(self, "Capture Failed", "Could not capture map.")
+                return
+            # Scale down if very large
+            if px.width() > 1400:
+                px = px.scaledToWidth(1400, Qt.TransformationMode.SmoothTransformation)
+            b64 = _pixmap_to_b64(px)
+            result = self._client.add_opord_snapshot(self._opord_id, label, b64)
+            self._opord = result
+            self._refresh_snapshots()
+        except Exception as e:
+            QMessageBox.critical(self, "Upload Failed", str(e))
+
+    def _attach_file(self):
+        if not self._ensure_saved():
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Attach Image", "",
+            "Images (*.png *.jpg *.jpeg *.gif *.webp);;All Files (*)"
+        )
+        if not path:
+            return
+        label, ok = QInputDialog.getText(
+            self, "Attachment Label", "Label for this attachment:",
+            text=path.split("/")[-1].rsplit(".", 1)[0],
+        )
+        if not ok:
+            return
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+            b64 = base64.b64encode(data).decode("ascii")
+            result = self._client.add_opord_snapshot(
+                self._opord_id, label.strip() or "Attachment", b64
+            )
+            self._opord = result
+            self._refresh_snapshots()
+        except Exception as e:
+            QMessageBox.critical(self, "Upload Failed", str(e))
+
+    def _delete_snapshot(self, snap_id: int):
+        ans = QMessageBox.question(
+            self, "Delete Snapshot",
+            "Delete this snapshot? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            result = self._client.delete_opord_snapshot(self._opord_id, snap_id)
+            self._opord = result
+            self._refresh_snapshots()
+        except Exception as e:
+            QMessageBox.critical(self, "Delete Failed", str(e))
+
+    def _refresh_snapshots(self):
+        # Clear existing grid
+        self._snap_cards.clear()
+        for t in self._thumb_loaders:
+            t.quit()
+        self._thumb_loaders.clear()
+        while self._snap_grid.count():
+            item = self._snap_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        snaps = self._opord.get("map_snapshots") or []
+        has_id = self._opord_id is not None
+
+        # Update hint visibility
+        hint = self.findChild(QLabel, "snap_hint")
+        if hint:
+            hint.setVisible(not has_id)
+        self._snap_capture_btn.setEnabled(
+            has_id and self._map_capture_fn is not None
+        )
+        self._snap_file_btn.setEnabled(has_id)
+
+        if not snaps:
+            empty = QLabel("No snapshots yet." if has_id
+                           else "Save the OPORD first.")
+            empty.setStyleSheet("color:#6e7681;font-size:10px;padding:12px 0;")
+            self._snap_grid.addWidget(empty, 0, 0)
+            return
+
+        cols = 2
+        token = self._client.token or ""
+        for i, snap in enumerate(snaps):
+            card = _SnapCard(snap)
+            card.delete_requested.connect(self._delete_snapshot)
+            self._snap_grid.addWidget(card, i // cols, i % cols)
+            snap_id  = snap.get("id", i)
+            photo_id = snap.get("photo_id")
+            if photo_id and token:
+                url = self._client.photo_url(photo_id)
+                t = _ThumbLoader(snap_id, url, token)
+                t.loaded.connect(self._on_thumb)
+                t.start()
+                self._thumb_loaders.append(t)
+                self._snap_cards[snap_id] = card
+
+    def _on_thumb(self, snap_id: int, data: bytes):
+        card = self._snap_cards.get(snap_id)
+        if card and data:
+            px = QPixmap()
+            px.loadFromData(data)
+            if not px.isNull():
+                card.set_pixmap(px)
+
     def _build_distribution(self) -> QWidget:
         w = QWidget(); lay = QVBoxLayout(w)
         lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
@@ -483,6 +787,7 @@ class OpordWindow(QMainWindow):
 
         self._update_title_bar()
         self._load_operators()
+        self._refresh_snapshots()
 
     def _update_title_bar(self):
         status = self._opord.get("status", "DRAFT")
@@ -584,10 +889,15 @@ class OpordWindow(QMainWindow):
                 result = self._client.update_opord(self._opord_id, data)
             self._opord = result
             self._update_title_bar()
+            self._refresh_snapshots()
             self.saved.emit(result)
             self.statusBar().showMessage("Saved", 3000)
         except Exception as e:
-            QMessageBox.critical(self, "Save Failed", str(e))
+            msg = str(e)
+            if "403" in msg:
+                msg = ("Permission denied — creating and editing OPORDs requires "
+                       "BATTLE_CAPTAIN or ADMIN role.")
+            QMessageBox.critical(self, "Save Failed", msg)
 
     def _publish(self):
         if not self._opord_id:

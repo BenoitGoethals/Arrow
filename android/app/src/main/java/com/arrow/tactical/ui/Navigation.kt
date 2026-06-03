@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.EmojiFlags
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -66,6 +67,7 @@ import com.arrow.tactical.kml.ui.KmlLayersScreen
 import com.arrow.tactical.map.ui.OfflineMapsScreen
 import com.arrow.tactical.messaging.ui.MessagingScreen
 import com.arrow.tactical.objectives.ui.ObjectivesScreen
+import com.arrow.tactical.photos.ui.MediaGalleryScreen
 import com.arrow.tactical.opord.ui.OpordDetailScreen
 import com.arrow.tactical.opord.ui.OpordListScreen
 import com.arrow.tactical.mission.ui.MissionSelectionScreen
@@ -82,11 +84,12 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
     data object Mortar : Tab("tab/mortar", "Mortar FDC", Icons.Filled.Adjust)
     data object Objectives : Tab("tab/objectives", "Objectives", Icons.Filled.EmojiFlags)
     data object Opord : Tab("tab/opord", "OPORD", Icons.Filled.Description)
+    data object Media : Tab("tab/media", "Media", Icons.Filled.PermMedia)
     data object Admin : Tab("tab/admin", "Admin", Icons.Filled.AdminPanelSettings)
     data object Settings : Tab("tab/settings", "Settings", Icons.Filled.Settings)
 }
 
-private val TABS_BASE = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Opord, Tab.Mortar, Tab.Objectives, Tab.Settings)
+private val TABS_BASE = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Opord, Tab.Mortar, Tab.Objectives, Tab.Media, Tab.Settings)
 // Admin tab is appended only when the signed-in user has the ADMIN role.
 private val TABS_ADMIN = TABS_BASE + Tab.Admin
 
@@ -358,6 +361,7 @@ private fun MainShell(
                 ReportsScreen(repo = container.reportRepository, container = container)
             }
             composable(Tab.Objectives.route) { ObjectivesScreen(container) }
+            composable(Tab.Media.route) { MediaGalleryScreen(container) }
             composable(Tab.Opord.route) {
                 OpordListScreen(container = container, onOpen = { id -> tabNav.navigate("opord/$id") })
             }

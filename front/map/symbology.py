@@ -54,6 +54,8 @@ _FUNC = {
     "cbrn":      "UCB---",
     "logistics": "USS---",
     "observer":  "UUOO--",   # forward observer
+    "location":  "USS---",   # support star — used as POI pin
+    "drone":     "A-----",   # air unit — used for hostile UAV/drone (pair with dim="A")
 }
 
 
@@ -101,7 +103,7 @@ def cbrn_marker() -> str:
     return build(H, "cbrn", "none")
 
 def poi() -> str:
-    return build(F, "observer", "none")
+    return build(N, "location", "none")
 
 
 # ---- CoT type → SIDC -----------------------------------------------
@@ -144,7 +146,8 @@ def from_tactical_object(obj_type: str, affiliation: str = "UNKNOWN") -> str:
         "FRIENDLY": build(F, "infantry",   "section"),
         "VEHICLE":  build(H, "armor",      "section"),
         "ARTILLERY":build(H, "arty",       "section"),
-        "POI":      build(F, "observer",   "none"),
+        "POI":      build(N, "location",   "none"),
+        "DRONE":    build(H, "drone",      "none", dim="A"),
         "MARKER":   build(aff_code, "unit","none"),
         "OBJECTIVE":build(F, "unit",       "company"),
         "ZONE":     build(N, "unit",       "none"),

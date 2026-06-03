@@ -10,18 +10,28 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.MediaItem
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.PlayerView
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import com.arrow.tactical.di.AppContainer
@@ -47,25 +57,33 @@ fun MessagingScreen(container: AppContainer) {
     var menuOpen  by remember { mutableStateOf(false) }
     var meId      by remember { mutableStateOf<Int?>(null) }
 
-    // Photo state
-    var pendingPhotoId  by remember { mutableStateOf<Int?>(null) }
-    var pendingPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    var uploadingPhoto  by remember { mutableStateOf(false) }
+    // Media (photo or video) attachment state
+    var pendingPhotoId   by remember { mutableStateOf<Int?>(null) }
+    var pendingMediaUri  by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingMediaMime by remember { mutableStateOf<String?>(null) }
+    var uploadingMedia   by remember { mutableStateOf(false) }
+
+    // Video playback dialog
+    var videoPlayUrl by remember { mutableStateOf<String?>(null) }
+    var videoToken   by remember { mutableStateOf("") }
 
     val scope     = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
+    // Accepts both images and videos via OpenDocument
+    val mediaLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        pendingPhotoUri = uri
+        val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+        pendingMediaUri  = uri
+        pendingMediaMime = mime
         scope.launch {
-            uploadingPhoto = true
+            uploadingMedia = true
             container.photoRepository.upload(context, uri)
-                .onSuccess { pendingPhotoId = it }
-                .onFailure { pendingPhotoId = null; pendingPhotoUri = null }
-            uploadingPhoto = false
+                .onSuccess  { pendingPhotoId = it }
+                .onFailure  { pendingPhotoId = null; pendingMediaUri = null }
+            uploadingMedia = false
         }
     }
 
@@ -77,6 +95,7 @@ fun MessagingScreen(container: AppContainer) {
         container.authRepository.me().onSuccess { meId = it.id }
         container.tacticalRepository.listOperators().onSuccess { operators = it }
         refreshMessages()
+        videoToken = container.tokenStore.current() ?: ""
     }
 
     LaunchedEffect(messages.size) {
@@ -89,6 +108,15 @@ fun MessagingScreen(container: AppContainer) {
 
     val baseUrl = remember { mutableStateOf("") }
     LaunchedEffect(Unit) { baseUrl.value = container.settingsRepository.currentServerUrl() }
+
+    // Video player dialog
+    videoPlayUrl?.let { url ->
+        VideoPlayerDialog(
+            url   = url,
+            token = videoToken,
+            onDismiss = { videoPlayUrl = null },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -139,18 +167,19 @@ fun MessagingScreen(container: AppContainer) {
             ) {
                 items(messages) { m ->
                     MessageBubble(
-                        message      = m,
-                        isMine       = m.senderId == meId,
-                        baseUrl      = baseUrl.value,
-                        imageLoader  = container.imageLoader,
+                        message     = m,
+                        isMine      = m.senderId == meId,
+                        baseUrl     = baseUrl.value,
+                        imageLoader = container.imageLoader,
+                        onPlayVideo = { url -> videoPlayUrl = url },
                     )
                 }
             }
 
             HorizontalDivider()
 
-            // Photo preview strip
-            if (pendingPhotoUri != null) {
+            // Pending media preview strip
+            if (pendingMediaUri != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -158,26 +187,44 @@ fun MessagingScreen(container: AppContainer) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (uploadingPhoto) {
+                    if (uploadingMedia) {
                         CircularProgressIndicator(Modifier.size(40.dp))
                         Text("Uploading…", style = MaterialTheme.typography.bodySmall)
                     } else {
-                        AsyncImage(
-                            model = pendingPhotoUri,
-                            contentDescription = "Attached photo",
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop,
-                        )
+                        val isVideo = pendingMediaMime?.startsWith("video/") == true
+                        if (isVideo) {
+                            Icon(
+                                Icons.Filled.PlayCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(48.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        } else {
+                            AsyncImage(
+                                model = pendingMediaUri,
+                                contentDescription = "Attached photo",
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
                         Text(
-                            if (pendingPhotoId != null) "Photo ready" else "Upload failed",
+                            when {
+                                pendingPhotoId == null -> "Upload failed"
+                                isVideo -> "Video ready"
+                                else -> "Photo ready"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f),
                         )
                     }
-                    IconButton(onClick = { pendingPhotoUri = null; pendingPhotoId = null }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Remove photo")
+                    IconButton(onClick = {
+                        pendingMediaUri  = null
+                        pendingPhotoId   = null
+                        pendingMediaMime = null
+                    }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Remove")
                     }
                 }
             }
@@ -186,16 +233,17 @@ fun MessagingScreen(container: AppContainer) {
                 draft          = draft,
                 onDraftChange  = { draft = it },
                 canSend        = draft.isNotBlank() || pendingPhotoId != null,
-                uploadingPhoto = uploadingPhoto,
+                uploadingMedia = uploadingMedia,
                 placeholder    = "Send to ${recipient.label.removePrefix("📢 ").removePrefix("⭐ ").removePrefix("→ ")}",
-                onPickPhoto    = { galleryLauncher.launch("image/*") },
+                onPickMedia    = { mediaLauncher.launch(arrayOf("image/*", "video/*")) },
                 onSend         = {
                     val text    = draft.trim()
                     val photoId = pendingPhotoId
                     if (text.isBlank() && photoId == null) return@Composer
                     draft = ""
-                    pendingPhotoId  = null
-                    pendingPhotoUri = null
+                    pendingPhotoId   = null
+                    pendingMediaUri  = null
+                    pendingMediaMime = null
                     scope.launch {
                         when (val r = recipient) {
                             Recipient.Broadcast ->
@@ -214,7 +262,13 @@ fun MessagingScreen(container: AppContainer) {
 }
 
 @Composable
-private fun MessageBubble(message: MessageDto, isMine: Boolean, baseUrl: String, imageLoader: ImageLoader) {
+private fun MessageBubble(
+    message: MessageDto,
+    isMine: Boolean,
+    baseUrl: String,
+    imageLoader: ImageLoader,
+    onPlayVideo: (String) -> Unit,
+) {
     val align = if (isMine) Alignment.End else Alignment.Start
     val bg = when {
         isMine -> MaterialTheme.colorScheme.primary
@@ -255,15 +309,41 @@ private fun MessageBubble(message: MessageDto, isMine: Boolean, baseUrl: String,
                     )
                 }
                 if (message.photoId != null && baseUrl.isNotBlank()) {
-                    AsyncImage(
-                        model              = "$baseUrl/photos/${message.photoId}",
-                        contentDescription = "Photo",
-                        imageLoader        = imageLoader,
-                        modifier           = Modifier
-                            .widthIn(max = 240.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale       = ContentScale.FillWidth,
-                    )
+                    val mediaUrl = "$baseUrl/photos/${message.photoId}"
+                    if (message.photoMimeType?.startsWith("video/") == true) {
+                        Surface(
+                            onClick = { onPlayVideo(mediaUrl) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.PlayCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    "Video — tap to play",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = fg,
+                                )
+                            }
+                        }
+                    } else {
+                        AsyncImage(
+                            model              = mediaUrl,
+                            contentDescription = "Photo",
+                            imageLoader        = imageLoader,
+                            modifier           = Modifier
+                                .widthIn(max = 240.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale       = ContentScale.FillWidth,
+                        )
+                    }
                 }
             }
         }
@@ -275,9 +355,9 @@ private fun Composer(
     draft: String,
     onDraftChange: (String) -> Unit,
     canSend: Boolean,
-    uploadingPhoto: Boolean,
+    uploadingMedia: Boolean,
     placeholder: String,
-    onPickPhoto: () -> Unit,
+    onPickMedia: () -> Unit,
     onSend: () -> Unit,
 ) {
     Row(
@@ -288,8 +368,8 @@ private fun Composer(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        IconButton(onClick = onPickPhoto, enabled = !uploadingPhoto) {
-            Icon(Icons.Filled.AddPhotoAlternate, contentDescription = "Attach photo")
+        IconButton(onClick = onPickMedia, enabled = !uploadingMedia) {
+            Icon(Icons.Filled.AttachFile, contentDescription = "Attach photo or video")
         }
         OutlinedTextField(
             value         = draft,
@@ -298,8 +378,52 @@ private fun Composer(
             modifier      = Modifier.weight(1f),
             maxLines      = 4,
         )
-        FilledIconButton(enabled = canSend && !uploadingPhoto, onClick = onSend) {
+        FilledIconButton(enabled = canSend && !uploadingMedia, onClick = onSend) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+        }
+    }
+}
+
+@Composable
+fun VideoPlayerDialog(url: String, token: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val player = remember(url) {
+        val dsf = DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(mapOf("Authorization" to "Bearer $token"))
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dsf))
+            .build()
+            .apply {
+                setMediaItem(MediaItem.fromUri(url))
+                prepare()
+                playWhenReady = true
+            }
+    }
+    DisposableEffect(player) { onDispose { player.release() } }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply { this.player = player }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp),
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+            }
         }
     }
 }
