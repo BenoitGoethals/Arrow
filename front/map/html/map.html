@@ -656,6 +656,32 @@ function addTacticalObject(obj){
   if(typeof geom==='string'&&geom){try{geom=JSON.parse(geom);}catch(_){geom=null;}}
   let lyr;
 
+  // Free-draw annotations from web/any client
+  if(type==='FREEDRAW_LINE'||type==='FREEDRAW_TEXT'){
+    try {
+      const notes = typeof obj.notes==='string' ? JSON.parse(obj.notes||'{}') : (obj.notes||{});
+      const color = notes.color||'#ef4444';
+      if(type==='FREEDRAW_LINE' && geom && geom.coords && geom.coords.length>=2){
+        const lyr=L.polyline(geom.coords.map(c=>[c[0],c[1]]),{
+          color,weight:notes.thick||2,opacity:.92,lineCap:'round',lineJoin:'round',interactive:false
+        }).addTo(LAYERS.freedraw);
+        if(graphics[obj.id]) LAYERS.freedraw.removeLayer(graphics[obj.id]);
+        graphics[obj.id]=lyr;
+      } else if(type==='FREEDRAW_TEXT' && geom && geom.coords && geom.coords[0]){
+        const [lat,lon]=geom.coords[0];
+        const sh='1px 1px 3px #000,-1px -1px 3px #000';
+        const lyr=L.marker([lat,lon],{interactive:false,icon:L.divIcon({
+          className:'',
+          html:`<div style="color:${color};font-family:'Courier New',monospace;font-size:13px;font-weight:700;white-space:nowrap;text-shadow:${sh};pointer-events:none">${esc(notes.text||'')}</div>`,
+          iconSize:[0,0],iconAnchor:[0,8]
+        })}).addTo(LAYERS.freedraw);
+        if(graphics[obj.id]) LAYERS.freedraw.removeLayer(graphics[obj.id]);
+        graphics[obj.id]=lyr;
+      }
+    } catch(e){}
+    return;
+  }
+
   // Tactical graphic types (line or polygon geometry) → proper APP-6 renderer
   const isLinePoly = geom && (geom.type==='line'||geom.type==='polygon') && geom.coords && geom.coords.length>=2;
   if(TG[type] && isLinePoly){
