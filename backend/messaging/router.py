@@ -6,7 +6,7 @@ from backend.api.schemas import MessageIn, MessageOut
 from backend.auth.jwt_auth import get_current_operator
 from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import Message, Mission, Operator
+from backend.storage.models import Message, Mission, Operator, Photo
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/messages", tags=["messaging"])
@@ -21,12 +21,12 @@ def _groups_for(op: Operator) -> list[str]:
     return _ROLE_GROUPS.get(op.role, [])
 
 
-@router.get("", response_model=list[MessageOut])
+@router.get("")
 def list_messages(
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
-) -> list[Message]:
+) -> list[dict]:
     clauses = [
         Message.sender_id == current.id,
         Message.receiver_id == current.id,
@@ -39,7 +39,19 @@ def list_messages(
     q = db.query(Message).filter(or_(*clauses))
     if mission:
         q = q.filter(Message.mission_id == mission.id)
-    return q.order_by(Message.timestamp.desc()).limit(200).all()
+    msgs = q.order_by(Message.timestamp.desc()).limit(200).all()
+
+    photo_ids = {m.photo_id for m in msgs if m.photo_id}
+    mime_map: dict[int, str] = {}
+    if photo_ids:
+        for p in db.query(Photo.id, Photo.mime_type).filter(Photo.id.in_(photo_ids)).all():
+            mime_map[p.id] = p.mime_type
+
+    return [
+        {**MessageOut.model_validate(m).model_dump(mode="json"),
+         "photo_mime_type": mime_map.get(m.photo_id) if m.photo_id else None}
+        for m in msgs
+    ]
 
 
 @router.post("", response_model=MessageOut, status_code=status.HTTP_201_CREATED)

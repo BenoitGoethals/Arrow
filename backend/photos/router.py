@@ -27,9 +27,20 @@ from backend.storage.models import Operator, Photo
 PHOTO_DIR = Path("data/photos")
 PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_MIME = {"image/jpeg", "image/png", "image/gif", "image/webp", "image/heic"}
-MIME_TO_EXT  = {"image/jpeg": "jpg", "image/png": "png", "image/gif": "gif",
-                "image/webp": "webp", "image/heic": "heic"}
+ALLOWED_MIME = {
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/heic",
+    "video/mp4", "video/webm", "video/ogg", "video/quicktime",
+}
+MIME_TO_EXT = {
+    "image/jpeg": "jpg",  "image/png": "png",  "image/gif": "gif",
+    "image/webp": "webp", "image/heic": "heic",
+    "video/mp4": "mp4",   "video/webm": "webm", "video/ogg": "ogv",
+    "video/quicktime": "mov",
+}
+_MAX_BYTES = {
+    "image": 10 * 1024 * 1024,   # 10 MB
+    "video": 200 * 1024 * 1024,  # 200 MB
+}
 
 router = APIRouter(prefix="/photos", tags=["photos"])
 
@@ -107,9 +118,14 @@ async def upload_photo(
     mime = (file.content_type or "").split(";")[0].strip()
     if mime not in ALLOWED_MIME:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                            f"Unsupported image type: {mime}")
+                            f"Unsupported media type: {mime}")
 
     raw  = await file.read()
+    media_cat = mime.split("/")[0]
+    limit = _MAX_BYTES.get(media_cat, 10 * 1024 * 1024)
+    if len(raw) > limit:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            f"File too large (max {limit // (1024 * 1024)} MB for {media_cat})")
     blob = _encrypt(raw)
     ext  = MIME_TO_EXT.get(mime, "jpg")
     encrypted = _get_aesgcm() is not None
