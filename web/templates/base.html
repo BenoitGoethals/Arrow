@@ -1763,7 +1763,7 @@ let _mvVol       = 0.8;
 let _mvNextTime  = 0;          // next audio playback start time
 const _mvSpeaking = {};        // session → bool
 
-function mvJoin() {
+window.mvJoin = function mvJoin() {
     const f = document.getElementById('mv-join-form');
     // Pre-fill host from monitor config
     if (_mumbleConfig && !document.getElementById('mv-host').value)
@@ -1776,12 +1776,12 @@ function mvJoin() {
     document.getElementById('mv-join-btn').style.display = 'none';
 }
 
-function mvHideJoinForm() {
+window.mvHideJoinForm = function mvHideJoinForm() {
     document.getElementById('mv-join-form').style.display = 'none';
     document.getElementById('mv-join-btn').style.display = '';
 }
 
-async function mvConnect() {
+window.mvConnect = async function mvConnect() {
     const hostFull = document.getElementById('mv-host').value.trim();
     const uname    = document.getElementById('mv-uname').value.trim();
     const pwd      = document.getElementById('mv-pwd').value;
@@ -1903,7 +1903,7 @@ function _mvSetState(state, errMsg) {
     }
 }
 
-function mvLeave() {
+window.mvLeave = function mvLeave() {
     if (_mvWs) { try { _mvWs.close(); } catch (_) {} }
     _mvSetState('disconnected');
 }
