@@ -153,7 +153,9 @@ data class MessageDto(
     @SerialName("group_id") val groupId: String? = null,
     val content: String,
     @SerialName("message_type") val messageType: String,
-    @SerialName("photo_id") val photoId: Int? = null,)
+    @SerialName("photo_id") val photoId: Int? = null,
+    @SerialName("photo_mime_type") val photoMimeType: String? = null,
+)
 
 @Serializable
 data class ReportIn(

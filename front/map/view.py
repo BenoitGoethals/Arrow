@@ -4,12 +4,18 @@ import json
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QUrl, QFile, QIODevice, Qt
+from PyQt6.QtCore import QUrl, QFile, QIODevice, Qt, QEvent, pyqtSignal
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineScript, QWebEnginePage, QWebEngineSettings
 from PyQt6.QtWebChannel import QWebChannel
 
 from front.map.bridge import MapBridge
+
+_MEDIA_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.mov', '.ogv')
+
+
+def _is_media_file(path: str) -> bool:
+    return path.lower().endswith(_MEDIA_EXTS)
 
 
 class _DebugPage(QWebEnginePage):
@@ -25,11 +31,14 @@ class _DebugPage(QWebEnginePage):
 
 
 class MapView(QWebEngineView):
+    file_dropped = pyqtSignal(str, float, float)  # file_path, lat, lon
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
         # Suppress Qt's default right-click context menu so JS radial menu fires
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.setAcceptDrops(True)
 
         self._page = _DebugPage(self)
         self.setPage(self._page)
@@ -60,11 +69,15 @@ class MapView(QWebEngineView):
     def _on_load_finished(self, ok: bool):
         if ok:
             print("[MapView] Page loaded OK", file=sys.stderr)
-            # Verify Leaflet is available
             self._page.runJavaScript(
                 "typeof L !== 'undefined' ? 'Leaflet OK' : 'Leaflet MISSING'",
                 lambda r: print(f"[MapView] {r}", file=sys.stderr)
             )
+            # Install drag-drop event filter on the viewport child widget
+            vp = self.focusProxy() or self.viewport()
+            if vp:
+                vp.setAcceptDrops(True)
+                vp.installEventFilter(self)
         else:
             print("[MapView] ERROR: Page failed to load", file=sys.stderr)
 
@@ -183,3 +196,37 @@ class MapView(QWebEngineView):
 
     def set_draw_graphic(self, graphic_type: str, affiliation: str):
         self._js(f"setDrawGraphic({json.dumps(graphic_type)}, {json.dumps(affiliation)})")
+
+    # ---- Drag-and-drop (media files → map) --------------------------------
+
+    def eventFilter(self, obj, event):
+        t = event.type()
+        if t == QEvent.Type.DragEnter:
+            mime = event.mimeData()
+            if mime.hasUrls() and any(_is_media_file(u.toLocalFile()) for u in mime.urls()):
+                event.acceptProposedAction()
+                return True
+        elif t == QEvent.Type.DragMove:
+            if event.mimeData().hasUrls():
+                event.acceptProposedAction()
+                return True
+        elif t == QEvent.Type.Drop:
+            mime = event.mimeData()
+            if mime.hasUrls():
+                files = [u.toLocalFile() for u in mime.urls() if _is_media_file(u.toLocalFile())]
+                if files:
+                    event.acceptProposedAction()
+                    pos = event.position().toPoint()
+                    x, y = pos.x(), pos.y()
+                    fp = files[0]
+                    self._page.runJavaScript(
+                        f"(function(){{try{{var ll=map.containerPointToLatLng([{x},{y}]);"
+                        f"return [ll.lat,ll.lng];}}catch(e){{return null;}}}})()",
+                        lambda r, p=fp: self._emit_drop(r, p),
+                    )
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _emit_drop(self, latlng, file_path: str):
+        if latlng and isinstance(latlng, list) and len(latlng) == 2:
+            self.file_dropped.emit(file_path, float(latlng[0]), float(latlng[1]))

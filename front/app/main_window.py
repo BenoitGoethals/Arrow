@@ -24,6 +24,7 @@ from front.panels.missions.panel  import MissionsPanel
 from front.panels.strike.panel    import StrikePackagePanel
 from front.panels.opord.panel     import OpordPanel
 from front.panels.streams.panel   import StreamsPanel
+from front.panels.media.panel     import MediaPanel
 from front.windows.strike_planner import StrikePlannerWindow
 from front.windows.opord_window   import OpordWindow
 from front.windows.stream_viewer  import StreamViewerWindow
@@ -95,6 +96,7 @@ class MainWindow(QMainWindow):
         self._strike_panel   = StrikePackagePanel()
         self._opord_panel    = OpordPanel()
         self._streams_panel  = StreamsPanel()
+        self._media_panel    = MediaPanel()
         self._planner_windows: list[StrikePlannerWindow] = []
         self._opord_windows:   list[OpordWindow]         = []
         self._stream_viewers:  list[StreamViewerWindow]  = []
@@ -108,6 +110,7 @@ class MainWindow(QMainWindow):
         self._info.add_panel("messages", "◎",  "MSG",    self._messages_panel, "6")
         self._info.add_panel("alerts",   "⚡", "ALRT",   self._alerts_panel,   "7")
         self._info.add_panel("draw",     "✚",  "DRAW",   self._draw_panel,     "8")
+        self._info.add_panel("media",    "🖼",  "MEDIA",  self._media_panel,    "9")
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
@@ -193,6 +196,7 @@ class MainWindow(QMainWindow):
         self._draw_panel.draw_mode_changed.connect(self._map.set_draw_mode)
         self._draw_panel.draw_graphic.connect(self._map.set_draw_graphic)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
+        self._map.file_dropped.connect(self._on_file_dropped_on_map)
         self._missions_panel.mission_selected.connect(self._on_mission_selected)
         self._missions_panel.mission_cleared.connect(self._on_mission_cleared)
         self._missions_panel.refresh_requested.connect(self._load_missions)
@@ -298,6 +302,7 @@ class MainWindow(QMainWindow):
             ("Messages",         "messages"),
             ("Alerts",           "alerts"),
             ("Draw",             "draw"),
+            ("Media Gallery",    "media"),
         ]:
             act = QAction(name, self)
             act.triggered.connect(
@@ -423,6 +428,8 @@ class MainWindow(QMainWindow):
             self._role     = me.get("role", "OPERATOR")
             self._callsign = me.get("callsign", self._callsign)
             self._messages_panel.set_my_callsign(self._callsign)
+            self._messages_panel.set_server(self._server_url, self._token)
+            self._media_panel.set_client(self._client)
             self._unlock_admin_menu()
             mode = "READ-ONLY" if not self._token else "COP"
             self.setWindowTitle(
@@ -685,7 +692,8 @@ class MainWindow(QMainWindow):
             full = self._client.opord(opord_data["id"])
         except Exception:
             full = opord_data
-        win = OpordWindow(self._client, full, parent=self)
+        win = OpordWindow(self._client, full,
+                          map_capture_fn=lambda: self._map.grab(), parent=self)
         win.saved.connect(lambda _: self._load_opords())
         win.published.connect(lambda _: self._load_opords())
         win.show()
@@ -693,7 +701,8 @@ class MainWindow(QMainWindow):
 
     def _new_opord(self):
         """Open blank OPORD editor."""
-        win = OpordWindow(self._client, None, parent=self)
+        win = OpordWindow(self._client, None,
+                          map_capture_fn=lambda: self._map.grab(), parent=self)
         win.saved.connect(lambda _: self._load_opords())
         win.show()
         self._opord_windows.append(win)
@@ -803,10 +812,54 @@ class MainWindow(QMainWindow):
 
     def _on_symbol_placed(self, sidc: str, designation: str, lat: float, lon: float):
         """User placed a symbol via the picker — save to server as tactical object."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QDialogButtonBox, QFileDialog, QLabel, QPushButton
         aff_map = {"F": "FRIENDLY", "H": "HOSTILE", "N": "NEUTRAL", "U": "UNKNOWN", "A": "FRIENDLY"}
         affiliation = aff_map.get(sidc[1] if len(sidc) > 1 else "U", "UNKNOWN")
         obj_type = "ENEMY" if affiliation == "HOSTILE" else "MARKER"
         echelon = _sidc_echelon(sidc)
+
+        # Offer optional photo attachment
+        photo_id: Optional[int] = None
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Attach Photo/Video?")
+        dlg.setMinimumWidth(300)
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel(f"Symbol: {designation or sidc}\nAttach a photo or video? (optional)"))
+        file_label = QLabel("None selected")
+        file_label.setStyleSheet("color:#8b949e;font-size:9px;")
+        file_path: list[str] = []
+
+        def pick():
+            path, _ = QFileDialog.getOpenFileName(
+                dlg, "Attach Photo or Video", "",
+                "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)"
+            )
+            if path:
+                file_path.clear()
+                file_path.append(path)
+                from pathlib import Path
+                file_label.setText(f"📎 {Path(path).name}")
+
+        row = QHBoxLayout()
+        pick_btn = QPushButton("📎 Browse…")
+        pick_btn.clicked.connect(pick)
+        row.addWidget(pick_btn)
+        row.addWidget(file_label, 1)
+        layout.addLayout(row)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted and file_path:
+            try:
+                photo_id = self._client.upload_media(file_path[0])
+            except Exception as e:
+                self.statusBar().showMessage(f"Upload failed: {e}", 4000)
+
         try:
             self._client.post_tactical_object(
                 obj_type,
@@ -815,6 +868,7 @@ class MainWindow(QMainWindow):
                 affiliation=affiliation,
                 symbol_code=sidc,
                 echelon=echelon,
+                photo_id=photo_id,
             )
         except Exception as e:
             self.statusBar().showMessage(f"Symbol not saved: {e}", 3000)
@@ -843,8 +897,13 @@ class MainWindow(QMainWindow):
 
     def _on_radial_action(self, action: str, lat: float, lon: float):
         if action == "tic":
-            self._send_alert("TIC")
+            self._send_alert("TIC", lat=lat, lon=lon)
             self._place_radial_marker("HOSTILE", lat, lon, notes="TIC", affiliation="HOSTILE")
+        elif action == "drone":
+            self._send_alert("DRONE_SPOTTED", lat=lat, lon=lon)
+            self._place_radial_marker("DRONE", lat, lon, notes="DRONE", affiliation="HOSTILE")
+            self._right_panel.expand()
+            self._info.activate("alerts")
         elif action in ("enemy", "hostile"):
             pass  # symbol picker handles placement
         elif action in ("friendly",):
@@ -854,7 +913,7 @@ class MainWindow(QMainWindow):
             self._info.activate("reports")
             self._place_radial_marker("MARKER", lat, lon, notes="MEDEVAC", affiliation="FRIENDLY")
         elif action == "poi":
-            self._place_radial_marker("POI", lat, lon, notes="POI", affiliation="NEUTRAL")
+            self._place_poi_with_photo(lat, lon)
         elif action == "fire":
             self._right_panel.expand()
             self._info.activate("draw")
@@ -862,20 +921,97 @@ class MainWindow(QMainWindow):
             self._right_panel.expand()
             self._info.activate("reports")
 
+    def _on_file_dropped_on_map(self, file_path: str, lat: float, lon: float):
+        self._place_poi_with_photo(lat, lon, preset_file=file_path)
+
+    def _place_poi_with_photo(self, lat: float, lon: float, preset_file: str | None = None):
+        from PyQt6.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QDialogButtonBox,
+            QLineEdit, QFileDialog, QLabel, QPushButton,
+        )
+        from pathlib import Path
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Place POI")
+        dlg.setMinimumWidth(360)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(8)
+
+        layout.addWidget(QLabel("Notes:"))
+        notes_edit = QLineEdit()
+        notes_edit.setPlaceholderText("Notes (optional)")
+        layout.addWidget(notes_edit)
+
+        layout.addWidget(QLabel("Photo / Video:"))
+        file_path: list[str] = [preset_file] if preset_file else []
+
+        fname = Path(preset_file).name if preset_file else "No file selected"
+        file_label = QLabel(f"📎 {fname}" if preset_file else fname)
+        file_label.setStyleSheet("color:#8b949e;font-size:9px;")
+
+        def pick():
+            path, _ = QFileDialog.getOpenFileName(
+                dlg, "Attach Photo or Video", "",
+                "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)"
+            )
+            if path:
+                file_path.clear()
+                file_path.append(path)
+                file_label.setText(f"📎 {Path(path).name}")
+
+        def clear_file():
+            file_path.clear()
+            file_label.setText("No file selected")
+
+        btn_row = QHBoxLayout()
+        pick_btn = QPushButton("📎 Browse…")
+        pick_btn.clicked.connect(pick)
+        clear_btn = QPushButton("✕")
+        clear_btn.setFixedWidth(28)
+        clear_btn.clicked.connect(clear_file)
+        btn_row.addWidget(pick_btn)
+        btn_row.addWidget(clear_btn)
+        btn_row.addWidget(file_label, 1)
+        layout.addLayout(btn_row)
+
+        btns = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        notes = notes_edit.text().strip() or "POI"
+        photo_id: Optional[int] = None
+        if file_path:
+            try:
+                photo_id = self._client.upload_media(file_path[0])
+            except Exception as e:
+                self.statusBar().showMessage(f"Upload failed: {e}", 4000)
+
+        self._place_radial_marker("POI", lat, lon, notes=notes,
+                                  affiliation="NEUTRAL", photo_id=photo_id)
+
     def _place_radial_marker(self, obj_type: str, lat: float, lon: float,
-                             notes: str = "", affiliation: str = "UNKNOWN"):
+                             notes: str = "", affiliation: str = "UNKNOWN",
+                             photo_id: Optional[int] = None):
         from front.map.symbology import build as build_sidc
         aff_sidc = {"FRIENDLY": "F", "HOSTILE": "H", "NEUTRAL": "N"}.get(affiliation, "U")
         type_func = {
             "HOSTILE": "infantry", "ENEMY": "infantry",
-            "MARKER": "unit", "POI": "observer",
+            "MARKER": "unit", "POI": "location",
+            "DRONE": "drone",
         }.get(obj_type, "unit")
-        sidc = build_sidc(aff_sidc, type_func, "none")
+        dim = "A" if obj_type == "DRONE" else "G"
+        sidc = build_sidc(aff_sidc, type_func, "none", dim=dim)
         try:
             self._client.post_tactical_object(
                 obj_type, {"type": "point", "coords": [[lat, lon]]},
                 notes=notes, affiliation=affiliation,
-                symbol_code=sidc,
+                symbol_code=sidc, photo_id=photo_id,
             )
         except Exception:
             pass
@@ -891,22 +1027,26 @@ class MainWindow(QMainWindow):
     # ================================================================
     # TOOLBAR HANDLERS
     # ================================================================
-    def _send_alert(self, alert_type: str):
+    def _send_alert(self, alert_type: str,
+                    lat: Optional[float] = None, lon: Optional[float] = None):
         try:
-            self._client.send_alert(alert_type)
+            self._client.send_alert(alert_type, lat=lat, lon=lon)
         except Exception as e:
             self.statusBar().showMessage(f"Alert failed: {e}", 3000)
 
     def _send_message_scoped(self, content: str, scope: str,
-                             receiver_id: object, mission_id: object):
+                             receiver_id: object, mission_id: object,
+                             file_path: object = None):
         try:
+            photo_id: Optional[int] = None
+            if file_path:
+                photo_id = self._client.upload_media(str(file_path))
             if scope == "DIRECT" and receiver_id is not None:
-                self._client.send_message(content, receiver_id=int(receiver_id))
+                self._client.send_message(content, receiver_id=int(receiver_id), photo_id=photo_id)
             elif scope == "MISSION" and mission_id is not None:
-                # Mission-scoped: send as group message using mission_id as group_id
-                self._client.send_message_group(content, group_id=int(mission_id))
+                self._client.send_message_group(content, group_id=int(mission_id), photo_id=photo_id)
             else:
-                self._client.send_message(content)
+                self._client.send_message(content, photo_id=photo_id)
         except Exception as e:
             self.statusBar().showMessage(f"Message failed: {e}", 3000)
 

@@ -58,14 +58,13 @@ class ArrowClient:
 
     def post_tactical_object(self, obj_type: str, geometry: dict, notes: str = "",
                               affiliation: str = "UNKNOWN", symbol_code: str = "",
-                              echelon: str = "") -> dict:
+                              echelon: str = "", photo_id: Optional[int] = None) -> dict:
         import json as _json
         coords = geometry.get("coords", [])
         lat = float(coords[0][0]) if coords else 0.0
         lon = float(coords[0][1]) if coords else 0.0
-        # store geometry string only for non-point shapes
         geom_str = _json.dumps(geometry) if geometry.get("type") in ("line", "polygon") else ""
-        return self._post("/tactical-objects", {
+        body: dict = {
             "type":        obj_type,
             "latitude":    lat,
             "longitude":   lon,
@@ -74,7 +73,10 @@ class ArrowClient:
             "affiliation": affiliation,
             "symbol_code": symbol_code,
             "echelon":     echelon,
-        })
+        }
+        if photo_id is not None:
+            body["photo_id"] = photo_id
+        return self._post("/tactical-objects", body)
 
     # ---- KML --------------------------------------------------------
     def kml_layers(self) -> list:
@@ -91,8 +93,14 @@ class ArrowClient:
     def alerts(self) -> list:
         return self._get("/alerts")
 
-    def send_alert(self, alert_type: str) -> dict:
-        return self._post("/alerts", {"type": alert_type})
+    def send_alert(self, alert_type: str,
+                   lat: Optional[float] = None, lon: Optional[float] = None) -> dict:
+        body: dict = {"type": alert_type}
+        if lat is not None:
+            body["latitude"] = lat
+        if lon is not None:
+            body["longitude"] = lon
+        return self._post("/alerts", body)
 
     # ---- Reports ----------------------------------------------------
     def reports(self, limit: int = 100) -> list:
@@ -101,23 +109,53 @@ class ArrowClient:
     def post_report(self, report_type: str, payload: dict) -> dict:
         return self._post("/reports", {"type": report_type, "payload": payload})
 
+    # ---- Photos / media ---------------------------------------------
+    def upload_media(self, file_path: str) -> int:
+        """Upload an image or video file; returns the photo ID."""
+        import mimetypes, os
+        mime = mimetypes.guess_type(file_path)[0] or "image/jpeg"
+        with open(file_path, "rb") as f:
+            data = f.read()
+        files = {"file": (os.path.basename(file_path), data, mime)}
+        r = httpx.post(
+            f"{self.base_url}/photos",
+            headers=self._headers(),
+            files=files,
+            timeout=60.0,
+        )
+        r.raise_for_status()
+        return r.json()["id"]
+
+    def photos(self) -> list:
+        return self._get("/photos")
+
+    def photo_url(self, photo_id: int) -> str:
+        return f"{self.base_url}/photos/{photo_id}"
+
     # ---- Messages ---------------------------------------------------
     def messages(self, limit: int = 100) -> list:
         return self._get("/messages", limit=limit)
 
-    def send_message(self, content: str, receiver_id: Optional[int] = None) -> dict:
-        body = {"content": content, "message_type": "BROADCAST"}
+    def send_message(self, content: str, receiver_id: Optional[int] = None,
+                     photo_id: Optional[int] = None) -> dict:
+        body: dict = {"content": content, "message_type": "BROADCAST"}
         if receiver_id:
             body["receiver_id"] = receiver_id
             body["message_type"] = "DIRECT"
+        if photo_id is not None:
+            body["photo_id"] = photo_id
         return self._post("/messages", body)
 
-    def send_message_group(self, content: str, group_id: int) -> dict:
-        return self._post("/messages", {
+    def send_message_group(self, content: str, group_id: int,
+                           photo_id: Optional[int] = None) -> dict:
+        body: dict = {
             "content": content,
             "message_type": "GROUP",
             "group_id": group_id,
-        })
+        }
+        if photo_id is not None:
+            body["photo_id"] = photo_id
+        return self._post("/messages", body)
 
     # ---- Missions ---------------------------------------------------
     def missions(self) -> list:
@@ -169,6 +207,27 @@ class ArrowClient:
             return []
 
     # ---- OPORDs -----------------------------------------------------
+    # ---- OPORD snapshots --------------------------------------------
+    def add_opord_snapshot(self, opord_id: int, label: str, image_b64: str,
+                           bbox: list = None, center: list = None,
+                           zoom: float = 0.0) -> dict:
+        return self._post(f"/opord/{opord_id}/snapshots", {
+            "label":     label,
+            "image_b64": image_b64,
+            "bbox":      bbox    or [],
+            "center":    center  or [],
+            "zoom":      zoom,
+            "annotations": "",
+        })
+
+    def delete_opord_snapshot(self, opord_id: int, snap_id: int) -> dict:
+        r = httpx.delete(
+            f"{self.base_url}/opord/{opord_id}/snapshots/{snap_id}",
+            headers=self._headers(), timeout=8.0,
+        )
+        r.raise_for_status()
+        return r.json()
+
     def opords(self) -> list:
         return self._get("/opord")
 
