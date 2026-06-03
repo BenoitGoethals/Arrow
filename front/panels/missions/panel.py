@@ -218,6 +218,8 @@ class MissionsPanel(QWidget):
 
     def _clear(self):
         self._active_id = None
+        self._list.clearSelection()
+        self._list.setCurrentItem(None)
         f = QFont("Courier New", 10); f.setBold(False)
         for i in range(self._list.count()):
             self._list.item(i).setFont(f)

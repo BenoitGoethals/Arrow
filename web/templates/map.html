@@ -170,6 +170,44 @@
                           font-weight: 700; }
     .tg-ech-label { color: #64748b; font-size: 0.66rem; text-transform: uppercase;
                     letter-spacing: 0.1em; margin-bottom: 2px; }
+
+    /* ── Free Draw panel ─────────────────────────────────────────────── */
+    .fd-section-label { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
+                        margin:8px 0 4px; font-weight:700; color:#94a3b8; }
+    .fd-colors { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; margin-bottom:6px; }
+    .fd-color-swatch { height:22px; border:2px solid transparent; border-radius:3px; cursor:pointer; }
+    .fd-color-swatch:hover { border-color:#e2e8f0; }
+    .fd-color-swatch.active { border-color:#fff; }
+    .fd-thick-row { display:flex; gap:4px; align-items:center; margin-bottom:6px; }
+    .fd-thick-label { font-size:.66rem; color:#64748b; text-transform:uppercase;
+                      letter-spacing:.08em; white-space:nowrap; }
+    .fd-thick-btn { background:#1a2233; color:#94a3b8; border:1px solid #2a3142;
+                    border-radius:4px; padding:3px 0; font:inherit; font-size:.72rem;
+                    cursor:pointer; flex:1; text-align:center; }
+    .fd-thick-btn:hover  { border-color:#6ee7b7; color:#e2e8f0; }
+    .fd-thick-btn.active { background:#1e3a2f; border-color:#6ee7b7; color:#6ee7b7; font-weight:700; }
+    .fd-tools { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+    .fd-tool-btn { background:#1a2233; color:#94a3b8; border:1px solid #2a3142;
+                   border-radius:4px; padding:5px 6px; font:inherit; font-size:.72rem;
+                   cursor:pointer; text-align:center; }
+    .fd-tool-btn:hover  { border-color:#6ee7b7; color:#e2e8f0; }
+    .fd-tool-btn.active { background:#1e293b; border-color:#60a5fa; color:#60a5fa; font-weight:600; }
+    .fd-tool-btn.danger:hover { border-color:#f87171; color:#f87171; }
+
+    /* Text-input overlay (same concept as in front) */
+    #fd-text-overlay { display:none; position:fixed; z-index:900;
+                       background:rgba(15,20,30,.97); border:1px solid #3b82f6;
+                       border-radius:4px; padding:6px 8px; gap:6px; align-items:center; }
+    #fd-text-overlay.active { display:flex; }
+    #fd-text-input { background:#111827; border:1px solid #2a3142; color:#e2e8f0;
+                     font:inherit; font-size:.85rem; padding:4px 8px; border-radius:3px;
+                     width:160px; outline:none; }
+    #fd-text-input:focus { border-color:#3b82f6; }
+    .fd-overlay-btn { background:#1a2233; border:1px solid #2a3142; color:#94a3b8;
+                      font:inherit; font-size:.75rem; cursor:pointer; padding:4px 10px;
+                      border-radius:3px; }
+    .fd-overlay-btn.primary { background:#1d4ed8; border-color:#2563eb; color:#fff; }
+    .fd-overlay-btn:hover { filter:brightness(1.2); }
 </style>
 {% endblock %}
 {% block content %}
@@ -276,7 +314,44 @@
             </div>
             <button class="tg-btn tg-cancel" id="tg-cancel">✕ Cancel drawing</button>
         </details>
+
+        <!-- ── Free Draw ───────────────────────────────────────────── -->
+        <details class="sb-section" style="margin-top:1rem" id="fd-section">
+            <summary><h3 style="display:inline">Free Draw</h3></summary>
+            <div class="fd-section-label">Color</div>
+            <div class="fd-colors" id="fd-colors">
+                <button class="fd-color-swatch" style="background:#ef4444" data-color="#ef4444" title="Red"></button>
+                <button class="fd-color-swatch" style="background:#f97316" data-color="#f97316" title="Orange"></button>
+                <button class="fd-color-swatch" style="background:#fbbf24" data-color="#fbbf24" title="Yellow"></button>
+                <button class="fd-color-swatch" style="background:#22c55e" data-color="#22c55e" title="Green"></button>
+                <button class="fd-color-swatch" style="background:#3b82f6" data-color="#3b82f6" title="Blue"></button>
+                <button class="fd-color-swatch" style="background:#a855f7" data-color="#a855f7" title="Purple"></button>
+                <button class="fd-color-swatch" style="background:#f1f5f9" data-color="#f1f5f9" title="White"></button>
+                <button class="fd-color-swatch" style="background:#0f172a;border-color:#334155" data-color="#0f172a" title="Black"></button>
+            </div>
+            <div class="fd-thick-row">
+                <span class="fd-thick-label">PX</span>
+                <button class="fd-thick-btn" data-thick="1">1</button>
+                <button class="fd-thick-btn active" data-thick="2">2</button>
+                <button class="fd-thick-btn" data-thick="3">3</button>
+                <button class="fd-thick-btn" data-thick="5">5</button>
+                <button class="fd-thick-btn" data-thick="8">8</button>
+            </div>
+            <div class="fd-tools">
+                <button class="fd-tool-btn" id="fd-pen-btn">✏ Pen</button>
+                <button class="fd-tool-btn" id="fd-text-btn">T Text</button>
+                <button class="fd-tool-btn" id="fd-undo-btn" onclick="fdUndo()">↩ Undo</button>
+                <button class="fd-tool-btn danger" id="fd-clear-btn" onclick="fdClear()">✕ Clear</button>
+            </div>
+        </details>
     </aside>
+
+    <!-- Free-draw text input overlay -->
+    <div id="fd-text-overlay">
+        <input id="fd-text-input" type="text" placeholder="Enter text…" maxlength="80">
+        <button class="fd-overlay-btn primary" onclick="fdPlaceText()">Place</button>
+        <button class="fd-overlay-btn" onclick="fdCloseText()">✕</button>
+    </div>
     <div style="position:relative">
         <!-- Radial context menu overlay -->
         <div id="radial-bg" onclick="closeRadial()"></div>
@@ -4492,6 +4567,175 @@
     })();
 
     document.getElementById('mgal-btn').addEventListener('click', openMediaGallery);
+
+    // ════════════════════════════════════════════════════════════════════
+    // FREE DRAW
+    // Pen: Leaflet mousedown → document mousemove/mouseup for accuracy.
+    // Text: Leaflet click → inline overlay input at click position.
+    // Local-only (not persisted to server — annotation layer only).
+    // ════════════════════════════════════════════════════════════════════
+    const fdLayer = L.layerGroup().addTo(map);
+
+    let fdColor   = '#ef4444';
+    let fdThick   = 2;
+    let fdTool    = 'none';   // 'pen' | 'text' | 'none'
+    let fdDown    = false;
+    let fdPts     = [];
+    let fdCurLyr  = null;
+    let fdHistory = [];
+    let fdPendLL  = null;
+
+    // ── helpers ──────────────────────────────────────────────────────────
+    function fdEsc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function fdSetTool(tool) {
+        fdStopAll();
+        fdTool = tool;
+        document.getElementById('fd-pen-btn').classList.toggle('active', tool === 'pen');
+        document.getElementById('fd-text-btn').classList.toggle('active', tool === 'text');
+
+        if (tool === 'pen') {
+            map.dragging.disable();
+            map.on('mousedown', fdLeafletDown);
+            document.addEventListener('mousemove', fdDocMove, false);
+            document.addEventListener('mouseup',   fdDocUp,   false);
+        } else if (tool === 'text') {
+            map.on('click', fdTextClick);
+        } else {
+            map.dragging.enable();
+        }
+    }
+
+    function fdStopAll() {
+        map.off('mousedown', fdLeafletDown);
+        map.off('click',     fdTextClick);
+        document.removeEventListener('mousemove', fdDocMove, false);
+        document.removeEventListener('mouseup',   fdDocUp,   false);
+        if (fdDown) { fdDown = false; map.dragging.enable(); }
+        if (fdCurLyr) { fdLayer.removeLayer(fdCurLyr); fdCurLyr = null; }
+        fdPts = [];
+        fdCloseText();
+    }
+
+    function fdLeafletDown(e) {
+        fdDown = true;
+        fdPts  = [e.latlng];
+    }
+
+    function fdDocMove(e) {
+        if (!fdDown) return;
+        const rect = map.getContainer().getBoundingClientRect();
+        const ll   = map.containerPointToLatLng(L.point(e.clientX - rect.left, e.clientY - rect.top));
+        fdPts.push(ll);
+        if (fdCurLyr) fdLayer.removeLayer(fdCurLyr);
+        if (fdPts.length >= 2) {
+            fdCurLyr = L.polyline(fdPts.slice(), {
+                color: fdColor, weight: fdThick, opacity: .92,
+                lineCap: 'round', lineJoin: 'round', interactive: false
+            }).addTo(fdLayer);
+        }
+    }
+
+    function fdDocUp() {
+        if (!fdDown) return;
+        fdDown = false;
+        if (fdCurLyr) { fdLayer.removeLayer(fdCurLyr); fdCurLyr = null; }
+        if (fdPts.length >= 2) {
+            const lyr = L.polyline(fdPts.slice(), {
+                color: fdColor, weight: fdThick, opacity: .92,
+                lineCap: 'round', lineJoin: 'round', interactive: false
+            }).addTo(fdLayer);
+            fdHistory.push(lyr);
+        }
+        fdPts = [];
+    }
+
+    function fdTextClick(e) {
+        if (fdTool !== 'text') return;
+        fdPendLL = e.latlng;
+        const pt = map.latLngToContainerPoint(e.latlng);
+        const rc = map.getContainer().getBoundingClientRect();
+        const ov = document.getElementById('fd-text-overlay');
+        ov.style.left = Math.min(rc.left + pt.x + 8, window.innerWidth  - 320) + 'px';
+        ov.style.top  = Math.min(rc.top  + pt.y - 18, window.innerHeight -  60) + 'px';
+        ov.classList.add('active');
+        const inp = document.getElementById('fd-text-input');
+        inp.value = '';
+        setTimeout(() => inp.focus(), 40);
+    }
+
+    function fdPlaceText() {
+        const text = (document.getElementById('fd-text-input').value || '').trim();
+        if (text && fdPendLL) {
+            const sh = '1px 1px 3px #000,-1px -1px 3px #000,1px -1px 3px #000,-1px 1px 3px #000';
+            const lyr = L.marker(fdPendLL, {
+                interactive: false,
+                icon: L.divIcon({
+                    className: '',
+                    html: `<div style="color:${fdColor};font-family:monospace;font-size:13px;
+                           font-weight:700;white-space:nowrap;text-shadow:${sh};
+                           pointer-events:none">${fdEsc(text)}</div>`,
+                    iconSize: [0, 0], iconAnchor: [0, 8]
+                })
+            }).addTo(fdLayer);
+            fdHistory.push(lyr);
+        }
+        fdCloseText();
+    }
+
+    function fdCloseText() {
+        const ov = document.getElementById('fd-text-overlay');
+        if (ov) ov.classList.remove('active');
+        fdPendLL = null;
+    }
+
+    function fdUndo() {
+        if (!fdHistory.length) return;
+        fdLayer.removeLayer(fdHistory.pop());
+    }
+
+    function fdClear() {
+        fdLayer.clearLayers();
+        fdHistory = [];
+        fdCurLyr  = null;
+    }
+
+    // ── UI wiring ─────────────────────────────────────────────────────────
+    document.getElementById('fd-pen-btn').addEventListener('click', () => {
+        fdSetTool(fdTool === 'pen' ? 'none' : 'pen');
+    });
+    document.getElementById('fd-text-btn').addEventListener('click', () => {
+        fdSetTool(fdTool === 'text' ? 'none' : 'text');
+    });
+
+    // Color swatches
+    document.getElementById('fd-colors').addEventListener('click', e => {
+        const btn = e.target.closest('[data-color]');
+        if (!btn) return;
+        fdColor = btn.dataset.color;
+        document.querySelectorAll('.fd-color-swatch').forEach(b => b.classList.toggle('active', b === btn));
+    });
+    // Select first color by default
+    document.querySelector('.fd-color-swatch').classList.add('active');
+
+    // Thickness buttons
+    document.querySelectorAll('.fd-thick-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            fdThick = parseInt(btn.dataset.thick);
+            document.querySelectorAll('.fd-thick-btn').forEach(b => b.classList.toggle('active', b === btn));
+        });
+    });
+
+    // Enter/Escape in text overlay
+    document.getElementById('fd-text-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter')  { fdPlaceText(); e.preventDefault(); }
+        if (e.key === 'Escape') { fdCloseText(); e.preventDefault(); }
+    });
+
+    // ESC also stops free draw pen
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && fdTool !== 'none') fdSetTool('none');
+    });
 
 })();
 </script>

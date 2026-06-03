@@ -62,17 +62,36 @@ _RED   = "#ef4444"
 _AMBER = "#f59e0b"
 
 
+_FD_COLORS = [
+    ("#f85149", "Red"),
+    ("#ff8800", "Orange"),
+    ("#ffd700", "Yellow"),
+    ("#3fb950", "Green"),
+    ("#00aaff", "Blue"),
+    ("#d2a8ff", "Purple"),
+    ("#e6edf3", "White"),
+    ("#111827", "Black"),
+]
+_FD_THICK = [1, 2, 3, 5, 8]
+
+
 class DrawPanel(QWidget):
     """Replicates the Frontline tactical graphics selection panel."""
 
-    draw_mode_changed = pyqtSignal(str)   # type_key passed to map
-    draw_graphic      = pyqtSignal(str, str)  # type_key, affiliation (F/H)
+    draw_mode_changed = pyqtSignal(str)        # type_key passed to map
+    draw_graphic      = pyqtSignal(str, str)   # type_key, affiliation (F/H)
+    free_draw_changed = pyqtSignal(str, str, int)  # tool ('pen'|'text'|'none'), color, thickness
+    free_draw_undo    = pyqtSignal()
+    free_draw_clear   = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._active_type: str | None = None
         self._active_aff:  str = "F"
         self._echelon: str = "--"
+        self._fd_color: str = "#f85149"
+        self._fd_thick: int = 2
+        self._fd_tool:  str = "none"
         self._build_ui()
 
     def _build_ui(self):
@@ -117,6 +136,13 @@ class DrawPanel(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
+        # ── Free Draw section ─────────────────────────────────────
+        layout.addWidget(self._section_header("FREE DRAW", "#8b949e"))
+        self._build_free_draw_section(layout)
+
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine); sep2.setFixedHeight(1)
+        layout.addWidget(sep2)
+
         # Friendly section
         layout.addWidget(self._section_header("FRIENDLY GRAPHICS", _BLUE))
         self._friendly_btns = self._graphic_grid(layout, FRIENDLY_GRAPHICS, _BLUE)
@@ -144,6 +170,163 @@ class DrawPanel(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
+
+    # ---- Free Draw -------------------------------------------------------
+
+    def _build_free_draw_section(self, layout: QVBoxLayout):
+        # Color palette (2 rows × 4)
+        color_grid = QGridLayout()
+        color_grid.setSpacing(4)
+        self._fd_color_btns: list[QPushButton] = []
+        for idx, (hex_color, name) in enumerate(_FD_COLORS):
+            btn = QPushButton()
+            btn.setFixedSize(32, 22)
+            btn.setToolTip(name)
+            border = "#ffffff" if hex_color == "#111827" else hex_color
+            btn.setStyleSheet(
+                f"QPushButton{{background:{hex_color};border:2px solid transparent;border-radius:2px;}}"
+                f"QPushButton:hover{{border-color:#e6edf3;}}"
+            )
+            btn.clicked.connect(lambda _, c=hex_color, b=btn: self._set_fd_color(c, b))
+            color_grid.addWidget(btn, idx // 4, idx % 4)
+            self._fd_color_btns.append(btn)
+        layout.addLayout(color_grid)
+        # Highlight default color
+        self._update_fd_color_btns(self._fd_color)
+
+        # Thickness row
+        thick_row = QHBoxLayout()
+        thick_row.setSpacing(4)
+        thick_row.addWidget(QLabel("PX", styleSheet="color:#6e7681;font-size:9px;font-weight:700;"))
+        self._fd_thick_btns: list[QPushButton] = []
+        for t in _FD_THICK:
+            btn = QPushButton(str(t))
+            btn.setFixedSize(32, 22)
+            btn.setStyleSheet(self._fd_thick_style(t == self._fd_thick))
+            btn.clicked.connect(lambda _, th=t: self._set_fd_thick(th))
+            thick_row.addWidget(btn)
+            self._fd_thick_btns.append(btn)
+        thick_row.addStretch()
+        layout.addLayout(thick_row)
+
+        # Tool buttons row
+        tool_row = QHBoxLayout()
+        tool_row.setSpacing(4)
+
+        self._fd_pen_btn = QPushButton("✏ Pen")
+        self._fd_pen_btn.setCheckable(True)
+        self._fd_pen_btn.setFixedHeight(28)
+        self._fd_pen_btn.setStyleSheet(self._fd_tool_style(False))
+        self._fd_pen_btn.clicked.connect(self._toggle_pen)
+        tool_row.addWidget(self._fd_pen_btn)
+
+        self._fd_text_btn = QPushButton("T Text")
+        self._fd_text_btn.setCheckable(True)
+        self._fd_text_btn.setFixedHeight(28)
+        self._fd_text_btn.setStyleSheet(self._fd_tool_style(False))
+        self._fd_text_btn.clicked.connect(self._toggle_text)
+        tool_row.addWidget(self._fd_text_btn)
+
+        undo_btn = QPushButton("↩ Undo")
+        undo_btn.setFixedHeight(28)
+        undo_btn.setStyleSheet(
+            "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:10px;padding:0 6px;}"
+            "QPushButton:hover{background:#30363d;color:#c9d1d9;}"
+        )
+        undo_btn.clicked.connect(self.free_draw_undo.emit)
+        tool_row.addWidget(undo_btn)
+
+        clr_btn = QPushButton("✕ Clear")
+        clr_btn.setFixedHeight(28)
+        clr_btn.setStyleSheet(
+            "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:10px;padding:0 6px;}"
+            "QPushButton:hover{background:#3d1c1c;border-color:#f85149;color:#f85149;}"
+        )
+        clr_btn.clicked.connect(self.free_draw_clear.emit)
+        tool_row.addWidget(clr_btn)
+
+        layout.addLayout(tool_row)
+
+    def _set_fd_color(self, color: str, clicked_btn: QPushButton):
+        self._fd_color = color
+        self._update_fd_color_btns(color)
+        if self._fd_tool != "none":
+            self.free_draw_changed.emit(self._fd_tool, color, self._fd_thick)
+
+    def _update_fd_color_btns(self, active_color: str):
+        for btn, (hex_color, _) in zip(self._fd_color_btns, _FD_COLORS):
+            if hex_color == active_color:
+                btn.setStyleSheet(
+                    f"QPushButton{{background:{hex_color};border:2px solid #e6edf3;border-radius:2px;}}"
+                )
+            else:
+                btn.setStyleSheet(
+                    f"QPushButton{{background:{hex_color};border:2px solid transparent;border-radius:2px;}}"
+                    f"QPushButton:hover{{border-color:#e6edf3;}}"
+                )
+
+    def _set_fd_thick(self, thickness: int):
+        self._fd_thick = thickness
+        for btn in self._fd_thick_btns:
+            t = int(btn.text())
+            btn.setStyleSheet(self._fd_thick_style(t == thickness))
+        if self._fd_tool != "none":
+            self.free_draw_changed.emit(self._fd_tool, self._fd_color, thickness)
+
+    def _toggle_pen(self):
+        if self._fd_pen_btn.isChecked():
+            self._fd_text_btn.setChecked(False)
+            self._fd_text_btn.setStyleSheet(self._fd_tool_style(False))
+            self._fd_pen_btn.setStyleSheet(self._fd_tool_style(True))
+            self._fd_tool = "pen"
+            self._cancel_btn.setEnabled(True)
+            self.free_draw_changed.emit("pen", self._fd_color, self._fd_thick)
+        else:
+            self._fd_pen_btn.setStyleSheet(self._fd_tool_style(False))
+            self._fd_tool = "none"
+            if self._active_type is None:
+                self._cancel_btn.setEnabled(False)
+            self.free_draw_changed.emit("none", self._fd_color, self._fd_thick)
+
+    def _toggle_text(self):
+        if self._fd_text_btn.isChecked():
+            self._fd_pen_btn.setChecked(False)
+            self._fd_pen_btn.setStyleSheet(self._fd_tool_style(False))
+            self._fd_text_btn.setStyleSheet(self._fd_tool_style(True))
+            self._fd_tool = "text"
+            self._cancel_btn.setEnabled(True)
+            self.free_draw_changed.emit("text", self._fd_color, self._fd_thick)
+        else:
+            self._fd_text_btn.setStyleSheet(self._fd_tool_style(False))
+            self._fd_tool = "none"
+            if self._active_type is None:
+                self._cancel_btn.setEnabled(False)
+            self.free_draw_changed.emit("none", self._fd_color, self._fd_thick)
+
+    def _stop_free_draw_tools(self):
+        self._fd_pen_btn.setChecked(False)
+        self._fd_text_btn.setChecked(False)
+        self._fd_pen_btn.setStyleSheet(self._fd_tool_style(False))
+        self._fd_text_btn.setStyleSheet(self._fd_tool_style(False))
+        self._fd_tool = "none"
+
+    @staticmethod
+    def _fd_thick_style(active: bool) -> str:
+        if active:
+            return ("QPushButton{background:#1c2d3f;border:1px solid #1f6feb;"
+                    "color:#79c0ff;font-size:10px;font-weight:700;}")
+        return ("QPushButton{background:#21262d;border:1px solid #30363d;"
+                "color:#8b949e;font-size:10px;}"
+                "QPushButton:hover{background:#30363d;color:#c9d1d9;}")
+
+    @staticmethod
+    def _fd_tool_style(active: bool) -> str:
+        if active:
+            return ("QPushButton{background:#1c2d3f;border:1px solid #388bfd;"
+                    "color:#79c0ff;font-size:10px;font-weight:600;padding:0 6px;}")
+        return ("QPushButton{background:#21262d;border:1px solid #30363d;"
+                "color:#8b949e;font-size:10px;padding:0 6px;}"
+                "QPushButton:hover{background:#30363d;color:#c9d1d9;}")
 
     # ---- Builders --------------------------------------------------------
 
@@ -181,6 +364,8 @@ class DrawPanel(QWidget):
         self._echelon = btn.property("echcode") or "--"
 
     def _select_graphic(self, btn: QPushButton):
+        # Stop any active free draw tool
+        self._stop_free_draw_tools()
         # Deselect all others
         all_btns = self._friendly_btns + self._enemy_btns + self._control_btns
         for b in all_btns:
@@ -203,6 +388,11 @@ class DrawPanel(QWidget):
             self._cancel()
 
     def _cancel(self):
+        # Stop free draw tools first
+        if self._fd_tool != "none":
+            self._stop_free_draw_tools()
+            self.free_draw_changed.emit("none", self._fd_color, self._fd_thick)
+        # Stop tactical graphic drawing
         for b in self._friendly_btns + self._enemy_btns + self._control_btns:
             b.setChecked(False)
             b.setStyleSheet(self._gfx_btn_style(b.property("color"), False))

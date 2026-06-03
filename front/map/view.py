@@ -197,6 +197,15 @@ class MapView(QWebEngineView):
     def set_draw_graphic(self, graphic_type: str, affiliation: str):
         self._js(f"setDrawGraphic({json.dumps(graphic_type)}, {json.dumps(affiliation)})")
 
+    def set_free_draw(self, tool: str, color: str, thickness: int):
+        self._js(f"setFreeDraw({json.dumps(tool)}, {json.dumps(color)}, {int(thickness)})")
+
+    def free_draw_undo(self):
+        self._js("undoFreeDraw()")
+
+    def free_draw_clear(self):
+        self._js("clearFreeDrawLayer()")
+
     # ---- Drag-and-drop (media files → map) --------------------------------
 
     def eventFilter(self, obj, event):

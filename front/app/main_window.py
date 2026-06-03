@@ -162,6 +162,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("]"), self).activated.connect(self._right_panel.toggle)
         QShortcut(QKeySequence("F1"), self).activated.connect(self._left_panel.toggle)
         QShortcut(QKeySequence("F2"), self).activated.connect(self._right_panel.toggle)
+        QShortcut(QKeySequence("F10"), self).activated.connect(self._take_screenshot)
 
     # ================================================================
     # SIGNALS
@@ -175,7 +176,8 @@ class MainWindow(QMainWindow):
         tb.alert_requested.connect(self._send_alert)
         tb.mbtiles_selected.connect(self._load_mbtiles_file)
         tb.weather_toggled.connect(self._map.set_weather_layer)
-        tb.weather_fetch.connect(lambda: self._map._js("fetchWeatherAtCenter()")  )  # noqa
+        tb.weather_fetch.connect(lambda: self._map._js("fetchWeatherAtCenter()"))
+        tb.screenshot_requested.connect(self._take_screenshot)
 
         self._map.bridge.coords_changed.connect(self._statusbar.update_coords)
         self._map.bridge.map_ready.connect(self._load_all)
@@ -195,6 +197,9 @@ class MainWindow(QMainWindow):
         self._messages_panel.message_send_requested.connect(self._send_message_scoped)
         self._draw_panel.draw_mode_changed.connect(self._map.set_draw_mode)
         self._draw_panel.draw_graphic.connect(self._map.set_draw_graphic)
+        self._draw_panel.free_draw_changed.connect(self._map.set_free_draw)
+        self._draw_panel.free_draw_undo.connect(self._map.free_draw_undo)
+        self._draw_panel.free_draw_clear.connect(self._map.free_draw_clear)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
         self._map.file_dropped.connect(self._on_file_dropped_on_map)
         self._missions_panel.mission_selected.connect(self._on_mission_selected)
@@ -1084,6 +1089,28 @@ class MainWindow(QMainWindow):
                     return
         except Exception:
             pass
+
+    # ================================================================
+    # SCREENSHOT
+    # ================================================================
+    def _take_screenshot(self):
+        import datetime
+        from PyQt6.QtWidgets import QFileDialog
+
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_name = f"arrow_map_{ts}.png"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Map Screenshot", default_name,
+            "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"
+        )
+        if not path:
+            return
+        pixmap = self._map.grab()
+        if pixmap.save(path):
+            self._toasts.show("info", "SCREENSHOT SAVED", path.split("/")[-1])
+            self.statusBar().showMessage(f"Screenshot saved: {path}", 5000)
+        else:
+            self.statusBar().showMessage("Screenshot failed to save", 4000)
 
     # ================================================================
     # HELPERS
