@@ -122,6 +122,59 @@ _patch_opus()
 _patch_ssl()
 
 
+# ── 3. opuslib vararg calling convention on ARM64 / Python 3.12+ ─────────────
+# opus_encoder_ctl / opus_decoder_ctl are variadic C functions.  On ARM64
+# macOS (Apple Silicon) ctypes cannot infer argument types for varargs —
+# the C ABI treats fixed and variadic arguments differently.  Without
+# explicit argtypes the wrong register is used, causing OPUS_BAD_ARG even
+# for perfectly valid values.  We wrap libopus_ctl with a small proxy that
+# sets argtypes before every call so ctypes uses the right convention.
+
+def _patch_opuslib_varargs() -> None:
+    if getattr(ctypes, "_arrow_opuslib_patched", False):
+        return
+    try:
+        import opuslib.api.encoder as _enc
+        import opuslib.api.decoder as _dec
+        import opuslib.api as _api
+
+        _raw_enc = _api.libopus.opus_encoder_ctl
+        _raw_dec = _api.libopus.opus_decoder_ctl
+
+        _byref_type = type(ctypes.byref(ctypes.c_int()))  # CArgObject
+
+        class _CTLProxy:
+            """Calls an opus_*_ctl C function with explicit argtypes each time."""
+            def __init__(self, fn):
+                self._fn = fn
+                self._fn.restype = ctypes.c_int
+
+            def __call__(self, obj, request_code, value=None):
+                fn = self._fn
+                if value is None:
+                    fn.argtypes = None
+                    return fn(obj, request_code)
+                if isinstance(value, _byref_type):
+                    # getter: byref(c_int) pointer for output
+                    fn.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+                    return fn(obj, request_code, value)
+                if isinstance(value, ctypes._SimpleCData):
+                    fn.argtypes = [ctypes.c_void_p, ctypes.c_int, type(value)]
+                    return fn(obj, request_code, value)
+                # Plain Python int / float — most common (setter) case
+                fn.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+                return fn(obj, request_code, ctypes.c_int(int(value)))
+
+        _enc.libopus_ctl = _CTLProxy(_raw_enc)
+        _dec.libopus_ctl = _CTLProxy(_raw_dec)
+        ctypes._arrow_opuslib_patched = True
+    except Exception:
+        pass
+
+
+_patch_opuslib_varargs()
+
+
 # ── Install hint (shown in web panel via monitor._ERR) ───────────────────────
 
 OPUS_INSTALL_HINT: str = ""
