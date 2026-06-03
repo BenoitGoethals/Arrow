@@ -44,6 +44,7 @@ from backend.storage.database import init_db
 from backend.storage.seed import seed as seed_db
 from backend.tracking.router import router as tracking_router
 from backend.websocket.router import router as ws_router
+from backend.mumble.router import router as mumble_router
 
 _WEAK_SECRET = "change-me-in-production"
 _SECRET_FILE = "data/jwt_secret.key"
@@ -160,7 +161,14 @@ async def lifespan(app: FastAPI):
     from backend import token_blacklist
     token_blacklist.init(os.environ.get("ARROW_REDIS_URL"))
 
+    # Mumble observer bot — loads saved config and connects if configured
+    from backend.mumble.monitor import monitor as _mumble_monitor
+    _mumble_monitor.load_config()
+
     yield
+
+    # Graceful Mumble shutdown
+    _mumble_monitor.stop()
 
 
 def create_app() -> FastAPI:
@@ -217,6 +225,7 @@ def create_app() -> FastAPI:
     app.include_router(octopus_router)
     app.include_router(photos_router)
     app.include_router(ws_router)
+    app.include_router(mumble_router)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict[str, str]:

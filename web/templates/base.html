@@ -164,6 +164,17 @@
     </span>
     <span id="nav-user" class="nav-user"></span>
     <a id="nav-auth" href="{{ url_for('login') }}">Sign in</a>
+
+    <!-- Mumble voice button -->
+    <button id="mumble-nav-btn" onclick="mumbleTogglePanel()"
+            title="Voice (Mumble)" class="nav-item"
+            style="background:none;border:1px solid #1e293b;border-radius:5px;
+                   color:#64748b;cursor:pointer;padding:3px 10px;font-size:.82rem;
+                   margin-left:6px;display:none;align-items:center;gap:5px;">
+        <span id="mumble-led" style="width:7px;height:7px;border-radius:50%;
+              background:#334155;display:inline-block;flex-shrink:0"></span>
+        🎙 VOICE
+    </button>
 </nav>
 <style>
 .nav-item { display: none; }
@@ -1432,6 +1443,337 @@
     connectWS();
 })();
 </script>
+<!-- ═══════════════════════════════════════════════════════════════════
+     MUMBLE VOICE PANEL  (floating, draggable)
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="mumble-panel" style="
+    display:none;position:fixed;bottom:70px;right:20px;z-index:8500;
+    width:300px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;
+    box-shadow:0 8px 32px rgba(0,0,0,.85);font-family:inherit;overflow:hidden;">
+
+  <!-- Title bar (drag handle) -->
+  <div id="mumble-bar" style="
+      display:flex;align-items:center;gap:8px;padding:8px 12px;
+      background:#1e293b;cursor:move;user-select:none;border-bottom:1px solid #0f172a;">
+    <span style="width:8px;height:8px;border-radius:50%;background:#334155;
+                 flex-shrink:0" id="mumble-panel-led"></span>
+    <span style="color:#94a3b8;font-size:.78rem;font-weight:700;
+                 letter-spacing:.06em;flex:1">🎙 VOICE — MUMBLE</span>
+    <span id="mumble-srv-label" style="color:#475569;font-size:.68rem;
+                                       font-family:monospace"></span>
+    <button onclick="mumbleTogglePanel()"
+            style="background:none;border:0;color:#475569;cursor:pointer;
+                   font-size:.9rem;padding:0 2px;line-height:1">✕</button>
+  </div>
+
+  <!-- Channel tree -->
+  <div id="mumble-channels" style="
+      max-height:260px;overflow-y:auto;padding:8px 0;
+      font-size:.78rem;color:#94a3b8;font-family:monospace;">
+    <div style="padding:6px 14px;color:#475569">Loading…</div>
+  </div>
+
+  <!-- Footer: status + open link + config -->
+  <div style="border-top:1px solid #1e293b;padding:8px 12px;
+              display:flex;flex-direction:column;gap:6px;">
+    <div id="mumble-status-line"
+         style="font-size:.72rem;color:#475569;font-family:monospace">—</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <a id="mumble-open-link" href="#"
+         style="flex:1;text-align:center;background:#1e3a5f;color:#60a5fa;
+                border:1px solid #2563eb;border-radius:5px;padding:4px 0;
+                font-size:.75rem;text-decoration:none;display:none">
+        ▶ Open in Mumble app
+      </a>
+      <button id="mumble-cfg-btn" onclick="mumbleShowConfig()"
+              style="background:#1e293b;border:1px solid #334155;color:#64748b;
+                     border-radius:5px;padding:4px 10px;font-size:.72rem;
+                     cursor:pointer;display:none">
+        ⚙ Config
+      </button>
+    </div>
+
+    <!-- Config form (admin / battle captain only) -->
+    <div id="mumble-cfg-form" style="display:none;flex-direction:column;gap:5px;
+                                      padding-top:6px;border-top:1px solid #1e293b;">
+      <div style="font-size:.68rem;color:#475569;letter-spacing:.08em;text-transform:uppercase">
+        Mumble Server
+      </div>
+      <input id="mc-host" placeholder="host (e.g. mumble.example.com)"
+             style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                    border-radius:4px;padding:4px 8px;font-size:.75rem;width:100%;
+                    box-sizing:border-box">
+      <div style="display:flex;gap:5px">
+        <input id="mc-port" placeholder="Port" type="number" value="64738"
+               style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                      border-radius:4px;padding:4px 6px;font-size:.75rem;width:70px">
+        <input id="mc-user" placeholder="Username (bot)"
+               style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                      border-radius:4px;padding:4px 6px;font-size:.75rem;flex:1">
+      </div>
+      <input id="mc-pwd" placeholder="Password (optional)" type="password"
+             style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                    border-radius:4px;padding:4px 8px;font-size:.75rem;width:100%;
+                    box-sizing:border-box">
+      <div style="display:flex;gap:5px;margin-top:2px">
+        <button onclick="mumbleSaveConfig()"
+                style="flex:1;background:#0ea5e9;border:0;color:#fff;border-radius:4px;
+                       padding:5px;font-size:.75rem;cursor:pointer;font:inherit">
+          Save &amp; Connect
+        </button>
+        <button onclick="mumbleDeleteConfig()"
+                style="background:#1e293b;border:1px solid #334155;color:#f87171;
+                       border-radius:4px;padding:5px 8px;font-size:.75rem;
+                       cursor:pointer;font:inherit">
+          Disconnect
+        </button>
+        <button onclick="document.getElementById('mumble-cfg-form').style.display='none'"
+                style="background:none;border:1px solid #1e293b;color:#475569;
+                       border-radius:4px;padding:5px 8px;font-size:.75rem;
+                       cursor:pointer;font:inherit">
+          Cancel
+        </button>
+      </div>
+      <div id="mc-msg" style="font-size:.7rem;color:#f87171;min-height:.9em"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let _mumblePollTimer = null;
+let _mumbleVisible   = false;
+let _mumbleConfig    = null;   // { host, port } for the deep-link
+
+// ── Panel toggle ─────────────────────────────────────────────────────────────
+window.mumbleTogglePanel = function () {
+    const panel = document.getElementById('mumble-panel');
+    _mumbleVisible = !_mumbleVisible;
+    panel.style.display = _mumbleVisible ? 'block' : 'none';
+    if (_mumbleVisible && !_mumblePollTimer) mumbleStartPoll();
+};
+
+// ── Draggable ─────────────────────────────────────────────────────────────────
+(function () {
+    const panel = document.getElementById('mumble-panel');
+    const bar   = document.getElementById('mumble-bar');
+    let drag = false, ox = 0, oy = 0;
+    bar.addEventListener('mousedown', e => {
+        drag = true;
+        const r = panel.getBoundingClientRect();
+        ox = e.clientX - r.left; oy = e.clientY - r.top;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!drag) return;
+        panel.style.left   = Math.max(0, e.clientX - ox) + 'px';
+        panel.style.top    = Math.max(0, e.clientY - oy) + 'px';
+        panel.style.right  = 'auto';
+        panel.style.bottom = 'auto';
+    });
+    document.addEventListener('mouseup', () => { drag = false; });
+})();
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+function mumbleStartPoll() {
+    mumbleFetch();
+    _mumblePollTimer = setInterval(mumbleFetch, 5000);
+}
+
+function mumbleFetch() {
+    const tok = localStorage.getItem('arrow_token');
+    if (!tok) return;
+    fetch(window.ARROW_BACKEND_URL + '/mumble/status', {
+        headers: { Authorization: 'Bearer ' + tok },
+    }).then(r => r.ok ? r.json() : null).then(data => {
+        if (data) mumbleRender(data);
+    }).catch(() => {});
+}
+
+function mumbleRender(data) {
+    const led       = document.getElementById('mumble-panel-led');
+    const navLed    = document.getElementById('mumble-led');
+    const statusLn  = document.getElementById('mumble-status-line');
+    const openLink  = document.getElementById('mumble-open-link');
+    const chDiv     = document.getElementById('mumble-channels');
+    const srvLabel  = document.getElementById('mumble-srv-label');
+
+    const connected = data.connected;
+    const ledColor  = connected ? '#22c55e' : (data.error ? '#ef4444' : '#334155');
+    led.style.background    = ledColor;
+    navLed.style.background = ledColor;
+
+    if (connected) {
+        statusLn.style.color = '#22c55e';
+        statusLn.textContent = '● Connected';
+    } else if (data.error) {
+        statusLn.style.color = '#f87171';
+        statusLn.textContent = '○ ' + data.error.slice(0, 60);
+    } else {
+        statusLn.style.color = '#475569';
+        statusLn.textContent = '○ Not configured';
+    }
+
+    // Server label
+    if (_mumbleConfig) {
+        srvLabel.textContent = _mumbleConfig.host + ':' + _mumbleConfig.port;
+        openLink.href = 'mumble://' + _mumbleConfig.host + ':' + _mumbleConfig.port;
+        openLink.style.display = '';
+    }
+
+    // Build channel tree
+    const channels = data.channels || [];
+    const users    = data.users    || [];
+    if (!channels.length) {
+        chDiv.innerHTML = '<div style="padding:6px 14px;color:#475569">' +
+            (connected ? 'No channels' : 'Not connected') + '</div>';
+        return;
+    }
+
+    // id → node map
+    const nodeMap = {};
+    channels.forEach(ch => { nodeMap[ch.id] = { ...ch, children: [], users: [] }; });
+    users.forEach(u => { if (nodeMap[u.channel_id]) nodeMap[u.channel_id].users.push(u); });
+
+    const roots = [];
+    channels.forEach(ch => {
+        const node = nodeMap[ch.id];
+        if (ch.parent_id >= 0 && nodeMap[ch.parent_id]) {
+            nodeMap[ch.parent_id].children.push(node);
+        } else {
+            roots.push(node);
+        }
+    });
+
+    function renderNode(node, depth) {
+        const indent = depth * 12;
+        let html = `<div style="padding:3px 14px 3px ${14 + indent}px;
+                                color:#64748b;cursor:default">
+            📁 <span style="color:#94a3b8">${_esc(node.name)}</span></div>`;
+        node.users.forEach(u => {
+            const mute  = u.muted    ? ' 🔴' : '';
+            const deaf  = u.deafened ? ' 🔇' : '';
+            html += `<div style="padding:2px 14px 2px ${26 + indent}px;color:#e2e8f0">
+                👤 ${_esc(u.name)}${mute}${deaf}</div>`;
+        });
+        node.children.forEach(ch => { html += renderNode(ch, depth + 1); });
+        return html;
+    }
+
+    chDiv.innerHTML = roots.map(r => renderNode(r, 0)).join('');
+}
+
+function _esc(s) {
+    return String(s).replace(/[&<>"']/g,
+        c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// ── Config form ───────────────────────────────────────────────────────────────
+window.mumbleShowConfig = function () {
+    const form = document.getElementById('mumble-cfg-form');
+    if (form.style.display === 'none' || !form.style.display) {
+        // Prefill from saved config
+        const tok = localStorage.getItem('arrow_token');
+        if (tok) {
+            fetch(window.ARROW_BACKEND_URL + '/mumble/config', {
+                headers: { Authorization: 'Bearer ' + tok },
+            }).then(r => r.ok ? r.json() : null).then(cfg => {
+                if (!cfg) return;
+                document.getElementById('mc-host').value = cfg.host  || '';
+                document.getElementById('mc-port').value = cfg.port  || 64738;
+                document.getElementById('mc-user').value = cfg.username || 'ArrowBot';
+            }).catch(() => {});
+        }
+        form.style.display = 'flex';
+    } else {
+        form.style.display = 'none';
+    }
+};
+
+window.mumbleSaveConfig = function () {
+    const tok  = localStorage.getItem('arrow_token');
+    const host = document.getElementById('mc-host').value.trim();
+    const port = parseInt(document.getElementById('mc-port').value) || 64738;
+    const user = document.getElementById('mc-user').value.trim() || 'ArrowBot';
+    const pwd  = document.getElementById('mc-pwd').value;
+    const msg  = document.getElementById('mc-msg');
+
+    if (!host) { msg.textContent = 'Host required'; return; }
+    msg.textContent = 'Saving…';
+
+    fetch(window.ARROW_BACKEND_URL + '/mumble/config', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host, port, username: user, password: pwd }),
+    }).then(r => {
+        if (r.ok) {
+            _mumbleConfig = { host, port };
+            msg.textContent = '';
+            document.getElementById('mumble-cfg-form').style.display = 'none';
+            mumbleFetch();
+        } else {
+            r.json().then(e => { msg.textContent = e.detail || 'Error'; }).catch(() => {
+                msg.textContent = 'Error ' + r.status;
+            });
+        }
+    }).catch(e => { msg.textContent = e.message; });
+};
+
+window.mumbleDeleteConfig = function () {
+    const tok = localStorage.getItem('arrow_token');
+    fetch(window.ARROW_BACKEND_URL + '/mumble/config', {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + tok },
+    }).then(() => {
+        _mumbleConfig = null;
+        document.getElementById('mumble-cfg-form').style.display = 'none';
+        mumbleFetch();
+    });
+};
+
+// ── Initialise on login ───────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
+    const tok  = localStorage.getItem('arrow_token');
+    const role = (localStorage.getItem('arrow_role') || '').toUpperCase();
+    if (!tok) return;
+
+    // Show the nav button for all logged-in users
+    const btn = document.getElementById('mumble-nav-btn');
+    if (btn) btn.style.display = 'flex';
+
+    // Show config button only for admin / battle captain
+    if (['ADMIN','BATTLE_CAPTAIN'].includes(role)) {
+        const cfgBtn = document.getElementById('mumble-cfg-btn');
+        if (cfgBtn) cfgBtn.style.display = '';
+    }
+
+    // Load server config for deep link
+    fetch(window.ARROW_BACKEND_URL + '/mumble/config', {
+        headers: { Authorization: 'Bearer ' + tok },
+    }).then(r => r.ok ? r.json() : null).then(cfg => {
+        if (cfg && cfg.host) _mumbleConfig = cfg;
+    }).catch(() => {});
+
+    // Background poll (even when panel is closed) to keep LED updated
+    setInterval(function () {
+        fetch(window.ARROW_BACKEND_URL + '/mumble/status', {
+            headers: { Authorization: 'Bearer ' + tok },
+        }).then(r => r.ok ? r.json() : null).then(data => {
+            if (!data) return;
+            const navLed = document.getElementById('mumble-led');
+            if (navLed) navLed.style.background =
+                data.connected ? '#22c55e' : (data.error ? '#ef4444' : '#334155');
+            if (_mumbleVisible) mumbleRender(data);
+        }).catch(() => {});
+    }, 10000);
+});
+
+})();
+</script>
+
 {% block scripts %}{% endblock %}
 </body>
 </html>
