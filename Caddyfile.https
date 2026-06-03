@@ -1,0 +1,44 @@
+# Arrow — HTTPS Caddyfile (self-signed / internal CA)
+#
+# Used by deploy.sh when ARROW_TLS=internal.
+# Caddy generates a self-signed cert via its built-in CA.
+# Browser shows a warning once — click Advanced → Proceed.
+# After that, microphone (PTT voice) works.
+
+{
+    email {$CADDY_EMAIL:admin@example.com}
+    admin off
+}
+
+{$ARROW_DOMAIN::443} {
+
+    tls internal
+
+    encode gzip
+
+    header {
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "SAMEORIGIN"
+        X-XSS-Protection          "1; mode=block"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        Permissions-Policy        "microphone=*, geolocation=*"
+        Strict-Transport-Security "max-age=63072000; includeSubDomains"
+        -Server
+        -X-Powered-By
+    }
+
+    @backend { path /api/* }
+    handle @backend {
+        uri strip_prefix /api
+        reverse_proxy backend:6001
+    }
+
+    @ws { path /ws /mumble/voice* }
+    handle @ws {
+        reverse_proxy backend:6001
+    }
+
+    handle {
+        reverse_proxy web:6002
+    }
+}
