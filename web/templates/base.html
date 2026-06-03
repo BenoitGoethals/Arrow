@@ -1764,14 +1764,24 @@ let _mvNextTime  = 0;          // next audio playback start time
 const _mvSpeaking = {};        // session → bool
 
 window.mvJoin = function mvJoin() {
-    const f = document.getElementById('mv-join-form');
+    const f   = document.getElementById('mv-join-form');
+    const msg = document.getElementById('mv-msg');
+
+    // Warn immediately if mic will not be available
+    if (!window.isSecureContext || !navigator.mediaDevices) {
+        msg.textContent = '⚠ Voice requires HTTPS. Access Arrow via https:// to enable mic.';
+    } else {
+        msg.textContent = '';
+    }
+
     // Pre-fill host from monitor config
     if (_mumbleConfig && !document.getElementById('mv-host').value)
         document.getElementById('mv-host').value = _mumbleConfig.host + ':' + (_mumbleConfig.port || 64738);
-    // Pre-fill username from arrow callsign
+    // Pre-fill username from Arrow callsign
     const cs = localStorage.getItem('arrow_callsign') || '';
     if (cs && !document.getElementById('mv-uname').value)
         document.getElementById('mv-uname').value = cs;
+
     f.style.display = (f.style.display === 'flex') ? 'none' : 'flex';
     document.getElementById('mv-join-btn').style.display = 'none';
 }
@@ -1791,6 +1801,12 @@ window.mvConnect = async function mvConnect() {
 
     const [host, portStr] = hostFull.includes(':') ? hostFull.split(':') : [hostFull, '64738'];
     const port = parseInt(portStr) || 64738;
+
+    // Mic requires a secure context (HTTPS or localhost)
+    if (!window.isSecureContext || !navigator.mediaDevices) {
+        msg.textContent = '⚠ Mic requires HTTPS. Open Arrow via https:// to use voice.';
+        return;
+    }
 
     msg.textContent = 'Requesting microphone…';
 
