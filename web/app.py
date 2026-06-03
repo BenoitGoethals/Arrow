@@ -61,8 +61,23 @@ app = create_app()
 
 
 def run() -> None:
+    import os
     cfg = WebConfig.from_env()
-    app.run(host="0.0.0.0", port=6002, debug=cfg.debug)
+
+    ssl_context = None
+    if os.environ.get("ARROW_WEB_HTTP", "0") != "1":
+        try:
+            from web.ssl_cert import ensure_cert
+            cert, key = ensure_cert()
+            ssl_context = (cert, key)
+            print(f"[Arrow Web] HTTPS on :6002  (cert: {cert})", flush=True)
+            print("[Arrow Web] First visit: click 'Advanced → Proceed' to accept the cert", flush=True)
+        except Exception as exc:
+            print(f"[Arrow Web] TLS cert error ({exc}) — falling back to HTTP", flush=True)
+    else:
+        print("[Arrow Web] HTTP mode (ARROW_WEB_HTTP=1)", flush=True)
+
+    app.run(host="0.0.0.0", port=6002, debug=cfg.debug, ssl_context=ssl_context)
 
 
 if __name__ == "__main__":
