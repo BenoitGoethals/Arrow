@@ -4184,69 +4184,64 @@
     }
 
     function handleAlertTriggered(d) {
-        // Toast is always shown — even without coordinates (Front may omit them)
+        const hasPos = d.latitude != null && d.longitude != null;
+
+        // 1. Toast — always, regardless of visibility or coordinates
         showAlertToast(d);
-        if (!state.visibility.alerts) return;
-        // Map marker only if we have a position
-        if (d.latitude == null || d.longitude == null) return;
-        // Drop a previous marker for the same alert id, if any (re-broadcast).
+
+        // 2. Zoom — always when we have a position, before any visibility gate
+        if (hasPos) {
+            map.setView([d.latitude, d.longitude], 16, { animate: true });
+        }
+
+        // 3. Map marker — respects the admin visibility toggle
+        if (!state.visibility.alerts || !hasPos) return;
+
         const prev = state.alertLayers.get(d.id);
         if (prev) { map.removeLayer(prev); state.alertLayers.delete(d.id); }
 
         const colour = ALERT_COLOURS[d.type] || '#dc2626';
         const grid   = toMgrs(d.latitude, d.longitude);
         const op     = state.operators.get(d.operator_id);
-        const cs     = op ? op.callsign : `op#${d.operator_id}`;
+        const cs     = op ? op.callsign : (d.callsign || `op#${d.operator_id}`);
+        const esc    = s => String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
         const popup  =
-            `<div style="font-family:monospace">` +
-            `<div style="color:${colour}; font-weight:700; font-size:1.05rem">⚠ ${d.type}</div>` +
-            `<div>From: <b>${cs.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</b></div>` +
-            `<div>Grid: <b>${grid}</b></div>` +
-            `<div style="color:#94a3b8">Lat ${d.latitude.toFixed(5)}, Lon ${d.longitude.toFixed(5)}</div>` +
+            `<div style="font-family:monospace;min-width:180px">` +
+            `<div style="color:${colour};font-weight:700;font-size:1.1rem;margin-bottom:4px">` +
+            `${ALERT_ICONS[d.type]||'⚠'} ${esc(d.type)}</div>` +
+            `<div>From: <b>${esc(cs)}</b></div>` +
+            `<div>Grid: <b style="color:${colour}">${grid}</b></div>` +
+            `<div style="color:#94a3b8;font-size:.8rem">` +
+            `${d.latitude.toFixed(5)}, ${d.longitude.toFixed(5)}</div>` +
             `</div>`;
 
-        // Marker stack: a tight target dot + an animated pulsing ring so it
-        // catches the eye even when the operator is panning across the map.
+        // Dot + expanding pulse ring
         const grp = L.layerGroup();
         L.circleMarker([d.latitude, d.longitude], {
-            color: colour, fillColor: colour, fillOpacity: 0.9,
-            radius: 6, weight: 2,
+            color: colour, fillColor: colour, fillOpacity: 0.9, radius: 7, weight: 2,
         }).addTo(grp);
         const ring = L.circleMarker([d.latitude, d.longitude], {
-            color: colour, fill: false, radius: 14, weight: 3, opacity: 1,
+            color: colour, fill: false, radius: 16, weight: 3, opacity: 1,
         }).addTo(grp);
-        // Manual pulse — Leaflet doesn't ship an animated marker, so step the
-        // radius/opacity on a 700 ms interval and let the group reference hold
-        // the timer for cleanup. 24 frames over 6 s is enough for the BC to
-        // visually locate the contact without becoming a perma-distraction.
         let frame = 0;
         const timer = setInterval(() => {
             frame++;
             const phase = frame % 8;
-            ring.setRadius(14 + phase * 2);
-            ring.setStyle({ opacity: 1 - phase / 8 });
-            if (frame >= 24) {
-                clearInterval(timer);
-                ring.setStyle({ radius: 14, opacity: 0.7 });
-            }
-        }, 220);
-        grp._arrowPulse = timer;     // remembered so removeAlert can clear it
+            ring.setRadius(16 + phase * 3);
+            ring.setStyle({ opacity: Math.max(0, 1 - phase / 8) });
+            if (frame >= 24) { clearInterval(timer); ring.setStyle({ radius: 16, opacity: 0.6 }); }
+        }, 200);
+        grp._arrowPulse = timer;
 
         grp.addTo(map);
-        grp.bindPopup(popup, { autoPan: true });
+        grp.bindPopup(popup, { autoPan: false });  // autoPan disabled — we already setView above
+        grp.openPopup();
         state.alertLayers.set(d.id, grp);
 
-        // Force the camera to the contact. Skip the auto-fit suppression so
-        // the BC always sees it even if they were panning. Use a hard zoom of
-        // 16 — close enough to pick out terrain but still shows neighbouring
-        // grid squares for context.
-        map.setView([d.latitude, d.longitude], 16, { animate: true });
-        grp.openPopup();
-
-        // Optional desktop notification — only when the page is backgrounded.
+        // Desktop notification when tab is backgrounded
         if (document.visibilityState !== 'visible' && 'Notification' in window
-            && Notification.permission === 'granted') {
-            new Notification(`${d.type} alert — ${cs}`, { body: `Grid: ${grid}` });
+                && Notification.permission === 'granted') {
+            new Notification(`${ALERT_ICONS[d.type]||'⚠'} ${d.type} — ${cs}`, { body: `Grid: ${grid}` });
         }
     }
 
