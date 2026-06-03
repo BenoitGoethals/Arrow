@@ -12,7 +12,11 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:'Courier New',monospace;}
-#map{width:100vw;height:100vh;background:#0d1117;}
+/* will-change + translateZ forces #map into its own persistent GPU layer.
+   Qt6/macOS Metal then composites overlays ON TOP of the map layer instead of
+   re-rendering the map, eliminating the black-screen compositor bug. */
+#map{width:100vw;height:100vh;background:#0d1117;
+     will-change:transform;transform:translateZ(0);isolation:isolate;}
 .leaflet-container{cursor:crosshair !important;}
 .mil-icon{background:transparent !important;border:none !important;}
 
@@ -31,8 +35,8 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 /* ================================================================
    RADIAL MENU (circular, large touch targets)
    ================================================================ */
-#radial-backdrop{display:none;position:fixed;inset:0;z-index:1999;}
-#radial-backdrop.active{display:block;}
+/* backdrop removed — was creating a new GPU compositing layer in Qt6/macOS
+   Metal that caused the map to go black; replaced with document mousedown */
 #radial-menu{
   display:none;position:absolute;z-index:2000;
   width:300px;height:300px;
@@ -52,33 +56,28 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 #radial-hub:hover{border-color:#f85149;}
 #radial-hub .hub-x{color:#6e7681;font-size:20px;line-height:1;}
 #radial-hub:hover .hub-x{color:#f85149;}
-/* each petal */
+/* each petal — NO CSS transitions (each transition creates a promoted GPU
+   layer; 8 simultaneous promotions overwhelm the Qt6/macOS Metal compositor
+   and black out the map).  Petals appear instantly at their ring position. */
 .radial-petal{
-  --tx:0px; --ty:0px; --scale:.4;
   position:absolute;left:50%;top:50%;
   width:72px;height:72px;
   margin:-36px 0 0 -36px;
   border-radius:50%;
   background:rgba(14,18,26,.97);
   border:2px solid #30363d;
-  display:flex;flex-direction:column;
+  display:none;flex-direction:column;
   align-items:center;justify-content:center;gap:3px;
   cursor:pointer;pointer-events:all;user-select:none;
-  opacity:0;
-  transform:translate(var(--tx),var(--ty)) scale(var(--scale));
-  transition:opacity .18s ease,
-             transform .18s cubic-bezier(.34,1.56,.64,1),
-             border-color .12s, background .12s;
   box-shadow:0 3px 14px rgba(0,0,0,.6);
 }
-#radial-menu.active .radial-petal{opacity:1;--scale:1;}
+#radial-menu.active .radial-petal{display:flex;}
 .radial-petal .rp-icon{font-size:26px;line-height:1;pointer-events:none;}
 .radial-petal .rp-lbl{
   font-family:'Courier New',monospace;font-size:8px;font-weight:700;
   letter-spacing:.6px;color:#8b949e;text-transform:uppercase;pointer-events:none;
 }
-/* hover only changes --scale, so the translate is preserved */
-#radial-menu.active .radial-petal:hover{--scale:1.14;background:rgba(31,111,235,.9);border-color:#388bfd;}
+#radial-menu.active .radial-petal:hover{background:rgba(31,111,235,.9);border-color:#388bfd;}
 .radial-petal:hover .rp-lbl{color:#fff;}
 #radial-menu.active .radial-petal.red:hover   {background:rgba(248,81,73,.9);border-color:#f85149;}
 #radial-menu.active .radial-petal.green:hover {background:rgba(63,185,80,.9);border-color:#3fb950;}
@@ -312,8 +311,7 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
   </div>
 </div>
 
-<!-- Radial menu (circular) -->
-<div id="radial-backdrop"></div>
+<!-- Radial menu (circular) — no backdrop div; outside-click handled in JS -->
 <div id="radial-menu">
   <div id="radial-hub" onclick="closeRadial()"><span class="hub-x">✕</span></div>
   <!-- petals injected by JS -->
@@ -453,7 +451,8 @@ let pickerAff='F', pickerEch='--', pickerEchCode='--';
 // ================================================================
 // MAP
 // ================================================================
-const map = L.map('map',{center:[50.85,4.35],zoom:11,zoomControl:false,attributionControl:false,preferCanvas:true});
+const map = L.map('map',{center:[50.85,4.35],zoom:11,zoomControl:false,attributionControl:false,
+    preferCanvas:true});  // GPU canvas renderer (safe now — map served via HTTP)
 L.control.zoom({position:'bottomright'}).addTo(map);
 L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
 
@@ -1767,7 +1766,6 @@ const _RADIAL_RADIUS = 104;   // px from hub centre to petal centre
 function openRadial(containerPoint, latlng) {
   _radialLatLng = latlng;
   const menu = document.getElementById('radial-menu');
-  const bd   = document.getElementById('radial-backdrop');
 
   // Position menu centre at the click, clamped so all petals stay on-screen
   const mapSize = map.getSize();
@@ -1777,37 +1775,34 @@ function openRadial(containerPoint, latlng) {
   menu.style.left = cx + 'px';
   menu.style.top  = cy + 'px';
   menu.classList.add('active');
-  bd.classList.add('active');
 
-  // Position petals around the ring via CSS vars (hover-safe)
+  // Position petals instantly (no CSS transitions — they create GPU layers
+  // that black out the Qt6/macOS Metal compositor)
   const petals = menu.querySelectorAll('.radial-petal');
   const n = petals.length;
   petals.forEach((el, i) => {
-    const ang = (-90 + i * (360 / n)) * Math.PI / 180;  // top, clockwise
-    const tx  = Math.cos(ang) * _RADIAL_RADIUS;
-    const ty  = Math.sin(ang) * _RADIAL_RADIUS;
-    // collapsed start
-    el.style.setProperty('--tx', '0px');
-    el.style.setProperty('--ty', '0px');
-    // expand to ring position (staggered)
-    setTimeout(() => {
-      el.style.setProperty('--tx', tx + 'px');
-      el.style.setProperty('--ty', ty + 'px');
-    }, 20 + i * 22);
+    const ang = (-90 + i * (360 / n)) * Math.PI / 180;
+    const tx  = Math.round(Math.cos(ang) * _RADIAL_RADIUS);
+    const ty  = Math.round(Math.sin(ang) * _RADIAL_RADIUS);
+    el.style.transform = `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
   });
+
+  // Close on any click outside the menu — no backdrop overlay needed
+  setTimeout(() => {
+    document.addEventListener('mousedown', _radialOutsideClick, {once: true});
+  }, 50);
+}
+
+function _radialOutsideClick(e) {
+  const menu = document.getElementById('radial-menu');
+  if (!menu.contains(e.target)) closeRadial();
+  else document.addEventListener('mousedown', _radialOutsideClick, {once: true});
 }
 
 function closeRadial() {
-  const menu = document.getElementById('radial-menu');
-  menu.classList.remove('active');
-  document.getElementById('radial-backdrop').classList.remove('active');
-  menu.querySelectorAll('.radial-petal').forEach(el => {
-    el.style.setProperty('--tx', '0px');
-    el.style.setProperty('--ty', '0px');
-  });
+  document.removeEventListener('mousedown', _radialOutsideClick);
+  document.getElementById('radial-menu').classList.remove('active');
 }
-
-document.getElementById('radial-backdrop').addEventListener('click', closeRadial);
 
 function _radialAct(key) {
   closeRadial();

@@ -199,7 +199,7 @@ class Api:
         origin, self._prefix = split_base(base_url)
         self._base_url  = base_url
         self.mission_id = mission_id
-        self.c = httpx.Client(base_url=origin, timeout=30.0)
+        self.c = httpx.Client(base_url=origin, timeout=30.0, verify=False)
 
     # ------------------------------------------------------------------
     def _p(self, path: str) -> str:

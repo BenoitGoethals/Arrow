@@ -18,7 +18,7 @@ ENEMY affiliation so the renderer can colour them correctly.
 
 Run:
   uv run python simulate_battlefield.py
-  uv run python simulate_battlefield.py --backend http://78.21.255.210:6001
+  uv run python simulate_battlefield.py --backend https://78.21.255.210:6001
   uv run python simulate_battlefield.py --reset      # wipe existing TGs first
   uv run python simulate_battlefield.py --no-move    # plan-only (no movement in this simulator)
   uv run python simulate_battlefield.py --steps 60 --dt 1.5
@@ -306,7 +306,7 @@ def main() -> None:
     parser.add_argument("--backend",
                         default=default_backend,
                         help=f"Backend base URL (defaults to last-used: {default_backend}). "
-                             "May include a path prefix, e.g. http://78.21.255.210:6200/api")
+                             "May include a path prefix, e.g. https://78.21.255.210:6200/api")
     parser.add_argument("--admin",    default="benoit", help="ADMIN callsign")
     parser.add_argument("--password", default="ranger14", help="ADMIN password")
     parser.add_argument("--reset",    action="store_true",

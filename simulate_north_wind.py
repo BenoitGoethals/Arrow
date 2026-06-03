@@ -7,7 +7,7 @@ Brigade-level invasion of the Netherlands from the Belgian border (Lommel) to
 Dokkum (Friesland), 8 phase objectives along the central NL corridor.
 
 Works like simulate.py:
-  • Defaults to the production backend  ``http://78.21.255.210:6200/api``
+  • Defaults to the production backend  ``https://78.21.255.210:6200/api``
   • Async HTTP via httpx (drives a live, observable demo)
   • Plants the full ORBAT, tactical control graphics, enemy positions, OPORD
   • Registers brigade-level operators (BDE CDR + BN COs + recce teams)
@@ -64,7 +64,7 @@ import sim_utils
 DEFAULT_BACKEND = (
     os.environ.get("ARROW_BACKEND_URL")
     or sim_utils.load_saved_backend()
-    or "http://78.21.255.210:6200/api"
+    or "https://78.21.255.210:6200/api"
 )
 
 parser = argparse.ArgumentParser(description="Arrow brigade simulator — OPERATION NORTH WIND")
@@ -916,7 +916,7 @@ async def reset_world(client: httpx.AsyncClient,
 # ── Main async driver ──────────────────────────────────────────────────────
 async def amain() -> None:
     log.info("Backend: %s   (path prefix: %r)", BASE, PATH_PREFIX or "<none>")
-    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0) as client:
+    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0, verify=False) as client:
         # Pre-flight reachability check — a quick GET /health (or the prefixed
         # equivalent) tells us in under 5 seconds whether the host / port is
         # wrong, before we waste 15s on the auth-form timeout.

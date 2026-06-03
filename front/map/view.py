@@ -4,7 +4,8 @@ import json
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QUrl, QFile, QIODevice, Qt, QEvent, pyqtSignal
+from PyQt6.QtCore import QUrl, QFile, QIODevice, Qt, QEvent, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineScript, QWebEnginePage, QWebEngineSettings, QWebEnginePermission
 from PyQt6.QtWebChannel import QWebChannel
@@ -36,8 +37,8 @@ class MapView(QWebEngineView):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # Suppress Qt's default right-click context menu so JS radial menu fires
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(lambda _: None)
         self.setAcceptDrops(True)
 
         self._page = _DebugPage(self)
@@ -46,7 +47,10 @@ class MapView(QWebEngineView):
         # Grant geolocation permission so navigator.geolocation works
         self._page.permissionRequested.connect(self._on_permission_requested)
 
-        # Allow file:// pages to fetch remote tile URLs (OSM, etc.)
+        # Match page background to the map CSS background — prevents white/black
+        # flash when the page renders before tiles arrive
+        self._page.setBackgroundColor(QColor("#0d1117"))
+
         s = self._page.settings()
         s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
@@ -61,13 +65,37 @@ class MapView(QWebEngineView):
         # Inject qwebchannel.js before page scripts run
         self._inject_qwebchannel()
 
-        # Log load result
+        # Log load result + start repaint guard
         self._page.loadFinished.connect(self._on_load_finished)
 
-        # Load the map HTML
-        map_html = Path(__file__).parent / "html" / "map.html"
-        print(f"[MapView] Loading: {map_html.resolve()}", file=sys.stderr)
-        self.load(QUrl.fromLocalFile(str(map_html.resolve())))
+        # Periodic repaint — guards against Qt6/macOS compositor dropping the
+        # WebEngine framebuffer after DOM changes (tile layer switch, overlays)
+        self._repaint_guard = QTimer(self)
+        self._repaint_guard.setInterval(250)
+        self._repaint_guard.timeout.connect(self.update)
+        self._repaint_guard.start()
+
+        # Load the map via the local HTTP server (http://127.0.0.1:PORT/map)
+        # instead of file:// — avoids the Qt6/macOS Metal compositor black-screen
+        # bug that only manifests on the file:// compositor code-path.
+        # map_url is set by MapView.set_map_server_port() once the server starts.
+        self._map_server_port: int = 0
+
+    def set_map_server_port(self, port: int):
+        """Call once the MBTilesServer is running before showing the window."""
+        self._map_server_port = port
+        url = f"http://127.0.0.1:{port}/map"
+        print(f"[MapView] Loading: {url}", file=sys.stderr)
+        self.load(QUrl(url))
+
+    def contextMenuEvent(self, event):
+        # Accept (swallow) the event — no native context menu.
+        # Two deferred repaints fix the Qt6 WebEngine black-compositor bug on
+        # macOS: one short (catches the overlay appearing) and one longer
+        # (catches the overlay being removed after the user picks an action).
+        event.accept()
+        QTimer.singleShot(40,  self.update)
+        QTimer.singleShot(200, self.update)
 
     def _on_permission_requested(self, permission):
         try:

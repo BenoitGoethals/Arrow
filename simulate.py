@@ -44,7 +44,7 @@ import sim_utils
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Arrow tactical simulator")
-parser.add_argument("--backend", default="http://78.21.255.210:6200/api")
+parser.add_argument("--backend", default="https://78.21.255.210:6200/api")
 parser.add_argument("--speed", type=float, default=1.0,
                     help="Time multiplier: 6 = 6× faster, 1 = real time")
 parser.add_argument("--reset", action="store_true",
@@ -1662,7 +1662,7 @@ async def main() -> None:
              UPDATE_S / speed_mult, ENEMY_S / speed_mult,
              CBRN_S / speed_mult, CAS_S / speed_mult)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
 
         if ARGS.reset:
             await reset_sim(client, all_ops)

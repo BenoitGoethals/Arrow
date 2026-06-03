@@ -21,7 +21,7 @@ against the live Arrow backend:
 
 Run:
     uv run python simulate_ranger_bastogne.py
-    uv run python simulate_ranger_bastogne.py --backend http://78.21.255.210:6001
+    uv run python simulate_ranger_bastogne.py --backend https://78.21.255.210:6001
     uv run python simulate_ranger_bastogne.py --reset      # wipe TGs first
     uv run python simulate_ranger_bastogne.py --no-move    # plan-only, no GPS sim
     uv run python simulate_ranger_bastogne.py --steps 60 --dt 1.5
@@ -711,7 +711,7 @@ def main() -> None:
     parser.add_argument("--backend",
                         default=os.environ.get("ARROW_BACKEND_URL", "http://localhost:6001"),
                         help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, "
-                             "then localhost. e.g. http://78.21.255.210:6001")
+                             "then localhost. e.g. https://78.21.255.210:6001")
     parser.add_argument("--admin",    default="benoit", help="ADMIN callsign")
     parser.add_argument("--password", default="ranger14", help="ADMIN password")
     parser.add_argument("--op-password", default="rangers!", help="Password used for every simulated operator")

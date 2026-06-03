@@ -27,7 +27,7 @@ Airport (EBOS) against the live Arrow backend.
 
 Run:
     uv run python simulate_oostende_airborne.py
-    uv run python simulate_oostende_airborne.py --backend http://78.21.255.210:6200/api
+    uv run python simulate_oostende_airborne.py --backend https://78.21.255.210:6200/api
     uv run python simulate_oostende_airborne.py --reset
     uv run python simulate_oostende_airborne.py --no-move
     uv run python simulate_oostende_airborne.py --steps 80 --dt 1.5

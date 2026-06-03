@@ -4,7 +4,7 @@ simulate_logreps.py — Send 10 realistic NATO LOGREP reports to the backend.
 
 Usage
   uv run python simulate_logreps.py
-  uv run python simulate_logreps.py --backend http://78.21.255.210:6001
+  uv run python simulate_logreps.py --backend https://78.21.255.210:6001
   uv run python simulate_logreps.py --mission "Op RANGER"   # adopt existing
   uv run python simulate_logreps.py --delay 0.5             # seconds between posts
 """
@@ -206,7 +206,7 @@ def main() -> None:
     origin, prefix = sim_utils.split_base(BACKEND)
     base = f"{origin}{prefix}"
 
-    with httpx.Client(timeout=15) as client:
+    with httpx.Client(timeout=15, verify=False) as client:
         # Authenticate
         log.info("Authenticating as benoit@%s …", origin)
         r = client.post(f"{base}/auth/login",

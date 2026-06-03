@@ -31,7 +31,7 @@ def download_libs(progress_cb=None) -> None:
             continue
         if progress_cb:
             progress_cb(f"Downloading {name}…")
-        resp = httpx.get(url, timeout=30.0, follow_redirects=True)
+        resp = httpx.get(url, timeout=30.0, follow_redirects=True, verify=False)
         resp.raise_for_status()
         dest.write_bytes(resp.content)
     if progress_cb:

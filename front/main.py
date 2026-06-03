@@ -2,7 +2,10 @@
 import sys
 import os
 
-os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox")
+_existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+_flags = {"--no-sandbox"}
+_flags.update(_existing.split())
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join(sorted(_flags))
 
 # macOS: Homebrew opus lives outside the default dyld search path.
 # Must be set before any import that pulls in opuslib (pymumble dependency).
@@ -18,6 +21,9 @@ from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QFont, QIcon
+
+from front.utils.log_setup import setup_logging
+setup_logging()   # must be before any other front.* import
 
 from front.app.theme import TACTICAL_DARK
 from front.app.login_dialog import LoginDialog

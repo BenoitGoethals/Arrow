@@ -9,7 +9,7 @@ zone radii, wind vectors, agent assignments, and delivery systems.
 
 Run:
   uv run python simulate_russia_cbrn.py
-  uv run python simulate_russia_cbrn.py --backend http://78.21.255.210:6200/api
+  uv run python simulate_russia_cbrn.py --backend https://78.21.255.210:6200/api
   uv run python simulate_russia_cbrn.py --reset
   uv run python simulate_russia_cbrn.py --seed 42
 """
