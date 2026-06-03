@@ -29,10 +29,12 @@ try:
     )
     _AVAILABLE = True
     _ERR = ""
+    if _opus_fix.OPUS_STUB_ACTIVE:
+        log.info("Mumble monitor: running with opus stub (presence-only, no audio)")
 except Exception as _e:
     _AVAILABLE = False
     hint = _opus_fix.OPUS_INSTALL_HINT
-    _ERR = f"{_e}" + (f" — {hint}" if hint else "")
+    _ERR = f"{_e}" + (f" — install: {hint}" if hint else "")
     log.warning("Mumble not available: %s", _ERR)
 
 
