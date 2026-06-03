@@ -71,6 +71,87 @@ remove_existing() {
     done
 }
 
+# ── Self-signed TLS cert generation ─────────────────────────────────────────
+# Generates data/ssl/web-cert.pem + web-key.pem using openssl (available on
+# every Linux server).  The cert SAN covers:
+#   - 127.0.0.1 / localhost
+#   - all local interface IPs (from hostname -I)
+#   - any extra IPs passed as arguments or in ARROW_WEB_EXTRA_IPS
+# Call:  _generate_cert [extra_ip1] [extra_ip2] …
+_generate_cert() {
+    local ssl_dir="./data/ssl"
+    mkdir -p "$ssl_dir"
+
+    # Collect all IPs: loopback + all local interfaces + arguments + env var
+    local all_ips="127.0.0.1"
+    local local_ips
+    local_ips="$(hostname -I 2>/dev/null)" || local_ips=""
+    for ip in $local_ips "$@"; do
+        [ -n "$ip" ] && all_ips="${all_ips} ${ip}"
+    done
+    # Extra IPs from env (comma or space separated)
+    for ip in $(echo "${ARROW_WEB_EXTRA_IPS:-}" | tr ',' ' '); do
+        [ -n "$ip" ] && all_ips="${all_ips} ${ip}"
+    done
+
+    # Deduplicate
+    all_ips=$(echo "$all_ips" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+
+    # Check if existing cert already covers all IPs
+    if [ -f "$ssl_dir/web-cert.pem" ] && [ -f "$ssl_dir/web-key.pem" ]; then
+        local missing=""
+        for ip in $all_ips; do
+            if ! openssl x509 -in "$ssl_dir/web-cert.pem" -noout -text 2>/dev/null \
+                 | grep -q "IP Address:${ip}"; then
+                missing="${missing} ${ip}"
+            fi
+        done
+        if [ -z "$missing" ]; then
+            echo "==> TLS cert OK (covers all IPs)"
+            return
+        fi
+        echo "==> TLS cert missing IPs:${missing} — regenerating"
+        rm -f "$ssl_dir/web-cert.pem" "$ssl_dir/web-key.pem"
+    fi
+
+    echo "==> Generating self-signed TLS cert"
+
+    # Build SAN string:  IP:x.x.x.x,IP:y.y.y.y,DNS:localhost,...
+    local san="DNS:localhost"
+    for ip in $all_ips; do
+        san="${san},IP:${ip}"
+    done
+
+    # Write openssl config (works on both LibreSSL/macOS and OpenSSL/Linux)
+    local cfg
+    cfg="$(mktemp /tmp/arrow-ssl-XXXXXX.conf)"
+    cat > "$cfg" << SSLCONF
+[req]
+distinguished_name = dn
+x509_extensions    = san
+prompt             = no
+
+[dn]
+CN = arrow
+O  = Arrow
+
+[san]
+subjectAltName   = ${san}
+basicConstraints = CA:TRUE
+SSLCONF
+
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "$ssl_dir/web-key.pem" \
+        -out    "$ssl_dir/web-cert.pem" \
+        -days 3650 \
+        -config "$cfg" \
+        2>/dev/null && echo "==> Cert covers: ${san}" || {
+            echo "error: openssl failed — is openssl installed?" >&2
+            exit 1
+        }
+    rm -f "$cfg"
+}
+
 # ── TLS / Caddyfile selection ────────────────────────────────────────────────
 # ARROW_TLS:  off (default) | internal (self-signed) | acme (Let's Encrypt)
 setup_tls() {
@@ -78,8 +159,6 @@ setup_tls() {
 
     case "$mode" in
         internal)
-            # Self-signed cert via Caddy's internal CA — works for bare IPs.
-            # Runs on port 6200 (same port as HTTP) so no port changes needed.
             export ARROW_CADDYFILE="./Caddyfile.https"
             export ARROW_DOMAIN="${ARROW_DOMAIN:-:6200}"
 
@@ -88,18 +167,21 @@ setup_tls() {
             host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || host_ip="localhost"
             local pub_ip="${SERVER_IP:-$host_ip}"
 
+            # Generate self-signed cert covering ALL server IPs
+            _generate_cert "${pub_ip}"
+
             local origins="https://${pub_ip}:${port},http://localhost:${port}"
             export ARROW_ALLOWED_ORIGINS="${ARROW_ALLOWED_ORIGINS:-$origins}"
 
-            echo "==> TLS mode  : internal (self-signed, Caddy CA)"
+            echo "==> TLS mode  : self-signed (openssl)"
             echo "==> Listening : https://${pub_ip}:${port}"
             echo ""
-            echo "    ┌──────────────────────────────────────────────────────────────┐"
-            echo "    │  BROWSER SETUP (one-time per browser):                       │"
-            echo "    │  1. Open  https://${pub_ip}:${port}                       "
-            echo "    │  2. Click 'Advanced → Proceed to ${pub_ip} (unsafe)'        │"
-            echo "    │  3. Done — mic / PTT voice now works                         │"
-            echo "    └──────────────────────────────────────────────────────────────┘"
+            echo "    ┌───────────────────────────────────────────────────────────┐"
+            echo "    │  BROWSER SETUP (one-time per browser / per IP):           │"
+            echo "    │  1. Open  https://${pub_ip}:${port}                     "
+            echo "    │  2. Click 'Advanced → Proceed to ${pub_ip} (unsafe)'     │"
+            echo "    │  3. Done — mic / PTT voice now works                      │"
+            echo "    └───────────────────────────────────────────────────────────┘"
             ;;
 
         acme)
