@@ -88,10 +88,9 @@ services:
     image: caddy:2-alpine
     container_name: arrow-proxy
     ports:
-      # HTTP (dev default)
+      # Port 6200 serves either HTTP (default) or HTTPS (when ARROW_TLS=internal)
+      # depending on which Caddyfile is active — no extra port needed.
       - "${ARROW_HTTP_PORT:-6200}:6200"
-      # HTTPS — enabled when ARROW_TLS=internal or ARROW_TLS=acme
-      - "${ARROW_HTTPS_PORT:-443}:443"
     environment:
       # :6200        → HTTP dev (default)
       # :443         → HTTPS self-signed (ARROW_TLS=internal)
