@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Optional
 
-import front.mumble.opus_fix  # noqa: F401 — patches ctypes before opuslib loads
+import front.mumble.opus_fix as _opus_fix  # patches ctypes + ssl before opuslib loads
 
 import numpy as np
 import sounddevice as sd
@@ -30,11 +30,13 @@ try:
         PYMUMBLE_CLBK_SOUNDRECEIVED,
     )
     MUMBLE_AVAILABLE = True
+    _MUMBLE_ERR = ""
 except Exception as _e:
     MUMBLE_AVAILABLE = False
-    _MUMBLE_ERR = str(_e)
+    _hint = _opus_fix.OPUS_INSTALL_HINT
+    _MUMBLE_ERR = f"{_e}" + (f" — {_hint}" if _hint else "")
 
-from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QTimer, Qt
 
 log = logging.getLogger(__name__)
 
@@ -193,6 +195,21 @@ class MumbleClient(QObject):
         self._speak_timer.setInterval(200)
         self._speak_timer.timeout.connect(self._check_speaking)
 
+        # Manage the timer from the main thread via queued signal connection
+        # (pymumble callbacks fire from a daemon thread; QTimers can't be
+        # started/stopped from there)
+        self.state_changed.connect(self._on_state_for_timer,
+                                   type=Qt.ConnectionType.QueuedConnection)
+
+    def _on_state_for_timer(self, state: str):
+        """Runs in the main thread (queued connection) — safe to touch QTimer."""
+        if state == "connected":
+            self._speak_timer.start()
+        else:
+            self._speak_timer.stop()
+            self._last_audio.clear()
+            self._speaking.clear()
+
     # ── Public API ───────────────────────────────────────────────────────────
 
     @property
@@ -239,16 +256,20 @@ class MumbleClient(QObject):
 
                 self._start_audio()
                 self._start_poll()
-                self._speak_timer.start()
+                # timer started via state_changed → _on_state_for_timer (main thread)
 
             except Exception as exc:
-                self.state_changed.emit(f"error:{exc}")
+                msg = str(exc)
+                # Unwrap pymumble's generic wrapper to show the real cause
+                if "ConnectionRejectedError" in type(exc).__name__:
+                    msg = "Server rejected connection — check host/port/password"
+                self.state_changed.emit(f"error:{msg}")
                 self._mumble = None
 
         threading.Thread(target=_do, daemon=True).start()
 
     def disconnect(self):
-        self._speak_timer.stop()
+        # _speak_timer stopped via state_changed → _on_state_for_timer (main thread)
         self._stop_poll()
         self._stop_audio()
         if self._mumble:

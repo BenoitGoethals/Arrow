@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 CONFIG_PATH = Path("data/mumble_config.json")
 
-import backend.mumble.opus_fix  # noqa: F401 — patches ctypes before opuslib loads
+import backend.mumble.opus_fix as _opus_fix  # patches ctypes + ssl before opuslib loads
 
 try:
     import pymumble_py3 as pymumble
@@ -28,10 +28,12 @@ try:
         PYMUMBLE_CLBK_SOUNDRECEIVED,
     )
     _AVAILABLE = True
+    _ERR = ""
 except Exception as _e:
     _AVAILABLE = False
-    _ERR = str(_e)
-    log.warning("Mumble not available: %s", _e)
+    hint = _opus_fix.OPUS_INSTALL_HINT
+    _ERR = f"{_e}" + (f" — {hint}" if hint else "")
+    log.warning("Mumble not available: %s", _ERR)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -150,10 +152,13 @@ class MumbleMonitor:
                         log.debug("Mumble snapshot error: %s", exc)
 
             except Exception as exc:
-                log.warning("Mumble monitor: connection failed — %s", exc)
+                msg = str(exc)
+                if "ConnectionRejectedError" in type(exc).__name__:
+                    msg = "Server rejected connection — check host/port/password"
+                log.warning("Mumble monitor: connection failed — %s", msg)
                 with self._lock:
                     self._state["connected"] = False
-                    self._state["error"]     = str(exc)
+                    self._state["error"]     = msg
                 self._mumble = None
 
             if self._stop.is_set():
