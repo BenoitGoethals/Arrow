@@ -54,6 +54,9 @@ services:
       ARROW_ALLOWED_ORIGINS: "${ARROW_ALLOWED_ORIGINS:-http://localhost:6200}"
       FLASK_DEBUG: "0"
       ARROW_JSON_LOGS: "1"
+      # For non-Docker HTTPS dev (arrow-web run locally): set public IP so the
+      # auto-generated self-signed cert covers it.  In Docker, Caddy handles TLS.
+      ARROW_WEB_HTTP: "1"
     expose:
       - "6002"
     depends_on:
@@ -85,15 +88,19 @@ services:
     image: caddy:2-alpine
     container_name: arrow-proxy
     ports:
+      # HTTP (dev default)
       - "${ARROW_HTTP_PORT:-6200}:6200"
-      # Uncomment for production HTTPS with Let's Encrypt:
-      # - "443:443"
-      # - "80:80"
+      # HTTPS — enabled when ARROW_TLS=internal or ARROW_TLS=acme
+      - "${ARROW_HTTPS_PORT:-443}:443"
     environment:
-      ARROW_DOMAIN:  "${ARROW_DOMAIN:-:6200}"   # e.g. my.host or :6200 for dev
+      # :6200        → HTTP dev (default)
+      # :443         → HTTPS self-signed (ARROW_TLS=internal)
+      # my.host.com  → HTTPS Let's Encrypt (ARROW_TLS=acme)
+      ARROW_DOMAIN:  "${ARROW_DOMAIN:-:6200}"
       CADDY_EMAIL:   "${CADDY_EMAIL:-admin@example.com}"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # deploy.sh writes the right Caddyfile to ./Caddyfile.active
+      - ${ARROW_CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
