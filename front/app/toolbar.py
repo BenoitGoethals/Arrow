@@ -27,6 +27,8 @@ class MainToolbar(QToolBar):
     weather_toggled  = pyqtSignal(str, bool)  # layer name, visible
     # Emergency alert
     alert_requested  = pyqtSignal(str)        # alert type
+    # Screenshot
+    screenshot_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -132,6 +134,14 @@ class MainToolbar(QToolBar):
         fit_btn.setObjectName("toolButton")
         fit_btn.clicked.connect(self.fit_requested.emit)
         self.addWidget(fit_btn)
+
+        # ---- Screenshot -----------------------------------------------
+        ss_btn = QToolButton()
+        ss_btn.setText("📷")
+        ss_btn.setToolTip("Save map screenshot (F10)")
+        ss_btn.setObjectName("toolButton")
+        ss_btn.clicked.connect(self.screenshot_requested.emit)
+        self.addWidget(ss_btn)
 
         # ---- Weather drop-down ---------------------------------------
         wx_btn = QToolButton()

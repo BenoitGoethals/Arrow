@@ -224,6 +224,28 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 .wx-lbl{color:#6e7681;font-size:9px;}
 #wx-radar-label{color:#3fb950;font-size:9px;margin-top:6px;padding-top:6px;border-top:1px solid #21262d;}
 #wx-location{color:#484f58;font-size:9px;margin-top:2px;}
+
+/* Free-draw text input overlay */
+#fd-text-overlay{
+  display:none;position:absolute;z-index:2100;
+  background:rgba(13,17,23,.97);border:1px solid #388bfd;border-radius:3px;
+  padding:6px 8px;gap:6px;align-items:center;flex-direction:row;
+}
+#fd-text-overlay.active{display:flex;}
+#fd-text-input{
+  background:#0d1117;border:1px solid #30363d;color:#c9d1d9;
+  font-family:'Courier New',monospace;font-size:11px;padding:4px 8px;
+  border-radius:2px;width:160px;outline:none;
+}
+#fd-text-input:focus{border-color:#388bfd;}
+.fd-btn{
+  background:#21262d;border:1px solid #30363d;color:#8b949e;
+  font-family:'Courier New',monospace;font-size:10px;cursor:pointer;
+  padding:4px 10px;border-radius:2px;
+}
+.fd-btn.primary{background:#1f6feb;border-color:#388bfd;color:#fff;}
+.fd-btn:hover{background:#30363d;color:#c9d1d9;}
+.fd-btn.primary:hover{background:#388bfd;}
 </style>
 </head>
 <body>
@@ -327,6 +349,13 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
   </div>
 </div>
 
+<!-- Free-draw text input -->
+<div id="fd-text-overlay">
+  <input id="fd-text-input" type="text" placeholder="Enter text…" maxlength="80">
+  <button class="fd-btn primary" onclick="placeFreeText()">Place</button>
+  <button class="fd-btn" onclick="closeFreeDrawTextInput()">✕</button>
+</div>
+
 <!-- Weather panel -->
 <div id="weather-panel">
   <div id="wx-header">
@@ -388,7 +417,7 @@ const LAYERS={
   tactObjs:L.layerGroup().addTo(map),  fireMissions:L.layerGroup().addTo(map),
   alerts:L.layerGroup().addTo(map),    graphics:L.layerGroup().addTo(map),
   kml:L.layerGroup().addTo(map),       cbrn:L.layerGroup().addTo(map),
-  weather:L.layerGroup().addTo(map),
+  weather:L.layerGroup().addTo(map),   freedraw:L.layerGroup().addTo(map),
 };
 
 // ================================================================
@@ -626,6 +655,18 @@ function addTacticalObject(obj){
   let geom=obj.geometry;
   if(typeof geom==='string'&&geom){try{geom=JSON.parse(geom);}catch(_){geom=null;}}
   let lyr;
+
+  // Tactical graphic types (line or polygon geometry) → proper APP-6 renderer
+  const isLinePoly = geom && (geom.type==='line'||geom.type==='polygon') && geom.coords && geom.coords.length>=2;
+  if(TG[type] && isLinePoly){
+    const pts = geom.coords.map(c=>L.latLng(c[0],c[1]));
+    lyr = buildTacticalGraphic(type, pts, obj.notes||'', aff);
+    lyr.addTo(LAYERS.graphics);
+    if(graphics[obj.id]) LAYERS.graphics.removeLayer(graphics[obj.id]);
+    graphics[obj.id]=lyr;
+    return;
+  }
+
   if(geom&&geom.type==='line'&&geom.coords){lyr=L.polyline(geom.coords.map(c=>[c[0],c[1]]),{color:aff==='HOSTILE'?'#f85149':'#3fb950',weight:2}).addTo(layer);}
   else if(geom&&geom.type==='polygon'&&geom.coords){lyr=L.polygon(geom.coords.map(c=>[c[0],c[1]]),{color:'#d29922',fillOpacity:.1}).addTo(layer);}
   else{
@@ -650,7 +691,7 @@ function addTacticalObject(obj){
   if(graphics[obj.id]) layer.removeLayer(graphics[obj.id]);
   graphics[obj.id]=lyr;
 }
-function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);delete graphics[id];}}
+function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);LAYERS.graphics.removeLayer(graphics[id]);delete graphics[id];}}
 function buildObjPopup(obj){const c=obj.affiliation==='HOSTILE'?'#f85149':'#d29922';return `<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:${c};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">${esc(obj.type)} ${obj.echelon?'['+esc(obj.echelon)+']':''}</div>${obj.notes?`<div>${esc(obj.notes)}</div>`:''}${obj.latitude?`<div>MGRS ${latLonToMGRS(obj.latitude,obj.longitude)}</div>`:''}<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(obj.timestamp||'')}</div></div>`;}
 
 // ================================================================
@@ -861,6 +902,8 @@ function cancelDraw(){
   map.doubleClickZoom.enable();
   map.getContainer().style.cursor='';
   _setDrawBanner('');
+  // Also stop free draw if active
+  if(_fdTool !== 'none') _fdStopAll();
 }
 
 function _setDrawBanner(txt){
@@ -877,8 +920,12 @@ function _setDrawBanner(txt){
   b.textContent=txt; b.style.display='block';
 }
 
-// ESC cancels drawing
-document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&_drawType) cancelDraw(); });
+// ESC cancels tactical drawing AND free draw
+document.addEventListener('keydown',function(e){
+  if(e.key !== 'Escape') return;
+  if(_drawType)          { cancelDraw(); return; }
+  if(_fdTool !== 'none') { _fdStopAll(); drawMode='pointer'; }
+});
 
 // ================================================================
 // APP-6 / MIL-STD-2525C TACTICAL GRAPHICS RENDERER
@@ -886,68 +933,81 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&_drawType)
 // FSCM bracket labels, echelon boundaries) — milsymbol does NOT do these.
 // ================================================================
 
-// type → render spec
+// ── Canonical tactical-graphic type spec ─────────────────────────────────
+// affByAff:true → colour from AFFILIATION (blue/red/yellow);
+// otherwise a fixed standard colour is used (FSCMs, FLOT/FLET).
 const TG = {
-  // ── Canonical SHARED vocabulary (web + front + android) ──────
-  // affByAff:true → colour comes from the AFFILIATION (blue/red); otherwise
-  // the control measure has a fixed standard colour.
-  // Offensive manoeuvre (affiliation-coloured)
-  ATK_AXIS:     {kind:'arrow',   w:3,   affByAff:true},
-  AXIS:         {kind:'axis',    w:3,   affByAff:true},
-  COUNTERATTACK:{kind:'arrow',   w:2.5, dash:'10,6', affByAff:true},
-  BYPASS:       {kind:'arrow',   w:2.5, affByAff:true},
-  WITHDRAW:     {kind:'arrow',   w:2.5, dash:'4,4',  affByAff:true},
-  DEF_AREA:     {kind:'line',    w:2.5, affByAff:true},
-  BLOCK:        {kind:'block',   w:2.5, affByAff:true},
-  AMBUSH:       {kind:'ambush',  w:2.5, affByAff:true},
-  OBJ_AREA:     {kind:'area',    w:2,   tag:'OBJ', affByAff:true},
-  OBJECTIVE:    {kind:'area',    w:2,   tag:'OBJ', affByAff:true},
-  BOUNDARY:     {kind:'boundary',w:1.5, affByAff:true},
-  PHASE_LINE:   {kind:'linelabel',w:2.5,tag:'PL', affByAff:true},
-  ROUTE:        {kind:'linelabel',w:2,  tag:'RTE', dash:'10,5', affByAff:true},
-  // Forward lines (fixed colours: FLOT green, FLET red)
-  FLOT:         {kind:'scallop', color:'#00ff66', w:2, label:'FLOT'},
-  FLET:         {kind:'scallop', color:'#f85149', w:2, label:'FLET'},
-  // Fire-support coordination measures (fixed FSCM colours)
-  FSCL:         {kind:'fscm',  color:'#ff8800', w:2.5, tag:'FSCL'},
-  CFL:          {kind:'fscm',  color:'#ff4400', w:2,   tag:'CFL'},
-  NFL:          {kind:'fscm',  color:'#ff0000', w:2,   tag:'NFL'},
-  NFA:          {kind:'hatch', color:'#ff0000', w:1.5, tag:'NFA'},
-  FFA:          {kind:'area',  color:'#00cc00', w:1.5, tag:'FFA'},
-  ENGAGEMENT_AREA:{kind:'area',color:'#ff3300', w:1.5, tag:'EA'},
-  ASSEMBLY_AREA:{kind:'area',  color:'#44aaff', w:1.5, tag:'AA'},
-  ZONE:         {kind:'area',  color:'#d29922', w:1.5, tag:''},
+  // Offensive manoeuvre
+  ATK_AXIS:      {kind:'mainattack', w:4,   affByAff:true},  // line + solid filled arrowhead
+  AXIS:          {kind:'arrow',      w:3.5, affByAff:true},  // line + open V arrowhead
+  COUNTERATTACK: {kind:'arrow',      w:3,   dash:'12,5', affByAff:true}, // dashed + open V
+  BYPASS:        {kind:'arrow',      w:3,                affByAff:true},
+  WITHDRAW:      {kind:'arrow',      w:3,   dash:'5,5',  affByAff:true},
+  // Defensive
+  DEF_AREA:      {kind:'defense',    w:3,   affByAff:true},  // line + perpendicular ticks
+  BLOCK:         {kind:'block',      w:3,   affByAff:true},  // line + T-bar at end
+  AMBUSH:        {kind:'ambush',     w:3,   affByAff:true},  // horseshoe arc
+  // Areas / zones
+  OBJ_AREA:      {kind:'area',       w:2,   tag:'OBJ',  affByAff:true},
+  OBJECTIVE:     {kind:'area',       w:2,   tag:'OBJ',  affByAff:true},
+  BOUNDARY:      {kind:'boundary',   w:2,   affByAff:true},
+  PHASE_LINE:    {kind:'linelabel',  w:3,   tag:'PL',   affByAff:true},
+  ROUTE:         {kind:'linelabel',  w:2,   tag:'RTE',  dash:'10,5', affByAff:true},
+  // Forward lines — fixed standard colours
+  FLOT:          {kind:'scallop',   color:'#00cc55', w:2.5, label:'FLOT'},
+  FLET:          {kind:'scallop',   color:'#f85149', w:2.5, label:'FLET'},
+  // Fire-support coordination measures — fixed colours
+  FSCL:          {kind:'fscm',      color:'#ff8800', w:3,   tag:'FSCL'},
+  CFL:           {kind:'fscm',      color:'#ff4400', w:2.5, tag:'CFL'},
+  NFL:           {kind:'fscm',      color:'#ff0000', w:2.5, tag:'NFL'},
+  NFA:           {kind:'hatch',     color:'#ff0000', w:2,   tag:'NFA'},
+  FFA:           {kind:'area',      color:'#00cc00', w:2,   tag:'FFA'},
+  ENGAGEMENT_AREA:{kind:'area',     color:'#ff3300', w:2,   tag:'EA'},
+  ASSEMBLY_AREA: {kind:'area',      color:'#44aaff', w:2,   tag:'AA'},
+  ZONE:          {kind:'area',      color:'#d29922', w:2,   tag:''},
   // Intel
-  NAI:          {kind:'areadash', color:'#aa44ff', w:1.5, tag:'NAI'},
-  TAI:          {kind:'areadash', color:'#ff44aa', w:1.5, tag:'TAI'},
+  NAI:           {kind:'areadash',  color:'#aa44ff', w:2,   tag:'NAI'},
+  TAI:           {kind:'areadash',  color:'#ff44aa', w:2,   tag:'TAI'},
 };
-// affiliation → manoeuvre-graphic colour
+
+// affiliation → colour per APP-6 colour standard
 function _affColor(aff){
   const a=(aff||'FRIENDLY').toUpperCase();
   return a==='HOSTILE'||a==='ENEMY' ? '#f85149'
-       : a==='NEUTRAL' ? '#3fb950'
-       : a==='UNKNOWN' ? '#d29922' : '#00aaff';
+       : a==='NEUTRAL'             ? '#3fb950'
+       : a==='UNKNOWN'             ? '#d29922' : '#00aaff';
 }
 
-// distance (m) between two LatLng
+// ── geometry helpers ──────────────────────────────────────────────────────
 function _distLL(a,b){
-  const R=6371000, dLat=(b.lat-a.lat)*Math.PI/180, dLon=(b.lng-a.lng)*Math.PI/180;
-  const la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
+  const R=6371000,dLat=(b.lat-a.lat)*Math.PI/180,dLon=(b.lng-a.lng)*Math.PI/180;
+  const la1=a.lat*Math.PI/180,la2=b.lat*Math.PI/180;
   const x=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
   return 2*R*Math.asin(Math.sqrt(x));
 }
 function _polyLen(pts){let d=0;for(let i=1;i<pts.length;i++)d+=_distLL(pts[i-1],pts[i]);return d;}
 
-// arrowhead triangle (filled) at tip, pointing along p_prev→p_tip
-function _arrowHeadPts(prev, tip, sizeM){
-  const brg=_bearing(prev,tip);
-  const l=destPoint(tip.lat,tip.lng,brg+148,sizeM);
-  const r=destPoint(tip.lat,tip.lng,brg-148,sizeM);
-  return [[l[0],l[1]],[tip.lat,tip.lng],[r[0],r[1]]];
+// Point + bearing at distance d along a polyline
+function _ptAtDist(pts,d){
+  let acc=0;
+  for(let i=0;i<pts.length-1;i++){
+    const s=_distLL(pts[i],pts[i+1]);
+    if(acc+s>=d){
+      const t=(d-acc)/s;
+      return {
+        pt:  L.latLng(pts[i].lat+t*(pts[i+1].lat-pts[i].lat),
+                      pts[i].lng+t*(pts[i+1].lng-pts[i].lng)),
+        brg: _bearing(pts[i],pts[i+1])
+      };
+    }
+    acc+=s;
+  }
+  const n=pts.length-1;
+  return {pt:pts[n], brg:_bearing(pts[Math.max(0,n-1)],pts[n])};
 }
 
-// boxed text label as a divIcon marker
-function _tgLabel(latlng, text, color){
+// Boxed text label as a divIcon marker
+function _tgLabel(latlng,text,color){
   return L.marker(latlng,{interactive:false,icon:L.divIcon({
     className:'',
     html:`<div style="background:rgba(0,0,0,.82);border:1px solid ${color};color:${color};
@@ -957,24 +1017,24 @@ function _tgLabel(latlng, text, color){
   })});
 }
 
-// scalloped (semicircle) line — bumps to the LEFT of travel direction
-function _scallopPts(pts, radiusM){
+// Scalloped line — semicircle bumps toward the RIGHT of travel (toward enemy for FLOT)
+function _scallopPts(pts,radiusM){
   const out=[];
   for(let i=0;i<pts.length-1;i++){
-    const a=pts[i], b=pts[i+1];
+    const a=pts[i],b=pts[i+1];
     const segLen=_distLL(a,b);
-    const n=Math.max(1, Math.round(segLen/(radiusM*2)));
+    const n=Math.max(1,Math.round(segLen/(radiusM*2)));
     const brg=_bearing(a,b);
     for(let k=0;k<n;k++){
-      const t0=k/n, t1=(k+1)/n;
+      const t0=k/n,t1=(k+1)/n;
       const s=[a.lat+(b.lat-a.lat)*t0, a.lng+(b.lng-a.lng)*t0];
       const e=[a.lat+(b.lat-a.lat)*t1, a.lng+(b.lng-a.lng)*t1];
       out.push(s);
-      // semicircle arc bulging left (brg-90)
       const midLat=(s[0]+e[0])/2, midLng=(s[1]+e[1])/2;
-      const c=destPoint(midLat,midLng,brg-90,radiusM);
-      for(let a2=0;a2<=180;a2+=30){
-        const ang=brg-90 + (180-a2);   // sweep
+      // bump to the right (+90° = enemy side)
+      const c=destPoint(midLat,midLng,brg+90,radiusM);
+      for(let a2=0;a2<=180;a2+=20){
+        const ang=brg+90+(180-a2);
         const p=destPoint(c[0],c[1],ang,radiusM);
         out.push([p[0],p[1]]);
       }
@@ -984,109 +1044,133 @@ function _scallopPts(pts, radiusM){
   return out;
 }
 
-// Build a tactical graphic. pts = array of L.latLng. Returns L.layerGroup.
-function buildTacticalGraphic(type, pts, label, aff){
+// ── Main renderer ─────────────────────────────────────────────────────────
+// Build a tactical graphic from a list of L.LatLng. Returns L.layerGroup.
+function buildTacticalGraphic(type,pts,label,aff){
   const spec = TG[type] || {kind:'line', color:'#e6edf3', w:2};
   const grp  = L.layerGroup();
-  const C = spec.affByAff ? _affColor(aff) : (spec.color || _affColor(aff));
-  const W=spec.w||2;
+  const C    = spec.affByAff ? _affColor(aff) : (spec.color||_affColor(aff));
+  const W    = spec.w || 2;
+  const len  = _polyLen(pts);
+  // Arrow head ground-size: 15 % of line length, clamped to [200 m, 3 000 m]
+  const head = Math.min(Math.max(len*0.15, 200), 3000);
   const isArea = ['area','areadash','hatch'].includes(spec.kind);
-  const head = Math.min(Math.max(_polyLen(pts)*0.10, 120), 1500); // arrowhead ground size
 
-  if(spec.kind==='arrow'){
-    // Direction/main attack: single shaft + filled chevron head
-    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
-    if(pts.length>=2){
-      const tri=_arrowHeadPts(pts[pts.length-2],pts[pts.length-1],head);
-      L.polygon(tri,{color:C,weight:W,fillColor:C,fillOpacity:.95}).addTo(grp);
-    }
-  }
-  else if(spec.kind==='axis'){
-    // Axis of Advance: APP-6 wide arrow — two parallel offset rails that
-    // converge into a large open arrowhead at the objective end.
-    const wM=head*0.45;                       // corridor half-width (ground m)
-    const left=[], right=[];
-    for(let i=0;i<pts.length;i++){
-      // bearing of travel at this vertex
-      let b;
-      if(i===0)               b=_bearing(pts[0],pts[1]);
-      else if(i===pts.length-1) b=_bearing(pts[i-1],pts[i]);
-      else                    b=_bearing(pts[i-1],pts[i+1]);
-      const lp=destPoint(pts[i].lat,pts[i].lng,b-90,wM);
-      const rp=destPoint(pts[i].lat,pts[i].lng,b+90,wM);
-      left.push([lp[0],lp[1]]); right.push([rp[0],rp[1]]);
-    }
-    // Stop the rails short of the tip so the arrowhead is open
+  // ── ATK_AXIS: line + large solid filled arrowhead ────────────────────
+  // Shaft stops at the arrowhead base so the line doesn't poke through the tip.
+  if(spec.kind==='mainattack'){
+    if(pts.length<2){L.polyline(pts,{color:C,weight:W}).addTo(grp);return grp;}
     const tip=pts[pts.length-1], prev=pts[pts.length-2];
-    const bEnd=_bearing(prev,tip);
-    const baseC=destPoint(tip.lat,tip.lng,bEnd+180,head);          // arrowhead base centre
-    const baseL=destPoint(baseC[0],baseC[1],bEnd-90,wM);
-    const baseR=destPoint(baseC[0],baseC[1],bEnd+90,wM);
-    left[left.length-1]=[baseL[0],baseL[1]];
-    right[right.length-1]=[baseR[0],baseR[1]];
-    // Wide-open arrowhead barbs (1.8× corridor width)
-    const barbL=destPoint(tip.lat,tip.lng,bEnd-90,wM*1.8);
-    const barbR=destPoint(tip.lat,tip.lng,bEnd+90,wM*1.8);
-    L.polyline(left ,{color:C,weight:W}).addTo(grp);
-    L.polyline(right,{color:C,weight:W}).addTo(grp);
-    L.polyline([[barbL[0],barbL[1]],[tip.lat,tip.lng],[barbR[0],barbR[1]]],
-               {color:C,weight:W}).addTo(grp);
-    // close the head base to the barbs
-    L.polyline([[baseL[0],baseL[1]],[barbL[0],barbL[1]]],{color:C,weight:W}).addTo(grp);
-    L.polyline([[baseR[0],baseR[1]],[barbR[0],barbR[1]]],{color:C,weight:W}).addTo(grp);
+    const brg=_bearing(prev,tip);
+    const ha=28, haR=ha*Math.PI/180;
+    const bL=destPoint(tip.lat,tip.lng,(brg+180+ha+360)%360, head);
+    const bR=destPoint(tip.lat,tip.lng,(brg+180-ha+360)%360, head);
+    const base=destPoint(tip.lat,tip.lng,(brg+180)%360, head*Math.cos(haR));
+    const shaft=[...pts.slice(0,pts.length-1), L.latLng(base[0],base[1])];
+    L.polyline(shaft,{color:C,weight:W,lineCap:'round',lineJoin:'round'}).addTo(grp);
+    L.polygon([[bL[0],bL[1]],[tip.lat,tip.lng],[bR[0],bR[1]]],
+      {color:C,weight:1,fillColor:C,fillOpacity:1}).addTo(grp);
   }
+
+  // ── Arrow: line + open V arrowhead (AXIS, COUNTERATTACK, BYPASS, WITHDRAW)
+  else if(spec.kind==='arrow'){
+    if(pts.length<2){L.polyline(pts,{color:C,weight:W}).addTo(grp);return grp;}
+    const tip=pts[pts.length-1], prev=pts[pts.length-2];
+    const brg=_bearing(prev,tip);
+    const bL=destPoint(tip.lat,tip.lng,(brg+148+360)%360, head*0.85);
+    const bR=destPoint(tip.lat,tip.lng,(brg-148+360)%360, head*0.85);
+    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash,lineCap:'round',lineJoin:'round'}).addTo(grp);
+    L.polyline([[bL[0],bL[1]],[tip.lat,tip.lng],[bR[0],bR[1]]],
+      {color:C,weight:W,lineJoin:'round'}).addTo(grp);
+  }
+
+  // ── Defense line — line + perpendicular ticks on right (enemy side) ──
+  else if(spec.kind==='defense'){
+    L.polyline(pts,{color:C,weight:W,lineCap:'round'}).addTo(grp);
+    const nTicks = Math.max(4, Math.min(20, Math.round(len/400)));
+    const spacing = len / (nTicks+1);
+    const tLen    = spacing * 0.55;
+    for(let k=1;k<=nTicks;k++){
+      const {pt,brg} = _ptAtDist(pts, k*spacing);
+      const e = destPoint(pt.lat,pt.lng,(brg+90+360)%360, tLen);
+      L.polyline([[pt.lat,pt.lng],[e[0],e[1]]],{color:C,weight:W-1||1}).addTo(grp);
+    }
+  }
+
+  // ── Scallop (FLOT / FLET) ────────────────────────────────────────────
   else if(spec.kind==='scallop'){
-    L.polyline(_scallopPts(pts,head*0.4),{color:C,weight:W}).addTo(grp);
-    if(spec.label) grp.addLayer(_tgLabel(pts[0], spec.label, C));
+    L.polyline(_scallopPts(pts,head*0.35),{color:C,weight:W}).addTo(grp);
+    if(spec.label){
+      grp.addLayer(_tgLabel(pts[0],spec.label,C));
+      grp.addLayer(_tgLabel(pts[pts.length-1],spec.label,C));
+    }
   }
+
+  // ── FSCM / Phase-line type (labelled at both ends) ───────────────────
   else if(spec.kind==='linelabel'||spec.kind==='fscm'){
     L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
     const name=(label||'').replace(/_/g,' ');
-    const txt = spec.tag + (name && name!==type ? ' '+name : '');
-    // FSCM/control lines label both ends, bracketed
-    grp.addLayer(_tgLabel(pts[0], txt, C));
-    grp.addLayer(_tgLabel(pts[pts.length-1], txt, C));
+    const txt=spec.tag+(name&&name!==type?' '+name:'');
+    grp.addLayer(_tgLabel(pts[0],txt,C));
+    grp.addLayer(_tgLabel(pts[pts.length-1],txt,C));
   }
+
+  // ── Boundary line ────────────────────────────────────────────────────
   else if(spec.kind==='boundary'){
-    L.polyline(pts,{color:C,weight:W}).addTo(grp);
-    // echelon tick box at midpoint
-    const mid=pts[Math.floor(pts.length/2)];
-    grp.addLayer(_tgLabel(mid, '╫', C));
-    if(label) grp.addLayer(_tgLabel(pts[0], label, C));
+    L.polyline(pts,{color:C,weight:W,dashArray:'6,4'}).addTo(grp);
+    // X marks at start, mid, end
+    [pts[0], pts[Math.floor(pts.length/2)], pts[pts.length-1]].forEach(p=>{
+      grp.addLayer(_tgLabel(p,'✕',C));
+    });
+    if(label) grp.addLayer(_tgLabel(pts[0],label,C));
   }
+
+  // ── Block (T-bar at end) ─────────────────────────────────────────────
   else if(spec.kind==='block'){
     L.polyline(pts,{color:C,weight:W}).addTo(grp);
-    // perpendicular cap at the end (block obstacle)
     if(pts.length>=2){
       const b=_bearing(pts[pts.length-2],pts[pts.length-1]);
       const t=pts[pts.length-1];
-      const a1=destPoint(t.lat,t.lng,b+90,head*0.5), a2=destPoint(t.lat,t.lng,b-90,head*0.5);
-      L.polyline([[a1[0],a1[1]],[a2[0],a2[1]]],{color:C,weight:W}).addTo(grp);
+      const a1=destPoint(t.lat,t.lng,(b+90+360)%360,head*0.55);
+      const a2=destPoint(t.lat,t.lng,(b-90+360)%360,head*0.55);
+      L.polyline([[a1[0],a1[1]],[a2[0],a2[1]]],{color:C,weight:W+1}).addTo(grp);
     }
   }
+
+  // ── Ambush — horseshoe arc opening toward the kill zone ──────────────
+  // The path endpoint IS the ambush position; the arc opens perpendicular
+  // to the approach so the "jaws" face the direction enemies travel through.
   else if(spec.kind==='ambush'){
-    // open arc/V pointing along the line toward the kill zone
     L.polyline(pts,{color:C,weight:W}).addTo(grp);
     if(pts.length>=2){
-      const tip=pts[pts.length-1], b=_bearing(pts[pts.length-2],tip);
-      const l=destPoint(tip.lat,tip.lng,b+135,head), r=destPoint(tip.lat,tip.lng,b-135,head);
-      L.polyline([[l[0],l[1]],[tip.lat,tip.lng],[r[0],r[1]]],{color:C,weight:W}).addTo(grp);
+      const tip=pts[pts.length-1];
+      const b=_bearing(pts[pts.length-2],tip);
+      // Arc: semicircle perpendicular to shaft, opening to the right
+      const arcPts=[];
+      for(let a=-90;a<=90;a+=15){
+        const p=destPoint(tip.lat,tip.lng,(b+a+360)%360, head*0.8);
+        arcPts.push([p[0],p[1]]);
+      }
+      L.polyline(arcPts,{color:C,weight:W}).addTo(grp);
     }
   }
+
+  // ── Area types (polygon, hatched, dashed) ────────────────────────────
   else if(isArea){
-    const dash = spec.kind==='areadash' ? '6,5' : null;
-    const fillOp = spec.kind==='hatch' ? 0 : 0.06;
-    const poly=L.polygon(pts,{color:C,weight:W,dashArray:dash,fill:true,fillColor:C,fillOpacity:fillOp}).addTo(grp);
-    if(spec.kind==='hatch') _addHatch(grp, pts, C);
-    // centroid label
+    const dash    = spec.kind==='areadash' ? '7,5' : null;
+    const fillOp  = spec.kind==='hatch'   ? 0     : 0.07;
+    L.polygon(pts,{color:C,weight:W,dashArray:dash,fill:true,fillColor:C,fillOpacity:fillOp}).addTo(grp);
+    if(spec.kind==='hatch') _addHatch(grp,pts,C);
     const c=_centroid(pts);
     const name=(label||'').replace(/_/g,' ');
-    const txt=(spec.tag||'') + (name && name!==type ? ' '+name : '');
-    if(txt.trim()) grp.addLayer(_tgLabel(L.latLng(c[0],c[1]), txt, C));
+    const txt=(spec.tag||'')+(name&&name!==type?' '+name:'');
+    if(txt.trim()) grp.addLayer(_tgLabel(L.latLng(c[0],c[1]),txt,C));
   }
-  else { // plain line
+
+  // ── Fallback: plain line ─────────────────────────────────────────────
+  else {
     L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
-    if(label) grp.addLayer(_tgLabel(pts[Math.floor(pts.length/2)], label.replace(/_/g,' '), C));
+    if(label) grp.addLayer(_tgLabel(pts[Math.floor(pts.length/2)],label.replace(/_/g,' '),C));
   }
   return grp;
 }
@@ -1654,9 +1738,10 @@ function _radialAct(key) {
 map.on('contextmenu', function(e) {
   e.originalEvent.preventDefault();
   e.originalEvent.stopPropagation();
-  if (_drawType)   { _drawFinishCtx(e); return; }  // finish active drawing
-  if (_measActive) { _stopMeasure(null); return; }
-  if (_rangeMode)  { return; }  // range tool: right-click does nothing
+  if (_drawType)                                   { _drawFinishCtx(e); return; }
+  if (_fdTool !== 'none')                          { return; }  // free draw: ignore right-click
+  if (_measActive)                                 { _stopMeasure(null); return; }
+  if (_rangeMode)                                  { return; }
   openRadial(e.containerPoint, e.latlng);
 });
 
@@ -1684,6 +1769,150 @@ map.on('click',function(e){if(drawMode==='pointer'&&bridge)bridge.onMapClicked(e
 // ================================================================
 function latLonToMGRS(lat,lon){try{if(typeof mgrs!=='undefined')return mgrs.forward([lon,lat],5);}catch(_){}return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// ================================================================
+// FREE DRAW
+// Pen: Leaflet mousedown → document mousemove/mouseup for accuracy.
+// Text: Leaflet click → inline overlay input.
+// ================================================================
+let _fdColor     = '#f85149';
+let _fdThick     = 2;
+let _fdTool      = 'none';
+let _fdDown      = false;
+let _fdPts       = [];
+let _fdCurLyr    = null;
+let _fdHistory   = [];
+let _fdPendingLL = null;
+
+function setFreeDraw(tool, color, thickness) {
+  _fdStopAll();
+  _fdColor = color     || '#f85149';
+  _fdThick = thickness || 2;
+  _fdTool  = tool      || 'none';
+
+  if (tool === 'pen') {
+    drawMode = 'freedraw';
+    map.getContainer().style.cursor = 'crosshair';
+    map.dragging.disable();
+    // Leaflet mousedown gives us accurate latlng for the first point
+    map.on('mousedown', _fdLeafletDown);
+    // Document-level for smooth mid-stroke tracking and reliable release
+    document.addEventListener('mousemove', _fdDocMove, false);
+    document.addEventListener('mouseup',   _fdDocUp,   false);
+  } else if (tool === 'text') {
+    drawMode = 'freedrawtext';
+    map.getContainer().style.cursor = 'text';
+    map.on('click', _fdTextClick);
+  } else {
+    drawMode = 'pointer';
+    map.getContainer().style.cursor = '';
+    map.dragging.enable();
+  }
+}
+
+function _fdStopAll() {
+  map.off('mousedown', _fdLeafletDown);
+  map.off('click',     _fdTextClick);
+  document.removeEventListener('mousemove', _fdDocMove, false);
+  document.removeEventListener('mouseup',   _fdDocUp,   false);
+  if (_fdDown) { _fdDown = false; map.dragging.enable(); }
+  if (_fdCurLyr) { LAYERS.freedraw.removeLayer(_fdCurLyr); _fdCurLyr = null; }
+  _fdPts = [];
+  closeFreeDrawTextInput();
+}
+
+// Called by Leaflet's mousedown — gives us precise latlng anchor
+function _fdLeafletDown(e) {
+  _fdDown = true;
+  _fdPts  = [e.latlng];
+}
+
+// Document-level mousemove: convert clientX/Y → map LatLng
+function _fdDocMove(e) {
+  if (!_fdDown) return;
+  const rect = map.getContainer().getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const ll = map.containerPointToLatLng(L.point(x, y));
+  _fdPts.push(ll);
+  // Redraw live preview
+  if (_fdCurLyr) LAYERS.freedraw.removeLayer(_fdCurLyr);
+  if (_fdPts.length >= 2) {
+    _fdCurLyr = L.polyline(_fdPts.slice(), {
+      color: _fdColor, weight: _fdThick, opacity: .92,
+      lineCap: 'round', lineJoin: 'round', interactive: false
+    }).addTo(LAYERS.freedraw);
+  }
+}
+
+// Document-level mouseup: commit stroke
+function _fdDocUp() {
+  if (!_fdDown) return;
+  _fdDown = false;
+  if (_fdCurLyr) { LAYERS.freedraw.removeLayer(_fdCurLyr); _fdCurLyr = null; }
+  if (_fdPts.length >= 2) {
+    const lyr = L.polyline(_fdPts.slice(), {
+      color: _fdColor, weight: _fdThick, opacity: .92,
+      lineCap: 'round', lineJoin: 'round', interactive: false
+    }).addTo(LAYERS.freedraw);
+    _fdHistory.push(lyr);
+  }
+  _fdPts = [];
+}
+
+// Text tool: click → show input overlay near click point
+function _fdTextClick(e) {
+  if (drawMode !== 'freedrawtext') return;
+  _fdPendingLL = e.latlng;
+  const pt = map.latLngToContainerPoint(e.latlng);
+  const ov = document.getElementById('fd-text-overlay');
+  ov.style.left = Math.min(pt.x + 8, window.innerWidth  - 310) + 'px';
+  ov.style.top  = Math.min(pt.y - 18, window.innerHeight - 60) + 'px';
+  ov.classList.add('active');
+  const inp = document.getElementById('fd-text-input');
+  inp.value = '';
+  setTimeout(() => inp.focus(), 40);
+}
+
+function placeFreeText() {
+  const text = (document.getElementById('fd-text-input').value || '').trim();
+  if (text && _fdPendingLL) {
+    const sh = '1px 1px 3px #000,-1px -1px 3px #000,1px -1px 3px #000,-1px 1px 3px #000';
+    const lyr = L.marker(_fdPendingLL, {
+      interactive: false,
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="color:${_fdColor};font-family:'Courier New',monospace;` +
+              `font-size:13px;font-weight:700;white-space:nowrap;` +
+              `text-shadow:${sh};pointer-events:none;">${esc(text)}</div>`,
+        iconSize: [0, 0], iconAnchor: [0, 8]
+      })
+    }).addTo(LAYERS.freedraw);
+    _fdHistory.push(lyr);
+  }
+  closeFreeDrawTextInput();
+}
+
+function closeFreeDrawTextInput() {
+  const ov = document.getElementById('fd-text-overlay');
+  if (ov) ov.classList.remove('active');
+  _fdPendingLL = null;
+}
+
+function undoFreeDraw() {
+  if (!_fdHistory.length) return;
+  LAYERS.freedraw.removeLayer(_fdHistory.pop());
+}
+
+function clearFreeDrawLayer() {
+  LAYERS.freedraw.clearLayers();
+  _fdHistory = [];
+  _fdCurLyr  = null;
+}
+
+document.getElementById('fd-text-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter')  { placeFreeText();          e.preventDefault(); }
+  if (e.key === 'Escape') { closeFreeDrawTextInput(); e.preventDefault(); }
+});
 
 // ================================================================
 // BRIDGE
