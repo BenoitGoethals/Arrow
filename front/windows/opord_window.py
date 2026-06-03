@@ -215,6 +215,7 @@ class OpordWindow(QMainWindow):
 
         title = self._opord.get("title", "New OPORD") if opord_data else "New OPORD"
         self.setWindowTitle(f"OPORD — {title}")
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.resize(1100, 800)
         self.setMinimumSize(900, 640)
         self.setStyleSheet("""

@@ -240,8 +240,10 @@ class StreamViewerWindow(QMainWindow):
         self._cfg     = cfg
         self._backend = backend_url.rstrip("/")
 
+        from PyQt6.QtCore import Qt
         title = cfg.get("callsign") or cfg.get("name") or "Stream"
         self.setWindowTitle(f"📡  {title}")
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.resize(720, 480)
         self.setMinimumSize(320, 240)
 

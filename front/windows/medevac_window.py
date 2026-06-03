@@ -96,7 +96,7 @@ class MedevacWindow(QDialog):
         self.setWindowTitle("MEDEVAC 9-LINER REQUEST")
         self.setMinimumWidth(560)
         self.setMinimumHeight(680)
-        self.setModal(False)   # non-modal so the map stays usable
+        self.setModal(True)
         self._build_ui()
 
     # ── UI ───────────────────────────────────────────────────────────────────
