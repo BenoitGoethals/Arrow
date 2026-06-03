@@ -17,20 +17,18 @@ import threading
 import time
 from typing import Optional
 
-# ── macOS: Homebrew opus lives outside the default dyld search path ──────────
-if sys.platform == "darwin":
-    for _p in ("/opt/homebrew/lib", "/usr/local/lib"):
-        if os.path.isdir(_p):
-            os.environ["DYLD_LIBRARY_PATH"] = (
-                _p + os.pathsep + os.environ.get("DYLD_LIBRARY_PATH", "")
-            )
-            break
+import front.mumble.opus_fix  # noqa: F401 — patches ctypes before opuslib loads
 
 import numpy as np
 import sounddevice as sd
 
 try:
     import pymumble_py3 as pymumble
+    from pymumble_py3.callbacks import (
+        PYMUMBLE_CLBK_CONNECTED,
+        PYMUMBLE_CLBK_DISCONNECTED,
+        PYMUMBLE_CLBK_SOUNDRECEIVED,
+    )
     MUMBLE_AVAILABLE = True
 except Exception as _e:
     MUMBLE_AVAILABLE = False
@@ -225,15 +223,9 @@ class MumbleClient(QObject):
                     reconnect=False, certfile=None,
                 )
                 m.set_application_string("Arrow Front")
-                m.callbacks.set_callback(
-                    pymumble.PYMUMBLE_CLBK_SOUNDRECEIVED, self._on_sound
-                )
-                m.callbacks.set_callback(
-                    pymumble.PYMUMBLE_CLBK_CONNECTED, self._on_connected
-                )
-                m.callbacks.set_callback(
-                    pymumble.PYMUMBLE_CLBK_DISCONNECTED, self._on_disconnected
-                )
+                m.callbacks.set_callback(PYMUMBLE_CLBK_SOUNDRECEIVED, self._on_sound)
+                m.callbacks.set_callback(PYMUMBLE_CLBK_CONNECTED,     self._on_connected)
+                m.callbacks.set_callback(PYMUMBLE_CLBK_DISCONNECTED,  self._on_disconnected)
                 m.start()
                 m.is_ready()           # blocks until connected (or raises)
                 self._mumble = m
@@ -278,7 +270,9 @@ class MumbleClient(QObject):
             self._audio_in.set_active(self._ptt_active and not muted)
         if self._mumble:
             try:
-                self._mumble.users.myself.mute(muted)
+                myself = self._mumble.users.myself
+                if myself:
+                    myself.mute() if muted else myself.unmute()
             except Exception:
                 pass
 
@@ -286,7 +280,9 @@ class MumbleClient(QObject):
         self._deafened = deafened
         if self._mumble:
             try:
-                self._mumble.users.myself.deafen(deafened)
+                myself = self._mumble.users.myself
+                if myself:
+                    myself.deafen() if deafened else myself.undeafen()
             except Exception:
                 pass
 
