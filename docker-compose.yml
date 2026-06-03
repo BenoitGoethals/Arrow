@@ -7,8 +7,10 @@ services:
       dockerfile: backend.dockerfile
     image: arrow-backend
     container_name: arrow-backend
-    ports:
-      - "6001:6001"
+    # Port 6001 is NOT exposed directly — nginx owns it (HTTPS proxy for Arrow Front).
+    # The backend is reachable within Docker as backend:6001.
+    expose:
+      - "6001"
     environment:
       # ARROW_JWT_SECRET: ""    # set a 64-char hex secret here or in .env for production
       #                         # if unset, a random secret is auto-generated on first boot
