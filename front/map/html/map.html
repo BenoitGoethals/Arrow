@@ -1870,7 +1870,7 @@ function _fdDocMove(e) {
   }
 }
 
-// Document-level mouseup: commit stroke
+// Document-level mouseup: commit stroke and persist to backend
 function _fdDocUp() {
   if (!_fdDown) return;
   _fdDown = false;
@@ -1881,6 +1881,13 @@ function _fdDocUp() {
       lineCap: 'round', lineJoin: 'round', interactive: false
     }).addTo(LAYERS.freedraw);
     _fdHistory.push(lyr);
+    // Persist — broadcasts via WS so web + all other fronts see it
+    const coords = _fdPts.map(ll => [ll.lat, ll.lng]);
+    if (bridge) bridge.onFreeDrawSaved(
+      'FREEDRAW_LINE',
+      JSON.stringify({type:'line', coords}),
+      JSON.stringify({color:_fdColor, thick:_fdThick})
+    );
   }
   _fdPts = [];
 }
@@ -1914,6 +1921,12 @@ function placeFreeText() {
       })
     }).addTo(LAYERS.freedraw);
     _fdHistory.push(lyr);
+    // Persist — broadcasts via WS so web + all other fronts see it
+    if (bridge) bridge.onFreeDrawSaved(
+      'FREEDRAW_TEXT',
+      JSON.stringify({type:'point', coords:[[_fdPendingLL.lat, _fdPendingLL.lng]]}),
+      JSON.stringify({color:_fdColor, text})
+    );
   }
   closeFreeDrawTextInput();
 }

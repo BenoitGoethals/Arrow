@@ -4039,11 +4039,109 @@
     // dismiss when the alert is acknowledged.
     if (!state.alertLayers) state.alertLayers = new Map();    // id -> LayerGroup
     const ALERT_COLOURS = {
-        TIC:         '#dc2626',
-        MEDICAL:     '#16a34a',
-        EVAC:        '#f59e0b',
-        LOST_COMMS:  '#6366f1',
+        TIC:            '#dc2626',
+        DRONE_SPOTTED:  '#a855f7',
+        MEDICAL:        '#16a34a',
+        MEDEVAC:        '#22c55e',
+        EVAC:           '#f59e0b',
+        LOST_COMMS:     '#6366f1',
     };
+    const ALERT_ICONS = {
+        TIC:            '⚡',
+        DRONE_SPOTTED:  '🛸',
+        MEDICAL:        '🏥',
+        MEDEVAC:        '🚁',
+        EVAC:           '🚁',
+        LOST_COMMS:     '📡',
+    };
+
+    // ── Alert toast — shown for every alert regardless of lat/lon ─────────────
+    function showAlertToast(d) {
+        const colour = ALERT_COLOURS[d.type] || '#dc2626';
+        const icon   = ALERT_ICONS[d.type]   || '⚠';
+        const op     = state.operators.get(d.operator_id);
+        const cs     = op ? op.callsign : (d.callsign || (d.operator_id ? `op#${d.operator_id}` : 'UNKNOWN'));
+        const hasPos = d.latitude != null && d.longitude != null;
+        const grid   = hasPos ? toMgrs(d.latitude, d.longitude) : null;
+
+        // Ensure the toast stack container exists
+        let wrap = document.getElementById('alert-toast-wrap');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.id = 'alert-toast-wrap';
+            wrap.style.cssText =
+                'position:fixed;top:68px;right:16px;z-index:9999;'
+                + 'display:flex;flex-direction:column;gap:6px;pointer-events:none;';
+            document.body.appendChild(wrap);
+        }
+
+        const card = document.createElement('div');
+        card.style.cssText =
+            `background:#0d1117;border:2px solid ${colour};border-radius:6px;`
+            + `padding:10px 16px;font-family:monospace;`
+            + `box-shadow:0 4px 24px rgba(0,0,0,.85);pointer-events:auto;cursor:pointer;`
+            + `min-width:280px;max-width:360px;transition:opacity .4s;`;
+        card.innerHTML =
+            `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">`
+            + `<span style="font-size:1.3rem">${icon}</span>`
+            + `<span style="color:${colour};font-weight:700;font-size:1rem;letter-spacing:2px">${escHtml(d.type)}</span>`
+            + `<span style="margin-left:auto;color:#475569;font-size:.7rem;letter-spacing:1px">ALERT</span>`
+            + `</div>`
+            + `<div style="color:#94a3b8;font-size:.8rem">FROM <b style="color:#e2e8f0">${escHtml(cs)}</b></div>`
+            + (grid ? `<div style="color:#94a3b8;font-size:.8rem">GRID <b style="color:${colour};letter-spacing:1px">${grid}</b></div>` : '')
+            + `<div style="color:#475569;font-size:.7rem;margin-top:5px">${hasPos ? 'Click to zoom · ' : ''}Dismiss after 15 s</div>`;
+
+        if (hasPos) {
+            card.onclick = () => {
+                map.setView([d.latitude, d.longitude], 16, { animate: true });
+                card.style.opacity = '0';
+                setTimeout(() => card.remove(), 420);
+            };
+        } else {
+            card.onclick = () => { card.style.opacity = '0'; setTimeout(() => card.remove(), 420); };
+        }
+
+        // Pulsing glow for emphasis
+        let pulse = 0;
+        const pulseTimer = setInterval(() => {
+            pulse++;
+            card.style.boxShadow = pulse % 2 === 0
+                ? '0 4px 24px rgba(0,0,0,.85)'
+                : `0 4px 24px rgba(0,0,0,.85),0 0 22px ${colour}66`;
+            if (pulse >= 12) clearInterval(pulseTimer);
+        }, 350);
+
+        wrap.prepend(card);   // newest on top
+        setTimeout(() => { card.style.opacity = '0'; setTimeout(() => card.remove(), 420); }, 15000);
+
+        // Browser notification when tab is backgrounded
+        if (document.visibilityState !== 'visible' && 'Notification' in window
+                && Notification.permission === 'granted') {
+            new Notification(`${icon} ${d.type} — ${cs}`, {
+                body: grid ? `Grid: ${grid}` : 'No location data',
+            });
+        }
+    }
+
+    // ── Report toast — shown for MEDEVAC, CASEVAC, CAS, DRONE_SPOT, IED ──────
+    function showReportToast(d) {
+        const TYPE_COLOR = {
+            MEDEVAC: '#22c55e', CASEVAC: '#22c55e',
+            CAS: '#f97316', DRONE_SPOT: '#a855f7', IED: '#ef4444',
+        };
+        const TYPE_ICON = {
+            MEDEVAC: '🚁', CASEVAC: '🚁', CAS: '✈', DRONE_SPOT: '🛸', IED: '💣',
+        };
+        const colour = TYPE_COLOR[d.type] || '#94a3b8';
+        const icon   = TYPE_ICON[d.type]  || '📋';
+        const sender = d.sender || d.callsign || '?';
+        showLogrepToast(`${icon} ${d.type} report from ${sender}`, colour);
+
+        if (document.visibilityState !== 'visible' && 'Notification' in window
+                && Notification.permission === 'granted') {
+            new Notification(`${icon} ${d.type}`, { body: `From: ${sender}` });
+        }
+    }
 
     // ── LOGREP notification toast ─────────────────────────────────────────────
     function showLogrepToast(msg, color) {
@@ -4086,9 +4184,11 @@
     }
 
     function handleAlertTriggered(d) {
-        if (d.latitude == null || d.longitude == null) return;
-        // Admin global filter — when alerts are muted, swallow the pulse/zoom.
+        // Toast is always shown — even without coordinates (Front may omit them)
+        showAlertToast(d);
         if (!state.visibility.alerts) return;
+        // Map marker only if we have a position
+        if (d.latitude == null || d.longitude == null) return;
         // Drop a previous marker for the same alert id, if any (re-broadcast).
         const prev = state.alertLayers.get(d.id);
         if (prev) { map.removeLayer(prev); state.alertLayers.delete(d.id); }
@@ -4217,6 +4317,9 @@
                 loadCbrnReports();
                 if (msg.event === 'submitted' && msg.data?.type === 'LOGREP') {
                     handleLogrepArrived(msg.data);
+                } else if (msg.event === 'submitted' &&
+                        ['MEDEVAC','CASEVAC','CAS','DRONE_SPOT','IED'].includes(msg.data?.type)) {
+                    showReportToast(msg.data);
                 } else if (msg.event === 'logrep_routed') {
                     showLogrepToast(`📦 LOGREP routed → ${(msg.data?.destinations||[]).join(', ')}`, '#0ea5e9');
                 } else if (msg.event === 'logrep_feedback') {

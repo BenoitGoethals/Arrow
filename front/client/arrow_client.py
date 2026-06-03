@@ -63,7 +63,7 @@ class ArrowClient:
         coords = geometry.get("coords", [])
         lat = float(coords[0][0]) if coords else 0.0
         lon = float(coords[0][1]) if coords else 0.0
-        geom_str = _json.dumps(geometry) if geometry.get("type") in ("line", "polygon") else ""
+        geom_str = _json.dumps(geometry) if geometry.get("type") in ("line", "polygon", "point") else ""
         body: dict = {
             "type":        obj_type,
             "latitude":    lat,
