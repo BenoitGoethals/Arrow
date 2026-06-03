@@ -1,21 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Photos — Arrow{% endblock %}
+{% block title %}Media Gallery — Arrow{% endblock %}
 
 {% block head %}
 <style>
 .ph-shell  { padding: 1.25rem; max-width: 1400px; margin: 0 auto; }
-.ph-head   { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1rem; }
+.ph-head   { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .ph-head h1 { margin: 0; color: #6ee7b7; font-size: 1.15rem; }
 .ph-head small { color: #64748b; }
+.ph-upload-btn {
+    margin-left: auto; background: #1f2937; color: #6ee7b7; border: 1px solid #2a3142;
+    border-radius: 6px; padding: 0.3rem 0.85rem; font: inherit; font-size: 0.82rem;
+    cursor: pointer;
+}
+.ph-upload-btn:hover { border-color: #6ee7b7; }
 .ph-grid   { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.6rem; }
 .ph-card   {
     background: #161b25; border: 1px solid #2a3142; border-radius: 6px;
     overflow: hidden; transition: border-color .15s; position: relative;
 }
 .ph-card:hover { border-color: #6ee7b7; }
-.ph-card img {
+.ph-card img, .ph-card .ph-vid-thumb {
     width: 100%; height: 140px; object-fit: cover; display: block;
     background: #0d1117; cursor: pointer;
+}
+.ph-card .ph-vid-thumb {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 3rem; color: #94a3b8;
 }
 .ph-meta   { padding: 0.45rem 0.55rem; font-size: 0.72rem; color: #94a3b8; }
 .ph-meta .ts { color: #cbd5e1; font-family: monospace; }
@@ -38,10 +48,21 @@
 }
 .ph-light-bg.open { display: flex; }
 .ph-light-img { max-width: 95vw; max-height: 92vh; border-radius: 4px; }
+.ph-light-vid { max-width: 95vw; max-height: 92vh; border-radius: 4px; outline: none; }
 .ph-light-close {
     position: absolute; top: 1rem; right: 1rem; background: #1f2937; color: #cbd5e1;
     border: 1px solid #475569; border-radius: 4px; padding: 0.4rem 0.8rem;
     font: inherit; cursor: pointer;
+}
+/* Upload modal */
+.ph-upload-modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.70);
+    z-index: 9100; align-items: center; justify-content: center;
+}
+.ph-upload-modal.open { display: flex; }
+.ph-upload-box {
+    background: #161b25; border: 1px solid #2a3142; border-radius: 10px;
+    padding: 1.25rem; width: 400px; max-width: 96vw;
 }
 </style>
 {% endblock %}
@@ -49,8 +70,9 @@
 {% block content %}
 <div class="ph-shell">
     <div class="ph-head">
-        <h1>📷 Photos</h1>
+        <h1>📷 Media Gallery</h1>
         <small id="ph-count">—</small>
+        <button class="ph-upload-btn" onclick="phUploadOpen()">+ Upload</button>
     </div>
     <div id="ph-grid" class="ph-grid">
         <div class="ph-empty">Loading…</div>
@@ -59,7 +81,26 @@
 
 <div class="ph-light-bg" id="ph-light" onclick="if(event.target===this)phClose()">
     <button class="ph-light-close" onclick="phClose()">✕ Close</button>
-    <img class="ph-light-img" id="ph-light-img" alt="Full size"/>
+    <img class="ph-light-img" id="ph-light-img" alt="Full size" style="display:none"/>
+    <video class="ph-light-vid" id="ph-light-vid" controls style="display:none"></video>
+</div>
+
+<div class="ph-upload-modal" id="ph-upload-modal" onclick="if(event.target===this)phUploadClose()">
+    <div class="ph-upload-box">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem">
+            <span style="font-weight:700;color:#6ee7b7">Upload Media</span>
+            <button onclick="phUploadClose()" style="background:none;border:0;color:#64748b;cursor:pointer;font-size:1.1rem">✕</button>
+        </div>
+        <input type="file" id="ph-upload-file" accept="image/*,video/*" multiple
+               style="width:100%;color:#cbd5e1;font:inherit;font-size:.85rem;margin-bottom:.75rem">
+        <div id="ph-upload-status" style="font-size:.8rem;color:#94a3b8;min-height:1.2em;margin-bottom:.6rem"></div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end">
+            <button onclick="phUploadClose()"
+                    style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:6px;padding:.4rem 1rem;cursor:pointer;font:inherit;font-size:.85rem">Cancel</button>
+            <button onclick="phUploadSubmit()"
+                    style="background:#34d399;color:#0d1117;border:0;border-radius:6px;padding:.4rem 1.2rem;font:inherit;font-size:.85rem;font-weight:700;cursor:pointer">Upload</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -83,7 +124,7 @@
             `${list.length} photo${list.length === 1 ? '' : 's'}`;
         const grid = document.getElementById('ph-grid');
         if (list.length === 0) {
-            grid.innerHTML = '<div class="ph-empty">No photos yet — operators can attach photos to messages, reports, objectives or enemy markers.</div>';
+            grid.innerHTML = '<div class="ph-empty">No media yet — operators can attach photos or videos to messages, reports, objectives or markers.</div>';
             return;
         }
         grid.innerHTML = list.map(p => {
@@ -92,23 +133,27 @@
             if (p.message_id)         refs.push(`<a href="/messaging/?open=msg:${p.message_id}">💬 msg #${p.message_id}</a>`);
             if (p.tactical_object_id) refs.push(`<a href="/map/">📍 obj #${p.tactical_object_id}</a>`);
             if (p.report_id)          refs.push(`<a href="/reports/?id=${p.report_id}">📋 report #${p.report_id}</a>`);
+            const isVid = (p.mime_type || '').startsWith('video/');
+            const thumb = isVid
+                ? `<div class="ph-vid-thumb" onclick="phOpen(${p.id},'${esc(p.mime_type)}')">▶</div>`
+                : `<img data-pid="${p.id}" alt="media" onclick="phOpen(${p.id},'${esc(p.mime_type)}')">`;
             return `
             <div class="ph-card">
-                <img data-pid="${p.id}" alt="photo" onclick="phOpen(${p.id})">
+                ${thumb}
                 <div class="ph-meta">
                     <div class="ts">${esc(ts)}</div>
                     <div>${esc(p.original_name || p.filename)}</div>
                     <div class="ref">${refs.join(' · ') || '<span style="color:#475569">orphan</span>'}</div>
                 </div>
                 <div class="ph-actions">
-                    <button class="ph-btn" onclick="phOpen(${p.id})">View</button>
+                    <button class="ph-btn" onclick="phOpen(${p.id},'${esc(p.mime_type)}')">View</button>
                     <a class="ph-btn" href="#" onclick="phSave(event, ${p.id}, '${esc(p.original_name || p.filename)}')">Save</a>
                     <button class="ph-btn ph-btn-del" onclick="phDelete(${p.id}, this)">Delete</button>
                 </div>
             </div>`;
         }).join('');
 
-        // Auth-load thumbnails
+        // Auth-load image thumbnails
         grid.querySelectorAll('img[data-pid]').forEach(async (img) => {
             const id = img.dataset.pid;
             try {
@@ -121,19 +166,67 @@
     }
 
     let _phUrl = null;
-    window.phOpen = async function(id) {
+    window.phOpen = async function(id, mimeType) {
         const r = await api(`/photos/${id}`);
-        if (!r.ok) { alert('Failed to open photo: ' + r.status); return; }
+        if (!r.ok) { alert('Failed to open media: ' + r.status); return; }
         const blob = await r.blob();
         if (_phUrl) URL.revokeObjectURL(_phUrl);
         _phUrl = URL.createObjectURL(blob);
-        document.getElementById('ph-light-img').src = _phUrl;
+        const isVid = (mimeType || '').startsWith('video/');
+        const imgEl = document.getElementById('ph-light-img');
+        const vidEl = document.getElementById('ph-light-vid');
+        if (isVid) {
+            imgEl.style.display = 'none';
+            vidEl.src = _phUrl;
+            vidEl.style.display = '';
+        } else {
+            vidEl.style.display = 'none';
+            vidEl.src = '';
+            imgEl.src = _phUrl;
+            imgEl.style.display = '';
+        }
         document.getElementById('ph-light').classList.add('open');
     };
 
     window.phClose = function() {
         document.getElementById('ph-light').classList.remove('open');
+        const vidEl = document.getElementById('ph-light-vid');
+        vidEl.pause?.();
+        vidEl.src = '';
         if (_phUrl) { URL.revokeObjectURL(_phUrl); _phUrl = null; }
+    };
+
+    window.phUploadOpen = function() {
+        document.getElementById('ph-upload-modal').classList.add('open');
+        document.getElementById('ph-upload-status').textContent = '';
+        document.getElementById('ph-upload-file').value = '';
+    };
+
+    window.phUploadClose = function() {
+        document.getElementById('ph-upload-modal').classList.remove('open');
+    };
+
+    window.phUploadSubmit = async function() {
+        const files = Array.from(document.getElementById('ph-upload-file').files);
+        const st = document.getElementById('ph-upload-status');
+        if (!files.length) { st.textContent = 'Select at least one file.'; return; }
+        st.textContent = `Uploading ${files.length} file(s)…`;
+        let done = 0, failed = 0;
+        for (const f of files) {
+            const fd = new FormData();
+            fd.append('file', f);
+            const res = await fetch(window.ARROW_BACKEND_URL + '/photos', {
+                method: 'POST',
+                headers,
+                body: fd,
+            });
+            if (res.ok) done++; else failed++;
+            st.textContent = `${done + failed}/${files.length} — ${done} ok${failed ? ', ' + failed + ' failed' : ''}`;
+        }
+        if (!failed) {
+            phUploadClose();
+            load();
+        }
     };
 
     window.phSave = async function(ev, id, fname) {

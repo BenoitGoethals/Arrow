@@ -39,7 +39,9 @@
     .photo-preview img { max-height: 90px; max-width: 160px; border-radius: 6px; object-fit: cover; }
     .photo-preview .rm { position: absolute; top: -6px; right: -6px; background: #ef4444; color: #fff; border: 0; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 0.7rem; line-height: 20px; text-align: center; padding: 0; }
     .bubble img.msg-photo { max-width: 100%; max-height: 240px; border-radius: 6px; display: block; margin-top: 4px; cursor: pointer; }
+    .bubble video.msg-video { max-width: 100%; max-height: 280px; border-radius: 6px; display: block; margin-top: 4px; }
     .photo-uploading { font-size: 0.75rem; color: #94a3b8; padding: 0.2rem 0; }
+    .photo-preview video { max-height: 90px; max-width: 160px; border-radius: 6px; }
     main { padding: 0; }
 </style>
 {% endblock %}
@@ -64,8 +66,8 @@
         <div id="chat-log" class="chat-log"></div>
         <div id="photo-preview-wrap"></div>
         <div class="composer">
-            <button class="photo-btn" id="composer-photo" title="Attach photo">📷</button>
-            <input type="file" id="photo-file-input" accept="image/*" style="display:none">
+            <button class="photo-btn" id="composer-photo" title="Attach photo or video">📎</button>
+            <input type="file" id="photo-file-input" accept="image/*,video/*" style="display:none">
             <textarea id="composer-input" placeholder="Type a message…" rows="1"></textarea>
             <button id="composer-send">Send</button>
         </div>
@@ -163,9 +165,16 @@
             const mine = m.sender_id === meId;
             const cls = m.message_type === 'BROADCAST' ? 'broadcast'
                 : m.message_type === 'GROUP' ? 'group' : 'direct';
-            const photoHtml = m.photo_id
-                ? `<img class="msg-photo" src="${window.ARROW_BACKEND_URL}/photos/${m.photo_id}" alt="photo" onclick="window.open(this.src)">`
-                : '';
+            let mediaHtml = '';
+            if (m.photo_id) {
+                const src = `${window.ARROW_BACKEND_URL}/photos/${m.photo_id}`;
+                if (m.photo_mime_type && m.photo_mime_type.startsWith('video/')) {
+                    mediaHtml = `<video class="msg-video" src="${src}" controls></video>`;
+                } else {
+                    mediaHtml = `<img class="msg-photo" src="${src}" alt="photo" onclick="window.open(this.src)">`;
+                }
+            }
+            const photoHtml = mediaHtml;
             return `<div class="row ${mine ? 'mine' : 'other'}">
                 <div class="bubble ${cls}">
                     <div class="from">${nameFor(m.sender_id)} · ${m.message_type}${m.group_id ? ' / ' + m.group_id : ''}
@@ -208,7 +217,8 @@
         const file = e.target.files[0];
         if (!file) return;
         const wrap = document.getElementById('photo-preview-wrap');
-        wrap.innerHTML = '<div class="photo-uploading">Uploading photo…</div>';
+        const isVideo = file.type.startsWith('video/');
+        wrap.innerHTML = `<div class="photo-uploading">Uploading ${isVideo ? 'video' : 'photo'}…</div>`;
 
         const fd = new FormData();
         fd.append('file', file);
@@ -217,18 +227,23 @@
             headers: { Authorization: `Bearer ${token}` },
             body: fd,
         });
-        if (!res.ok) { wrap.innerHTML = ''; alert('Photo upload failed'); return; }
+        if (!res.ok) { wrap.innerHTML = ''; alert('Upload failed'); return; }
         const data = await res.json();
         pendingPhotoId = data.id;
 
+        const localUrl = URL.createObjectURL(file);
+        const previewEl = isVideo
+            ? `<video src="${localUrl}" muted style="max-height:90px;max-width:160px;border-radius:6px"></video>`
+            : `<img src="${localUrl}" alt="preview" style="max-height:90px;max-width:160px;border-radius:6px;object-fit:cover">`;
         wrap.innerHTML = `<div class="photo-preview">
-            <img src="${window.ARROW_BACKEND_URL}/photos/${data.id}" alt="preview">
+            ${previewEl}
             <button class="rm" id="photo-remove" title="Remove">✕</button>
         </div>`;
         document.getElementById('photo-remove').addEventListener('click', () => {
             pendingPhotoId = null;
             wrap.innerHTML = '';
             e.target.value = '';
+            URL.revokeObjectURL(localUrl);
         });
     });
 

@@ -170,6 +170,7 @@ class MessageOut(ORMModel):
     timestamp: datetime
     message_type: str
     photo_id: int | None
+    photo_mime_type: str | None = None
 
 
 class PositionIn(BaseModel):

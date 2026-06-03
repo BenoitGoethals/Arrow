@@ -337,6 +337,7 @@
                 <button class="overlay-btn" id="goto-toggle" title="Go to location">🔍 Go To</button>
                 <button class="overlay-btn" id="track-toggle" title="Operator track history">📊 Tracks</button>
                 <button class="overlay-btn" id="wx-toggle" title="Weather overlays">🌧 Weather</button>
+                <button class="overlay-btn" id="mgal-btn" title="Media Gallery">📷 Media</button>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
             <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -2090,13 +2091,7 @@
             showFireMissionForm(lat, lon, grid);
         }
         else if (action === 'poi') {
-            const notes = prompt(`POI at ${grid}\nNotes:`, '') ?? '';
-            const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
-                method:'POST', headers:missionHeaders({'Content-Type':'application/json'}),
-                body: JSON.stringify({ type:'POI', symbol_code:'SNGPI-------',
-                    latitude:lat, longitude:lon, notes:`${notes}  MGRS:${grid}` }),
-            });
-            if (r.ok) { const o = await r.json(); state.tacticalObjects.set(o.id,o); refreshEnemies(); }
+            showPoiForm(lat, lon, grid);
         }
         else if (action === 'report') {
             window.location.href = `/reports/?lat=${lat}&lon=${lon}`;
@@ -2213,6 +2208,187 @@
             st.textContent = `✗ Failed (${r.status})`;
             st.style.color = '#ef4444';
         }
+    };
+
+    // ── POI modal ────────────────────────────────────────────────────────────
+    function showPoiForm(lat, lon, grid) {
+        document.getElementById('poi-modal')?.remove();
+        const modal = document.createElement('div');
+        modal.id = 'poi-modal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:900;display:flex;align-items:center;justify-content:center;padding:1rem';
+        modal.innerHTML = `
+        <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;width:420px;max-width:100%;padding:1.25rem">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.8rem">
+                <div>
+                    <div style="font-size:1rem;font-weight:700;color:#d97706">📍 New POI</div>
+                    <div style="font-size:0.72rem;color:#64748b;font-family:monospace">${escHtml(grid)}</div>
+                </div>
+                <button onclick="document.getElementById('poi-modal').remove()"
+                        style="background:none;border:0;color:#64748b;cursor:pointer;font-size:1.2rem">✕</button>
+            </div>
+            <div style="margin-bottom:10px">
+                <label style="font-size:0.72rem;color:#94a3b8">Notes</label>
+                <textarea id="poi-notes" rows="3" placeholder="Description, location notes…"
+                    style="width:100%;background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:5px;
+                           padding:.4rem .6rem;font:inherit;font-size:.85rem;resize:vertical;box-sizing:border-box"></textarea>
+            </div>
+            <div style="margin-bottom:10px">
+                <label style="font-size:0.72rem;color:#94a3b8">Photo / Video (optional)</label>
+                <input id="poi-media" type="file" accept="image/*,video/*"
+                       style="width:100%;color:#cbd5e1;font:inherit;font-size:.78rem">
+                <div id="poi-media-status" style="font-size:0.7rem;color:#64748b;margin-top:3px"></div>
+            </div>
+            <div id="poi-status" style="font-size:0.8rem;min-height:1.2em;margin-bottom:8px"></div>
+            <div style="display:flex;gap:.5rem;justify-content:flex-end">
+                <button onclick="document.getElementById('poi-modal').remove()"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:6px;padding:.45rem 1rem;cursor:pointer;font:inherit;font-size:.85rem">Cancel</button>
+                <button onclick="submitPoi(${lat},${lon},'${escHtml(grid)}')"
+                        style="background:#d97706;color:#fff;border:0;border-radius:6px;padding:.45rem 1.2rem;font:inherit;font-size:.85rem;font-weight:700;cursor:pointer">
+                    📍 PLACE POI
+                </button>
+            </div>
+        </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+        document.getElementById('poi-notes').focus();
+    }
+
+    window.submitPoi = async function(lat, lon, grid) {
+        const notes = document.getElementById('poi-notes').value.trim();
+        const file  = document.getElementById('poi-media').files[0] || null;
+        const st    = document.getElementById('poi-status');
+
+        let photoId = null;
+        if (file) {
+            const mediaStatus = document.getElementById('poi-media-status');
+            mediaStatus.textContent = 'Uploading…';
+            const fd = new FormData();
+            fd.append('file', file);
+            const pr = await fetch(window.ARROW_BACKEND_URL + '/photos', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body: fd,
+            });
+            if (!pr.ok) {
+                st.textContent = `✗ Upload failed (${pr.status})`; st.style.color = '#ef4444';
+                return;
+            }
+            const photo = await pr.json();
+            photoId = photo.id;
+            mediaStatus.textContent = `✓ #${photoId}`;
+        }
+
+        st.textContent = 'Saving…'; st.style.color = '#94a3b8';
+        const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
+            method: 'POST',
+            headers: missionHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+                type: 'POI', symbol_code: 'SNGPI-------',
+                latitude: lat, longitude: lon,
+                notes: notes ? `${notes}  MGRS:${grid}` : `MGRS:${grid}`,
+                photo_id: photoId,
+            }),
+        });
+        if (r.ok) {
+            const o = await r.json();
+            state.tacticalObjects.set(o.id, o);
+            refreshEnemies();
+            document.getElementById('poi-modal').remove();
+        } else {
+            st.textContent = `✗ Failed (${r.status})`; st.style.color = '#ef4444';
+        }
+    };
+
+    // ── Media Gallery overlay ────────────────────────────────────────────────
+    function openMediaGallery() {
+        document.getElementById('media-gallery-overlay')?.remove();
+        const panel = document.createElement('div');
+        panel.id = 'media-gallery-overlay';
+        panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.80);z-index:950;display:flex;align-items:center;justify-content:center;padding:1rem';
+        panel.innerHTML = `
+        <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;
+                    width:960px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+            <div style="padding:.75rem 1.1rem;border-bottom:1px solid #2a3142;display:flex;align-items:center;gap:.75rem;flex-shrink:0">
+                <span style="font-weight:700;color:#6ee7b7;font-size:.95rem">📷 Media Gallery</span>
+                <span id="mgal-count" style="color:#64748b;font-size:.78rem"></span>
+                <button onclick="document.getElementById('media-gallery-overlay').remove()"
+                        style="margin-left:auto;background:none;border:0;color:#64748b;cursor:pointer;font-size:1.1rem">✕</button>
+            </div>
+            <div id="mgal-grid"
+                 style="overflow-y:auto;padding:.75rem;
+                        display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+                        gap:.5rem;flex:1">
+                <div style="color:#64748b;grid-column:1/-1;text-align:center;padding:2rem">Loading…</div>
+            </div>
+        </div>`;
+        document.body.appendChild(panel);
+        panel.addEventListener('click', e => { if (e.target === panel) panel.remove(); });
+        _loadMgal();
+    }
+
+    async function _loadMgal() {
+        const authHdr = { Authorization: `Bearer ${token}` };
+        const r = await fetch(window.ARROW_BACKEND_URL + '/photos', { headers: authHdr });
+        const list = r.ok ? await r.json() : [];
+        const grid = document.getElementById('mgal-grid');
+        const cnt  = document.getElementById('mgal-count');
+        if (!grid) return;
+        if (cnt) cnt.textContent = `${list.length} item${list.length !== 1 ? 's' : ''}`;
+        if (!list.length) {
+            grid.innerHTML = '<div style="color:#64748b;grid-column:1/-1;text-align:center;padding:2rem">No media yet</div>';
+            return;
+        }
+        grid.innerHTML = list.map(p => {
+            const ts = p.timestamp ? new Date(p.timestamp).toLocaleString() : '';
+            const isVid = (p.mime_type || '').startsWith('video/');
+            const thumb = isVid
+                ? `<div data-mgpid="${p.id}" data-mgmime="${escHtml(p.mime_type)}"
+                        style="width:100%;height:110px;background:#0d1117;display:flex;align-items:center;
+                               justify-content:center;font-size:2.4rem;cursor:pointer"
+                        onclick="mgalOpen(${p.id},'${escHtml(p.mime_type || '')}')">▶</div>`
+                : `<img data-mgpid="${p.id}" alt=""
+                       style="width:100%;height:110px;object-fit:cover;display:block;
+                              background:#0d1117;cursor:pointer"
+                       onclick="mgalOpen(${p.id},'${escHtml(p.mime_type || '')}')">`;
+            return `<div style="background:#0e1117;border:1px solid #2a3142;border-radius:6px;overflow:hidden">
+                ${thumb}
+                <div style="padding:.3rem .5rem;font-size:.65rem;color:#64748b;
+                            white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+                     title="${escHtml(p.original_name||p.filename)}">${escHtml(p.original_name||p.filename)}</div>
+                <div style="padding:0 .5rem .35rem;font-size:.62rem;color:#475569">${escHtml(ts)}</div>
+            </div>`;
+        }).join('');
+
+        grid.querySelectorAll('img[data-mgpid]').forEach(async img => {
+            const id = img.dataset.mgpid;
+            try {
+                const r2 = await fetch(window.ARROW_BACKEND_URL + `/photos/${id}`, { headers: authHdr });
+                if (!r2.ok) return;
+                img.src = URL.createObjectURL(await r2.blob());
+            } catch(_) {}
+        });
+    }
+
+    window.mgalOpen = async function(id, mimeType) {
+        const authHdr = { Authorization: `Bearer ${token}` };
+        const r = await fetch(window.ARROW_BACKEND_URL + `/photos/${id}`, { headers: authHdr });
+        if (!r.ok) return;
+        const url = URL.createObjectURL(await r.blob());
+        const isVid = mimeType.startsWith('video/');
+        document.getElementById('mgal-lb')?.remove();
+        const lb = document.createElement('div');
+        lb.id = 'mgal-lb';
+        lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9100;display:flex;align-items:center;justify-content:center';
+        const mediaEl = isVid
+            ? `<video src="${url}" controls autoplay style="max-width:95vw;max-height:90vh;border-radius:4px"></video>`
+            : `<img src="${url}" style="max-width:95vw;max-height:90vh;border-radius:4px" alt="">`;
+        lb.innerHTML = mediaEl +
+            `<button onclick="this.closest('#mgal-lb').remove();URL.revokeObjectURL('${url}')"
+                style="position:absolute;top:1rem;right:1rem;background:#1f2937;color:#cbd5e1;
+                       border:1px solid #475569;border-radius:4px;padding:.4rem .8rem;
+                       cursor:pointer;font:inherit">✕ Close</button>`;
+        document.body.appendChild(lb);
+        lb.addEventListener('click', e => { if (e.target === lb) { lb.remove(); URL.revokeObjectURL(url); } });
     };
 
     // ── MIL-STD-2525C / APP-6 symbol picker ─────────────────────────────────
@@ -2420,6 +2596,15 @@
                                           padding:.4rem .6rem;font:inherit;font-size:.83rem;
                                           box-sizing:border-box">
                         </div>
+                        <div style="margin-bottom:.5rem">
+                            <label style="font-size:.65rem;color:#475569;text-transform:uppercase;
+                                          letter-spacing:.1em;display:block;margin-bottom:3px">
+                                Photo / Video (optional)
+                            </label>
+                            <input id="sp-media" type="file" accept="image/*,video/*"
+                                   style="width:100%;color:#94a3b8;font:inherit;font-size:.75rem">
+                            <div id="sp-media-status" style="font-size:.65rem;color:#64748b;margin-top:2px"></div>
+                        </div>
                         <div id="sp-error" style="font-size:.75rem;color:#ef4444;min-height:1em;margin-bottom:.4rem"></div>
                         <div style="display:flex;gap:.5rem;justify-content:flex-end">
                             <button id="sp-cancel-btn"
@@ -2468,6 +2653,28 @@
                 ? `${desig}${echLabel}  MGRS:${_sp.grid}`
                 : `${_sp.sym.label}${echLabel}  MGRS:${_sp.grid}`;
 
+            // Upload media if attached
+            let photoId = null;
+            const mediaFile = document.getElementById('sp-media')?.files[0] || null;
+            if (mediaFile) {
+                if (errEl) errEl.textContent = 'Uploading media…';
+                const fd = new FormData();
+                fd.append('file', mediaFile);
+                const pr = await fetch(window.ARROW_BACKEND_URL + '/photos', {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}` },
+                    body: fd,
+                });
+                if (!pr.ok) {
+                    if (errEl) errEl.textContent = `✗ Upload failed (${pr.status})`;
+                    return;
+                }
+                const photoData = await pr.json();
+                photoId = photoData.id;
+                const st = document.getElementById('sp-media-status');
+                if (st) st.textContent = `✓ media #${photoId}`;
+            }
+
             if (errEl) errEl.textContent = 'Placing…';
 
             const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
@@ -2480,6 +2687,7 @@
                     longitude:   _sp.lon,
                     notes,
                     affiliation: affLabel,
+                    photo_id:    photoId,
                 }),
             });
 
@@ -4282,6 +4490,8 @@
         // Auto-refresh frames every 10 minutes
         setInterval(loadFrames, 10 * 60 * 1000);
     })();
+
+    document.getElementById('mgal-btn').addEventListener('click', openMediaGallery);
 
 })();
 </script>
