@@ -246,10 +246,71 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 .fd-btn.primary{background:#1f6feb;border-color:#388bfd;color:#fff;}
 .fd-btn:hover{background:#30363d;color:#c9d1d9;}
 .fd-btn.primary:hover{background:#388bfd;}
+
+/* ================================================================
+   NORTH WIDGET + GPS HUD (top-left overlay)
+   ================================================================ */
+#north-widget{
+  position:absolute;top:10px;left:10px;z-index:1000;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  pointer-events:none;
+}
+#north-rose{width:52px;height:52px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.7));}
+#own-gps-hud{
+  background:rgba(13,17,23,.88);border:1px solid #30363d;border-radius:2px;
+  padding:5px 8px;font-family:'Courier New',monospace;font-size:9px;
+  color:#6e7681;text-align:center;min-width:130px;line-height:1.6;
+}
+#own-gps-hud.has-fix{border-color:#3fb950;}
+#own-gps-label{font-size:8px;font-weight:700;letter-spacing:1.5px;color:#484f58;text-transform:uppercase;}
+#own-gps-acc{color:#3fb950;font-weight:700;}
+#own-gps-mgrs{color:#e6edf3;font-weight:700;letter-spacing:0.5px;font-size:10px;}
+#own-gps-ll{color:#484f58;font-size:8px;}
+
+/* Pulsing GPS dot (own position marker) */
+.my-pos-wrap{position:relative;width:20px;height:20px;}
+.my-pos-ring{
+  position:absolute;top:50%;left:50%;
+  width:20px;height:20px;margin:-10px 0 0 -10px;
+  border-radius:50%;background:rgba(56,139,253,.28);
+  animation:gps-pulse 2s ease-out infinite;
+}
+.my-pos-dot{
+  position:absolute;top:50%;left:50%;
+  width:10px;height:10px;margin:-5px 0 0 -5px;
+  border-radius:50%;background:#388bfd;
+  border:2px solid #fff;box-shadow:0 0 6px rgba(56,139,253,.9);
+}
+@keyframes gps-pulse{
+  0%  {transform:scale(0.5);opacity:1;}
+  100%{transform:scale(2.8);opacity:0;}
+}
 </style>
 </head>
 <body>
 <div id="map"></div>
+
+<!-- North arrow + GPS HUD (top-left) -->
+<div id="north-widget">
+  <svg id="north-rose" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="26" cy="26" r="25" fill="rgba(13,17,23,.88)" stroke="#30363d" stroke-width="1.5"/>
+    <text x="26" y="8" text-anchor="middle" dominant-baseline="middle"
+          font-family="Courier New,monospace" font-size="10" font-weight="700"
+          fill="#e6edf3" letter-spacing="0.5">N</text>
+    <!-- North pointer (red) -->
+    <polygon points="26,13 30.5,27 26,24 21.5,27" fill="#f85149"/>
+    <!-- South pointer (dim) -->
+    <polygon points="26,39 30.5,25 26,28 21.5,25" fill="#484f58"/>
+    <!-- Center -->
+    <circle cx="26" cy="26" r="3" fill="#0d1117" stroke="#6e7681" stroke-width="1"/>
+  </svg>
+  <div id="own-gps-hud">
+    <div id="own-gps-label">OWN POS GPS</div>
+    <div id="own-gps-mgrs">—</div>
+    <div id="own-gps-ll">—</div>
+    <div id="own-gps-acc"></div>
+  </div>
+</div>
 
 <!-- Radial menu (circular) -->
 <div id="radial-backdrop"></div>
@@ -1954,6 +2015,183 @@ document.getElementById('fd-text-input').addEventListener('keydown', function(e)
 });
 
 // ================================================================
+// OWN GPS POSITION
+// ================================================================
+let _myPosMarker      = null;
+let _myPosAccCircle   = null;
+let _gpsWatchId       = null;
+let _gpsWifiWatchId   = null;   // fallback WiFi watcher
+let _gpsCenterOnFix   = true;
+let _gpsShowAccuracy  = true;
+let _gpsFirstFix      = true;
+let _gpsUsingWifi     = false;  // true when running on WiFi fallback
+let _gpsMaxAgeMs      = 4000;
+let _gpsEnabled       = true;
+let _gpsHighAccuracy  = true;
+
+// Called by Python after map ready (and after settings change)
+function setGPSConfig(enabled, highAccuracy, maxAgeMs, centerOnFix, showAccuracy) {
+  _gpsCenterOnFix  = centerOnFix;
+  _gpsShowAccuracy = showAccuracy;
+  _gpsMaxAgeMs     = maxAgeMs || 4000;
+  _gpsEnabled      = enabled;
+  _gpsHighAccuracy = highAccuracy;
+
+  _gpsStopAll();
+
+  if (!enabled) {
+    if (_myPosMarker)    { map.removeLayer(_myPosMarker);    _myPosMarker    = null; }
+    if (_myPosAccCircle) { map.removeLayer(_myPosAccCircle); _myPosAccCircle = null; }
+    document.getElementById('own-gps-hud').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('own-gps-hud').style.display = '';
+  _gpsFirstFix  = true;
+  _gpsUsingWifi = false;
+  _gpsStartPrimary();
+}
+
+function _gpsStopAll() {
+  if (_gpsWatchId !== null)     { navigator.geolocation.clearWatch(_gpsWatchId);     _gpsWatchId     = null; }
+  if (_gpsWifiWatchId !== null) { navigator.geolocation.clearWatch(_gpsWifiWatchId); _gpsWifiWatchId = null; }
+}
+
+// Try GPS (high-accuracy) first
+function _gpsStartPrimary() {
+  if (!navigator.geolocation) {
+    document.getElementById('own-gps-mgrs').textContent = 'N/A';
+    return;
+  }
+  _gpsSetLabel('SEARCHING…', '#d29922');
+  _gpsWatchId = navigator.geolocation.watchPosition(
+    _onGPSSuccess,
+    _onGPSPrimaryError,
+    { enableHighAccuracy: !!_gpsHighAccuracy, maximumAge: _gpsMaxAgeMs, timeout: 12000 }
+  );
+}
+
+// GPS failed → fall back to WiFi / network positioning
+function _gpsStartWifiFallback() {
+  if (_gpsWifiWatchId !== null) return;   // already running
+  _gpsSetLabel('NO GPS — WIFI…', '#d29922');
+  _gpsWifiWatchId = navigator.geolocation.watchPosition(
+    _onGPSSuccess,
+    _onGPSFinalError,
+    { enableHighAccuracy: false, maximumAge: 15000, timeout: 30000 }
+  );
+}
+
+// Default startup (before Python pushes config)
+function initGPS() {
+  setGPSConfig(true, true, 4000, true, true);
+}
+
+function _onGPSSuccess(pos) {
+  const lat  = pos.coords.latitude;
+  const lon  = pos.coords.longitude;
+  const acc  = Math.round(pos.coords.accuracy);
+  const mgrs = latLonToMGRS(lat, lon);
+
+  // If WiFi fallback fired but GPS watcher is still open, keep both running —
+  // GPS watcher will win once it gets a fix (higher accuracy shows in HUD).
+  const viaWifi = (pos.coords.accuracy > 200);   // rough heuristic
+  _gpsUsingWifi = viaWifi;
+
+  // Center map on first fix
+  if (_gpsCenterOnFix && _gpsFirstFix) {
+    map.setView([lat, lon], Math.max(map.getZoom(), 14));
+    _gpsFirstFix = false;
+  }
+
+  // Source badge
+  const src   = viaWifi ? 'WIFI' : 'GPS';
+  const color = viaWifi ? '#d29922' : '#3fb950';
+
+  // Update HUD
+  document.getElementById('own-gps-hud').classList.add('has-fix');
+  document.getElementById('own-gps-label').textContent = 'OWN POS · ' + src;
+  document.getElementById('own-gps-label').style.color = color;
+  document.getElementById('own-gps-mgrs').textContent  = mgrs;
+  document.getElementById('own-gps-ll').textContent    = lat.toFixed(5) + ', ' + lon.toFixed(5);
+  document.getElementById('own-gps-acc').textContent   = '±' + acc + ' m';
+  document.getElementById('own-gps-acc').style.color   = color;
+
+  // Pulsing dot marker
+  const ll        = [lat, lon];
+  const dotColor  = viaWifi ? '#d29922' : '#388bfd';
+  const ringColor = viaWifi ? 'rgba(210,153,34,.28)' : 'rgba(56,139,253,.28)';
+
+  if (!_myPosMarker) {
+    const icon = L.divIcon({
+      className: '',
+      html: '<div class="my-pos-wrap"><div class="my-pos-ring"></div><div class="my-pos-dot"></div></div>',
+      iconSize: [20, 20], iconAnchor: [10, 10], popupAnchor: [0, -12],
+    });
+    _myPosMarker = L.marker(ll, {icon, zIndexOffset: 2000, interactive: true})
+      .bindPopup('', {maxWidth: 220})
+      .addTo(map);
+    _myPosAccCircle = L.circle(ll, {
+      radius: acc, color: dotColor, weight: 1,
+      opacity: _gpsShowAccuracy ? 0.5 : 0,
+      fillColor: dotColor, fillOpacity: _gpsShowAccuracy ? 0.06 : 0,
+      interactive: false,
+    }).addTo(map);
+  } else {
+    _myPosMarker.setLatLng(ll);
+    _myPosAccCircle.setLatLng(ll).setRadius(acc).setStyle({
+      color: dotColor, fillColor: dotColor,
+      opacity:     _gpsShowAccuracy ? 0.5  : 0,
+      fillOpacity: _gpsShowAccuracy ? 0.06 : 0,
+    });
+  }
+
+  // Recolour pulsing dot via CSS variable trick (inject style)
+  const wrap = _myPosMarker.getElement();
+  if (wrap) {
+    const dot  = wrap.querySelector('.my-pos-dot');
+    const ring = wrap.querySelector('.my-pos-ring');
+    if (dot)  { dot.style.background  = dotColor;  dot.style.boxShadow = `0 0 6px ${dotColor}cc`; }
+    if (ring) { ring.style.background = ringColor; }
+  }
+
+  _myPosMarker.setPopupContent(
+    '<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px">' +
+    '<div style="font-weight:bold;color:' + dotColor + ';border-bottom:1px solid #30363d;' +
+    'padding-bottom:4px;margin-bottom:5px">OWN POSITION · ' + src + '</div>' +
+    '<div>MGRS ' + mgrs + '</div>' +
+    '<div style="color:#6e7681;font-size:9px">' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</div>' +
+    '<div style="color:' + color + ';margin-top:3px">ACC ±' + acc + ' m</div></div>'
+  );
+}
+
+// Primary (GPS) error → start WiFi fallback, keep GPS watcher alive for recovery
+function _onGPSPrimaryError(err) {
+  if (err.code === 1) {
+    // PERMISSION_DENIED — no point retrying
+    _gpsSetLabel('DENIED', '#f85149');
+    document.getElementById('own-gps-acc').textContent = '';
+    return;
+  }
+  // POSITION_UNAVAILABLE (2) or TIMEOUT (3) → try WiFi
+  _gpsStartWifiFallback();
+}
+
+// WiFi fallback also failed
+function _onGPSFinalError(err) {
+  const msgs = {1: 'DENIED', 2: 'NO SIGNAL', 3: 'TIMEOUT'};
+  _gpsSetLabel(msgs[err.code] || 'ERR', '#f85149');
+  document.getElementById('own-gps-acc').textContent = '';
+  document.getElementById('own-gps-hud').classList.remove('has-fix');
+}
+
+function _gpsSetLabel(text, color) {
+  const el = document.getElementById('own-gps-label');
+  el.textContent = text;
+  el.style.color = color || '#484f58';
+}
+
+// ================================================================
 // BRIDGE
 // ================================================================
 function initBridge(){
@@ -1962,7 +2200,10 @@ function initBridge(){
     bridge=channel.objects.bridge;bridge.onReady();console.log('[ArrowFront] Bridge ready');
   });
 }
-document.addEventListener('DOMContentLoaded',initBridge);
+document.addEventListener('DOMContentLoaded', function() {
+  initBridge();
+  initGPS();
+});
 </script>
 </body>
 </html>

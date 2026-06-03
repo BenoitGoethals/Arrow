@@ -4,6 +4,16 @@ import os
 
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox")
 
+# macOS: Homebrew opus lives outside the default dyld search path.
+# Must be set before any import that pulls in opuslib (pymumble dependency).
+if sys.platform == "darwin":
+    for _brew_lib in ("/opt/homebrew/lib", "/usr/local/lib"):
+        if os.path.isdir(_brew_lib):
+            os.environ["DYLD_LIBRARY_PATH"] = (
+                _brew_lib + os.pathsep + os.environ.get("DYLD_LIBRARY_PATH", "")
+            )
+            break
+
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QSettings
