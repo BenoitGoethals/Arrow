@@ -18,17 +18,15 @@ log = logging.getLogger(__name__)
 
 CONFIG_PATH = Path("data/mumble_config.json")
 
-# ── macOS: Homebrew opus path ─────────────────────────────────────────────────
-if sys.platform == "darwin":
-    for _p in ("/opt/homebrew/lib", "/usr/local/lib"):
-        if os.path.isdir(_p):
-            os.environ["DYLD_LIBRARY_PATH"] = (
-                _p + os.pathsep + os.environ.get("DYLD_LIBRARY_PATH", "")
-            )
-            break
+import backend.mumble.opus_fix  # noqa: F401 — patches ctypes before opuslib loads
 
 try:
     import pymumble_py3 as pymumble
+    from pymumble_py3.callbacks import (
+        PYMUMBLE_CLBK_CONNECTED,
+        PYMUMBLE_CLBK_DISCONNECTED,
+        PYMUMBLE_CLBK_SOUNDRECEIVED,
+    )
     _AVAILABLE = True
 except Exception as _e:
     _AVAILABLE = False
