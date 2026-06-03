@@ -154,55 +154,77 @@ SSLCONF
 
 # ── TLS / Caddyfile selection ────────────────────────────────────────────────
 # ARROW_TLS:  off (default) | internal (self-signed) | acme (Let's Encrypt)
+#
+# The chosen Caddyfile is written to Caddyfile.active so that docker compose
+# always uses the right config even after restarts or manual `docker compose up`.
 setup_tls() {
     local mode="${ARROW_TLS:-off}"
+    local port="${ARROW_HTTP_PORT:-6200}"
+    local host_ip
+    host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || host_ip="localhost"
+    local pub_ip="${SERVER_IP:-$host_ip}"
 
     case "$mode" in
         internal)
-            export ARROW_CADDYFILE="./Caddyfile.https"
-            export ARROW_DOMAIN="${ARROW_DOMAIN:-:6200}"
-
-            local port="${ARROW_HTTP_PORT:-6200}"
-            local host_ip
-            host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || host_ip="localhost"
-            local pub_ip="${SERVER_IP:-$host_ip}"
-
             # Generate self-signed cert covering ALL server IPs
             _generate_cert "${pub_ip}"
 
+            # Write active Caddyfile
+            cp Caddyfile.https Caddyfile.active
+
             local origins="https://${pub_ip}:${port},http://localhost:${port}"
+            export ARROW_DOMAIN="${ARROW_DOMAIN:-:${port}}"
             export ARROW_ALLOWED_ORIGINS="${ARROW_ALLOWED_ORIGINS:-$origins}"
 
-            echo "==> TLS mode  : self-signed (openssl)"
+            # Persist to .env so docker compose up (without deploy.sh) works too
+            _write_env "ARROW_TLS=internal" \
+                       "ARROW_DOMAIN=${ARROW_DOMAIN}" \
+                       "ARROW_ALLOWED_ORIGINS=${ARROW_ALLOWED_ORIGINS}"
+
+            echo "==> TLS mode  : HTTPS self-signed (openssl)"
+            echo "==> Caddyfile : Caddyfile.active → Caddyfile.https"
             echo "==> Listening : https://${pub_ip}:${port}"
             echo ""
             echo "    ┌───────────────────────────────────────────────────────────┐"
-            echo "    │  BROWSER SETUP (one-time per browser / per IP):           │"
+            echo "    │  BROWSER — one-time setup per browser / per IP:           │"
             echo "    │  1. Open  https://${pub_ip}:${port}                     "
             echo "    │  2. Click 'Advanced → Proceed to ${pub_ip} (unsafe)'     │"
-            echo "    │  3. Done — mic / PTT voice now works                      │"
+            echo "    │  3. Done — mic / PTT voice works                          │"
             echo "    └───────────────────────────────────────────────────────────┘"
             ;;
 
         acme)
-            # Let's Encrypt — requires a real domain and ports 80+443
-            export ARROW_CADDYFILE="./Caddyfile"
-            export ARROW_DOMAIN="${ARROW_DOMAIN:?ARROW_DOMAIN must be set (e.g. my.domain.com) for acme mode}"
-            echo "==> TLS mode  : acme (Let's Encrypt)"
+            cp Caddyfile Caddyfile.active
+            export ARROW_DOMAIN="${ARROW_DOMAIN:?ARROW_DOMAIN must be set for acme mode}"
+            _write_env "ARROW_TLS=acme" "ARROW_DOMAIN=${ARROW_DOMAIN}"
+            echo "==> TLS mode  : HTTPS Let's Encrypt"
             echo "==> Domain    : ${ARROW_DOMAIN}"
             ;;
 
         off|*)
-            export ARROW_CADDYFILE="./Caddyfile"
-            export ARROW_DOMAIN="${ARROW_DOMAIN:-:6200}"
-            local http_port="${ARROW_HTTP_PORT:-6200}"
-            local host_ip
-            host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || host_ip="localhost"
-            export ARROW_ALLOWED_ORIGINS="${ARROW_ALLOWED_ORIGINS:-http://localhost:${http_port}}"
-            echo "==> TLS mode  : off (plain HTTP)"
-            echo "==> Listening : http://${host_ip}:${http_port}"
+            cp Caddyfile Caddyfile.active
+            export ARROW_DOMAIN="${ARROW_DOMAIN:-:${port}}"
+            export ARROW_ALLOWED_ORIGINS="${ARROW_ALLOWED_ORIGINS:-http://localhost:${port}}"
+            _write_env "ARROW_TLS=off" \
+                       "ARROW_DOMAIN=${ARROW_DOMAIN}" \
+                       "ARROW_ALLOWED_ORIGINS=${ARROW_ALLOWED_ORIGINS}"
+            echo "==> TLS mode  : HTTP (plain)"
+            echo "==> Caddyfile : Caddyfile.active → Caddyfile (HTTP)"
+            echo "==> Listening : http://${pub_ip}:${port}"
             ;;
     esac
+}
+
+# Write key=value pairs into .env, updating existing keys or appending new ones.
+_write_env() {
+    touch .env
+    for pair in "$@"; do
+        local key="${pair%%=*}"
+        # Remove old entry for this key then append updated one
+        sed -i.bak "/^${key}=/d" .env 2>/dev/null || sed -i '' "/^${key}=/d" .env 2>/dev/null || true
+        echo "${pair}" >> .env
+    done
+    rm -f .env.bak
 }
 
 # ── Wait for backend health ───────────────────────────────────────────────────
