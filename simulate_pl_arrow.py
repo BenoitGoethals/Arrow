@@ -26,7 +26,7 @@ does not silently discard position updates.
 
 Usage
   uv run python simulate_pl_arrow.py
-  uv run python simulate_pl_arrow.py --backend http://78.21.255.210:6001
+  uv run python simulate_pl_arrow.py --backend https://78.21.255.210:6001
   uv run python simulate_pl_arrow.py --speed 20   # recommended: 20x faster
   uv run python simulate_pl_arrow.py --reset       # wipe sim ops first
   uv run python simulate_pl_arrow.py --no-move     # plan-only, no GPS sim
@@ -978,7 +978,7 @@ async def main() -> None:
              DRONE_S     / ARGS.speed,
              TIC_CHECK_S / ARGS.speed)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         admin_token = await bootstrap(client, all_ops, sections)
 
         mid_lat = (WAYPOINTS[0][0] + WAYPOINTS[3][0]) / 2

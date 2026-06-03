@@ -1,8 +1,17 @@
 """WebSocket listener — all broadcast channels handled."""
 import asyncio
 import json
+import logging
+import ssl
 import websockets
 from PyQt6.QtCore import QThread, pyqtSignal
+
+log = logging.getLogger(__name__)
+
+# Accept self-signed certs (production uses a self-signed cert)
+_SSL_CTX = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode    = ssl.CERT_NONE
 
 
 class WSListener(QThread):
@@ -48,7 +57,11 @@ class WSListener(QThread):
         backoff = 2
         while not self._stop:
             try:
-                async with websockets.connect(self._url, ping_interval=20) as ws:
+                ssl_ctx = _SSL_CTX if self._url.startswith("wss://") else None
+                url_log = self._url.split("?")[0]
+                log.info("WS connecting → %s", url_log)
+                async with websockets.connect(self._url, ping_interval=20, ssl=ssl_ctx) as ws:
+                    log.info("WS connected")
                     self.connection_changed.emit(True)
                     backoff = 2
                     async for raw in ws:
@@ -56,11 +69,13 @@ class WSListener(QThread):
                             break
                         try:
                             self._dispatch(json.loads(raw))
-                        except Exception:
-                            pass
-            except Exception:
+                        except Exception as exc:
+                            log.warning("WS dispatch error: %s", exc)
+            except Exception as exc:
+                log.warning("WS disconnected: %s", exc)
                 self.connection_changed.emit(False)
                 if not self._stop:
+                    log.info("WS retry in %ds", backoff)
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, 30)
 

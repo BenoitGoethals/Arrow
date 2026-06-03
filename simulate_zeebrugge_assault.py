@@ -64,7 +64,7 @@ import sim_utils
 DEFAULT_BACKEND = (
     os.environ.get("ARROW_BACKEND_URL")
     or sim_utils.load_saved_backend()
-    or "http://78.21.255.210:6200/api"
+    or "https://78.21.255.210:6200/api"
 )
 
 parser = argparse.ArgumentParser(description="Arrow — OPERATION STEEL TIDE (Zeebrugge)")
@@ -805,7 +805,7 @@ async def live_movement(token: str, op_ids: list[int]) -> None:
     headers = {"Authorization": f"Bearer {token}",
                "X-Mission-ID": str(MID)}
 
-    async with httpx.AsyncClient(timeout=8) as client:
+    async with httpx.AsyncClient(timeout=8, verify=False) as client:
         # Initial positions — all Rangers on FOB
         positions = {oid: FOB_LAUNCH for oid in op_ids}
 

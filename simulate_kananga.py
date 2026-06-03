@@ -29,7 +29,7 @@ Coordinates (real)
 
 Run:
   uv run python simulate_kananga.py
-  uv run python simulate_kananga.py --backend http://78.21.255.210:6001
+  uv run python simulate_kananga.py --backend https://78.21.255.210:6001
   uv run python simulate_kananga.py --speed 30      # 30× real time
   uv run python simulate_kananga.py --no-move        # static plant only
   uv run python simulate_kananga.py --reset          # wipe all existing TGs / OPORDs
@@ -57,7 +57,7 @@ import sim_utils
 DEFAULT_BACKEND = (
     os.environ.get("ARROW_BACKEND_URL")
     or sim_utils.load_saved_backend()
-    or "http://78.21.255.210:6200/api"
+    or "https://78.21.255.210:6200/api"
 )
 
 parser = argparse.ArgumentParser(description="Arrow regiment simulator — OPERATION IRON SKY (Kananga)")
@@ -1169,7 +1169,7 @@ async def amain() -> None:
     log.info("OPERATION IRON SKY — Kananga (DRC) airborne simulator")
     log.info("Backend: %s  (path prefix: %r)", BASE, PATH_PREFIX or "<none>")
 
-    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0) as client:
+    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0, verify=False) as client:
         # Health check
         try:
             h = await client.get(_p("/health"), timeout=5)

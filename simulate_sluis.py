@@ -21,7 +21,7 @@ Unit structure (same as Dendermonde scenario)
 
 Usage
   uv run python simulate_sluis.py
-  uv run python simulate_sluis.py --backend http://78.21.255.210:6001
+  uv run python simulate_sluis.py --backend https://78.21.255.210:6001
   uv run python simulate_sluis.py --backend http://localhost:6001 --speed 4
   uv run python simulate_sluis.py --reset
   uv run python simulate_sluis.py --no-move    # plan-only, no GPS sim
@@ -49,7 +49,7 @@ parser = argparse.ArgumentParser(description="Arrow Sluis-attack scenario simula
 parser.add_argument("--backend",
                     default=(os.environ.get("ARROW_BACKEND_URL")
                              or sim_utils.load_saved_backend()
-                             or "http://78.21.255.210:6200/api"),
+                             or "https://78.21.255.210:6200/api"),
                     help="Backend URL (e.g. http://host:6200/api or http://localhost:6001)")
 parser.add_argument("--speed", type=float, default=None,
                     help="Time multiplier (1 = real time, 6 = 6× faster)")
@@ -857,7 +857,7 @@ async def main() -> None:
              ENEMY_S / speed_mult, FM_S / speed_mult,
              CAS_S / speed_mult, MEDEVAC_S / speed_mult, CBRN_S / speed_mult)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         if ARGS.reset:
             await reset_sim(client, all_ops)
         admin_token = await bootstrap(client, all_ops, sections)

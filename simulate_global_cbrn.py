@@ -21,7 +21,7 @@ is remembered in `~/.config/arrow/simulator.json` for subsequent runs.
 
 Run:
   uv run python simulate_global_cbrn.py
-  uv run python simulate_global_cbrn.py --backend http://78.21.255.210:6001
+  uv run python simulate_global_cbrn.py --backend https://78.21.255.210:6001
   uv run python simulate_global_cbrn.py --reset
   uv run python simulate_global_cbrn.py --no-move
   uv run python simulate_global_cbrn.py --steps 60 --dt 1.5
@@ -265,7 +265,7 @@ def main() -> None:
         description="Operation REGNUM IGNIS — global CBRN exchange simulator (NATO / RU / CN)")
     parser.add_argument("--backend", default=default_backend,
                         help=f"Backend base URL (defaults to last-used: {default_backend}). "
-                             "Supports a path prefix, e.g. http://78.21.255.210:6200/api")
+                             "Supports a path prefix, e.g. https://78.21.255.210:6200/api")
     parser.add_argument("--admin",    default="benoit",   help="ADMIN callsign")
     parser.add_argument("--password", default="ranger14", help="ADMIN password")
     parser.add_argument("--seed",     type=int, default=None,
@@ -292,7 +292,7 @@ def main() -> None:
     log.info("OPERATION REGNUM IGNIS — global CBRN exchange (NATO / RU / CN)")
     log.info("backend=%s admin=%s", args.backend, args.admin)
 
-    with httpx.Client(base_url=origin, timeout=20.0) as client:
+    with httpx.Client(base_url=origin, timeout=20.0, verify=False) as client:
         token = login(client, args.admin, args.password)
         sim_utils.save_backend(args.backend)
         MISSION_ID = sim_utils.create_mission_sync(

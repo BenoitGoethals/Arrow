@@ -118,8 +118,9 @@ server {
         proxy_read_timeout 120s;
     }
 
-    # WebSocket endpoints
-    location ~ ^/(ws|mumble/voice) {
+    # WebSocket endpoints (with or without /api prefix)
+    location ~ ^/(api/)?(ws|mumble/voice) {
+        rewrite ^/api/(.*)$ /\$1 break;
         proxy_pass         http://backend:6001;
         proxy_http_version 1.1;
         proxy_set_header   Upgrade    \$http_upgrade;
@@ -143,21 +144,25 @@ EOF
 write_nginx_https() {
     local port="$1"
     cat > nginx.conf << EOF
+# ── Shared TLS settings ────────────────────────────────────────────────────
+ssl_certificate     /etc/nginx/ssl/web-cert.pem;
+ssl_certificate_key /etc/nginx/ssl/web-key.pem;
+ssl_protocols       TLSv1.2 TLSv1.3;
+ssl_ciphers         HIGH:!aNULL:!MD5;
+ssl_session_cache   shared:SSL:10m;
+ssl_session_timeout 10m;
+
+# ── Port ${port} — web dashboard (browser) ─────────────────────────────────
 server {
     listen ${port} ssl;
     server_name _;
-
-    ssl_certificate     /etc/nginx/ssl/web-cert.pem;
-    ssl_certificate_key /etc/nginx/ssl/web-key.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
 
     add_header X-Content-Type-Options  nosniff;
     add_header X-Frame-Options         SAMEORIGIN;
     add_header Permissions-Policy      "microphone=*, geolocation=*";
     add_header Strict-Transport-Security "max-age=63072000";
 
-    # Backend REST
+    # Backend REST (browser uses /api prefix)
     location /api/ {
         proxy_pass         http://backend:6001/;
         proxy_set_header   Host              \$host;
@@ -166,7 +171,39 @@ server {
         proxy_read_timeout 120s;
     }
 
-    # WebSocket endpoints
+    # WebSocket — matches /ws, /api/ws, /mumble/voice, /api/mumble/voice
+    # rewrite strips the /api prefix so backend always sees /ws or /mumble/voice
+    location ~ ^/(api/)?(ws|mumble/voice) {
+        rewrite ^/api/(.*)$ /\$1 break;
+        proxy_pass         http://backend:6001;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    \$http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       \$host;
+        proxy_read_timeout 86400s;
+    }
+
+    # Web dashboard (Flask)
+    location / {
+        proxy_pass         http://web:6002;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-Proto https;
+        proxy_read_timeout 120s;
+    }
+}
+
+# ── Port 6001 — FastAPI direct (Arrow Front desktop app) ───────────────────
+# Arrow Front calls /auth/login, /missions, /ws etc. without /api prefix.
+# This block exposes FastAPI directly over HTTPS so the desktop app can use
+# https://SERVER:6001 as its server URL.
+server {
+    listen 6001 ssl;
+    server_name _;
+
+    add_header X-Content-Type-Options nosniff;
+
+    # WebSocket
     location ~ ^/(ws|mumble/voice) {
         proxy_pass         http://backend:6001;
         proxy_http_version 1.1;
@@ -176,17 +213,16 @@ server {
         proxy_read_timeout 86400s;
     }
 
-    # Web dashboard
+    # All other FastAPI routes
     location / {
-        proxy_pass         http://web:6002;
-        proxy_set_header   Host              \$host;
-        proxy_set_header   X-Real-IP         \$remote_addr;
-        proxy_set_header   X-Forwarded-Proto https;
+        proxy_pass         http://backend:6001;
+        proxy_set_header   Host      \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
         proxy_read_timeout 120s;
     }
 }
 EOF
-    echo "==> nginx.conf written (HTTPS port $port)"
+    echo "==> nginx.conf written (HTTPS — web :${port}, API :6001)"
 }
 
 # ── Container cleanup ─────────────────────────────────────────────────────────

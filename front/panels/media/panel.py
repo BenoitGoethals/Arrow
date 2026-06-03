@@ -48,7 +48,8 @@ class _ThumbThread(QThread):
                 self._url,
                 headers={"Authorization": f"Bearer {self._token}"},
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            from front.utils.ssl_utils import NO_VERIFY_CTX
+            with urllib.request.urlopen(req, timeout=10, context=NO_VERIFY_CTX) as resp:
                 data = resp.read()
             self.loaded.emit(self._photo_id, data)
         except Exception:

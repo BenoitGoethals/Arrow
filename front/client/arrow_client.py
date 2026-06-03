@@ -1,6 +1,13 @@
 """Synchronous Arrow REST client."""
+import logging
+import time
 from typing import Optional
 import httpx
+
+log = logging.getLogger(__name__)
+
+# Self-signed certs are used in production — disable verification globally.
+_VERIFY = False
 
 
 class ArrowClient:
@@ -12,24 +19,34 @@ class ArrowClient:
         return {"Authorization": f"Bearer {self._token}"} if self._token else {}
 
     def _get(self, path: str, **params) -> list | dict:
-        r = httpx.get(f"{self.base_url}{path}", headers=self._headers(), params=params, timeout=10.0)
+        t0 = time.monotonic()
+        r = httpx.get(f"{self.base_url}{path}", headers=self._headers(),
+                      params=params, timeout=10.0, verify=_VERIFY)
+        ms = int((time.monotonic() - t0) * 1000)
+        log.debug("GET %s → %d  (%d ms)", path, r.status_code, ms)
         r.raise_for_status()
         return r.json()
 
     def _post(self, path: str, body: dict = None, data: dict = None) -> dict:
-        kw = dict(headers=self._headers(), timeout=8.0)
+        t0 = time.monotonic()
+        kw = dict(headers=self._headers(), timeout=8.0, verify=_VERIFY)
         if data:
             kw["data"] = data
         else:
             kw["json"] = body or {}
         r = httpx.post(f"{self.base_url}{path}", **kw)
+        ms = int((time.monotonic() - t0) * 1000)
+        log.debug("POST %s → %d  (%d ms)", path, r.status_code, ms)
         r.raise_for_status()
         return r.json()
 
     # ---- Auth -------------------------------------------------------
     def login(self, callsign: str, password: str) -> dict:
+        log.info("Login: callsign=%s  server=%s", callsign, self.base_url)
         r = httpx.post(f"{self.base_url}/auth/login",
-                       data={"username": callsign, "password": password}, timeout=8.0)
+                       data={"username": callsign, "password": password},
+                       timeout=8.0, verify=_VERIFY)
+        log.info("Login response: %d", r.status_code)
         r.raise_for_status()
         data = r.json()
         self._token = data["access_token"]
@@ -122,6 +139,7 @@ class ArrowClient:
             headers=self._headers(),
             files=files,
             timeout=60.0,
+            verify=_VERIFY,
         )
         r.raise_for_status()
         return r.json()["id"]
@@ -170,7 +188,7 @@ class ArrowClient:
     def delete_mission(self, mission_id: int) -> None:
         r = httpx.delete(
             f"{self.base_url}/missions/{mission_id}",
-            headers=self._headers(), timeout=8.0,
+            headers=self._headers(), timeout=8.0, verify=_VERIFY,
         )
         r.raise_for_status()
 
@@ -223,7 +241,7 @@ class ArrowClient:
     def delete_opord_snapshot(self, opord_id: int, snap_id: int) -> dict:
         r = httpx.delete(
             f"{self.base_url}/opord/{opord_id}/snapshots/{snap_id}",
-            headers=self._headers(), timeout=8.0,
+            headers=self._headers(), timeout=8.0, verify=_VERIFY,
         )
         r.raise_for_status()
         return r.json()
@@ -238,10 +256,9 @@ class ArrowClient:
         return self._post("/opord", data)
 
     def update_opord(self, opord_id: int, data: dict) -> dict:
-        import httpx
         r = httpx.put(
             f"{self.base_url}/opord/{opord_id}",
-            json=data, headers=self._headers(), timeout=10.0,
+            json=data, headers=self._headers(), timeout=10.0, verify=_VERIFY,
         )
         r.raise_for_status()
         return r.json()

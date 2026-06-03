@@ -307,7 +307,7 @@ class ConfigDialog(QDialog):
         self._test_btn.setEnabled(False)
         self._test_result.setText("Testing…")
         try:
-            r = httpx.get(f"{url}/health", timeout=float(self._timeout.value()))
+            r = httpx.get(f"{url}/health", timeout=float(self._timeout.value()), verify=False)
             if r.status_code == 200:
                 data = r.json()
                 ver = data.get("version", "")

@@ -1,9 +1,12 @@
 """MainWindow — full Arrow Front COP layout."""
 from __future__ import annotations
 import json
+import logging
 from typing import Optional
 
 import sys
+
+log = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QMessageBox,
 )
@@ -20,6 +23,7 @@ from front.panels.reports.panel   import ReportsPanel
 from front.panels.messages.panel  import MessagesPanel
 from front.panels.alerts.panel    import AlertsPanel
 from front.panels.draw.panel      import DrawPanel
+from front.panels.log.panel       import LogPanel
 from front.mumble.panel           import MumblePanel
 from front.panels.missions.panel  import MissionsPanel
 from front.panels.strike.panel    import StrikePackagePanel
@@ -63,9 +67,11 @@ class MainWindow(QMainWindow):
         self._ws: Optional[WSListener] = None
         self._toasts     = ToastManager(self)
         self._tile_server = MBTilesServer()
-        self._tile_server.start()
+        port = self._tile_server.start()
 
         self._build_ui()
+        # Load map via HTTP (fixes Qt6/macOS Metal compositor black-screen bug)
+        self._map.set_map_server_port(port)
         self._connect_signals()
         self._start_ws()
         QTimer.singleShot(1800, self._load_all)
@@ -101,6 +107,7 @@ class MainWindow(QMainWindow):
         self._streams_panel  = StreamsPanel()
         self._media_panel    = MediaPanel()
         self._mumble_panel   = MumblePanel()
+        self._log_panel      = LogPanel()
         self._planner_windows: list[StrikePlannerWindow] = []
         self._opord_windows:   list[OpordWindow]         = []
         self._stream_viewers:  list[StreamViewerWindow]  = []
@@ -117,6 +124,7 @@ class MainWindow(QMainWindow):
         self._info.add_panel("draw",     "✚",  "DRAW",   self._draw_panel,     "8")
         self._info.add_panel("media",    "🖼",  "MEDIA",  self._media_panel,    "9")
         self._info.add_panel("mumble",   "🎙",  "VOICE",  self._mumble_panel,   "0")
+        self._info.add_panel("log",      "📋",  "LOG",    self._log_panel,      "L")
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
@@ -235,7 +243,14 @@ class MainWindow(QMainWindow):
     def _start_ws(self):
         if not self._token:
             return
-        ws_base = self._server_url.replace("http://", "ws://").replace("https://", "wss://")
+        ws_base = (self._server_url
+                   .replace("http://", "ws://")
+                   .replace("https://", "wss://")
+                   .rstrip("/"))
+        # Strip /api suffix — WS endpoint is at /ws, not /api/ws
+        if ws_base.endswith("/api"):
+            ws_base = ws_base[:-4]
+        log.info("WS base URL: %s", ws_base)
         self._ws = WSListener(ws_base, self._token)
         self._ws.track_received.connect(self._on_track)
         self._ws.cot_received.connect(self._on_cot)
@@ -469,6 +484,7 @@ class MainWindow(QMainWindow):
             me = self._client.me()
             self._role     = me.get("role", "OPERATOR")
             self._callsign = me.get("callsign", self._callsign)
+            log.info("Authenticated: callsign=%s role=%s", self._callsign, self._role)
             self._messages_panel.set_my_callsign(self._callsign)
             self._messages_panel.set_server(self._server_url, self._token)
             self._media_panel.set_client(self._client)
@@ -592,6 +608,8 @@ class MainWindow(QMainWindow):
     # WS EVENT HANDLERS
     # ================================================================
     def _on_track(self, data: dict):
+        log.debug("TRACK  %s  lat=%.5f lon=%.5f hdg=%s",
+                  data.get("callsign"), data.get("lat",0), data.get("lon",0), data.get("heading"))
         self._push_track(data)
         self._orbat_panel.update_from_tracking(data)
 
@@ -605,6 +623,7 @@ class MainWindow(QMainWindow):
             self._map.update_cot_track(data)
 
     def _on_alert(self, data: dict):
+        log.warning("ALERT  type=%s  operator=%s", data.get("type"), data.get("operator") or data.get("callsign"))
         self._alerts_panel.add_alert(data)
         lat = data.get("latitude") or data.get("lat")
         lon = data.get("longitude") or data.get("lon")

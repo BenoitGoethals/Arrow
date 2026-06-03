@@ -642,7 +642,7 @@ def bootstrap(sess: Session, battalion: list[dict],
 def main() -> None:
     sim_utils.save_backend(BASE)
 
-    with httpx.Client() as client:
+    with httpx.Client(verify=False) as client:
         sess = Session(client, ARGS.seed_admin, ARGS.seed_admin_password)
 
         # 1. Login as seed admin

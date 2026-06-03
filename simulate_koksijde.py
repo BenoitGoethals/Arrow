@@ -41,7 +41,7 @@ Phase plan:
   Φ9 (H+240) Combined defence
 
 Works like simulate.py / simulate_north_wind.py:
-  • Defaults to the production backend  http://78.21.255.210:6200/api
+  • Defaults to the production backend  https://78.21.255.210:6200/api
   • Async HTTP via httpx
   • Plants OPORD + tactical control graphics + enemy ORBAT
   • Registers live operators; CH-47s fly in from FOB, Rangers seize
@@ -79,7 +79,7 @@ import sim_utils
 DEFAULT_BACKEND = (
     os.environ.get("ARROW_BACKEND_URL")
     or sim_utils.load_saved_backend()
-    or "http://78.21.255.210:6200/api"
+    or "https://78.21.255.210:6200/api"
 )
 
 parser = argparse.ArgumentParser(description="Arrow — OPERATION HAMMERHEAD (Koksijde air-assault)")
@@ -1142,7 +1142,7 @@ async def reset_world(client: httpx.AsyncClient,
 
 async def amain() -> None:
     log.info("Backend: %s   (path prefix: %r)", BASE, PATH_PREFIX or "<none>")
-    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0) as client:
+    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0, verify=False) as client:
         log.info("Logging in as seed admin %s …", ARGS.admin)
         admin_token = await login(client, ARGS.admin, ARGS.password)
         if not admin_token:
