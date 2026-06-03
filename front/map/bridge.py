@@ -11,6 +11,7 @@ class MapBridge(QObject):
     measure_done     = pyqtSignal(str, str)
     radial_action    = pyqtSignal(str, float, float)
     symbol_selected  = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
+    free_draw_saved  = pyqtSignal(str, str, str)   # type, geom_json, notes_json
 
     @pyqtSlot()
     def onReady(self):
@@ -43,3 +44,7 @@ class MapBridge(QObject):
     @pyqtSlot(str, str, float, float)
     def onSymbolSelected(self, sidc, designation, lat, lon):
         self.symbol_selected.emit(sidc, designation, lat, lon)
+
+    @pyqtSlot(str, str, str)
+    def onFreeDrawSaved(self, obj_type: str, geom_json: str, notes_json: str):
+        self.free_draw_saved.emit(obj_type, geom_json, notes_json)

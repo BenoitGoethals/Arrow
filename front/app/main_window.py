@@ -28,6 +28,7 @@ from front.panels.media.panel     import MediaPanel
 from front.windows.strike_planner import StrikePlannerWindow
 from front.windows.opord_window   import OpordWindow
 from front.windows.stream_viewer  import StreamViewerWindow
+from front.windows.medevac_window import MedevacWindow
 from front.client.arrow_client    import ArrowClient
 from front.client.ws_listener    import WSListener
 from front.map.tile_server       import MBTilesServer
@@ -100,6 +101,7 @@ class MainWindow(QMainWindow):
         self._planner_windows: list[StrikePlannerWindow] = []
         self._opord_windows:   list[OpordWindow]         = []
         self._stream_viewers:  list[StreamViewerWindow]  = []
+        self._medevac_windows: list[MedevacWindow]       = []
 
         self._info = RightInfoPanel()
         self._info.add_panel("missions", "◈",  "MISS",   self._missions_panel, "1")
@@ -201,6 +203,7 @@ class MainWindow(QMainWindow):
         self._draw_panel.free_draw_undo.connect(self._map.free_draw_undo)
         self._draw_panel.free_draw_clear.connect(self._map.free_draw_clear)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
+        self._map.bridge.free_draw_saved.connect(self._on_free_draw_saved)
         self._map.file_dropped.connect(self._on_file_dropped_on_map)
         self._missions_panel.mission_selected.connect(self._on_mission_selected)
         self._missions_panel.mission_cleared.connect(self._on_mission_cleared)
@@ -914,9 +917,7 @@ class MainWindow(QMainWindow):
         elif action in ("friendly",):
             pass  # symbol picker handles placement
         elif action == "medevac":
-            self._right_panel.expand()
-            self._info.activate("reports")
-            self._place_radial_marker("MARKER", lat, lon, notes="MEDEVAC", affiliation="FRIENDLY")
+            self._open_medevac(lat, lon)
         elif action == "poi":
             self._place_poi_with_photo(lat, lon)
         elif action == "fire":
@@ -925,6 +926,52 @@ class MainWindow(QMainWindow):
         elif action == "report":
             self._right_panel.expand()
             self._info.activate("reports")
+
+    def _open_medevac(self, lat: float, lon: float):
+        """Place a MEDEVAC marker on the map and open the 9-liner form."""
+        # Convert lat/lon to MGRS for Line 1 pre-fill
+        try:
+            from front.utils.mgrs_util import to_mgrs
+            mgrs = to_mgrs(lat, lon)
+        except Exception:
+            mgrs = f"{lat:.5f}, {lon:.5f}"
+
+        # Place a medical marker on the map immediately
+        self._place_medevac_marker(lat, lon)
+
+        # Open the 9-liner window
+        win = MedevacWindow(self._client, lat, lon, mgrs, parent=self)
+        win.report_submitted.connect(
+            lambda _: (self._right_panel.expand(), self._info.activate("reports"))
+        )
+        win.show()
+        win.raise_()
+        self._medevac_windows.append(win)
+
+    def _place_medevac_marker(self, lat: float, lon: float):
+        """Place a red-cross MEDEVAC marker on the map at the given position."""
+        sidc = MedevacWindow.MEDEVAC_SIDC
+        obj = {
+            "id":          f"medevac_{lat:.5f}_{lon:.5f}",
+            "type":        "MARKER",
+            "symbol_code": sidc,
+            "latitude":    lat,
+            "longitude":   lon,
+            "affiliation": "FRIENDLY",
+            "notes":       "MEDEVAC",
+        }
+        self._map.add_tactical_object(obj)
+        # Also persist to backend so it shows on the web map
+        try:
+            self._client.post_tactical_object(
+                "MARKER",
+                {"type": "point", "coords": [[lat, lon]]},
+                notes="MEDEVAC",
+                affiliation="FRIENDLY",
+                symbol_code=sidc,
+            )
+        except Exception:
+            pass
 
     def _on_file_dropped_on_map(self, file_path: str, lat: float, lon: float):
         self._place_poi_with_photo(lat, lon, preset_file=file_path)
@@ -1060,6 +1107,20 @@ class MainWindow(QMainWindow):
         db = self._tile_server.db
         self._map.load_mbtiles(tile_url, db.min_zoom, db.max_zoom)
         self.statusBar().showMessage(f"MBTiles: {db.name}", 3000)
+
+    def _on_free_draw_saved(self, obj_type: str, geom_json: str, notes_json: str):
+        """Persist a free-draw stroke/text so web + other fronts see it via WS."""
+        try:
+            geom = json.loads(geom_json)
+            if not geom.get("coords"):
+                return
+            self._client.post_tactical_object(
+                obj_type, geom,
+                notes=notes_json,
+                affiliation="NEUTRAL",
+            )
+        except Exception as e:
+            self.statusBar().showMessage(f"Free draw not saved: {e}", 3000)
 
     def _on_graphic_drawn(self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY"):
         """Persist a drawn tactical graphic to the backend (synced to web + android).
