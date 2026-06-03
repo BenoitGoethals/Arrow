@@ -10,7 +10,7 @@
     admin off
 }
 
-{$ARROW_DOMAIN::443} {
+{$ARROW_DOMAIN::6200} {
 
     tls internal
 

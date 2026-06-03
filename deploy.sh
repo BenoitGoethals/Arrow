@@ -79,30 +79,27 @@ setup_tls() {
     case "$mode" in
         internal)
             # Self-signed cert via Caddy's internal CA — works for bare IPs.
+            # Runs on port 6200 (same port as HTTP) so no port changes needed.
             export ARROW_CADDYFILE="./Caddyfile.https"
-            export ARROW_DOMAIN="${ARROW_DOMAIN:-:443}"
+            export ARROW_DOMAIN="${ARROW_DOMAIN:-:6200}"
 
-            # Build CORS origin list for the backend
-            local http_port="${ARROW_HTTP_PORT:-6200}"
-            local https_port="${ARROW_HTTPS_PORT:-443}"
+            local port="${ARROW_HTTP_PORT:-6200}"
             local host_ip
             host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || host_ip="localhost"
             local pub_ip="${SERVER_IP:-$host_ip}"
 
-            local origins="https://${pub_ip}"
-            [ "$https_port" != "443" ] && origins="${origins}:${https_port}"
-            origins="${origins},http://localhost:${http_port}"
+            local origins="https://${pub_ip}:${port},http://localhost:${port}"
             export ARROW_ALLOWED_ORIGINS="${ARROW_ALLOWED_ORIGINS:-$origins}"
 
             echo "==> TLS mode  : internal (self-signed, Caddy CA)"
-            echo "==> Listening : https://${pub_ip}:${https_port}"
+            echo "==> Listening : https://${pub_ip}:${port}"
             echo ""
-            echo "    ┌─────────────────────────────────────────────────────────┐"
-            echo "    │  BROWSER SETUP (one-time per browser):                  │"
-            echo "    │  1. Open https://${pub_ip}:${https_port}              "
-            echo "    │  2. Click  'Advanced → Proceed to ${pub_ip} (unsafe)'  │"
-            echo "    │  3. Done — mic / PTT voice now works                    │"
-            echo "    └─────────────────────────────────────────────────────────┘"
+            echo "    ┌──────────────────────────────────────────────────────────────┐"
+            echo "    │  BROWSER SETUP (one-time per browser):                       │"
+            echo "    │  1. Open  https://${pub_ip}:${port}                       "
+            echo "    │  2. Click 'Advanced → Proceed to ${pub_ip} (unsafe)'        │"
+            echo "    │  3. Done — mic / PTT voice now works                         │"
+            echo "    └──────────────────────────────────────────────────────────────┘"
             ;;
 
         acme)
@@ -154,7 +151,8 @@ print_urls() {
     echo "═══════════════════════════════════════════════════"
     if [ "$mode" = "internal" ] || [ "$mode" = "acme" ]; then
         local domain="${ARROW_DOMAIN:-$pub_ip}"
-        [ "$domain" = ":443" ] && domain="${pub_ip}:${https_port}"
+        [ "$domain" = ":6200" ] && domain="${pub_ip}:${http_port}"
+        [ "$domain" = ":443"  ] && domain="${pub_ip}:${https_port}"
         echo "  Arrow Web     https://${domain}"
         echo "  Arrow API     https://${domain}/api/docs"
     else
