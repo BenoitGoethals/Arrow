@@ -22,7 +22,7 @@ class SettingsRepository(private val context: Context) {
     private val keyBasemap      = stringPreferencesKey("basemap")
     private val keyActiveMission = intPreferencesKey("active_mission_id")
 
-    val serverUrl: Flow<String>  = context.dataStore.data.map { it[keyServerUrl] ?: DEFAULT_SERVER }
+    val serverUrl: Flow<String>  = context.dataStore.data.map { upgradeUrl(it[keyServerUrl] ?: DEFAULT_SERVER) }
     val callsign:  Flow<String>  = context.dataStore.data.map { it[keyCallsign] ?: "" }
     val team:      Flow<String>  = context.dataStore.data.map { it[keyTeam] ?: "" }
     val basemap:   Flow<String?> = context.dataStore.data.map { it[keyBasemap] }
@@ -41,7 +41,7 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
-    suspend fun currentServerUrl(): String = serverUrl.first()
+    suspend fun currentServerUrl(): String = upgradeUrl(serverUrl.first())
     suspend fun currentCallsign(): String  = callsign.first()
     suspend fun currentBasemap(): String?  = basemap.first()
 
@@ -53,7 +53,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun update(serverUrl: String? = null, callsign: String? = null, team: String? = null) {
         context.dataStore.edit { prefs ->
-            serverUrl?.let { prefs[keyServerUrl] = it.trimEnd('/') }
+            serverUrl?.let { prefs[keyServerUrl] = upgradeUrl(it.trimEnd('/')) }
             callsign?.let { prefs[keyCallsign] = it }
             team?.let { prefs[keyTeam] = it }
         }
@@ -65,5 +65,12 @@ class SettingsRepository(private val context: Context) {
 
     companion object {
         const val DEFAULT_SERVER = "https://78.21.255.210:6200/api"
+
+        fun upgradeUrl(url: String): String {
+            if (url.startsWith("http://") && "localhost" !in url && "127.0.0.1" !in url) {
+                return "https://" + url.removePrefix("http://")
+            }
+            return url
+        }
     }
 }

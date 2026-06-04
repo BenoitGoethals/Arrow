@@ -35,6 +35,10 @@ class ApiClient(
     @Volatile private var cachedToken: String? = null
     @Volatile var activeMissionId: Int? = null   // set by MissionRepository after selection
 
+    /** Call immediately after saving a token so refreshProfile() has auth before the
+     *  DataStore Flow collector coroutine gets a chance to run. */
+    fun setToken(token: String?) { cachedToken = token }
+
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             tokenStore.tokenFlow.collect { cachedToken = it }

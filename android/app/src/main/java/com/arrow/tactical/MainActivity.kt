@@ -10,8 +10,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.arrow.tactical.messaging.ChatNotificationManager
 import com.arrow.tactical.ui.ArrowNavGraph
@@ -32,8 +30,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             ArrowTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
-                    val token by container.tokenStore.tokenFlow.collectAsState(initial = null)
-                    ArrowNavGraph(container = container, isAuthenticated = !token.isNullOrBlank())
+                    ArrowNavGraph(container = container)
                 }
             }
         }

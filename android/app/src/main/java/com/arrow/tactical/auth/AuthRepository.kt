@@ -27,6 +27,7 @@ class AuthRepository(
         val token = json.decodeFromString<TokenDto>(r.body)
         if (!token.mfaRequired && token.accessToken != null) {
             tokenStore.save(token.accessToken, token.role)
+            api.setToken(token.accessToken)
             refreshProfile()
         }
         token
@@ -39,6 +40,7 @@ class AuthRepository(
         val token = json.decodeFromString<TokenDto>(r.body)
         if (token.accessToken != null) {
             tokenStore.save(token.accessToken, token.role)
+            api.setToken(token.accessToken)
             refreshProfile()
         }
         token
@@ -46,6 +48,7 @@ class AuthRepository(
 
     suspend fun logout(): Result<Unit> = runCatching {
         api.postJson("/auth/logout", "{}")
+        api.setToken(null)
         tokenStore.clear()
         profileStore.clear()
     }
@@ -56,6 +59,7 @@ class AuthRepository(
         val token = json.decodeFromString<TokenDto>(r.body)
         if (token.accessToken != null) {
             tokenStore.save(token.accessToken, token.role)
+            api.setToken(token.accessToken)
             refreshProfile()
         }
         token
