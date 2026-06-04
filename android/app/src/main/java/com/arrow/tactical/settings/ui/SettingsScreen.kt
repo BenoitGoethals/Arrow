@@ -4,8 +4,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,21 +21,13 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     repo: SettingsRepository,
     profileStore: ProfileStore,
-    isAuthenticated: Boolean,
-    onLogin: () -> Unit,
     onLogout: () -> Unit,
     onOpenOfflineMaps: () -> Unit = {},
     onOpenKmlLayers: () -> Unit = {},
     onOpenVisibility: () -> Unit = {},
 ) {
-    val server   by repo.serverUrl.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
-    val profile  by profileStore.profile.collectAsState(initial = null)
-
-    // Guest-mode editable identity (only used when not authenticated)
-    val callsign by repo.callsign.collectAsState(initial = "")
-    val team     by repo.team.collectAsState(initial = "")
-    var callsignDraft by remember(callsign) { mutableStateOf(callsign) }
-    var teamDraft     by remember(team)     { mutableStateOf(team) }
+    val server  by repo.serverUrl.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
+    val profile by profileStore.profile.collectAsState(initial = null)
 
     var serverDraft by remember(server) { mutableStateOf(server) }
     var saved by remember { mutableStateOf(false) }
@@ -55,44 +45,12 @@ fun SettingsScreen(
         ) {
             Spacer(Modifier.height(4.dp))
 
-            // ── Guest mode banner ──────────────────────────────────────────
-            if (!isAuthenticated) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(Icons.Filled.CloudOff, contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Column {
-                            Text("Guest mode — local only",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer)
-                            Text("Log in to sync with the server and join your team.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        }
-                    }
-                }
-
-                Button(
-                    onClick  = onLogin,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.CloudSync, contentDescription = null,
-                        modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Login to sync with server")
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            // ── Profile ────────────────────────────────────────────────────
+            if (profile != null) {
+                ProfileCard(profile = profile!!)
             }
+
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
             // ── Connection ─────────────────────────────────────────────────
             Text("Connection", style = MaterialTheme.typography.labelLarge,
@@ -102,7 +60,7 @@ fun SettingsScreen(
                 value         = serverDraft,
                 onValueChange = { serverDraft = it; saved = false },
                 label         = { Text("Backend URL") },
-                placeholder   = { Text("http://192.168.0.x:6001") },
+                placeholder   = { Text("https://host:port/api") },
                 modifier      = Modifier.fillMaxWidth(),
                 singleLine    = true,
             )
@@ -110,13 +68,7 @@ fun SettingsScreen(
             Button(
                 onClick = {
                     scope.launch {
-                        if (isAuthenticated) {
-                            repo.update(serverUrl = serverDraft)
-                        } else {
-                            repo.update(serverUrl = serverDraft,
-                                        callsign = callsignDraft,
-                                        team = teamDraft)
-                        }
+                        repo.update(serverUrl = serverDraft)
                         saved = true
                     }
                 },
@@ -127,32 +79,7 @@ fun SettingsScreen(
 
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
-            // ── Identity ───────────────────────────────────────────────────
-            if (isAuthenticated && profile != null) {
-                ProfileCard(profile = profile!!)
-            } else if (!isAuthenticated) {
-                Text("Identity", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary)
-
-                OutlinedTextField(
-                    value         = callsignDraft,
-                    onValueChange = { callsignDraft = it; saved = false },
-                    label         = { Text("Callsign") },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                )
-                OutlinedTextField(
-                    value         = teamDraft,
-                    onValueChange = { teamDraft = it; saved = false },
-                    label         = { Text("Team (guest)") },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                )
-            }
-
-            HorizontalDivider(Modifier.padding(vertical = 4.dp))
-
-            // ── Offline maps ───────────────────────────────────────────────
+            // ── Map tools ─────────────────────────────────────────────────
             Text("Offline base maps", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
             OutlinedButton(onClick = onOpenOfflineMaps, modifier = Modifier.fillMaxWidth()) {
@@ -173,17 +100,15 @@ fun SettingsScreen(
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-            // ── Auth action ────────────────────────────────────────────────
-            if (isAuthenticated) {
-                OutlinedButton(
-                    onClick  = onLogout,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors   = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text("Sign out")
-                }
+            // ── Sign out ───────────────────────────────────────────────────
+            OutlinedButton(
+                onClick  = onLogout,
+                modifier = Modifier.fillMaxWidth(),
+                colors   = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) {
+                Text("Sign out")
             }
 
             Spacer(Modifier.height(16.dp))
@@ -198,7 +123,7 @@ private fun ProfileCard(profile: OperatorProfile) {
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
+        colors   = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
@@ -213,7 +138,7 @@ private fun ProfileCard(profile: OperatorProfile) {
                     modifier = Modifier.size(28.dp))
                 Column {
                     Text(profile.callsign,
-                        style = MaterialTheme.typography.titleMedium,
+                        style      = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold)
                     Text("${profile.rank}  ·  ${profile.role}",
                         style = MaterialTheme.typography.bodySmall,
@@ -232,7 +157,6 @@ private fun ProfileCard(profile: OperatorProfile) {
                 )
             }
 
-            // Hierarchy path: Team · Section · Platoon · Company
             val hierarchyParts = listOfNotNull(
                 profile.teamName,
                 profile.sectionName,
@@ -261,15 +185,15 @@ private fun ProfileCard(profile: OperatorProfile) {
 @Composable
 private fun ProfileRow(label: String, value: String) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier              = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment     = Alignment.CenterVertically,
     ) {
         Text(label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value,
-            style = MaterialTheme.typography.bodyMedium,
+            style      = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium)
     }
 }

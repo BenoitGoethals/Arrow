@@ -3,8 +3,10 @@ package com.arrow.tactical.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -41,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -89,8 +93,7 @@ private sealed class Tab(val route: String, val label: String, val icon: ImageVe
     data object Settings : Tab("tab/settings", "Settings", Icons.Filled.Settings)
 }
 
-private val TABS_BASE = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Opord, Tab.Mortar, Tab.Objectives, Tab.Media, Tab.Settings)
-// Admin tab is appended only when the signed-in user has the ADMIN role.
+private val TABS_BASE  = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Opord, Tab.Mortar, Tab.Objectives, Tab.Media, Tab.Settings)
 private val TABS_ADMIN = TABS_BASE + Tab.Admin
 
 object Routes {
@@ -100,17 +103,57 @@ object Routes {
 }
 
 @Composable
-fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
+fun ArrowNavGraph(container: AppContainer) {
+    // null = DataStore not yet read (loading); Boolean = actual auth state
+    val isAuthenticated: Boolean? by produceState<Boolean?>(initialValue = null) {
+        container.tokenStore.tokenFlow.collect { token ->
+            value = !token.isNullOrBlank()
+        }
+    }
+
+    // Show splash while DataStore initializes (typically < 50 ms)
+    if (isAuthenticated == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    val authenticated = isAuthenticated!!
     val rootNav = rememberNavController()
 
-    // Always start on the main shell — login is optional (from Settings).
-    NavHost(navController = rootNav, startDestination = Routes.MAIN) {
+    // On startup with a saved token: validate it and reload profile.
+    // If stale the 401 interceptor clears the token → isAuthenticated → false
+    // → LaunchedEffect below redirects to LOGIN.
+    LaunchedEffect(Unit) {
+        if (authenticated) {
+            if (container.authRepository.me().isSuccess) {
+                container.authRepository.refreshProfile()
+            } else {
+                container.tokenStore.clear()
+            }
+        }
+    }
+
+    // Reactive logout: when token disappears, return to login
+    LaunchedEffect(authenticated) {
+        if (!authenticated) {
+            val dest = rootNav.currentDestination?.route
+            if (dest != null && dest != Routes.LOGIN) {
+                rootNav.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+            }
+        }
+    }
+
+    NavHost(
+        navController = rootNav,
+        startDestination = if (authenticated) Routes.MAIN else Routes.LOGIN,
+    ) {
         composable(Routes.LOGIN) {
             LoginScreen(
-                authRepository = container.authRepository,
+                authRepository    = container.authRepository,
                 settingsRepository = container.settingsRepository,
-                onAuthenticated = {
-                    // After login go to mission selection so the operator picks a mission
+                onAuthenticated   = {
                     rootNav.navigate(Routes.MISSION) {
                         popUpTo(Routes.LOGIN) { inclusive = true }
                     }
@@ -122,19 +165,16 @@ fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
                 container = container,
                 onMissionSelected = {
                     rootNav.navigate(Routes.MAIN) {
-                        popUpTo(Routes.MISSION) { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 },
             )
         }
         composable(Routes.MAIN) {
             MainShell(
-                container = container,
-                isAuthenticated = isAuthenticated,
-                onNavigateToLogin = { rootNav.navigate(Routes.LOGIN) },
-                onLogout = {
-                    rootNav.navigate(Routes.MAIN) { popUpTo(0) }
-                }
+                container       = container,
+                isAuthenticated = authenticated,
+                onLogout        = { /* navigation handled reactively via LaunchedEffect above */ },
             )
         }
     }
@@ -145,7 +185,6 @@ fun ArrowNavGraph(container: AppContainer, isAuthenticated: Boolean) {
 private fun MainShell(
     container: AppContainer,
     isAuthenticated: Boolean,
-    onNavigateToLogin: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val tabNav = rememberNavController()
@@ -158,14 +197,9 @@ private fun MainShell(
     val isOnline by container.connectivity.isOnline.collectAsState(initial = false)
     val tabs = if (role == "ADMIN") TABS_ADMIN else TABS_BASE
 
-    // Map tab renders its own SitawareChrome top bar — don't duplicate the strip there.
     val onMapTab = currentRoute?.startsWith(Tab.Map.route) == true
 
-    // Drawer is opened only from the SitaWare hamburger button; bottom nav
-    // bar stays visible on every tab including the map.
-    val drawerState = rememberDrawerState(
-        initialValue = DrawerValue.Closed,
-    )
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     LaunchedEffect(Unit) {
         container.navigateToChatFlow.collect {
@@ -186,9 +220,9 @@ private fun MainShell(
     }
 
     ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen,   // no swipe-to-open from map
-        drawerContent = {
+        drawerState    = drawerState,
+        gesturesEnabled = drawerState.isOpen,
+        drawerContent  = {
             ModalDrawerSheet {
                 Text(
                     "ARROW",
@@ -198,10 +232,10 @@ private fun MainShell(
                 HorizontalDivider()
                 tabs.forEach { tab ->
                     NavigationDrawerItem(
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) },
+                        icon     = { Icon(tab.icon, contentDescription = tab.label) },
+                        label    = { Text(tab.label) },
                         selected = currentRoute?.startsWith(tab.route) == true,
-                        onClick = {
+                        onClick  = {
                             goTab(tab.route)
                             scope.launch { drawerState.close() }
                         },
@@ -211,202 +245,186 @@ private fun MainShell(
             }
         },
     ) {
-    var bottomBarExpanded by remember { mutableStateOf(value = true) }
-    Scaffold(
-        topBar = {
-            if (!onMapTab) {
-                ArrowStatusBar(
-                    callsign = if (isAuthenticated) callsign else "",
-                    role     = if (isAuthenticated) role else null,
-                    isOnline = isOnline,
-                )
-            }
-        },
-        bottomBar = {
-            Column {
-                // Collapse handle — always visible; tap to toggle the full bar.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainer)
-                        .clickable { bottomBarExpanded = !bottomBarExpanded }
-                        .padding(vertical = 2.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        if (bottomBarExpanded) Icons.Filled.KeyboardArrowDown
-                        else                   Icons.Filled.KeyboardArrowUp,
-                        contentDescription = if (bottomBarExpanded) "Collapse menu" else "Expand menu",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        var bottomBarExpanded by remember { mutableStateOf(value = true) }
+        Scaffold(
+            topBar = {
+                if (!onMapTab) {
+                    ArrowStatusBar(
+                        callsign = if (isAuthenticated) callsign else "",
+                        role     = if (isAuthenticated) role else null,
+                        isOnline = isOnline,
                     )
                 }
-                if (bottomBarExpanded) {
-                    NavigationBar {
-                        tabs.forEach { tab ->
-                            val selected = currentRoute?.startsWith(tab.route) == true
-                            NavigationBarItem(
-                                selected = selected,
-                                onClick = { goTab(tab.route) },
-                                icon = { Icon(tab.icon, contentDescription = tab.label) },
-                                label = { Text(tab.label) },
-                            )
+            },
+            bottomBar = {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .clickable { bottomBarExpanded = !bottomBarExpanded }
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment     = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (bottomBarExpanded) Icons.Filled.KeyboardArrowDown
+                            else                   Icons.Filled.KeyboardArrowUp,
+                            contentDescription = if (bottomBarExpanded) "Collapse menu" else "Expand menu",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (bottomBarExpanded) {
+                        NavigationBar {
+                            tabs.forEach { tab ->
+                                val selected = currentRoute?.startsWith(tab.route) == true
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick  = { goTab(tab.route) },
+                                    icon     = { Icon(tab.icon, contentDescription = tab.label) },
+                                    label    = { Text(tab.label) },
+                                )
+                            }
                         }
                     }
                 }
-            }
-        },
-    ) { padding ->
-        NavHost(
-            navController = tabNav,
-            startDestination = Tab.Map.route,
-            modifier = Modifier.padding(padding),
-        ) {
-            composable(Tab.Map.route) {
-                MapScreen(
-                    container  = container,
-                    onCallFire = { lat, lon ->
-                        if (lat.isNaN()) tabNav.navigate("fire-mission")
-                        else tabNav.navigate("fire-mission?lat=$lat&lon=$lon")
-                    },
-                    onReport     = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
-                    onOpenMortar = { lat, lon -> tabNav.navigate("mortar?lat=$lat&lon=$lon") },
-                    onOpenDrawer = { scope.launch { drawerState.open() } },
-                )
-            }
-            composable(
-                "fire-mission?lat={lat}&lon={lon}",
-                arguments = listOf(
-                    navArgument("lat") { type = NavType.StringType },
-                    navArgument("lon") { type = NavType.StringType },
-                ),
-            ) { entry ->
-                FireMissionScreen(
-                    container  = container,
-                    presetLat  = entry.arguments?.getString("lat")?.toDoubleOrNull(),
-                    presetLon  = entry.arguments?.getString("lon")?.toDoubleOrNull(),
-                    onBack     = { tabNav.popBackStack() },
-                    onOpenMortar = { lat, lon ->
-                        if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
-                        else tabNav.navigate("mortar?lat=$lat&lon=$lon")
-                    },
-                )
-            }
-            composable("fire-mission") {
-                FireMissionScreen(
-                    container = container,
-                    onBack    = { tabNav.popBackStack() },
-                    onOpenMortar = { lat, lon ->
-                        if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
-                        else tabNav.navigate("mortar?lat=$lat&lon=$lon")
-                    },
-                )
-            }
-            composable(
-                "mortar?lat={lat}&lon={lon}",
-                arguments = listOf(
-                    navArgument("lat") { type = NavType.StringType },
-                    navArgument("lon") { type = NavType.StringType },
-                ),
-            ) { entry ->
-                MortarScreen(
-                    container = container,
-                    presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
-                    presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
-                    onBack    = { tabNav.popBackStack() },
-                )
-            }
-            composable("mortar") {
-                MortarScreen(container = container, onBack = { tabNav.popBackStack() })
-            }
-            composable("${Tab.Mark.route}?lat={lat}&lon={lon}") { entry ->
-                val lat = entry.arguments?.getString("lat")?.toDoubleOrNull()
-                val lon = entry.arguments?.getString("lon")?.toDoubleOrNull()
-                MarkEnemyScreen(
-                    container = container,
-                    presetLat = lat,
-                    presetLon = lon,
-                    onMarked = { tabNav.popBackStack(Tab.Map.route, inclusive = false) },
-                )
-            }
-            composable(Tab.Mark.route) {
-                MarkEnemyScreen(
-                    container = container,
-                    presetLat = null,
-                    presetLon = null,
-                    onMarked = { tabNav.popBackStack(Tab.Map.route, inclusive = false) },
-                )
-            }
-            composable(Tab.Alerts.route) { AlertsScreen(container.alertRepository) }
-            composable(Tab.Mortar.route) {
-                MortarScreen(container = container, onBack = { tabNav.popBackStack() })
-            }
-            composable(Tab.Chat.route) { MessagingScreen(container) }
-            composable(
-                "${Tab.Reports.route}?lat={lat}&lon={lon}",
-                arguments = listOf(
-                    navArgument("lat") { type = NavType.StringType },
-                    navArgument("lon") { type = NavType.StringType },
-                ),
-            ) { entry ->
-                ReportsScreen(
-                    repo      = container.reportRepository,
-                    container = container,
-                    presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
-                    presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
-                )
-            }
-            composable(Tab.Reports.route) {
-                ReportsScreen(repo = container.reportRepository, container = container)
-            }
-            composable(Tab.Objectives.route) { ObjectivesScreen(container) }
-            composable(Tab.Media.route) { MediaGalleryScreen(container) }
-            composable(Tab.Opord.route) {
-                OpordListScreen(container = container, onOpen = { id -> tabNav.navigate("opord/$id") })
-            }
-            composable(
-                "opord/{id}",
-                arguments = listOf(navArgument("id") { type = NavType.IntType }),
-            ) { entry ->
-                val id = entry.arguments?.getInt("id") ?: 0
-                OpordDetailScreen(container = container, opordId = id, onBack = { tabNav.popBackStack() })
-            }
-            composable(Tab.Admin.route) { AdminScreen(container.logRepository) }
-            composable(Tab.Settings.route) {
-                SettingsScreen(
-                    repo            = container.settingsRepository,
-                    profileStore    = container.profileStore,
-                    isAuthenticated = isAuthenticated,
-                    onLogin = onNavigateToLogin,
-                    onLogout = {
-                        scope.launch { container.authRepository.logout() }
-                        onLogout()
-                    },
-                    onOpenOfflineMaps = { tabNav.navigate("offline-maps") },
-                    onOpenKmlLayers   = { tabNav.navigate("kml-layers") },
-                    onOpenVisibility  = { tabNav.navigate("visibility") },
-                )
-            }
-            composable("offline-maps") {
-                OfflineMapsScreen(
-                    container = container,
-                    onBack    = { tabNav.popBackStack() },
-                )
-            }
-            composable("kml-layers") {
-                KmlLayersScreen(
-                    container = container,
-                    onBack    = { tabNav.popBackStack() },
-                )
-            }
-            composable("visibility") {
-                VisibilitySettingsScreen(
-                    container = container,
-                    onBack    = { tabNav.popBackStack() },
-                )
+            },
+        ) { padding ->
+            NavHost(
+                navController    = tabNav,
+                startDestination = Tab.Map.route,
+                modifier         = Modifier.padding(padding),
+            ) {
+                composable(Tab.Map.route) {
+                    MapScreen(
+                        container  = container,
+                        onCallFire = { lat, lon ->
+                            if (lat.isNaN()) tabNav.navigate("fire-mission")
+                            else tabNav.navigate("fire-mission?lat=$lat&lon=$lon")
+                        },
+                        onReport     = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
+                        onOpenMortar = { lat, lon -> tabNav.navigate("mortar?lat=$lat&lon=$lon") },
+                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                    )
+                }
+                composable(
+                    "fire-mission?lat={lat}&lon={lon}",
+                    arguments = listOf(
+                        navArgument("lat") { type = NavType.StringType },
+                        navArgument("lon") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    FireMissionScreen(
+                        container  = container,
+                        presetLat  = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                        presetLon  = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                        onBack     = { tabNav.popBackStack() },
+                        onOpenMortar = { lat, lon ->
+                            if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
+                            else tabNav.navigate("mortar?lat=$lat&lon=$lon")
+                        },
+                    )
+                }
+                composable("fire-mission") {
+                    FireMissionScreen(
+                        container = container,
+                        onBack    = { tabNav.popBackStack() },
+                        onOpenMortar = { lat, lon ->
+                            if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
+                            else tabNav.navigate("mortar?lat=$lat&lon=$lon")
+                        },
+                    )
+                }
+                composable(
+                    "mortar?lat={lat}&lon={lon}",
+                    arguments = listOf(
+                        navArgument("lat") { type = NavType.StringType },
+                        navArgument("lon") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    MortarScreen(
+                        container = container,
+                        presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                        presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                        onBack    = { tabNav.popBackStack() },
+                    )
+                }
+                composable("mortar") {
+                    MortarScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
+                composable("${Tab.Mark.route}?lat={lat}&lon={lon}") { entry ->
+                    val lat = entry.arguments?.getString("lat")?.toDoubleOrNull()
+                    val lon = entry.arguments?.getString("lon")?.toDoubleOrNull()
+                    MarkEnemyScreen(
+                        container = container,
+                        presetLat = lat,
+                        presetLon = lon,
+                        onMarked  = { tabNav.popBackStack(Tab.Map.route, inclusive = false) },
+                    )
+                }
+                composable(Tab.Mark.route) {
+                    MarkEnemyScreen(
+                        container = container,
+                        presetLat = null,
+                        presetLon = null,
+                        onMarked  = { tabNav.popBackStack(Tab.Map.route, inclusive = false) },
+                    )
+                }
+                composable(Tab.Alerts.route)  { AlertsScreen(container.alertRepository) }
+                composable(Tab.Mortar.route)  { MortarScreen(container = container, onBack = { tabNav.popBackStack() }) }
+                composable(Tab.Chat.route)    { MessagingScreen(container) }
+                composable(
+                    "${Tab.Reports.route}?lat={lat}&lon={lon}",
+                    arguments = listOf(
+                        navArgument("lat") { type = NavType.StringType },
+                        navArgument("lon") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    ReportsScreen(
+                        repo      = container.reportRepository,
+                        container = container,
+                        presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                        presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                    )
+                }
+                composable(Tab.Reports.route)     { ReportsScreen(repo = container.reportRepository, container = container) }
+                composable(Tab.Objectives.route)  { ObjectivesScreen(container) }
+                composable(Tab.Media.route)       { MediaGalleryScreen(container) }
+                composable(Tab.Opord.route) {
+                    OpordListScreen(container = container, onOpen = { id -> tabNav.navigate("opord/$id") })
+                }
+                composable(
+                    "opord/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.IntType }),
+                ) { entry ->
+                    val id = entry.arguments?.getInt("id") ?: 0
+                    OpordDetailScreen(container = container, opordId = id, onBack = { tabNav.popBackStack() })
+                }
+                composable(Tab.Admin.route) { AdminScreen(container.logRepository) }
+                composable(Tab.Settings.route) {
+                    SettingsScreen(
+                        repo             = container.settingsRepository,
+                        profileStore     = container.profileStore,
+                        onLogout         = {
+                            scope.launch { container.authRepository.logout() }
+                            onLogout()
+                        },
+                        onOpenOfflineMaps = { tabNav.navigate("offline-maps") },
+                        onOpenKmlLayers   = { tabNav.navigate("kml-layers") },
+                        onOpenVisibility  = { tabNav.navigate("visibility") },
+                    )
+                }
+                composable("offline-maps") {
+                    OfflineMapsScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
+                composable("kml-layers") {
+                    KmlLayersScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
+                composable("visibility") {
+                    VisibilitySettingsScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
             }
         }
     }
-    }   // ModalNavigationDrawer
 }

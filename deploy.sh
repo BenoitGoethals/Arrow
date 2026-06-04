@@ -118,6 +118,17 @@ server {
         proxy_read_timeout 120s;
     }
 
+    # Stream WebSocket (Android camera producer: /api/streams/{id}/produce)
+    location ~ ^/api/streams/ {
+        rewrite ^/api/(.*)$ /\$1 break;
+        proxy_pass         http://backend:6001;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    \$http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       \$host;
+        proxy_read_timeout 86400s;
+    }
+
     # WebSocket endpoints (with or without /api prefix)
     location ~ ^/(api/)?(ws|mumble/voice) {
         rewrite ^/api/(.*)$ /\$1 break;
@@ -171,6 +182,17 @@ server {
         proxy_read_timeout 120s;
     }
 
+    # Stream WebSocket (Android camera producer: /api/streams/{id}/produce)
+    location ~ ^/api/streams/ {
+        rewrite ^/api/(.*)$ /\$1 break;
+        proxy_pass         http://backend:6001;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    \$http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       \$host;
+        proxy_read_timeout 86400s;
+    }
+
     # WebSocket — matches /ws, /api/ws, /mumble/voice, /api/mumble/voice
     # rewrite strips the /api prefix so backend always sees /ws or /mumble/voice
     location ~ ^/(api/)?(ws|mumble/voice) {
@@ -202,6 +224,16 @@ server {
     server_name _;
 
     add_header X-Content-Type-Options nosniff;
+
+    # Stream WebSocket (Android / desktop camera producer)
+    location ~ ^/streams/ {
+        proxy_pass         http://backend:6001;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    \$http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       \$host;
+        proxy_read_timeout 86400s;
+    }
 
     # WebSocket
     location ~ ^/(ws|mumble/voice) {
