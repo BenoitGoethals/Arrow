@@ -975,6 +975,19 @@
         return _audioCtx;
     }
 
+    // Pre-warm the AudioContext on first user gesture so it is already running
+    // when an alert fires (browsers block AudioContext creation without a prior
+    // user interaction — alerts arrive via WebSocket with no gesture context).
+    function _warmAudioCtx() {
+        try { audioCtx(); } catch (_) {}
+        document.removeEventListener('click',   _warmAudioCtx, true);
+        document.removeEventListener('keydown', _warmAudioCtx, true);
+        document.removeEventListener('touchstart', _warmAudioCtx, true);
+    }
+    document.addEventListener('click',      _warmAudioCtx, true);
+    document.addEventListener('keydown',    _warmAudioCtx, true);
+    document.addEventListener('touchstart', _warmAudioCtx, true);
+
     /**
      * triggerAudioAlert(type)
      *   'fire' → says "Fire mission" then plays a 5-second pulsing alarm (880 Hz sawtooth)

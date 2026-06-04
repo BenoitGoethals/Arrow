@@ -39,7 +39,8 @@ from front.client.ws_listener    import WSListener
 from front.map.tile_server       import MBTilesServer
 from front.app.collapsible_panel  import CollapsibleSidePanel
 from front.app.toast_manager      import ToastManager
-from front.app.settings_dialog    import ConfigDialog, read_gps_config
+from front.app.settings_dialog    import ConfigDialog, read_gps_config, load as _settings_load, _bool as _settings_bool
+from front.app.voice_alerts       import VoiceAlertPlayer
 
 CBRN_TYPES = {"CBRN_1","CBRN_2","CBRN_3","CBRN_4","CBRN_5","CBRN_6"}
 
@@ -66,6 +67,9 @@ class MainWindow(QMainWindow):
         self._role       = "OPERATOR"
         self._ws: Optional[WSListener] = None
         self._toasts     = ToastManager(self)
+        self._suppress_toasts = False
+        self._voice      = VoiceAlertPlayer(self)
+        self._voice.enabled = _settings_bool(_settings_load("display_voice_alerts"), True)
         self._tile_server = MBTilesServer()
         port = self._tile_server.start()
 
@@ -276,6 +280,7 @@ class MainWindow(QMainWindow):
         if self._loaded:
             return
         self._loaded = True
+        self._suppress_toasts = True
         self._apply_gps_config()
         self._resolve_role()
         self._load_hierarchy()
@@ -291,6 +296,7 @@ class MainWindow(QMainWindow):
         self._load_alerts()
         self._load_reports()
         self._load_messages()
+        self._suppress_toasts = False
 
     # ================================================================
     # MENU BAR
@@ -469,6 +475,7 @@ class MainWindow(QMainWindow):
         dlg.trails_changed.connect(
             lambda on: self._map.toggle_layer("operTrails", on)
         )
+        dlg.voice_alerts_changed.connect(lambda on: setattr(self._voice, "enabled", on))
         dlg.exec()
 
     def _apply_gps_config(self):
@@ -632,7 +639,9 @@ class MainWindow(QMainWindow):
         self._info.inc_badge("alerts")
         alert_type = data.get("type", "ALERT")
         operator   = data.get("operator") or data.get("callsign") or ""
-        self._toasts.alert(alert_type, operator)
+        if not self._suppress_toasts:
+            self._toasts.alert(alert_type, operator)
+            self._voice.play(alert_type)
         if alert_type in ("TIC", "DRONE_SPOTTED"):
             self._right_panel.expand()
             self._info.activate("alerts")
@@ -642,7 +651,8 @@ class MainWindow(QMainWindow):
         self._info.inc_badge("reports")
         rtype  = data.get("type", "REPORT")
         sender = data.get("sender") or data.get("callsign") or ""
-        self._toasts.report(rtype, sender)
+        if not self._suppress_toasts:
+            self._toasts.report(rtype, sender)
         if data.get("type", "") in CBRN_TYPES:
             p = data.get("payload", {})
             if isinstance(p, str):
@@ -678,7 +688,8 @@ class MainWindow(QMainWindow):
         sender = data.get("sender") or data.get("callsign") or "?"
         if sender != self._callsign:
             preview = (data.get("content") or "")[:60]
-            self._toasts.message(sender, preview)
+            if not self._suppress_toasts:
+                self._toasts.message(sender, preview)
             self._info.inc_badge("messages")
 
     def _load_strike_packages(self):
