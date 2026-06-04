@@ -2041,13 +2041,17 @@ function _mvSetupPTT() {
     }
 
     const press = () => {
+        if (_mvPtt) return;   // already transmitting
         _mvPtt = true;
         btn.style.background = '#1d4ed8';
         btn.style.color      = '#fff';
         btn.textContent      = '🔴 TRANSMITTING';
         if (_mvAudioCtx && _mvAudioCtx.state === 'suspended') _mvAudioCtx.resume();
+        if (_mvWs && _mvWs.readyState === WebSocket.OPEN)
+            _mvWs.send(JSON.stringify({ type: 'ptt_start' }));
     };
     const release = () => {
+        if (!_mvPtt) return;  // already released
         _mvPtt = false;
         btn.style.background = '#1e3a5f';
         btn.style.color      = '#93c5fd';
