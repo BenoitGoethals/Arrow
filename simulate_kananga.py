@@ -52,6 +52,7 @@ from typing import Optional
 import httpx
 
 import sim_utils
+from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, dist_m, step_towards
 
 # ── CLI / persistent config ─────────────────────────────────────────────────
 DEFAULT_BACKEND = (
@@ -90,17 +91,9 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%H:%M:%S")
 log = logging.getLogger("ks")
 
-BASE = ARGS.backend.rstrip("/")
-MISSION_ID: int | None = None
-
-ORIGIN, PATH_PREFIX = sim_utils.split_base(BASE)
-
-
-def _p(path: str) -> str:
-    if not PATH_PREFIX or path.startswith(PATH_PREFIX + "/") or path == PATH_PREFIX:
-        return path
-    return PATH_PREFIX + path
-
+_CTX = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"))
+api  = _CTX.api
+login = _CTX.login
 
 # ── Tactical-graphic type sets ───────────────────────────────────────────────
 POINT_TG_TYPES = {"ATK_AXIS", "COUNTERATTACK", "AMBUSH", "DEF_AREA",
@@ -109,32 +102,6 @@ LINE_TG_TYPES  = {"BOUNDARY", "FLET", "FLOT", "PHASE_LINE"}
 POLY_TG_TYPES  = {"OBJ_AREA"}
 ALL_TG_TYPES   = POINT_TG_TYPES | LINE_TG_TYPES | POLY_TG_TYPES
 NON_TG_TYPES   = {"ENEMY", "POI", "MARKER", "OBJECTIVE", "ROUTE", "ZONE"}
-
-
-# ── Geo helpers ──────────────────────────────────────────────────────────────
-LAT_DEG_PER_M = 1 / 111_000.0
-
-def lon_deg_per_m(lat: float) -> float:
-    return 1 / (111_000.0 * math.cos(math.radians(lat)))
-
-def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    dlat = (lat2 - lat1) * 111_000
-    dlon = (lon2 - lon1) * 111_000 * math.cos(math.radians((lat1 + lat2) / 2))
-    return math.hypot(dlat, dlon)
-
-def step_towards(lat: float, lon: float, tlat: float, tlon: float,
-                 speed_ms: float, dt: float) -> tuple[float, float]:
-    d = dist_m(lat, lon, tlat, tlon)
-    if d < 0.5:
-        return tlat, tlon
-    move = min(speed_ms * dt, d)
-    dlat = (tlat - lat) * 111_000
-    dlon = (tlon - lon) * 111_000 * math.cos(math.radians(lat))
-    brg  = math.atan2(dlon, dlat)
-    return (
-        lat + move * math.cos(brg) * LAT_DEG_PER_M,
-        lon + move * math.sin(brg) * lon_deg_per_m(lat),
-    )
 
 
 @dataclass(frozen=True)
@@ -200,39 +167,6 @@ PHASES: list[Phase] = [
 
 
 # ── HTTP plumbing ────────────────────────────────────────────────────────────
-async def login(client: httpx.AsyncClient, callsign: str, password: str) -> str:
-    try:
-        r = await client.post(_p("/auth/login"),
-                              data={"username": callsign, "password": password},
-                              timeout=10)
-        if r.status_code == 200:
-            p = r.json()
-            if p.get("mfa_required"):
-                return ""
-            return p.get("access_token", "")
-    except Exception:
-        pass
-    return ""
-
-
-async def api(client: httpx.AsyncClient, method: str, path: str, *,
-              token: str = "", json: dict | list | None = None,
-              timeout: float = 12.0) -> dict | list | None:
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    if MISSION_ID:
-        headers["X-Mission-ID"] = str(MISSION_ID)
-    try:
-        r = await client.request(method, _p(path),
-                                 headers=headers, json=json, timeout=timeout)
-        if r.status_code in (200, 201):
-            return r.json()
-        if r.status_code not in (404, 409):
-            log.debug("API %s %s → %d", method, path, r.status_code)
-    except Exception as exc:
-        log.debug("API error %s %s: %s", method, path, exc)
-    return None
-
-
 # ── Geometry helpers ─────────────────────────────────────────────────────────
 def _tg(type_: str, lat: float, lon: float, *,
         affiliation: str = "FRIENDLY", echelon: str = "",
@@ -1167,29 +1101,28 @@ async def reset_world(client: httpx.AsyncClient, admin_token: str) -> tuple[int,
 # ── Main ─────────────────────────────────────────────────────────────────────
 async def amain() -> None:
     log.info("OPERATION IRON SKY — Kananga (DRC) airborne simulator")
-    log.info("Backend: %s  (path prefix: %r)", BASE, PATH_PREFIX or "<none>")
+    log.info("Backend: %s", _CTX.base)
 
-    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0, verify=False) as client:
+    async with httpx.AsyncClient(timeout=20.0, verify=False) as client:
         # Health check
         try:
-            h = await client.get(_p("/health"), timeout=5)
+            h = await client.get(f"{_CTX.base}/health", timeout=5)
             log.info("Health: HTTP %d", h.status_code)
         except httpx.ConnectError as e:
-            sys.exit(f"❌  Cannot reach {BASE} — {e}")
+            sys.exit(f"❌  Cannot reach {_CTX.base} — {e}")
         except httpx.ConnectTimeout:
-            sys.exit(f"❌  Timeout connecting to {BASE}")
+            sys.exit(f"❌  Timeout connecting to {_CTX.base}")
         except httpx.HTTPError as e:
             log.warning("Health check failed: %s — continuing.", e)
 
         # Auth
         admin_token = await login(client, ARGS.admin, ARGS.password)
         if not admin_token:
-            sys.exit(f"❌  Login failed for {ARGS.admin} @ {BASE}")
+            sys.exit(f"❌  Login failed for {ARGS.admin} @ {_CTX.base}")
         sim_utils.save_backend(ARGS.backend)
         log.info("Authenticated as %s.", ARGS.admin)
-        global MISSION_ID
-        MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name,
+        _CTX.mission_id = await sim_utils.create_mission_async(
+            client, _CTX.base, admin_token, ARGS.mission_name,
             map_center_lat=-5.900, map_center_lng=22.368, map_zoom=14)
 
         if ARGS.reset:

@@ -64,6 +64,6 @@ class SettingsRepository(private val context: Context) {
     }
 
     companion object {
-        const val DEFAULT_SERVER = "http://192.168.0.240:6001"
+        const val DEFAULT_SERVER = "https://78.21.255.210:6200/api"
     }
 }

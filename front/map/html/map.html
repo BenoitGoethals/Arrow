@@ -463,8 +463,12 @@ const TILES={
   SATELLITE:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}),
   TOPO:     L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}),
 };
-let mbtLayer=null, activeBase='OSM';
+let activeBase='OSM';
 TILES.OSM.addTo(map);
+
+// MBTiles overlay layers — keyed by mbt_id, sit ABOVE base tiles (zIndex 5)
+// but below vector overlays so markers / graphics remain readable.
+const mbtileLayers = {}; // mbt_id → {layer, name, visible}
 
 // Weather overlay layers
 const WEATHER_LAYERS={};
@@ -1466,8 +1470,23 @@ function degToCardinal(d){if(d==null)return'—';const dirs=['N','NE','E','SE','
 // ================================================================
 // LAYER / VIEW CONTROLS
 // ================================================================
-function loadMBTiles(url,minZ,maxZ){if(mbtLayer)map.removeLayer(mbtLayer);mbtLayer=L.tileLayer(url,{minZoom:minZ||0,maxZoom:maxZ||18});if(TILES[activeBase])map.removeLayer(TILES[activeBase]);activeBase='MBTILES';mbtLayer.addTo(map);}
-function setBaseLayer(name){if(name==='MBTILES'){if(mbtLayer){if(TILES[activeBase])map.removeLayer(TILES[activeBase]);mbtLayer.addTo(map);activeBase='MBTILES';}return;}if(name===activeBase)return;if(activeBase==='MBTILES'&&mbtLayer)map.removeLayer(mbtLayer);else if(TILES[activeBase])map.removeLayer(TILES[activeBase]);if(TILES[name]){TILES[name].addTo(map);activeBase=name;}}
+function addMBTilesLayer(id,url,minZ,maxZ,name){
+  if(mbtileLayers[id])map.removeLayer(mbtileLayers[id].layer);
+  const layer=L.tileLayer(url,{minZoom:minZ||0,maxZoom:maxZ||18,tileSize:256,zIndex:5,opacity:1.0});
+  layer.addTo(map);
+  mbtileLayers[id]={layer,name:name||id,visible:true};
+}
+function removeMBTilesLayer(id){
+  if(!mbtileLayers[id])return;
+  map.removeLayer(mbtileLayers[id].layer);
+  delete mbtileLayers[id];
+}
+function toggleMBTilesLayer(id,visible){
+  if(!mbtileLayers[id])return;
+  mbtileLayers[id].visible=visible;
+  visible?mbtileLayers[id].layer.addTo(map):map.removeLayer(mbtileLayers[id].layer);
+}
+function setBaseLayer(name){if(name===activeBase)return;if(TILES[activeBase])map.removeLayer(TILES[activeBase]);if(TILES[name]){TILES[name].addTo(map);activeBase=name;}}
 function toggleLayer(name,visible){if(!LAYERS[name])return;visible?LAYERS[name].addTo(map):map.removeLayer(LAYERS[name]);}
 function fitTracks(){const all=[...Object.values(tracks).map(t=>t.marker),...Object.values(cotTracks)];if(!all.length)return;map.fitBounds(L.featureGroup(all).getBounds().pad(.15));}
 function centerOn(lat,lon,zoom){map.setView([lat,lon],zoom||map.getZoom());}

@@ -286,7 +286,49 @@ class ArrowClient:
 
     # ---- Map sources (MBTiles on server) ----------------------------
     def map_sources(self) -> list:
+        """Return list of MapSource dicts from the server (includes downloadable flag)."""
         return self._get("/map/sources")
+
+    def download_mbtiles(
+        self,
+        name: str,
+        dest_path: str,
+        on_progress=None,   # callable(done_bytes: int, total_bytes: int)
+        stop_event=None,    # threading.Event — set it to abort
+    ) -> None:
+        """Stream /map/sources/{name}/download to dest_path.
+
+        Calls on_progress periodically; raises on HTTP or I/O error.
+        Aborts cleanly when stop_event is set.
+        """
+        import os
+        url = f"{self.base_url}/map/sources/{name}/download"
+        with httpx.stream(
+            "GET", url, headers=self._headers(),
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=60.0, pool=5.0),
+            verify=_VERIFY,
+        ) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("content-length", 0))
+            done  = 0
+            tmp   = dest_path + ".part"
+            try:
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_bytes(chunk_size=65_536):
+                        if stop_event and stop_event.is_set():
+                            raise InterruptedError("Download cancelled")
+                        f.write(chunk)
+                        done += len(chunk)
+                        if on_progress:
+                            on_progress(done, total)
+                os.replace(tmp, dest_path)
+            except Exception:
+                if os.path.exists(tmp):
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+                raise
 
     # ---- Properties -------------------------------------------------
     @property

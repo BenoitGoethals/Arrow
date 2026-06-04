@@ -23,6 +23,7 @@ class WsClient(
 ) {
     private val client = OkHttpClient.Builder()
         .pingInterval(30, TimeUnit.SECONDS)
+        .trustSelfSigned()
         .build()
 
     suspend fun events(): Flow<JsonObject> = callbackFlow {

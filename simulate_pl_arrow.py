@@ -46,6 +46,7 @@ from typing import Optional
 
 import httpx
 import sim_utils
+from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, dist_m, step_towards
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -55,7 +56,7 @@ parser = argparse.ArgumentParser(description="PL Arrow -- Dendermonde -> Aalst")
 parser.add_argument("--backend",
                     default=(os.environ.get("ARROW_BACKEND_URL")
                              or sim_utils.load_saved_backend()
-                             or "http://localhost:6001"),
+                             or "https://78.21.255.210:6200/api"),
                     help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, then localhost.")
 parser.add_argument("--speed", type=float, default=None,
                     help="Time multiplier (1=real time, 20=20x faster)")
@@ -85,47 +86,16 @@ log = logging.getLogger("sim.arrow")
 # Constants
 # ---------------------------------------------------------------------------
 
-BASE         = ARGS.backend.rstrip("/")
 SIM_PASSWORD = "Arrow2525!"
+_CTX         = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"), SIM_PASSWORD)
+_api         = _CTX.api
+_login       = _CTX.login
 WALK_MS      = 5_000 / 3_600   # 5 km/h in m/s
 UPDATE_S     = 10.0             # real seconds between position pushes
 OPFOR_S      = 30.0             # real seconds between enemy jitter steps
 DRONE_S      = 90.0             # real seconds between drone SPOT reports
 TIC_CHECK_S  = 15.0             # real seconds between TIC proximity checks
 TIC_RANGE_M  = 400.0            # metres -- trigger TIC when this close to enemy
-MISSION_ID: int | None = None
-
-# ---------------------------------------------------------------------------
-# Geo helpers
-# ---------------------------------------------------------------------------
-
-LAT_DEG_PER_M = 1.0 / 111_000.0
-
-
-def _lon_deg_per_m(lat: float) -> float:
-    return 1.0 / (111_000.0 * math.cos(math.radians(lat)))
-
-
-def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    dlat = (lat2 - lat1) * 111_000
-    dlon = (lon2 - lon1) * 111_000 * math.cos(math.radians((lat1 + lat2) / 2))
-    return math.hypot(dlat, dlon)
-
-
-def step_towards(lat: float, lon: float,
-                 tlat: float, tlon: float,
-                 speed_ms: float, dt: float) -> tuple[float, float]:
-    d = dist_m(lat, lon, tlat, tlon)
-    if d < 0.5:
-        return tlat, tlon
-    move   = min(speed_ms * dt, d)
-    dlat_m = (tlat - lat) * 111_000
-    dlon_m = (tlon - lon) * 111_000 * math.cos(math.radians(lat))
-    brg    = math.atan2(dlon_m, dlat_m)
-    return (
-        lat + move * math.cos(brg) * LAT_DEG_PER_M,
-        lon + move * math.sin(brg) * _lon_deg_per_m(lat),
-    )
 
 
 def march_bearing(lat: float, lon: float, tlat: float, tlon: float) -> float:
@@ -137,21 +107,20 @@ def march_bearing(lat: float, lon: float, tlat: float, tlon: float) -> float:
 def formation_pos(centre_lat: float, centre_lon: float,
                   fwd_m: float, right_m: float,
                   bearing_rad: float) -> tuple[float, float]:
-    """Offset centre by fwd_m along bearing and right_m to the right."""
     right_brg = bearing_rad + math.pi / 2
     lat = (centre_lat
            + fwd_m   * math.cos(bearing_rad) * LAT_DEG_PER_M
            + right_m * math.cos(right_brg)   * LAT_DEG_PER_M)
     lon = (centre_lon
-           + fwd_m   * math.sin(bearing_rad) * _lon_deg_per_m(centre_lat)
-           + right_m * math.sin(right_brg)   * _lon_deg_per_m(centre_lat))
+           + fwd_m   * math.sin(bearing_rad) * lon_deg_per_m(centre_lat)
+           + right_m * math.sin(right_brg)   * lon_deg_per_m(centre_lat))
     return lat, lon
 
 
 def offset_point(lat: float, lon: float,
                  north_m: float, east_m: float) -> tuple[float, float]:
     return (lat + north_m * LAT_DEG_PER_M,
-            lon + east_m  * _lon_deg_per_m(lat))
+            lon + east_m  * lon_deg_per_m(lat))
 
 
 def grid(lat: float, lon: float) -> str:
@@ -330,43 +299,6 @@ def _build_platoon() -> tuple[list[SimOp], list[SimSection]]:
         sections.append(sec)
 
     return all_ops, sections
-
-
-# ---------------------------------------------------------------------------
-# HTTP helpers
-# ---------------------------------------------------------------------------
-
-async def _api(client: httpx.AsyncClient, method: str, path: str,
-               token: str = "", **kwargs) -> Optional[dict]:
-    headers: dict[str, str] = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    if MISSION_ID:
-        headers["X-Mission-ID"] = str(MISSION_ID)
-    try:
-        r = await client.request(method, f"{BASE}{path}",
-                                 headers=headers, timeout=10, **kwargs)
-        if r.status_code in (200, 201):
-            return r.json()
-        if r.status_code in (204, 409):
-            return {}
-        log.warning("%-6s %-40s -> %d  %s", method, path, r.status_code, r.text[:80])
-    except Exception as exc:
-        log.warning("%-6s %-40s -> %s", method, path, exc)
-    return None
-
-
-async def _login(client: httpx.AsyncClient, callsign: str,
-                 password: str = SIM_PASSWORD) -> Optional[str]:
-    try:
-        r = await client.post(f"{BASE}/auth/login",
-                              data={"username": callsign, "password": password},
-                              timeout=10)
-        if r.status_code == 200:
-            return r.json().get("access_token")
-    except Exception:
-        pass
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -953,8 +885,6 @@ async def run_platoon(client: httpx.AsyncClient,
 # ---------------------------------------------------------------------------
 
 async def main() -> None:
-    global MISSION_ID
-
     # Apply --admin/--password aliases
     if ARGS.admin:
         ARGS.seed_admin = ARGS.admin
@@ -971,7 +901,7 @@ async def main() -> None:
     all_ops, sections = _build_platoon()
     log.info("=== Op Dendermonde-Aalst -- PL Arrow simulator ===")
     log.info("Backend: %s  |  Operators: %d  |  Speed: %.1fx",
-             BASE, len(all_ops), ARGS.speed)
+             _CTX.base, len(all_ops), ARGS.speed)
     log.info("Walk %.1f km/h  update=%.0fs  drone=%.0fs  TIC=%.0fs",
              WALK_MS * 3.6,
              UPDATE_S    / ARGS.speed,
@@ -983,13 +913,13 @@ async def main() -> None:
 
         mid_lat = (WAYPOINTS[0][0] + WAYPOINTS[3][0]) / 2
         mid_lon = (WAYPOINTS[0][1] + WAYPOINTS[3][1]) / 2
-        MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name,
+        _CTX.mission_id = await sim_utils.create_mission_async(
+            client, _CTX.base, admin_token, ARGS.mission_name,
             description="PL Arrow -- 1 PLT Bravo Coy, Dendermonde -> Aalst, 5 km/h",
             map_center_lat=mid_lat, map_center_lng=mid_lon, map_zoom=13,
         )
-        if MISSION_ID:
-            log.info("Mission id=%d", MISSION_ID)
+        if _CTX.mission_id:
+            log.info("Mission id=%d", _CTX.mission_id)
 
         await plant_opord(client, admin_token)
         enemy_units = await plant_enemy(client, admin_token)
