@@ -40,6 +40,7 @@ from typing import Optional
 import httpx
 
 import sim_utils
+from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, dist_m, step_towards, jitter, mgrs
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -62,59 +63,12 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%H:%M:%S")
 log = logging.getLogger("sim")
 
-# ── MGRS conversion (WGS-84, DMATM 8358.1) ───────────────────────────────────
-
-import math as _math
-
-def _utm_zone(lat: float, lon: float) -> int:
-    if 56 <= lat < 64 and 3 <= lon < 12:
-        return 32
-    if 72 <= lat <= 84:
-        if lon < 9:  return 31
-        if lon < 21: return 33
-        if lon < 33: return 35
-        if lon < 42: return 37
-    return int((lon + 180) / 6) + 1
-
-def _lat_band(lat: float) -> str:
-    return "CDEFGHJKLMNPQRSTUVWX"[min(19, int((lat + 80) / 8))]
-
-def _to_utm(lat: float, lon: float, zone: int):
-    a=6378137; f=1/298.257223563; e2=2*f-f*f; e4=e2*e2; e6=e4*e2; ep2=e2/(1-e2); k0=0.9996
-    lr=_math.radians(lat); lo=_math.radians(lon); lo0=_math.radians((zone-1)*6-180+3)
-    N=a/_math.sqrt(1-e2*_math.sin(lr)**2)
-    T=_math.tan(lr)**2; C=ep2*_math.cos(lr)**2; av=_math.cos(lr)*(lo-lo0)
-    M=a*((1-e2/4-3*e4/64-5*e6/256)*lr-(3*e2/8+3*e4/32+45*e6/1024)*_math.sin(2*lr)
-         +(15*e4/256+45*e6/1024)*_math.sin(4*lr)-(35*e6/3072)*_math.sin(6*lr))
-    e=k0*N*(av+(1-T+C)*av**3/6+(5-18*T+T**2+72*C-58*ep2)*av**5/120)+500_000
-    n=k0*(M+N*_math.tan(lr)*(av**2/2+(5-T+9*C+4*C**2)*av**4/24
-         +(61-58*T+T**2+600*C-330*ep2)*av**6/720))
-    if lat < 0: n += 10_000_000
-    return e, n
-
-_SET_COLS = ["ABCDEFGH", "JKLMNPQR", "STUVWXYZ"]
-_ROW_ODD  = "ABCDEFGHJKLMNPQRSTUV"
-_ROW_EVEN = "FGHJKLMNPQRSTUVABCDE"
-
-def mgrs(lat: float, lon: float, acc: int = 5) -> str:
-    """Return an MGRS grid string for WGS-84 lat/lon (default 5-digit = 1 m precision)."""
-    try:
-        z = _utm_zone(lat, lon)
-        b = _lat_band(lat)
-        e, n = _to_utm(lat, lon, z)
-        col = _SET_COLS[(z - 1) % 3][max(0, min(7, int(e / 100_000) - 1))]
-        row = (_ROW_ODD if z % 2 else _ROW_EVEN)[int(n / 100_000) % 20]
-        es  = str(int(e % 100_000)).zfill(5)[:acc]
-        ns  = str(int(n % 100_000)).zfill(5)[:acc]
-        return f"{z}{b}{col}{row} {es}{ns}"
-    except Exception:
-        return f"{lat:.4f},{lon:.4f}"   # fallback
-
 # ── Simulation constants ──────────────────────────────────────────────────────
 
-BASE = ARGS.backend.rstrip("/")
-MISSION_ID: int | None = None
 SIM_PASSWORD   = "Arrow2525!"
+_CTX           = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"), SIM_PASSWORD)
+api            = _CTX.api
+login          = _CTX.login
 WALK_MS        = 5000 / 3600          # 5 km/h in m/s
 INFIL_MS       = 1500 / 3600          # 1.5 km/h in m/s
 UPDATE_S       = 10.0                 # real seconds between position pushes
@@ -122,41 +76,6 @@ ENEMY_S        = 10.0                 # real seconds between enemy marks
 SECTION_STAGGER_S = 120.0            # section 2 starts this many (real) seconds later
 CBRN_S         = 90.0                 # real seconds between worldwide CBRN incidents
 CAS_S          = 60.0                 # real seconds between CAS requests
-
-# ── Geographic helpers ────────────────────────────────────────────────────────
-
-LAT_DEG_PER_M = 1 / 111_000.0
-
-def lon_deg_per_m(lat: float) -> float:
-    return 1 / (111_000.0 * math.cos(math.radians(lat)))
-
-def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    dlat = (lat2 - lat1) * 111_000
-    dlon = (lon2 - lon1) * 111_000 * math.cos(math.radians((lat1 + lat2) / 2))
-    return math.hypot(dlat, dlon)
-
-def step_towards(lat: float, lon: float,
-                 tlat: float, tlon: float,
-                 speed_ms: float, dt: float) -> tuple[float, float]:
-    """Move (lat,lon) toward (tlat,tlon) at speed_ms for dt seconds."""
-    d = dist_m(lat, lon, tlat, tlon)
-    if d < 0.5:
-        return tlat, tlon
-    move = min(speed_ms * dt, d)
-    dlat = (tlat - lat) * 111_000
-    dlon = (tlon - lon) * 111_000 * math.cos(math.radians(lat))
-    brg  = math.atan2(dlon, dlat)
-    return (
-        lat + move * math.cos(brg) * LAT_DEG_PER_M,
-        lon + move * math.sin(brg) * lon_deg_per_m(lat),
-    )
-
-def jitter(lat: float, lon: float, north_m: float, east_m: float) -> tuple[float, float]:
-    """Offset a coordinate by fixed north/east meters (formation spread)."""
-    return (
-        lat + north_m * LAT_DEG_PER_M,
-        lon + east_m  * lon_deg_per_m(lat),
-    )
 
 # ── Unit tree definition ──────────────────────────────────────────────────────
 
@@ -317,40 +236,6 @@ _EVENT_WEIGHTS = [e["weight"] for e in _EVENTS]
 
 SPOT_DIRECTIONS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 SPOT_DISTANCES  = [50, 100, 150, 200, 300, 400, 500]
-
-# ── HTTP helpers ──────────────────────────────────────────────────────────────
-
-async def api(client: httpx.AsyncClient, method: str, path: str,
-              token: str = "", **kwargs) -> Optional[dict]:
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    if MISSION_ID:
-        headers["X-Mission-ID"] = str(MISSION_ID)
-    try:
-        r = await client.request(method, f"{BASE}{path}",
-                                 headers=headers, timeout=10, **kwargs)
-        if r.status_code in (200, 201):
-            return r.json()
-        if r.status_code == 409:
-            return None   # already exists
-        log.warning("%-6s %-30s → %d  %s", method, path, r.status_code, r.text[:80])
-        return None
-    except Exception as exc:
-        log.warning("%-6s %-30s → %s", method, path, exc)
-        return None
-
-async def login(client: httpx.AsyncClient, callsign: str,
-                password: str = SIM_PASSWORD) -> Optional[str]:
-    try:
-        r = await client.post(f"{BASE}/auth/login",
-                              data={"username": callsign, "password": password},
-                              timeout=10)
-        if r.status_code == 200:
-            return r.json().get("access_token")
-    except Exception:
-        pass
-    return None
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -1653,7 +1538,7 @@ async def main() -> None:
     speed_mult = ARGS.speed
 
     log.info("=== Arrow Tactical Simulator — Operation Dendermonde ===")
-    log.info("Backend : %s", BASE)
+    log.info("Backend : %s", _CTX.base)
     log.info("Operators: %d  |  Sections: %d  |  Speed: %.1f×",
              len(all_ops), len(sections), speed_mult)
     log.info("Walk %.1f km/h  Infil %.1f km/h  Update every %gs  Enemy every %gs  "
@@ -1668,9 +1553,8 @@ async def main() -> None:
             await reset_sim(client, all_ops)
 
         admin_token = await bootstrap(client, all_ops, sections)
-        global MISSION_ID
-        MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name,
+        _CTX.mission_id = await sim_utils.create_mission_async(
+            client, _CTX.base, admin_token, ARGS.mission_name,
             map_center_lat=50.08, map_center_lng=5.73, map_zoom=12)
         await login_all(client, all_ops)
 

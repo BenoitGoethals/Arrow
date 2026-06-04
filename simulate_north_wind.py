@@ -53,10 +53,10 @@ import random
 import sys
 from dataclasses import dataclass, field
 from typing import Optional
-from urllib.parse import urlsplit
 import httpx
 
 import sim_utils
+from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, dist_m, step_towards, mgrs
 
 # ── CLI / persistent config ─────────────────────────────────────────────────
 # simulate.py-compatible default — points at the production server so just
@@ -101,11 +101,9 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%H:%M:%S")
 log = logging.getLogger("nw")
 
-BASE = ARGS.backend.rstrip("/")
-MISSION_ID: int | None = None
-
-ORIGIN, PATH_PREFIX = sim_utils.split_base(BASE)
-
+_CTX  = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"))
+api   = _CTX.api
+login = _CTX.login
 
 # ── Tactical-graphic & object types ─────────────────────────────────────────
 POINT_TG_TYPES = {"ATK_AXIS", "COUNTERATTACK", "AMBUSH", "DEF_AREA",
@@ -114,32 +112,6 @@ LINE_TG_TYPES  = {"BOUNDARY", "FLET", "FLOT", "PHASE_LINE"}
 POLY_TG_TYPES  = {"OBJ_AREA"}
 ALL_TG_TYPES   = POINT_TG_TYPES | LINE_TG_TYPES | POLY_TG_TYPES
 NON_TG_TYPES   = {"ENEMY", "POI", "MARKER", "OBJECTIVE", "ROUTE", "ZONE"}
-
-
-# ── Geo helpers ──────────────────────────────────────────────────────────────
-LAT_DEG_PER_M = 1 / 111_000.0
-
-def lon_deg_per_m(lat: float) -> float:
-    return 1 / (111_000.0 * math.cos(math.radians(lat)))
-
-def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    dlat = (lat2 - lat1) * 111_000
-    dlon = (lon2 - lon1) * 111_000 * math.cos(math.radians((lat1 + lat2) / 2))
-    return math.hypot(dlat, dlon)
-
-def step_towards(lat: float, lon: float, tlat: float, tlon: float,
-                 speed_ms: float, dt: float) -> tuple[float, float]:
-    d = dist_m(lat, lon, tlat, tlon)
-    if d < 0.5:
-        return tlat, tlon
-    move = min(speed_ms * dt, d)
-    dlat = (tlat - lat) * 111_000
-    dlon = (tlon - lon) * 111_000 * math.cos(math.radians(lat))
-    brg  = math.atan2(dlon, dlat)
-    return (
-        lat + move * math.cos(brg) * LAT_DEG_PER_M,
-        lon + move * math.sin(brg) * lon_deg_per_m(lat),
-    )
 
 
 @dataclass(frozen=True)
@@ -183,78 +155,6 @@ PHASES: list[Phase] = [
 LD_CENTRE = LatLon(51.2333, 5.3133)      # Lommel / NL border crossing
 LEFT_BOUNDARY_LON   = 5.0
 RIGHT_BOUNDARY_LON  = 6.3
-
-
-# ── HTTP plumbing (async, simulate.py-style) ────────────────────────────────
-def _p(path: str) -> str:
-    if not PATH_PREFIX or path.startswith(PATH_PREFIX + "/") or path == PATH_PREFIX:
-        return path
-    return PATH_PREFIX + path
-
-_API_FAIL_COUNT = 0    # bumped on each non-2xx so we can log the first few loudly
-
-async def api(client: httpx.AsyncClient, method: str, path: str,
-              token: str = "", **kwargs) -> Optional[dict]:
-    """Async request returning JSON or None. Logs non-2xx without aborting.
-
-    First 5 failures are logged with the full response body so the operator
-    can immediately tell whether it's auth, schema validation, or a missing
-    endpoint. After that we throttle to avoid drowning the console.
-    """
-    global _API_FAIL_COUNT
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    if MISSION_ID:
-        headers["X-Mission-ID"] = str(MISSION_ID)
-    try:
-        r = await client.request(method, _p(path), headers=headers, timeout=20, **kwargs)
-        if 200 <= r.status_code < 300:
-            return r.json() if r.content else {}
-        _API_FAIL_COUNT += 1
-        body = r.text[:400] if _API_FAIL_COUNT <= 5 else r.text[:80]
-        log.warning("%-6s %-30s → %d  %s", method, path, r.status_code, body)
-        return None
-    except Exception as exc:
-        _API_FAIL_COUNT += 1
-        log.warning("%-6s %-30s → %s", method, path, exc)
-        return None
-
-async def login(client: httpx.AsyncClient, callsign: str, password: str) -> Optional[str]:
-    """POST /auth/login.
-
-    On exception we log the *type* of the exception alongside its message —
-    httpx raises ``ConnectTimeout`` / ``ConnectError`` / ``ReadTimeout`` with
-    empty messages, so logging just ``str(exc)`` produces a silent warning
-    that's nearly impossible to diagnose. The type tells the operator at a
-    glance whether it's a wrong host, a closed port, a slow backend, or a
-    genuine 4xx/5xx response.
-    """
-    try:
-        r = await client.post(_p("/auth/login"),
-                              data={"username": callsign, "password": password},
-                              timeout=15)
-        if r.status_code == 200:
-            payload = r.json()
-            if payload.get("mfa_required"):
-                log.error("Account %s has MFA enabled — use a non-MFA admin.", callsign)
-                return None
-            return payload.get("access_token")
-        log.warning("login %s → HTTP %d  %s",
-                    callsign, r.status_code, (r.text or "<empty body>")[:200])
-    except httpx.ConnectError as exc:
-        log.warning("login %s → CONNECT-ERROR: %s (host unreachable / wrong --backend URL?)",
-                    callsign, exc or "no detail")
-    except httpx.ConnectTimeout as exc:
-        log.warning("login %s → CONNECT-TIMEOUT after 15s: %s "
-                    "(port firewalled or wrong --backend URL?)",
-                    callsign, exc or "no detail")
-    except httpx.ReadTimeout as exc:
-        log.warning("login %s → READ-TIMEOUT after 15s: %s "
-                    "(backend reachable but unresponsive)",
-                    callsign, exc or "no detail")
-    except Exception as exc:
-        log.warning("login %s → %s: %s",
-                    callsign, type(exc).__name__, exc or "no detail")
-    return None
 
 
 # ── Static-phase: plant tactical objects ────────────────────────────────────
@@ -718,9 +618,6 @@ async def advance_phase_clock(phase_idx_state: dict, speed: float,
         log.info("📍 PHASE ADVANCE — Φ%d %s (%s)", ph.idx, ph.obj_name, ph.city)
 
 
-# Simple MGRS converter — duplicated from simulate.py so this script stays standalone.
-def mgrs(lat: float, lon: float, acc: int = 5) -> str:
-    return f"{lat:.4f},{lon:.4f}"   # plain decimal as a tactical placeholder
 
 
 CONTACT_TEMPLATES = [
@@ -915,24 +812,17 @@ async def reset_world(client: httpx.AsyncClient,
 
 # ── Main async driver ──────────────────────────────────────────────────────
 async def amain() -> None:
-    log.info("Backend: %s   (path prefix: %r)", BASE, PATH_PREFIX or "<none>")
-    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0, verify=False) as client:
-        # Pre-flight reachability check — a quick GET /health (or the prefixed
-        # equivalent) tells us in under 5 seconds whether the host / port is
-        # wrong, before we waste 15s on the auth-form timeout.
+    log.info("Backend: %s", _CTX.base)
+    async with httpx.AsyncClient(timeout=20.0, verify=False) as client:
         try:
-            health = await client.get(_p("/health"), timeout=5)
+            health = await client.get(f"{_CTX.base}/health", timeout=5)
             log.info("Health check → HTTP %d", health.status_code)
         except httpx.ConnectError as exc:
-            sys.exit(f"❌  Cannot reach {BASE}\n"
+            sys.exit(f"❌  Cannot reach {_CTX.base}\n"
                      f"   ConnectError: {exc or '(no detail)'}\n"
-                     f"   Check the IP / port — common typo: 78.21.255.21 vs "
-                     f"78.21.255.210. Also confirm the backend is running and "
-                     f"the path prefix is correct (currently '{PATH_PREFIX or '<none>'}').")
+                     f"   Check the IP / port.")
         except httpx.ConnectTimeout:
-            sys.exit(f"❌  Cannot reach {BASE} — connect timed out after 5s.\n"
-                     f"   Port {urlsplit(BASE).netloc.rsplit(':', 1)[-1]} firewalled "
-                     f"or the host is offline.")
+            sys.exit(f"❌  Cannot reach {_CTX.base} — connect timed out after 5s.")
         except httpx.HTTPError as exc:
             log.warning("Health check failed: %s: %s — continuing anyway.",
                         type(exc).__name__, exc or "(no detail)")
@@ -941,7 +831,7 @@ async def amain() -> None:
         admin_token = await login(client, ARGS.admin, ARGS.password)
         if not admin_token:
             sys.exit(f"❌  login failed for {ARGS.admin}.\n"
-                     f"   Backend URL : {BASE}\n"
+                     f"   Backend URL : {_CTX.base}\n"
                      f"   Most common causes:\n"
                      f"     • Wrong --backend URL (typo in IP/port/path prefix)\n"
                      f"     • Admin password not 'ranger14' (use --password)\n"
@@ -949,9 +839,8 @@ async def amain() -> None:
                      f"another ADMIN with --admin <callsign>")
         sim_utils.save_backend(ARGS.backend)
         log.info("Authenticated.")
-        global MISSION_ID
-        MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name,
+        _CTX.mission_id = await sim_utils.create_mission_async(
+            client, _CTX.base, admin_token, ARGS.mission_name,
             map_center_lat=52.2, map_center_lng=5.6, map_zoom=8)
 
         if ARGS.reset:
@@ -1036,7 +925,7 @@ async def amain() -> None:
             log.warning("⚠ Plant is incomplete. Re-read the warnings above. "
                         "Common causes: --backend URL wrong (currently %s), seed admin "
                         "lacks ADMIN role, MFA enabled on seed admin, or backend rate "
-                        "limit. Try: --backend http://YOUR-SERVER:6001 --reset", BASE)
+                        "limit. Try: --backend http://YOUR-SERVER:6001 --reset", _CTX.base)
 
         log.info("Static plant: %d / %d POSTs accepted across %d phases.",
                  total_ok, total_all, len(PHASES))

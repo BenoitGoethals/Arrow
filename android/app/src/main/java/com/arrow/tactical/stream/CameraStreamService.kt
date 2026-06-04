@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import com.arrow.tactical.network.trustSelfSigned
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.WebSocket
@@ -100,6 +101,7 @@ class CameraStreamService : Service() {
         val client = OkHttpClient.Builder()
             .pingInterval(15, TimeUnit.SECONDS)
             .connectTimeout(10, TimeUnit.SECONDS)
+            .trustSelfSigned()
             .build()
 
         webSocket = client.newWebSocket(

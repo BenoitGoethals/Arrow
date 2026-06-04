@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QMessageBox,
 )
 from front.app.right_info_panel import RightInfoPanel
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QSettings
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction
 
 from front.map.view       import MapView
@@ -41,6 +41,7 @@ from front.app.collapsible_panel  import CollapsibleSidePanel
 from front.app.toast_manager      import ToastManager
 from front.app.settings_dialog    import ConfigDialog, read_gps_config, load as _settings_load, _bool as _settings_bool
 from front.app.voice_alerts       import VoiceAlertPlayer
+from front.panels.mbtiles.dialog  import MBTilesDialog
 
 CBRN_TYPES = {"CBRN_1","CBRN_2","CBRN_3","CBRN_4","CBRN_5","CBRN_6"}
 
@@ -70,6 +71,10 @@ class MainWindow(QMainWindow):
         self._suppress_toasts = False
         self._voice      = VoiceAlertPlayer(self)
         self._voice.enabled = _settings_bool(_settings_load("display_voice_alerts"), True)
+
+        # MBTiles overlay registry: mbt_id → {path, name, min_zoom, max_zoom, visible}
+        self._mbtiles: dict[str, dict] = {}
+        self._mbtiles_dlg = MBTilesDialog(self)
         self._tile_server = MBTilesServer()
         port = self._tile_server.start()
 
@@ -193,7 +198,7 @@ class MainWindow(QMainWindow):
         tb.base_changed.connect(self._map.set_base_layer)
         tb.fit_requested.connect(self._map.fit_tracks)
         tb.alert_requested.connect(self._send_alert)
-        tb.mbtiles_selected.connect(self._load_mbtiles_file)
+        tb.mbtiles_manage.connect(self._open_mbtiles_manager)
         tb.weather_toggled.connect(self._map.set_weather_layer)
         tb.weather_fetch.connect(lambda: self._map._js("fetchWeatherAtCenter()"))
         tb.screenshot_requested.connect(self._take_screenshot)
@@ -281,6 +286,7 @@ class MainWindow(QMainWindow):
             return
         self._loaded = True
         self._suppress_toasts = True
+        self._restore_mbtiles()
         self._apply_gps_config()
         self._resolve_role()
         self._load_hierarchy()
@@ -1166,11 +1172,71 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.statusBar().showMessage(f"Message failed: {e}", 3000)
 
-    def _load_mbtiles_file(self, path: str):
-        tile_url = self._tile_server.load(path)
-        db = self._tile_server.db
-        self._map.load_mbtiles(tile_url, db.min_zoom, db.max_zoom)
-        self.statusBar().showMessage(f"MBTiles: {db.name}", 3000)
+    # ================================================================
+    # MBTILES CRUD
+    # ================================================================
+
+    def _open_mbtiles_manager(self):
+        dlg = self._mbtiles_dlg
+        for sig in (dlg.add_requested, dlg.remove_requested, dlg.toggle_requested):
+            try: sig.disconnect()
+            except Exception: pass
+        dlg.add_requested.connect(self._mbtiles_add)
+        dlg.remove_requested.connect(self._mbtiles_remove)
+        dlg.toggle_requested.connect(self._mbtiles_toggle)
+        dlg.set_client(self._client)
+        dlg.refresh(self._mbtiles)
+        dlg.show()
+        dlg.raise_()
+
+    def _mbtiles_add(self, path: str):
+        try:
+            mbt_id, tile_url, min_z, max_z, name = self._tile_server.load(path)
+        except Exception as exc:
+            self.statusBar().showMessage(f"MBTiles load failed: {exc}", 4000)
+            return
+        self._mbtiles[mbt_id] = {
+            "path": path, "name": name,
+            "min_zoom": min_z, "max_zoom": max_z, "visible": True,
+        }
+        self._map.add_mbtiles_layer(mbt_id, tile_url, min_z, max_z, name)
+        self._save_mbtiles_settings()
+        self._mbtiles_dlg.refresh(self._mbtiles)
+        self.statusBar().showMessage(f"MBTiles loaded: {name}  (z{min_z}–{max_z})", 3000)
+
+    def _mbtiles_remove(self, mbt_id: str):
+        if mbt_id not in self._mbtiles:
+            return
+        name = self._mbtiles[mbt_id]["name"]
+        self._tile_server.unload(mbt_id)
+        self._map.remove_mbtiles_layer(mbt_id)
+        del self._mbtiles[mbt_id]
+        self._save_mbtiles_settings()
+        self._mbtiles_dlg.refresh(self._mbtiles)
+        self.statusBar().showMessage(f"MBTiles removed: {name}", 2000)
+
+    def _mbtiles_toggle(self, mbt_id: str, visible: bool):
+        if mbt_id not in self._mbtiles:
+            return
+        self._mbtiles[mbt_id]["visible"] = visible
+        self._map.toggle_mbtiles_layer(mbt_id, visible)
+        self._mbtiles_dlg.refresh(self._mbtiles)
+
+    def _save_mbtiles_settings(self):
+        s = QSettings("Arrow", "ArrowFront")
+        s.setValue("mbtiles/paths", [v["path"] for v in self._mbtiles.values()])
+
+    def _restore_mbtiles(self):
+        """Reload previously loaded MBTiles files on startup."""
+        s = QSettings("Arrow", "ArrowFront")
+        paths = s.value("mbtiles/paths", [])
+        if isinstance(paths, str):
+            paths = [paths]
+        for path in paths or []:
+            try:
+                self._mbtiles_add(path)
+            except Exception:
+                pass
 
     def _on_free_draw_saved(self, obj_type: str, geom_json: str, notes_json: str):
         """Persist a free-draw stroke/text so web + other fronts see it via WS."""

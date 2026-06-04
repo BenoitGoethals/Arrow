@@ -34,6 +34,9 @@ def load_saved_backend() -> str | None:
 
 def save_backend(url: str) -> None:
     try:
+        # Normalise to HTTPS before persisting
+        if url.startswith("http://") and "localhost" not in url and "127.0.0.1" not in url:
+            url = "https://" + url[7:]
         _CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         _CONFIG_FILE.write_text(json.dumps({"backend": url}, indent=2))
     except Exception as e:
@@ -256,3 +259,165 @@ class Api:
     def delete(self, path: str, tok: str) -> int:
         r = self.c.delete(self._p(path), headers=self._hdr(tok))
         return r.status_code
+
+
+# ── Geographic helpers ────────────────────────────────────────────────────────
+
+import math as _math
+
+LAT_DEG_PER_M: float = 1.0 / 111_000.0
+
+
+def lon_deg_per_m(lat: float) -> float:
+    return 1.0 / (111_000.0 * _math.cos(_math.radians(lat)))
+
+
+def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    dlat = (lat2 - lat1) * 111_000
+    dlon = (lon2 - lon1) * 111_000 * _math.cos(_math.radians((lat1 + lat2) / 2))
+    return _math.hypot(dlat, dlon)
+
+
+def step_towards(lat: float, lon: float,
+                 tlat: float, tlon: float,
+                 speed_ms: float, dt: float) -> tuple[float, float]:
+    d = dist_m(lat, lon, tlat, tlon)
+    if d < 0.5:
+        return tlat, tlon
+    move = min(speed_ms * dt, d)
+    dlat = (tlat - lat) * 111_000
+    dlon = (tlon - lon) * 111_000 * _math.cos(_math.radians(lat))
+    brg = _math.atan2(dlon, dlat)
+    return (
+        lat + move * _math.cos(brg) * LAT_DEG_PER_M,
+        lon + move * _math.sin(brg) * lon_deg_per_m(lat),
+    )
+
+
+def jitter(lat: float, lon: float, north_m: float, east_m: float) -> tuple[float, float]:
+    return (
+        lat + north_m * LAT_DEG_PER_M,
+        lon + east_m  * lon_deg_per_m(lat),
+    )
+
+
+# ── MGRS conversion (WGS-84, DMATM 8358.1) ───────────────────────────────────
+
+def _utm_zone(lat: float, lon: float) -> int:
+    if 56 <= lat < 64 and 3 <= lon < 12:
+        return 32
+    if 72 <= lat <= 84:
+        if lon < 9:  return 31
+        if lon < 21: return 33
+        if lon < 33: return 35
+        if lon < 42: return 37
+    return int((lon + 180) / 6) + 1
+
+
+def _lat_band(lat: float) -> str:
+    return "CDEFGHJKLMNPQRSTUVWX"[min(19, int((lat + 80) / 8))]
+
+
+def _to_utm(lat: float, lon: float, zone: int) -> tuple[float, float]:
+    a, f = 6_378_137, 1 / 298.257223563
+    e2 = 2*f - f*f; e4 = e2*e2; e6 = e4*e2; ep2 = e2/(1-e2); k0 = 0.9996
+    lr = _math.radians(lat); lo = _math.radians(lon); lo0 = _math.radians((zone-1)*6-180+3)
+    N = a / _math.sqrt(1 - e2*_math.sin(lr)**2)
+    T = _math.tan(lr)**2; C = ep2*_math.cos(lr)**2; av = _math.cos(lr)*(lo-lo0)
+    M = a*((1-e2/4-3*e4/64-5*e6/256)*lr
+           - (3*e2/8+3*e4/32+45*e6/1024)*_math.sin(2*lr)
+           + (15*e4/256+45*e6/1024)*_math.sin(4*lr)
+           - (35*e6/3072)*_math.sin(6*lr))
+    e = k0*N*(av+(1-T+C)*av**3/6+(5-18*T+T**2+72*C-58*ep2)*av**5/120)+500_000
+    n = k0*(M+N*_math.tan(lr)*(av**2/2+(5-T+9*C+4*C**2)*av**4/24
+           +(61-58*T+T**2+600*C-330*ep2)*av**6/720))
+    if lat < 0:
+        n += 10_000_000
+    return e, n
+
+
+_SET_COLS = ["ABCDEFGH", "JKLMNPQR", "STUVWXYZ"]
+_ROW_ODD  = "ABCDEFGHJKLMNPQRSTUV"
+_ROW_EVEN = "FGHJKLMNPQRSTUVABCDE"
+
+
+def mgrs(lat: float, lon: float, acc: int = 5) -> str:
+    """Return an MGRS grid string for WGS-84 lat/lon (default 5-digit = 1 m precision)."""
+    try:
+        z = _utm_zone(lat, lon)
+        b = _lat_band(lat)
+        e, n = _to_utm(lat, lon, z)
+        col = _SET_COLS[(z-1) % 3][max(0, min(7, int(e/100_000)-1))]
+        row = (_ROW_ODD if z % 2 else _ROW_EVEN)[int(n/100_000) % 20]
+        es  = str(int(e % 100_000)).zfill(5)[:acc]
+        ns  = str(int(n % 100_000)).zfill(5)[:acc]
+        return f"{z}{b}{col}{row} {es}{ns}"
+    except Exception:
+        return f"{lat:.4f},{lon:.4f}"
+
+
+# ── Async simulation context ──────────────────────────────────────────────────
+
+class AsyncSimContext:
+    """Shared state for async simulators: base URL, mission ID, and HTTP helpers."""
+
+    def __init__(self, base_url: str, sim_password: str = "Arrow2525!") -> None:
+        url = base_url.rstrip("/")
+        # Auto-upgrade HTTP → HTTPS for remote hosts; keep http:// for localhost
+        if url.startswith("http://") and "localhost" not in url and "127.0.0.1" not in url:
+            url = "https://" + url[7:]
+        self._base = url
+        self._password = sim_password
+        self.mission_id: int | None = None
+        self._fail_count = 0
+
+    @property
+    def base(self) -> str:
+        return self._base
+
+    def _hdr(self, token: str) -> dict[str, str]:
+        h: dict[str, str] = {}
+        if token:
+            h["Authorization"] = f"Bearer {token}"
+        if self.mission_id:
+            h["X-Mission-ID"] = str(self.mission_id)
+        return h
+
+    async def api(self, client: httpx.AsyncClient, method: str, path: str,
+                  token: str = "", **kwargs) -> "dict | list | None":
+        headers = self._hdr(token)
+        try:
+            r = await client.request(method, f"{self._base}{path}",
+                                     headers=headers, timeout=20, **kwargs)
+            if 200 <= r.status_code < 300:
+                return r.json() if r.content else {}
+            self._fail_count += 1
+            body = r.text[:400] if self._fail_count <= 5 else r.text[:80]
+            log.warning("%-6s %-30s → %d  %s", method, path, r.status_code, body)
+            return None
+        except Exception as exc:
+            self._fail_count += 1
+            log.warning("%-6s %-30s → %s", method, path, exc)
+            return None
+
+    async def login(self, client: httpx.AsyncClient, callsign: str,
+                    password: str | None = None) -> "str | None":
+        pw = password if password is not None else self._password
+        try:
+            r = await client.post(f"{self._base}/auth/login",
+                                  data={"username": callsign, "password": pw},
+                                  timeout=15)
+            if r.status_code == 200:
+                payload = r.json()
+                if payload.get("mfa_required"):
+                    log.warning("Account %s has MFA enabled — use a non-MFA admin.", callsign)
+                    return None
+                return payload.get("access_token")
+            log.warning("login %s → HTTP %d  %s",
+                        callsign, r.status_code, (r.text or "<empty body>")[:200])
+        except httpx.ConnectError as exc:
+            log.warning("login %s → CONNECT-ERROR: %s (wrong --backend URL?)",
+                        callsign, exc or "no detail")
+        except Exception as exc:
+            log.warning("login %s → %s: %s", callsign, type(exc).__name__, exc)
+        return None

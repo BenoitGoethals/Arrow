@@ -1,23 +1,19 @@
 """Local HTTP server — serves MBTiles offline map tiles AND the map HTML page.
 
-Serving map.html via http://127.0.0.1 instead of file:// fixes the Qt6/macOS
-Metal compositor black-screen bug: the file:// protocol uses a different
-compositing code-path that cannot composite CSS overlays over the Leaflet map
-without losing the GPU framebuffer.
-
 Routes
 ------
-/ping                  → health check
-/map                   → map.html
-/lib/<file>            → front/map/html/lib/<file>  (Leaflet, milsymbol, mgrs, ...)
-/qwebchannel.js        → qwebchannel.js (injected by Qt, but kept here as fallback)
-/{z}/{x}/{y}.png       → MBTiles tile (when an MBTiles file is loaded)
+/ping                       → health check
+/map                        → map.html
+/lib/<file>                 → front/map/html/lib/<file>  (Leaflet, milsymbol, mgrs, ...)
+/qwebchannel.js             → qwebchannel.js
+/{mbt_id}/{z}/{x}/{y}.png   → MBTiles tile for the given layer id
 """
 from __future__ import annotations
 
 import mimetypes
 import sqlite3
 import threading
+import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
@@ -26,10 +22,8 @@ _HTML_DIR = Path(__file__).parent / "html"
 
 
 class _Handler(BaseHTTPRequestHandler):
-    # ── routing ──────────────────────────────────────────────────────────────
-
     def do_GET(self):
-        path = self.path.split("?")[0]   # strip query string
+        path = self.path.split("?")[0]
 
         if path == "/ping":
             return self._text(200, "pong")
@@ -43,14 +37,16 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/qwebchannel.js":
             return self._file(_HTML_DIR / "qwebchannel.js")
 
-        # MBTiles tile: /{z}/{x}/{y}.png
+        # MBTiles tile: /{mbt_id}/{z}/{x}/{y}.png
         try:
             parts = path.strip("/").split("/")
-            if len(parts) == 3:
-                z, x = int(parts[0]), int(parts[1])
-                y    = int(parts[2].split(".")[0])
-                tms_y = (1 << z) - 1 - y
-                tile = self.server._mbtiles_server.get_tile(z, x, tms_y)  # type: ignore
+            if len(parts) == 4:
+                mbt_id = parts[0]
+                z, x   = int(parts[1]), int(parts[2])
+                y      = int(parts[3].split(".")[0])
+                tms_y  = (1 << z) - 1 - y
+                srv: MBTilesServer = self.server._mbtiles_server  # type: ignore
+                tile = srv.get_tile(mbt_id, z, x, tms_y)
                 if tile:
                     return self._bytes(200, tile, "image/png")
                 return self._bytes(204, b"", "image/png")
@@ -61,8 +57,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self._text(200, "")
-
-    # ── helpers ───────────────────────────────────────────────────────────────
 
     def _file(self, p: Path):
         if not p.exists():
@@ -83,10 +77,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def log_message(self, *args):
-        pass  # suppress access log
+        pass
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 
 class MBTilesDB:
     def __init__(self, path: str):
@@ -109,49 +101,58 @@ class MBTilesDB:
         return row[0] if row else None
 
     def close(self):
-        self._conn.close()
+        try:
+            self._conn.close()
+        except Exception:
+            pass
 
 
 class MBTilesServer:
-    """HTTP server that serves map.html, Leaflet assets, and MBTile data."""
+    """HTTP server that serves map.html, Leaflet assets, and MBTile data.
+
+    Multiple MBTiles files are supported simultaneously; each gets a short UUID
+    as its URL prefix: http://127.0.0.1:{port}/{mbt_id}/{z}/{x}/{y}.png
+    """
 
     def __init__(self, port: int = 8743):
-        self._port  = port
-        self._db:    Optional[MBTilesDB]  = None
-        self._httpd: Optional[HTTPServer] = None
+        self._port   = port
+        self._dbs:   dict[str, MBTilesDB]    = {}  # mbt_id → db
+        self._httpd: Optional[HTTPServer]    = None
         self._thread: Optional[threading.Thread] = None
 
     # ── MBTiles ──────────────────────────────────────────────────────────────
 
-    def load(self, path: str) -> str:
-        if self._db:
-            self._db.close()
-        self._db = MBTilesDB(path)
-        return self.tile_url
+    def load(self, path: str) -> tuple[str, str, int, int, str]:
+        """Load an MBTiles file.  Returns (mbt_id, tile_url, min_zoom, max_zoom, name)."""
+        # Reuse if already loaded
+        for mbt_id, db in self._dbs.items():
+            if db._path == path:
+                return mbt_id, self._tile_url(mbt_id), db.min_zoom, db.max_zoom, db.name
+        db = MBTilesDB(path)
+        mbt_id = uuid.uuid4().hex[:8]
+        self._dbs[mbt_id] = db
+        return mbt_id, self._tile_url(mbt_id), db.min_zoom, db.max_zoom, db.name
 
-    def unload(self):
-        if self._db:
-            self._db.close()
-            self._db = None
+    def unload(self, mbt_id: str):
+        db = self._dbs.pop(mbt_id, None)
+        if db:
+            db.close()
 
-    @property
-    def tile_url(self) -> str:
-        return f"http://127.0.0.1:{self._port}/{{z}}/{{x}}/{{y}}.png"
+    def unload_all(self):
+        for db in self._dbs.values():
+            db.close()
+        self._dbs.clear()
+
+    def get_tile(self, mbt_id: str, z: int, x: int, tms_y: int) -> Optional[bytes]:
+        db = self._dbs.get(mbt_id)
+        return db.get_tile(z, x, tms_y) if db else None
+
+    def _tile_url(self, mbt_id: str) -> str:
+        return f"http://127.0.0.1:{self._port}/{mbt_id}/{{z}}/{{x}}/{{y}}.png"
 
     @property
     def map_url(self) -> str:
         return f"http://127.0.0.1:{self._port}/map"
-
-    @property
-    def loaded(self) -> bool:
-        return self._db is not None
-
-    @property
-    def db(self) -> Optional[MBTilesDB]:
-        return self._db
-
-    def get_tile(self, z: int, x: int, tms_y: int) -> Optional[bytes]:
-        return self._db.get_tile(z, x, tms_y) if self._db else None
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 

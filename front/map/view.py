@@ -199,8 +199,18 @@ class MapView(QWebEngineView):
     def center_on(self, lat: float, lon: float, zoom: int = 14):
         self._js(f"centerOn({lat}, {lon}, {zoom})")
 
-    def load_mbtiles(self, tile_url: str, min_zoom: int = 0, max_zoom: int = 18):
-        self._js(f"loadMBTiles({json.dumps(tile_url)}, {min_zoom}, {max_zoom})")
+    def add_mbtiles_layer(self, mbt_id: str, tile_url: str,
+                          min_zoom: int = 0, max_zoom: int = 18, name: str = ""):
+        self._js(
+            f"addMBTilesLayer({json.dumps(mbt_id)}, {json.dumps(tile_url)}, "
+            f"{min_zoom}, {max_zoom}, {json.dumps(name)})"
+        )
+
+    def remove_mbtiles_layer(self, mbt_id: str):
+        self._js(f"removeMBTilesLayer({json.dumps(mbt_id)})")
+
+    def toggle_mbtiles_layer(self, mbt_id: str, visible: bool):
+        self._js(f"toggleMBTilesLayer({json.dumps(mbt_id)}, {json.dumps(visible)})")
 
     def update_cot_track(self, track: dict):
         self._js(f"updateCotTrack({json.dumps(track)})")

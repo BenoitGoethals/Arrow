@@ -74,6 +74,7 @@ from typing import Optional
 import httpx
 
 import sim_utils
+from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, dist_m, step_towards
 
 # ── CLI / persistent config ─────────────────────────────────────────────────
 DEFAULT_BACKEND = (
@@ -115,11 +116,9 @@ logging.basicConfig(level=logging.INFO,
                     datefmt="%H:%M:%S")
 log = logging.getLogger("hh")
 
-BASE = ARGS.backend.rstrip("/")
-MISSION_ID: int | None = None
-
-ORIGIN, PATH_PREFIX = sim_utils.split_base(BASE)
-
+_CTX  = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"))
+api   = _CTX.api
+login = _CTX.login
 
 # ── Tactical object type sets ───────────────────────────────────────────────
 POINT_TG_TYPES = {"ATK_AXIS", "COUNTERATTACK", "AMBUSH", "DEF_AREA",
@@ -128,32 +127,6 @@ LINE_TG_TYPES  = {"BOUNDARY", "FLET", "FLOT", "PHASE_LINE"}
 POLY_TG_TYPES  = {"OBJ_AREA", "ZONE"}
 ALL_TG_TYPES   = POINT_TG_TYPES | LINE_TG_TYPES | POLY_TG_TYPES
 NON_TG_TYPES   = {"ENEMY", "POI", "MARKER", "OBJECTIVE", "ROUTE"}
-
-
-# ── Geo helpers ──────────────────────────────────────────────────────────────
-LAT_DEG_PER_M = 1 / 111_000.0
-
-def lon_deg_per_m(lat: float) -> float:
-    return 1 / (111_000.0 * math.cos(math.radians(lat)))
-
-def dist_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    dlat = (lat2 - lat1) * 111_000
-    dlon = (lon2 - lon1) * 111_000 * math.cos(math.radians((lat1 + lat2) / 2))
-    return math.hypot(dlat, dlon)
-
-def step_towards(lat: float, lon: float, tlat: float, tlon: float,
-                 speed_ms: float, dt: float) -> tuple[float, float]:
-    d = dist_m(lat, lon, tlat, tlon)
-    if d < 0.5:
-        return tlat, tlon
-    move = min(speed_ms * dt, d)
-    dlat = (tlat - lat) * 111_000
-    dlon = (tlon - lon) * 111_000 * math.cos(math.radians(lat))
-    brg  = math.atan2(dlon, dlat)
-    return (
-        lat + move * math.cos(brg) * LAT_DEG_PER_M,
-        lon + move * math.sin(brg) * lon_deg_per_m(lat),
-    )
 
 
 @dataclass(frozen=True)
@@ -216,48 +189,7 @@ PHASES: list[Phase] = [
 ]
 
 
-# ── HTTP plumbing ───────────────────────────────────────────────────────────
-def _p(path: str) -> str:
-    if not PATH_PREFIX or path.startswith(PATH_PREFIX + "/") or path == PATH_PREFIX:
-        return path
-    return PATH_PREFIX + path
 
-_API_FAIL_COUNT = 0
-
-async def api(client: httpx.AsyncClient, method: str, path: str,
-              token: str = "", **kwargs) -> Optional[dict]:
-    global _API_FAIL_COUNT
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    if MISSION_ID:
-        headers["X-Mission-ID"] = str(MISSION_ID)
-    try:
-        r = await client.request(method, _p(path), headers=headers, timeout=20, **kwargs)
-        if 200 <= r.status_code < 300:
-            return r.json() if r.content else {}
-        _API_FAIL_COUNT += 1
-        body = r.text[:400] if _API_FAIL_COUNT <= 5 else r.text[:80]
-        log.warning("%-6s %-30s → %d  %s", method, path, r.status_code, body)
-        return None
-    except Exception as exc:
-        _API_FAIL_COUNT += 1
-        log.warning("%-6s %-30s → %s", method, path, exc)
-        return None
-
-async def login(client: httpx.AsyncClient, callsign: str, password: str) -> Optional[str]:
-    try:
-        r = await client.post(_p("/auth/login"),
-                              data={"username": callsign, "password": password},
-                              timeout=15)
-        if r.status_code == 200:
-            payload = r.json()
-            if payload.get("mfa_required"):
-                log.error("Account %s has MFA enabled — use a non-MFA admin.", callsign)
-                return None
-            return payload.get("access_token")
-        log.warning("login %s → %d %s", callsign, r.status_code, r.text[:120])
-    except Exception as exc:
-        log.warning("login %s → %s", callsign, exc)
-    return None
 
 
 # ── Tactical-object builder ─────────────────────────────────────────────────
@@ -1141,8 +1073,8 @@ async def reset_world(client: httpx.AsyncClient,
 
 
 async def amain() -> None:
-    log.info("Backend: %s   (path prefix: %r)", BASE, PATH_PREFIX or "<none>")
-    async with httpx.AsyncClient(base_url=ORIGIN, timeout=20.0, verify=False) as client:
+    log.info("Backend: %s", _CTX.base)
+    async with httpx.AsyncClient(timeout=20.0, verify=False) as client:
         log.info("Logging in as seed admin %s …", ARGS.admin)
         admin_token = await login(client, ARGS.admin, ARGS.password)
         if not admin_token:
@@ -1150,9 +1082,8 @@ async def amain() -> None:
                      "for a non-MFA ADMIN account on the backend.")
         sim_utils.save_backend(ARGS.backend)
         log.info("Authenticated.")
-        global MISSION_ID
-        MISSION_ID = await sim_utils.create_mission_async(
-            client, BASE, admin_token, ARGS.mission_name,
+        _CTX.mission_id = await sim_utils.create_mission_async(
+            client, _CTX.base, admin_token, ARGS.mission_name,
             map_center_lat=51.0900, map_center_lng=2.6531, map_zoom=14)
 
         if ARGS.reset:

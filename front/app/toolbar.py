@@ -4,6 +4,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import (
     QToolBar, QToolButton, QLabel, QComboBox, QMenu, QSizePolicy,
     QCheckBox, QWidgetAction, QWidget, QVBoxLayout, QFileDialog, QMessageBox,
+    # QFileDialog kept for potential future use
 )
 import sys
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -19,8 +20,8 @@ class MainToolbar(QToolBar):
     layer_toggled   = pyqtSignal(str, bool)  # layer name, visible
     # Base layer selection
     base_changed    = pyqtSignal(str)        # 'OSM','DARK','SATELLITE','TOPO'
-    # MBTiles file selected
-    mbtiles_selected = pyqtSignal(str)       # file path
+    # MBTiles manager requested
+    mbtiles_manage = pyqtSignal()            # open CRUD dialog
     # Fit all tracks
     fit_requested    = pyqtSignal()
     weather_fetch    = pyqtSignal()
@@ -118,16 +119,20 @@ class MainToolbar(QToolBar):
             act.triggered.connect(lambda checked, n=name: self.base_changed.emit(n))
 
         layers_menu.addSeparator()
-        mbt_act = layers_menu.addAction("📂  Load MBTiles…")
-        mbt_act.triggered.connect(self._load_mbtiles)
-
-        layers_menu.addSeparator()
         vis_act = layers_menu.addAction("🗂  Map Visibility…")
         vis_act.triggered.connect(self._layers_dialog.show)
         vis_act.triggered.connect(self._layers_dialog.raise_)
 
         layers_btn.setMenu(layers_menu)
         self.addWidget(layers_btn)
+
+        # ---- MBTiles manager button -----------------------------------
+        mbt_btn = QToolButton()
+        mbt_btn.setText("MBTILES")
+        mbt_btn.setObjectName("toolButton")
+        mbt_btn.setToolTip("Manage offline MBTiles layers")
+        mbt_btn.clicked.connect(self.mbtiles_manage.emit)
+        self.addWidget(mbt_btn)
 
         # ---- Fit tracks -----------------------------------------------
         fit_btn = QToolButton()
@@ -244,9 +249,3 @@ class MainToolbar(QToolBar):
         if ans == QMessageBox.StandardButton.Yes:
             sys.exit(0)
 
-    def _load_mbtiles(self):
-        path, _ = QFileDialog.getOpenFileName(
-            None, "Open MBTiles", "", "MBTiles files (*.mbtiles *.mb)"
-        )
-        if path:
-            self.mbtiles_selected.emit(path)
