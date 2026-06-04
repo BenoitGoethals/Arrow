@@ -247,6 +247,7 @@ class Alert(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[str] = mapped_column(String(40))  # TIC, MEDICAL, EVAC, LOST_COMMS
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    operator: Mapped["Operator"] = relationship()
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

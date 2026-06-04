@@ -56,6 +56,7 @@ def main():
     app.setApplicationName("Arrow Front")
     app.setApplicationDisplayName("Arrow Front")
     app.setOrganizationName("Arrow")
+    app.setOrganizationDomain("com.arrow")
     app.setStyleSheet(TACTICAL_DARK)
     app.setFont(QFont("Ubuntu", 10))
 
