@@ -58,7 +58,7 @@ def main():
     app.setOrganizationName("Arrow")
     app.setOrganizationDomain("com.arrow")
     app.setStyleSheet(TACTICAL_DARK)
-    app.setFont(QFont("Ubuntu", 10))
+    app.setFont(QFont("Ubuntu", 12))
 
     # Application icon
     icon_path = Path(__file__).parent / "resources" / "arrow_icon.png"

@@ -17,15 +17,16 @@ _S = QSettings("Arrow", "ArrowFront")
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DEFAULTS = {
-    "server_url":           "http://localhost:6001",
-    "server_timeout":       10,
-    "display_base_layer":   "OSM",
-    "display_show_trails":  True,
-    "gps_enabled":          True,
-    "gps_high_accuracy":    True,
-    "gps_max_age_ms":       4000,
-    "gps_center_on_fix":    True,
-    "gps_show_accuracy":    True,
+    "server_url":             "http://localhost:6001",
+    "server_timeout":         10,
+    "display_base_layer":     "OSM",
+    "display_show_trails":    True,
+    "display_voice_alerts":   True,
+    "gps_enabled":            True,
+    "gps_high_accuracy":      True,
+    "gps_max_age_ms":         4000,
+    "gps_center_on_fix":      True,
+    "gps_show_accuracy":      True,
 }
 
 
@@ -41,9 +42,10 @@ def save_all(values: dict):
 class ConfigDialog(QDialog):
     """Tabbed settings modal. Emits gps_config_changed after saving."""
 
-    gps_config_changed = pyqtSignal(bool, bool, int, bool, bool)
-    base_layer_changed = pyqtSignal(str)
-    trails_changed     = pyqtSignal(bool)
+    gps_config_changed   = pyqtSignal(bool, bool, int, bool, bool)
+    base_layer_changed   = pyqtSignal(str)
+    trails_changed       = pyqtSignal(bool)
+    voice_alerts_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -178,6 +180,11 @@ class ConfigDialog(QDialog):
         self._show_trails = QCheckBox("Show operator trails")
         lay.addWidget(self._show_trails)
 
+        lay.addWidget(_section("Alerts"))
+
+        self._voice_alerts = QCheckBox("Voice alerts  (TTS + alarm tone on incoming alerts)")
+        lay.addWidget(self._voice_alerts)
+
         lay.addStretch()
         return w
 
@@ -254,6 +261,8 @@ class ConfigDialog(QDialog):
         st = load("display_show_trails")
         self._show_trails.setChecked(_bool(st, True))
 
+        self._voice_alerts.setChecked(_bool(load("display_voice_alerts"), True))
+
         # GPS
         gps_en = _bool(load("gps_enabled"), True)
         self._gps_enabled.setChecked(gps_en)
@@ -272,8 +281,9 @@ class ConfigDialog(QDialog):
         values = {
             "server_url":          self._url.text().strip().rstrip("/") or "http://localhost:6001",
             "server_timeout":      self._timeout.value(),
-            "display_base_layer":  self._base_layer.currentData(),
-            "display_show_trails": self._show_trails.isChecked(),
+            "display_base_layer":   self._base_layer.currentData(),
+            "display_show_trails":  self._show_trails.isChecked(),
+            "display_voice_alerts": self._voice_alerts.isChecked(),
             "gps_enabled":         self._gps_enabled.isChecked(),
             "gps_high_accuracy":   bool(self._gps_accuracy.currentData()),
             "gps_max_age_ms":      self._gps_interval.value() * 1000,
@@ -291,6 +301,7 @@ class ConfigDialog(QDialog):
         )
         self.base_layer_changed.emit(values["display_base_layer"])
         self.trails_changed.emit(values["display_show_trails"])
+        self.voice_alerts_changed.emit(values["display_voice_alerts"])
 
         self._status_lbl.setText("Saved.")
         self.accept()
