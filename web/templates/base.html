@@ -1716,10 +1716,19 @@ window.mumbleShowConfig = function () {
         const tok = localStorage.getItem('arrow_token');
         fetch(window.ARROW_BACKEND_URL + '/mumble/config', { headers: { Authorization: 'Bearer ' + tok } })
             .then(r => r.ok ? r.json() : null).then(cfg => {
-                if (!cfg) return;
-                document.getElementById('mc-host').value = cfg.host || '';
-                document.getElementById('mc-port').value = cfg.port || 64738;
-                document.getElementById('mc-user').value = cfg.username || '';
+                if (cfg && cfg.host) {
+                    document.getElementById('mc-host').value = cfg.host;
+                    document.getElementById('mc-port').value = cfg.port || 64738;
+                    document.getElementById('mc-user').value = cfg.username || '';
+                } else {
+                    // Pre-fill from the voice credentials field so the server isn't typed twice
+                    const voiceHost = document.getElementById('mv-host').value.trim();
+                    if (voiceHost && !document.getElementById('mc-host').value) {
+                        const [h, p] = voiceHost.split(':');
+                        document.getElementById('mc-host').value = h || '';
+                        if (p) document.getElementById('mc-port').value = parseInt(p) || 64738;
+                    }
+                }
             }).catch(() => {});
     }
 };
