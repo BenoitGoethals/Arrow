@@ -25,6 +25,47 @@ async def get_status(_op=Depends(get_current_operator)):
     return monitor.get_status()
 
 
+@router.get("/ping")
+async def ping_mumble(_op=Depends(get_current_operator)):
+    """TCP probe + live bot-status for the configured Mumble server."""
+    import asyncio
+    import time
+
+    cfg = monitor._config
+    if not cfg.get("host"):
+        return {"ok": False, "msg": "Bot not configured — set host in ⚙ Bot Config"}
+
+    host = cfg["host"]
+    port = int(cfg.get("port", 64738))
+    t0 = time.monotonic()
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=3.0
+        )
+        tcp_ms = int((time.monotonic() - t0) * 1000)
+        writer.close()
+        try:
+            await asyncio.wait_for(writer.wait_closed(), timeout=0.5)
+        except Exception:
+            pass
+    except asyncio.TimeoutError:
+        return {"ok": False, "msg": f"TCP timeout → {host}:{port} (3 s)"}
+    except Exception as exc:
+        return {"ok": False, "msg": f"{host}:{port} — {exc}"}
+
+    st = monitor.get_status()
+    return {
+        "ok":            True,
+        "tcp_ms":        tcp_ms,
+        "host":          host,
+        "port":          port,
+        "bot_connected": st["connected"],
+        "bot_error":     st.get("error", ""),
+        "channels":      len(st.get("channels", [])),
+        "users":         len(st.get("users", [])),
+    }
+
+
 @router.get("/config")
 async def get_config(_op=Depends(require_role("ADMIN", "BATTLE_CAPTAIN"))):
     return monitor.get_config_public()

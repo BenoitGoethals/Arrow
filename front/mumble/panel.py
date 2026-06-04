@@ -7,7 +7,11 @@ from PyQt6.QtWidgets import (
     QLineEdit, QSpinBox, QFormLayout, QDialog, QDialogButtonBox,
     QComboBox,
 )
-from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QTimer
+import socket
+import threading
+import time as _time
+
+from PyQt6.QtCore import Qt, QSettings, pyqtSignal, pyqtSlot, QTimer, QMetaObject, Q_ARG
 from PyQt6.QtGui import QFont, QColor
 
 from front.mumble.client import MumbleClient, list_audio_devices
@@ -79,6 +83,18 @@ class _ConnectDialog(QDialog):
         form2.addRow(out_lbl, self._out_dev)
         lay.addLayout(form2)
 
+        # ── Test button ──────────────────────────────────────────────────
+        test_row = QHBoxLayout()
+        self._test_btn = QPushButton("🔗 Test server")
+        self._test_btn.setFixedHeight(26)
+        self._test_btn.clicked.connect(self._do_test)
+        self._test_lbl = QLabel("")
+        self._test_lbl.setFont(_MONO)
+        self._test_lbl.setStyleSheet("font-size:9px;color:#6e7681;")
+        test_row.addWidget(self._test_btn)
+        test_row.addWidget(self._test_lbl, 1)
+        lay.addLayout(test_row)
+
         btns = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel
@@ -86,6 +102,42 @@ class _ConnectDialog(QDialog):
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
+
+    def _do_test(self):
+        host = self._host.text().strip()
+        port = self._port.value()
+        if not host:
+            self._test_lbl.setText("Enter a server address first")
+            self._test_lbl.setStyleSheet("font-size:9px;color:#d29922;")
+            return
+        self._test_btn.setEnabled(False)
+        self._test_lbl.setText("Probing…")
+        self._test_lbl.setStyleSheet("font-size:9px;color:#6e7681;")
+
+        def _probe():
+            t0 = _time.monotonic()
+            try:
+                with socket.create_connection((host, port), timeout=3.0):
+                    ms = int((_time.monotonic() - t0) * 1000)
+                result = (True, f"✓  {host}:{port}  —  {ms} ms")
+            except OSError as exc:
+                result = (False, f"✗  {exc}")
+            # marshal back to Qt main thread via a QTimer zero-shot
+                QMetaObject.invokeMethod(
+                self, "_apply_test_result",
+                Qt.ConnectionType.QueuedConnection,
+                Q_ARG(bool, result[0]),
+                Q_ARG(str, result[1]),
+            )
+
+        threading.Thread(target=_probe, daemon=True).start()
+
+    @pyqtSlot(bool, str)
+    def _apply_test_result(self, ok: bool, msg: str):
+        self._test_btn.setEnabled(True)
+        color = "#3fb950" if ok else "#f85149"
+        self._test_lbl.setText(msg)
+        self._test_lbl.setStyleSheet(f"font-size:9px;color:{color};")
 
     def _restore_combo(self, combo: QComboBox, saved):
         if saved is None:
@@ -131,7 +183,8 @@ class MumblePanel(QWidget):
         self._channels: list[dict] = []
         self._users:    list[dict] = []
         self._ptt_held = False
-        self._server_addr: str = ""
+        self._server_addr:    str  = ""
+        self._handshake_done: bool = False
 
         self._build()
         self._wire()
@@ -284,6 +337,7 @@ class MumblePanel(QWidget):
 
     def _on_state(self, state: str):
         if state == "connected":
+            self._handshake_done = False
             self._led.setStyleSheet("color:#3fb950;")
             self._status.setText(self._server_addr or "Connected")
             self._status.setStyleSheet("color:#3fb950;")
@@ -298,6 +352,7 @@ class MumblePanel(QWidget):
             self._conn_btn.setEnabled(False)
 
         elif state == "disconnected":
+            self._handshake_done = False
             self._led.setStyleSheet("color:#484f58;")
             self._status.setText("Disconnected")
             self._status.setStyleSheet("color:#6e7681;")
@@ -324,6 +379,24 @@ class MumblePanel(QWidget):
         self._users = users
         self._rebuild_tree()
         self._rebuild_user_list()
+        if not self._handshake_done and users:
+            self_user = next((u for u in users if u.get("self")), None)
+            self._handshake_done = True
+            if self_user:
+                n = len(users)
+                ch = len(self._channels)
+                self._status.setText(f"✓ comms OK · {n} user{'s' if n>1 else ''} · {ch} ch")
+                self._status.setStyleSheet("color:#3fb950;")
+                QTimer.singleShot(5000, self._restore_status)
+            else:
+                self._status.setText("⚠ connected — not in user list")
+                self._status.setStyleSheet("color:#d29922;")
+                QTimer.singleShot(5000, self._restore_status)
+
+    def _restore_status(self):
+        if self._conn_btn.text() == "Disconnect":
+            self._status.setText(self._server_addr or "Connected")
+            self._status.setStyleSheet("color:#3fb950;")
 
     def _on_speaking(self, name: str, speaking: bool):
         # Update user list item colour live

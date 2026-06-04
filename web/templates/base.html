@@ -1563,12 +1563,20 @@
       <a id="mumble-open-link" href="#" style="display:none;flex:1;text-align:center;
          background:#172554;color:#60a5fa;border:1px solid #1d4ed8;border-radius:4px;
          padding:3px 0;font-size:.72rem;text-decoration:none">▶ Open app</a>
+      <button id="mumble-ping-btn" onclick="mumblePing()" style="display:none;
+              background:#1e293b;border:1px solid #334155;color:#64748b;
+              border-radius:4px;padding:3px 8px;font-size:.72rem;cursor:pointer">
+        🔗 Ping
+      </button>
       <button id="mumble-cfg-btn" onclick="mumbleShowConfig()" style="display:none;
               background:#1e293b;border:1px solid #334155;color:#64748b;
               border-radius:4px;padding:3px 8px;font-size:.72rem;cursor:pointer">
         ⚙ Bot Config
       </button>
     </div>
+    <!-- Ping result row -->
+    <div id="mumble-ping-result" style="display:none;padding:4px 10px;
+         font-size:.7rem;font-family:monospace;border-bottom:1px solid #1e293b;"></div>
 
     <!-- Bot config form -->
     <div id="mumble-cfg-form" style="display:none;flex-direction:column;gap:5px;
@@ -1751,6 +1759,35 @@ window.mumbleSaveConfig = function () {
       .catch(() => { msg.textContent = 'Error saving'; });
 };
 
+window.mumblePing = function () {
+    const tok = localStorage.getItem('arrow_token');
+    const btn = document.getElementById('mumble-ping-btn');
+    const res = document.getElementById('mumble-ping-result');
+    btn.disabled = true;
+    btn.textContent = '…';
+    res.style.display = '';
+    res.textContent   = 'Probing…';
+    res.style.color   = '#94a3b8';
+    fetch(window.ARROW_BACKEND_URL + '/mumble/ping', { headers: { Authorization: 'Bearer ' + tok } })
+        .then(r => r.json()).then(d => {
+            btn.disabled = false; btn.textContent = '🔗 Ping';
+            if (d.ok) {
+                const botState = d.bot_connected
+                    ? `bot ✓`
+                    : (d.bot_error ? `bot ✗ ${d.bot_error.slice(0,30)}` : 'bot offline');
+                const uLabel = d.users > 0 ? ` · ${d.users} user${d.users > 1 ? 's' : ''}` : '';
+                res.textContent = `✓ TCP ${d.tcp_ms} ms · ${botState}${uLabel}`;
+                res.style.color = d.bot_connected ? '#4ade80' : '#fb923c';
+            } else {
+                res.textContent = `✗ ${d.msg}`;
+                res.style.color = '#f87171';
+            }
+        }).catch(() => {
+            btn.disabled = false; btn.textContent = '🔗 Ping';
+            res.textContent = '✗ request failed'; res.style.color = '#f87171';
+        });
+};
+
 window.mumbleDeleteConfig = function () {
     const tok = localStorage.getItem('arrow_token');
     fetch(window.ARROW_BACKEND_URL + '/mumble/config', { method: 'DELETE', headers: { Authorization: 'Bearer ' + tok } })
@@ -1760,7 +1797,8 @@ window.mumbleDeleteConfig = function () {
 // ════════════════════════════════════════════════════════════════════
 // VOICE (WebSocket bridge + Web Audio)
 // ════════════════════════════════════════════════════════════════════
-let _mvWs        = null;       // WebSocket to /mumble/voice
+let _mvWs             = null;       // WebSocket to /mumble/voice
+let _mvHandshakeDone  = false;      // true once we confirmed self in user list
 let _mvAudioCtx  = null;       // AudioContext (48 kHz)
 let _mvGainNode  = null;       // output gain for volume
 let _mvStream    = null;       // MediaStream from getUserMedia
@@ -1882,17 +1920,39 @@ window.mvConnect = async function mvConnect() {
 
 function _mvHandleMsg(msg) {
     if (msg.type === 'state') {
+        if (msg.state === 'connected') _mvHandshakeDone = false;
         _mvSetState(msg.state, msg.msg);
     } else if (msg.type === 'update') {
-        // Update channel/user tree from personal session
         if (msg.channels && msg.users) {
             _renderPresence({ connected: true, channels: msg.channels, users: msg.users });
+            if (!_mvHandshakeDone && msg.users.length > 0) {
+                _mvHandshakeDone = true;
+                _mvShowHandshake(msg.users, msg.channels);
+            }
         }
     } else if (msg.type === 'speaking') {
         _mvSpeaking[msg.session] = msg.speaking;
-        // Re-render to update speaking icon
         _presenceFetch();
     }
+}
+
+function _mvShowHandshake(users, channels) {
+    const self = users.find(u => u.self);
+    const stat = document.getElementById('mv-status');
+    if (!stat) return;
+    if (self) {
+        stat.textContent = `✓ handshake OK · ${users.length} user${users.length > 1 ? 's' : ''} · ${channels.length} ch`;
+        stat.style.color = '#4ade80';
+    } else {
+        stat.textContent = '⚠ connected but not in user list';
+        stat.style.color = '#fb923c';
+    }
+    setTimeout(() => {
+        if (stat.textContent.startsWith('✓') || stat.textContent.startsWith('⚠')) {
+            stat.textContent = '● Voice connected';
+            stat.style.color = '#22c55e';
+        }
+    }, 5000);
 }
 
 function _mvSetState(state, errMsg) {
@@ -2045,8 +2105,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('mumble-nav-btn').style.display = 'flex';
 
-    if (['ADMIN', 'BATTLE_CAPTAIN'].includes(role))
-        document.getElementById('mumble-cfg-btn').style.display = '';
+    if (['ADMIN', 'BATTLE_CAPTAIN'].includes(role)) {
+        document.getElementById('mumble-cfg-btn').style.display  = '';
+        document.getElementById('mumble-ping-btn').style.display = '';
+    }
 
     // Load bot config for deep link + presence server label
     fetch(window.ARROW_BACKEND_URL + '/mumble/config', { headers: { Authorization: 'Bearer ' + tok } })
