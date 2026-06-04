@@ -138,6 +138,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ── Mumble voice server ──────────────────────────────────────────────────────
+  murmur:
+    image: mumblevoip/mumble-server:latest
+    container_name: murmur
+    ports:
+      - "64738:64738/tcp"   # desktop clients connect from outside Docker
+      - "64738:64738/udp"
+    volumes:
+      - murmur-data:/data
+    environment:
+      MUMBLE_SUPERUSER_PASSWORD: "${MUMBLE_SUPERUSER_PASSWORD:-R@nger&1401!}"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
   # ── Log aggregation (optional — enable with: docker compose --profile logging up) ──
   loki:
     image: grafana/loki:3.0.0
@@ -181,6 +199,7 @@ volumes:
   arrow-data:
   arrow-backups:
   redis-data:
+  murmur-data:
   loki-data:
   grafana-data:
   apk-nfs:

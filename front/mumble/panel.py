@@ -131,6 +131,7 @@ class MumblePanel(QWidget):
         self._channels: list[dict] = []
         self._users:    list[dict] = []
         self._ptt_held = False
+        self._server_addr: str = ""
 
         self._build()
         self._wire()
@@ -275,6 +276,7 @@ class MumblePanel(QWidget):
         p = dlg.params
         if not p["host"] or not p["username"]:
             return
+        self._server_addr = f"{p['host']}:{p['port']}"
         self._client.set_devices(p["in_device"], p["out_device"])
         self._client.connect_to(
             p["host"], p["port"], p["username"], p["password"], p["channel"]
@@ -283,7 +285,7 @@ class MumblePanel(QWidget):
     def _on_state(self, state: str):
         if state == "connected":
             self._led.setStyleSheet("color:#3fb950;")
-            self._status.setText("Connected")
+            self._status.setText(self._server_addr or "Connected")
             self._status.setStyleSheet("color:#3fb950;")
             self._conn_btn.setText("Disconnect")
             for w in (self._ptt_btn, self._mute_btn, self._deaf_btn, self._vol):
