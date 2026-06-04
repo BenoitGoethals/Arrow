@@ -2004,6 +2004,7 @@ function _mvCleanup() {
         try { _mvAudioCtx.close(); } catch (_) {}
         _mvAudioCtx = null;
     }
+    _mvGainNode = null;
     _mvWs  = null;
     _mvPtt = false;
     Object.keys(_mvSpeaking).forEach(k => delete _mvSpeaking[k]);
@@ -2011,18 +2012,29 @@ function _mvCleanup() {
 
 // Audio playback — chain PCM chunks in time
 function _mvPlayPCM(buffer) {
-    if (!_mvAudioCtx) return;
-    const i16  = new Int16Array(buffer);
-    const f32  = new Float32Array(i16.length);
-    for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
-    const ab   = _mvAudioCtx.createBuffer(1, f32.length, 48000);
-    ab.getChannelData(0).set(f32);
-    const src  = _mvAudioCtx.createBufferSource();
-    src.buffer = ab;
-    src.connect(_mvGainNode);
-    const when = Math.max(_mvAudioCtx.currentTime + 0.04, _mvNextTime);
-    src.start(when);
-    _mvNextTime = when + ab.duration;
+    if (!_mvAudioCtx || !_mvGainNode) return;
+    // Discard frames while suspended — prevents a time-scheduled backlog that
+    // would delay playback by N seconds after the context resumes.
+    if (_mvAudioCtx.state !== 'running') return;
+    try {
+        const i16  = new Int16Array(buffer);
+        const f32  = new Float32Array(i16.length);
+        for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
+        const ab   = _mvAudioCtx.createBuffer(1, f32.length, 48000);
+        ab.getChannelData(0).set(f32);
+        const src  = _mvAudioCtx.createBufferSource();
+        src.buffer = ab;
+        src.connect(_mvGainNode);
+        const now  = _mvAudioCtx.currentTime;
+        // If _mvNextTime has drifted more than 0.5 s into the future, reset it
+        // (can happen after a stall or rapid reconnect).
+        if (_mvNextTime > now + 0.5) _mvNextTime = now;
+        const when = Math.max(now + 0.04, _mvNextTime);
+        src.start(when);
+        _mvNextTime = when + ab.duration;
+    } catch (e) {
+        console.warn('[Mumble] _mvPlayPCM error:', e);
+    }
 }
 
 // PTT button events
@@ -2046,7 +2058,7 @@ function _mvSetupPTT() {
         btn.style.background = '#1d4ed8';
         btn.style.color      = '#fff';
         btn.textContent      = '🔴 TRANSMITTING';
-        if (_mvAudioCtx && _mvAudioCtx.state === 'suspended') _mvAudioCtx.resume();
+        if (_mvAudioCtx) _mvAudioCtx.resume().then(() => { _mvNextTime = 0; });
         if (_mvWs && _mvWs.readyState === WebSocket.OPEN)
             _mvWs.send(JSON.stringify({ type: 'ptt_start' }));
     };
