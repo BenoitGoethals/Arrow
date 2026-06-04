@@ -145,14 +145,8 @@ class LoginDialog(QDialog):
 
     @staticmethod
     def _normalize_url(raw: str) -> str:
-        """Strip trailing slashes and any /api… path suffix the user may have pasted."""
-        url = raw.strip().rstrip("/")
-        # Remove common API path prefixes so ArrowClient can append its own paths cleanly
-        for suffix in ("/api/v1", "/api"):
-            if url.endswith(suffix):
-                url = url[: -len(suffix)].rstrip("/")
-                break
-        return url
+        """Strip trailing slashes only — callers append their own paths."""
+        return raw.strip().rstrip("/")
 
     def _do_login(self):
         url      = self._normalize_url(self._url_field.text())
