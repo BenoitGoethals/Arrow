@@ -413,6 +413,11 @@ class MumblePanel(QWidget):
             self._client.join_channel(cid)
 
     def _ptt_press(self):
+        if not self._client._audio_in:
+            self._status.setText("⚠ No mic — check permissions")
+            self._status.setStyleSheet("color:#d29922;")
+            QTimer.singleShot(4000, self._restore_status)
+            return
         self._client.set_ptt(True)
         self._ptt_btn.setStyleSheet(
             "QPushButton{background:#388bfd;border:1px solid #58a6ff;"

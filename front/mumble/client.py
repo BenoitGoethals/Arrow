@@ -284,6 +284,8 @@ class MumbleClient(QObject):
         self._ptt_active = active
         if self._audio_in:
             self._audio_in.set_active(active and not self._muted)
+        elif active:
+            log.warning("PTT pressed but audio input is not available — check mic permissions")
 
     def set_muted(self, muted: bool):
         self._muted = muted
@@ -331,10 +333,18 @@ class MumbleClient(QObject):
     # ── Internal helpers ─────────────────────────────────────────────────────
 
     def _start_audio(self):
-        self._audio_out = _AudioOut(device=self._out_device)
-        self._audio_out.start()
-        self._audio_in = _AudioIn(self._feed_mic, device=self._in_device)
-        self._audio_in.start()
+        try:
+            self._audio_out = _AudioOut(device=self._out_device)
+            self._audio_out.start()
+        except Exception as exc:
+            log.warning("Mumble: audio output failed to start: %s", exc)
+            self._audio_out = None
+        try:
+            self._audio_in = _AudioIn(self._feed_mic, device=self._in_device)
+            self._audio_in.start()
+        except Exception as exc:
+            log.warning("Mumble: audio input failed to start: %s — mic may need permission", exc)
+            self._audio_in = None
 
     def _stop_audio(self):
         self._ptt_active = False
