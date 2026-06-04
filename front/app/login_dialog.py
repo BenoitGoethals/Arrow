@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QSettings
 from PyQt6.QtGui import QFont
 
+import httpx
 from front.client.arrow_client import ArrowClient
 from front.client import auth as keyring_auth
 
@@ -137,13 +138,24 @@ class LoginDialog(QDialog):
             self._callsign_field.setFocus()
 
     def _save_fields(self):
-        self._settings.setValue(_SETTINGS_KEY_URL, self._url_field.text().strip().rstrip("/"))
+        self._settings.setValue(_SETTINGS_KEY_URL, self._normalize_url(self._url_field.text()))
         self._settings.setValue(_SETTINGS_KEY_CALLSIGN, self._callsign_field.text().strip())
 
     # ---- Actions ----------------------------------------------------------
 
+    @staticmethod
+    def _normalize_url(raw: str) -> str:
+        """Strip trailing slashes and any /api… path suffix the user may have pasted."""
+        url = raw.strip().rstrip("/")
+        # Remove common API path prefixes so ArrowClient can append its own paths cleanly
+        for suffix in ("/api/v1", "/api"):
+            if url.endswith(suffix):
+                url = url[: -len(suffix)].rstrip("/")
+                break
+        return url
+
     def _do_login(self):
-        url      = self._url_field.text().strip().rstrip("/")
+        url      = self._normalize_url(self._url_field.text())
         callsign = self._callsign_field.text().strip()
         password = self._password_field.text()
 
@@ -165,6 +177,8 @@ class LoginDialog(QDialog):
             if self._remember.isChecked():
                 keyring_auth.save_token(url, self._token)
             self.accept()
+        except httpx.TimeoutException:
+            self._error.setText("Server timed out — check URL and network")
         except Exception as exc:
             msg = str(exc)
             if "401" in msg or "403" in msg:
@@ -178,7 +192,7 @@ class LoginDialog(QDialog):
             self._connect_btn.setText("CONNECT")
 
     def _do_skip(self):
-        url = self._url_field.text().strip().rstrip("/") or "http://localhost:6001"
+        url = self._normalize_url(self._url_field.text()) or "http://localhost:6001"
         self._server_url = url
         self._token      = ""
         self._callsign   = "GUEST"

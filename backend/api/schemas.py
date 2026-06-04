@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 _NAME = Field(min_length=1, max_length=120)
 
@@ -147,10 +147,23 @@ class AlertOut(ORMModel):
     id: int
     type: str
     operator_id: int
+    callsign: str | None = None
     latitude: float | None
     longitude: float | None
     timestamp: datetime
     status: str
+
+    @model_validator(mode='before')
+    @classmethod
+    def _pull_callsign(cls, data):
+        if not isinstance(data, dict) and hasattr(data, 'operator') and data.operator is not None:
+            return {
+                'id': data.id, 'type': data.type, 'operator_id': data.operator_id,
+                'callsign': data.operator.callsign,
+                'latitude': data.latitude, 'longitude': data.longitude,
+                'timestamp': data.timestamp, 'status': data.status,
+            }
+        return data
 
 
 class MessageIn(BaseModel):

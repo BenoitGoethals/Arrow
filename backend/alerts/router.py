@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.api.schemas import AlertIn, AlertOut
 from backend.auth.jwt_auth import get_current_operator, require_role
@@ -17,7 +17,7 @@ def list_alerts(
     _: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[Alert]:
-    q = db.query(Alert).order_by(Alert.timestamp.desc())
+    q = db.query(Alert).options(selectinload(Alert.operator)).order_by(Alert.timestamp.desc())
     if mission:
         q = q.filter(Alert.mission_id == mission.id)
     return q.limit(200).all()
@@ -41,11 +41,13 @@ async def trigger_alert(
     db.commit()
     db.refresh(alert)
 
+    data = AlertOut.model_validate(alert).model_dump(mode="json")
+    data["callsign"] = current.callsign
     await broadcaster.broadcast({
         "channel": "alert",
         "event": "triggered",
         "mission_id": alert.mission_id,
-        "data": AlertOut.model_validate(alert).model_dump(mode="json"),
+        "data": data,
     })
     return alert
 
