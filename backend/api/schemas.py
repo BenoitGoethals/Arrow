@@ -115,6 +115,13 @@ class TacticalObjectIn(BaseModel):
     affiliation: str = "FRIENDLY"
 
 
+class TacticalObjectPatch(BaseModel):
+    latitude: float | None = None
+    longitude: float | None = None
+    notes: str | None = None
+    rotation: float | None = None
+
+
 class TacticalObjectOut(ORMModel):
     id: int
     type: str

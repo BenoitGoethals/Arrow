@@ -127,6 +127,29 @@ class TacticalRepository(
         )
     }
 
+    // ── Move / update position ────────────────────────────────────────────────
+
+    suspend fun updatePosition(id: Int, lat: Double, lon: Double): Result<Unit> = runCatching {
+        val longId = id.toLong()
+        db.cachedTacticalObjectDao().updatePosition(longId, lat, lon)
+
+        val token = tokenStore.current()
+        if (token.isNullOrBlank() || longId < 0) return@runCatching
+
+        if (connectivity.hasActiveConnection()) {
+            val body = """{"latitude":$lat,"longitude":$lon}"""
+            api.patchJson("/tactical-objects/$id", body)
+        } else {
+            db.pendingActionDao().insert(
+                PendingActionEntity(
+                    actionType = "PATCH_JSON",
+                    endpoint   = "/tactical-objects/$id",
+                    payload    = """{"latitude":$lat,"longitude":$lon}""",
+                )
+            )
+        }
+    }
+
     /** Clear stale synced objects then fetch fresh data for the current mission. */
     suspend fun clearAndReload(): Result<List<TacticalObjectDto>> {
         db.cachedTacticalObjectDao().clearSynced()

@@ -43,6 +43,12 @@ interface CachedTacticalObjectDao {
     @Query("DELETE FROM cached_tactical_objects WHERE deletePending = 1 AND syncStatus = 'synced'")
     suspend fun purgeConfirmedDeletes()
 
+    @Query("SELECT * FROM cached_tactical_objects WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): CachedTacticalObjectEntity?
+
+    @Query("UPDATE cached_tactical_objects SET latitude = :lat, longitude = :lon WHERE id = :id")
+    suspend fun updatePosition(id: Long, lat: Double, lon: Double)
+
     /** Remove all synced rows — called on mission switch so stale objects don't bleed across missions. */
     @Query("DELETE FROM cached_tactical_objects WHERE syncStatus = 'synced'")
     suspend fun clearSynced()

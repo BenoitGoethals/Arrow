@@ -199,8 +199,11 @@ class Api:
     """
 
     def __init__(self, base_url: str, mission_id: int | None = None) -> None:
-        origin, self._prefix = split_base(base_url)
-        self._base_url  = base_url
+        url = base_url.rstrip("/")
+        if url.startswith("http://") and "localhost" not in url and "127.0.0.1" not in url:
+            url = "https://" + url[7:]
+        origin, self._prefix = split_base(url)
+        self._base_url  = url
         self.mission_id = mission_id
         self.c = httpx.Client(base_url=origin, timeout=30.0, verify=False)
 
