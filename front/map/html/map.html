@@ -85,6 +85,40 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 #radial-menu.active .radial-petal.purple:hover{background:rgba(210,168,255,.9);border-color:#d2a8ff;}
 
 /* ================================================================
+   TACTICAL OBJECT RADIAL (Delete / Move) — same Qt6/macOS constraints
+   ================================================================ */
+#tobj-radial{
+  display:none;position:absolute;z-index:2001;
+  width:300px;height:300px;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+#tobj-radial.active{display:block;}
+#tobj-hub{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:54px;height:54px;border-radius:50%;
+  background:rgba(10,13,18,.96);border:2px solid #30363d;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:all;cursor:pointer;z-index:5;
+  box-shadow:0 2px 12px rgba(0,0,0,.7);
+}
+#tobj-hub:hover{border-color:#f85149;}
+#tobj-hub .hub-x{color:#6e7681;font-size:20px;line-height:1;}
+#tobj-hub:hover .hub-x{color:#f85149;}
+#tobj-radial.active .radial-petal{display:flex;}
+/* Move-mode instruction banner */
+#tobj-move-banner{
+  display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);
+  z-index:1600;background:rgba(13,17,23,.95);border:1px solid #388bfd;
+  color:#79c0ff;font-family:'Courier New',monospace;font-size:11px;font-weight:700;
+  padding:6px 14px;border-radius:3px;pointer-events:all;white-space:nowrap;
+}
+#tobj-move-cancel{
+  background:none;border:none;color:#f85149;cursor:pointer;
+  font-family:'Courier New',monospace;font-size:11px;font-weight:700;padding:0 0 0 8px;
+}
+
+/* ================================================================
    SYMBOL PICKER OVERLAY
    ================================================================ */
 #sym-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;align-items:center;justify-content:center;}
@@ -315,6 +349,18 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 <div id="radial-menu">
   <div id="radial-hub" onclick="closeRadial()"><span class="hub-x">✕</span></div>
   <!-- petals injected by JS -->
+</div>
+
+<!-- Tactical object radial (right-click on marker → Delete / Move) -->
+<div id="tobj-radial">
+  <div id="tobj-hub" onclick="closeTobjRadial()"><span class="hub-x">✕</span></div>
+  <!-- petals injected by JS -->
+</div>
+
+<!-- Move-mode instruction banner -->
+<div id="tobj-move-banner">
+  TAP MAP TO PLACE MARKER &nbsp;·&nbsp;
+  <button id="tobj-move-cancel" onclick="_cancelTobjMove()">✕ CANCEL</button>
 </div>
 
 <!-- Symbol picker overlay -->
@@ -777,6 +823,8 @@ function addTacticalObject(obj){
       icon=buildMilIcon(sidc,'','',obj.rotation);
     }
     lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
+    const _capObjId=obj.id;
+    lyr.on('contextmenu',function(e){L.DomEvent.stop(e);openTobjRadial(e.containerPoint,_capObjId);});
   }
   if(graphics[obj.id]) layer.removeLayer(graphics[obj.id]);
   graphics[obj.id]=lyr;
@@ -1010,9 +1058,10 @@ function _setDrawBanner(txt){
   b.textContent=txt; b.style.display='block';
 }
 
-// ESC cancels tactical drawing AND free draw
+// ESC cancels move mode, tactical drawing, and free draw
 document.addEventListener('keydown',function(e){
   if(e.key !== 'Escape') return;
+  if(typeof _tobjMoveId!=='undefined'&&_tobjMoveId!==null){_cancelTobjMove();return;}
   if(_drawType)          { cancelDraw(); return; }
   if(_fdTool !== 'none') { _fdStopAll(); drawMode='pointer'; }
 });
@@ -1834,11 +1883,101 @@ function _radialAct(key) {
   else if (bridge)             bridge.onRadialAction(key, ll.lat, ll.lng);
 }
 
+// ================================================================
+// TACTICAL OBJECT RADIAL (Delete / Move) — right-click on a marker
+// ================================================================
+let _tobjRadialId = null;
+let _tobjMoveId   = null;
+
+const TOBJ_PETALS = [
+  ['🗑', 'DELETE', 'red', 'tobj_delete'],
+  ['📌', 'MOVE',   '',   'tobj_move'],
+];
+const _TOBJ_RADIUS = 104;
+
+(function _buildTobjPetals(){
+  const menu = document.getElementById('tobj-radial');
+  const n = TOBJ_PETALS.length;
+  TOBJ_PETALS.forEach((p, i) => {
+    const [icon, label, cls, key] = p;
+    const el = document.createElement('div');
+    el.className = 'radial-petal' + (cls ? ' ' + cls : '');
+    el.dataset.key = key;
+    el.innerHTML = `<span class="rp-icon">${icon}</span><span class="rp-lbl">${label}</span>`;
+    el.addEventListener('click', ev => { ev.stopPropagation(); _tobjAct(key); });
+    menu.appendChild(el);
+  });
+})();
+
+function openTobjRadial(containerPoint, objId) {
+  _tobjRadialId = objId;
+  const menu = document.getElementById('tobj-radial');
+  const mapSize = map.getSize();
+  const pad = _TOBJ_RADIUS + 44;
+  let cx = Math.max(pad, Math.min(containerPoint.x, mapSize.x - pad));
+  let cy = Math.max(pad, Math.min(containerPoint.y, mapSize.y - pad));
+  menu.style.left = cx + 'px';
+  menu.style.top  = cy + 'px';
+  menu.classList.add('active');
+
+  // Position petals instantly — NO CSS transitions (Qt6/macOS GPU layer constraint)
+  const petals = menu.querySelectorAll('.radial-petal');
+  const n = petals.length;
+  petals.forEach((el, i) => {
+    const ang = (-90 + i * (360 / n)) * Math.PI / 180;
+    const tx  = Math.round(Math.cos(ang) * _TOBJ_RADIUS);
+    const ty  = Math.round(Math.sin(ang) * _TOBJ_RADIUS);
+    el.style.transform = `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
+  });
+
+  setTimeout(() => {
+    document.addEventListener('mousedown', _tobjOutsideClick, {once: true});
+  }, 50);
+}
+
+function _tobjOutsideClick(e) {
+  const menu = document.getElementById('tobj-radial');
+  if (!menu.contains(e.target)) closeTobjRadial();
+  else document.addEventListener('mousedown', _tobjOutsideClick, {once: true});
+}
+
+function closeTobjRadial() {
+  document.removeEventListener('mousedown', _tobjOutsideClick);
+  document.getElementById('tobj-radial').classList.remove('active');
+}
+
+function _tobjAct(key) {
+  const id = _tobjRadialId;
+  closeTobjRadial();
+  if (id === null || id === undefined) return;
+  if (key === 'tobj_delete') {
+    removeTacticalObject(id);
+    if (bridge) bridge.onTacticalObjectAction('delete', id);
+  } else if (key === 'tobj_move') {
+    _tobjMoveId = id;
+    document.getElementById('tobj-move-banner').style.display = '';
+  }
+}
+
+function _cancelTobjMove() {
+  _tobjMoveId = null;
+  document.getElementById('tobj-move-banner').style.display = 'none';
+}
+
+function _doTobjMove(latlng) {
+  const id = _tobjMoveId;
+  _cancelTobjMove();
+  const lyr = graphics[id];
+  if (lyr && typeof lyr.setLatLng === 'function') lyr.setLatLng(latlng);
+  if (bridge) bridge.onTacticalObjectMove(id, latlng.lat, latlng.lng);
+}
+
 // Right-click opens the radial — UNLESS a measure tool is active
 // (in which case right-click finishes the current measurement instead).
 map.on('contextmenu', function(e) {
   e.originalEvent.preventDefault();
   e.originalEvent.stopPropagation();
+  if (_tobjMoveId !== null)                        { _cancelTobjMove(); return; }
   if (_drawType)                                   { _drawFinishCtx(e); return; }
   if (_fdTool !== 'none')                          { return; }  // free draw: ignore right-click
   if (_measActive)                                 { _stopMeasure(null); return; }
@@ -1863,7 +2002,10 @@ map.getContainer().addEventListener('touchmove', ()=>clearTimeout(_pressTimer), 
 // MAP EVENTS
 // ================================================================
 map.on('mousemove',function(e){const mg=latLonToMGRS(e.latlng.lat,e.latlng.lng);if(bridge)bridge.onCoordsChanged(e.latlng.lat,e.latlng.lng,mg);});
-map.on('click',function(e){if(drawMode==='pointer'&&bridge)bridge.onMapClicked(e.latlng.lat,e.latlng.lng);});
+map.on('click',function(e){
+  if(_tobjMoveId!==null){_doTobjMove(e.latlng);return;}
+  if(drawMode==='pointer'&&bridge)bridge.onMapClicked(e.latlng.lat,e.latlng.lng);
+});
 
 // ================================================================
 // UTILITY

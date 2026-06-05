@@ -227,6 +227,8 @@ class MainWindow(QMainWindow):
         self._draw_panel.free_draw_clear.connect(self._map.free_draw_clear)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
         self._map.bridge.free_draw_saved.connect(self._on_free_draw_saved)
+        self._map.bridge.tactical_object_action.connect(self._on_tactical_object_action)
+        self._map.bridge.tactical_object_move.connect(self._on_tactical_object_move)
         self._map.file_dropped.connect(self._on_file_dropped_on_map)
         self._missions_panel.mission_selected.connect(self._on_mission_selected)
         self._missions_panel.mission_cleared.connect(self._on_mission_cleared)
@@ -1251,6 +1253,20 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             self.statusBar().showMessage(f"Free draw not saved: {e}", 3000)
+
+    def _on_tactical_object_action(self, action: str, obj_id: int):
+        if action == "delete" and obj_id > 0:
+            try:
+                self._client.delete_tactical_object(obj_id)
+            except Exception as e:
+                self.statusBar().showMessage(f"Delete failed: {e}", 3000)
+
+    def _on_tactical_object_move(self, obj_id: int, lat: float, lon: float):
+        if obj_id > 0:
+            try:
+                self._client.patch_tactical_object(obj_id, lat, lon)
+            except Exception as e:
+                self.statusBar().showMessage(f"Move failed: {e}", 3000)
 
     def _on_graphic_drawn(self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY"):
         """Persist a drawn tactical graphic to the backend (synced to web + android).

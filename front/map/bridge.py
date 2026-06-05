@@ -9,9 +9,11 @@ class MapBridge(QObject):
     map_clicked      = pyqtSignal(float, float)
     graphic_drawn    = pyqtSignal(str, str, str)   # type, geojson, affiliation
     measure_done     = pyqtSignal(str, str)
-    radial_action    = pyqtSignal(str, float, float)
-    symbol_selected  = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
-    free_draw_saved  = pyqtSignal(str, str, str)   # type, geom_json, notes_json
+    radial_action         = pyqtSignal(str, float, float)
+    symbol_selected       = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
+    free_draw_saved       = pyqtSignal(str, str, str)   # type, geom_json, notes_json
+    tactical_object_action = pyqtSignal(str, int)        # action ("delete"), obj_id
+    tactical_object_move   = pyqtSignal(int, float, float)  # obj_id, lat, lon
 
     @pyqtSlot()
     def onReady(self):
@@ -48,3 +50,11 @@ class MapBridge(QObject):
     @pyqtSlot(str, str, str)
     def onFreeDrawSaved(self, obj_type: str, geom_json: str, notes_json: str):
         self.free_draw_saved.emit(obj_type, geom_json, notes_json)
+
+    @pyqtSlot(str, int)
+    def onTacticalObjectAction(self, action: str, obj_id: int):
+        self.tactical_object_action.emit(action, obj_id)
+
+    @pyqtSlot(int, float, float)
+    def onTacticalObjectMove(self, obj_id: int, lat: float, lon: float):
+        self.tactical_object_move.emit(obj_id, lat, lon)
