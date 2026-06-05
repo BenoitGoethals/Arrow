@@ -1468,6 +1468,7 @@
     };
 
     let _mrObjId = null;
+    let _mrOutsideAC = null;
 
     // Convert compass angle (0°=top, CW) to SVG x,y
     function mrXY(cx, cy, r, compassDeg) {
@@ -1569,29 +1570,36 @@
         const overlay = document.getElementById('mr-overlay');
         overlay.hidden = false;
         requestAnimationFrame(() => overlay.classList.add('open'));
-        setTimeout(() => document.addEventListener('mousedown', _mrOutside, { once: true }), 0);
+        if (_mrOutsideAC) _mrOutsideAC.abort();
+        _mrOutsideAC = new AbortController();
+        setTimeout(() => document.addEventListener('mousedown', _mrOutside,
+            { signal: _mrOutsideAC.signal }), 0);
     }
 
     function closeMarkerRadial() {
+        if (_mrOutsideAC) { _mrOutsideAC.abort(); _mrOutsideAC = null; }
         const overlay = document.getElementById('mr-overlay');
-        overlay.classList.remove('open');
-        // wait for CSS transition before hiding
-        overlay.addEventListener('transitionend', () => {
-            overlay.hidden = true;
-            document.getElementById('mr-svg').innerHTML    = '';
-            document.getElementById('mr-items').innerHTML  = '';
-        }, { once: true });
         _mrObjId = null;
+        if (!overlay.classList.contains('open')) {
+            overlay.hidden = true;
+            document.getElementById('mr-svg').innerHTML   = '';
+            document.getElementById('mr-items').innerHTML = '';
+            return;
+        }
+        overlay.classList.remove('open');
+        const onEnd = () => {
+            overlay.hidden = true;
+            document.getElementById('mr-svg').innerHTML   = '';
+            document.getElementById('mr-items').innerHTML = '';
+        };
+        overlay.addEventListener('transitionend', onEnd, { once: true });
+        setTimeout(() => { overlay.removeEventListener('transitionend', onEnd); if (!overlay.hidden) onEnd(); }, 400);
     }
 
     function _mrOutside(ev) {
-        const overlay = document.getElementById('mr-overlay');
-        // click on scrim (not on a button) → close
-        if (ev.target === document.getElementById('mr-scrim') || ev.target === overlay) {
-            closeMarkerRadial();
-        } else {
-            setTimeout(() => document.addEventListener('mousedown', _mrOutside, { once: true }), 0);
-        }
+        const items = document.getElementById('mr-items');
+        if (items && items.contains(ev.target)) return;  // button click — let _mrAction handle it
+        closeMarkerRadial();
     }
 
     async function _mrAction(label, id) {
