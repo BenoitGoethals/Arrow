@@ -348,10 +348,13 @@ fun MapScreen(
     var droneBehavior  by remember { mutableStateOf("UNKNOWN") }
     var droneNotes     by remember { mutableStateOf("") }
 
-    // ── Tactical object action dialog (tap marker → Delete / Move) ─────────
-    var selectedTacticalObj by remember { mutableStateOf<TacticalObjectDto?>(null) }
+    // ── Tactical object action radial (tap marker → Delete / Move) ──────────
+    var selectedTacticalObj       by remember { mutableStateOf<TacticalObjectDto?>(null) }
+    var selectedTacticalObjScreen by remember { mutableStateOf<Offset?>(null) }
     val movingTacticalObjState = remember { mutableStateOf<TacticalObjectDto?>(null) }
     var movingTacticalObj by movingTacticalObjState
+    val role by container.tokenStore.roleFlow.collectAsState(initial = null)
+    val canEditTactical = role == "ADMIN" || role == "BATTLE_CAPTAIN"
 
     // ── CAS 9-liner form state ─────────────────────────────────────────────
     var casLine1   by remember { mutableStateOf("") }  // IP
@@ -908,8 +911,16 @@ fun MapScreen(
                         icon     = if (type == EnemyType.POI) MilSymbolRenderer.poi(res)
                                    else MilSymbolRenderer.hostile(res, type)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        setOnMarkerClickListener { _, _ ->
+                        setOnMarkerClickListener { m, _ ->
+                            // During move-mode let the tap fall through to singleTapConfirmedHelper
+                            if (movingTacticalObjState.value != null) return@setOnMarkerClickListener false
+                            val screenPt = android.graphics.Point()
+                            map.projection?.toPixels(m.position, screenPt)
                             selectedTacticalObj = first
+                            selectedTacticalObjScreen = Offset(
+                                screenPt.x.toFloat().takeIf { it != 0f } ?: (map.width / 2f),
+                                screenPt.y.toFloat().takeIf { it != 0f } ?: (map.height / 2f),
+                            )
                             true
                         }
                         map.overlays.add(this)
@@ -2183,61 +2194,52 @@ fun MapScreen(
         )
     }
 
-    selectedTacticalObj?.let { obj ->
-        val role by container.tokenStore.roleFlow.collectAsState(initial = null)
-        val canEdit = role == "ADMIN" || role == "BATTLE_CAPTAIN"
-        AlertDialog(
-            onDismissRequest = { selectedTacticalObj = null },
-            title = { Text(obj.type, fontWeight = FontWeight.Bold) },
-            text  = {
-                Column {
-                    if (obj.notes.isNotBlank()) Text(obj.notes)
-                    if (movingTacticalObj != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Text("Tap the map to place the new position.", style = MaterialTheme.typography.bodySmall)
-                    }
+    // ── Tactical object radial (tap enemy/POI marker) ────────────────────────
+    val tactObj    = selectedTacticalObj
+    val tactScreen = selectedTacticalObjScreen
+    if (tactObj != null && tactScreen != null) {
+        RadialMenu(
+            tapOffset = tactScreen,
+            items = buildList {
+                if (canEditTactical) {
+                    add(RadialItem("📌", "Move", Color(0xFF2563EB)) {
+                        selectedTacticalObj       = null
+                        selectedTacticalObjScreen = null
+                        movingTacticalObjState.value = tactObj
+                    })
+                    add(RadialItem("🗑", "Delete", Color(0xFFDC2626)) {
+                        selectedTacticalObj       = null
+                        selectedTacticalObjScreen = null
+                        scope.launch { container.tacticalRepository.delete(tactObj.id) }
+                    })
+                } else {
+                    add(RadialItem("ℹ", tactObj.type, Color(0xFF64748B)) {
+                        selectedTacticalObj = null; selectedTacticalObjScreen = null
+                    })
                 }
             },
-            confirmButton = {
-                if (canEdit) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = {
-                            movingTacticalObj  = obj
-                            selectedTacticalObj = null
-                        }) { Text("Move") }
-                        TextButton(onClick = {
-                            val id = obj.id
-                            selectedTacticalObj = null
-                            scope.launch { container.tacticalRepository.delete(id) }
-                        }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { selectedTacticalObj = null }) { Text("Close") }
-            },
+            onDismiss = { selectedTacticalObj = null; selectedTacticalObjScreen = null },
         )
     }
 
+    // ── Move-mode banner ──────────────────────────────────────────────────────
     if (movingTacticalObj != null) {
         Box(
-            Modifier
-                .fillMaxWidth()
-                .padding(bottom = 80.dp),
+            Modifier.fillMaxSize().padding(bottom = 88.dp),
             contentAlignment = Alignment.BottomCenter,
         ) {
             Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.padding(16.dp),
+                color  = MaterialTheme.colorScheme.primaryContainer,
+                shape  = RoundedCornerShape(8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp),
             ) {
                 Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment      = Alignment.CenterVertically,
+                    horizontalArrangement  = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("Tap map to move", style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = { movingTacticalObj = null }) { Text("Cancel") }
+                    Text("Tap map to place marker", style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = { movingTacticalObjState.value = null }) { Text("Cancel") }
                 }
             }
         }

@@ -95,6 +95,24 @@ class ArrowClient:
             body["photo_id"] = photo_id
         return self._post("/tactical-objects", body)
 
+    def delete_tactical_object(self, obj_id: int) -> None:
+        r = httpx.delete(
+            f"{self.base_url}/tactical-objects/{obj_id}",
+            headers=self._headers(),
+            timeout=8.0, verify=_VERIFY,
+        )
+        r.raise_for_status()
+
+    def patch_tactical_object(self, obj_id: int, lat: float, lon: float) -> dict:
+        r = httpx.patch(
+            f"{self.base_url}/tactical-objects/{obj_id}",
+            json={"latitude": lat, "longitude": lon},
+            headers=self._headers(),
+            timeout=8.0, verify=_VERIFY,
+        )
+        r.raise_for_status()
+        return r.json()
+
     # ---- KML --------------------------------------------------------
     def kml_layers(self) -> list:
         return self._get("/kml-layers")
