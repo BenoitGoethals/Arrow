@@ -348,6 +348,11 @@ fun MapScreen(
     var droneBehavior  by remember { mutableStateOf("UNKNOWN") }
     var droneNotes     by remember { mutableStateOf("") }
 
+    // ── Tactical object action dialog (tap marker → Delete / Move) ─────────
+    var selectedTacticalObj by remember { mutableStateOf<TacticalObjectDto?>(null) }
+    val movingTacticalObjState = remember { mutableStateOf<TacticalObjectDto?>(null) }
+    var movingTacticalObj by movingTacticalObjState
+
     // ── CAS 9-liner form state ─────────────────────────────────────────────
     var casLine1   by remember { mutableStateOf("") }  // IP
     var casLine2   by remember { mutableStateOf("") }  // Heading/Distance
@@ -903,6 +908,10 @@ fun MapScreen(
                         icon     = if (type == EnemyType.POI) MilSymbolRenderer.poi(res)
                                    else MilSymbolRenderer.hostile(res, type)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        setOnMarkerClickListener { _, _ ->
+                            selectedTacticalObj = first
+                            true
+                        }
                         map.overlays.add(this)
                     }
                     if (type != EnemyType.POI) {
@@ -1085,6 +1094,15 @@ fun MapScreen(
                     val events = MapEventsOverlay(object : MapEventsReceiver {
                         override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
                             p ?: return false
+                            // Move mode: relocate the selected tactical object to the tapped point.
+                            val moving = movingTacticalObjState.value
+                            if (moving != null) {
+                                movingTacticalObjState.value = null
+                                scope.launch {
+                                    container.tacticalRepository.updatePosition(moving.id, p.latitude, p.longitude)
+                                }
+                                return true
+                            }
                             // In measure mode, taps populate point 1 / point 2 instead of opening the radial menu.
                             if (measureModeState.value) {
                                 when {
@@ -2163,6 +2181,66 @@ fun MapScreen(
             imageLoader = container.imageLoader,
             onDismiss   = { selectedObjective = null },
         )
+    }
+
+    selectedTacticalObj?.let { obj ->
+        val role by container.tokenStore.roleFlow.collectAsState(initial = null)
+        val canEdit = role == "ADMIN" || role == "BATTLE_CAPTAIN"
+        AlertDialog(
+            onDismissRequest = { selectedTacticalObj = null },
+            title = { Text(obj.type, fontWeight = FontWeight.Bold) },
+            text  = {
+                Column {
+                    if (obj.notes.isNotBlank()) Text(obj.notes)
+                    if (movingTacticalObj != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Tap the map to place the new position.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                if (canEdit) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            movingTacticalObj  = obj
+                            selectedTacticalObj = null
+                        }) { Text("Move") }
+                        TextButton(onClick = {
+                            val id = obj.id
+                            selectedTacticalObj = null
+                            scope.launch { container.tacticalRepository.delete(id) }
+                        }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedTacticalObj = null }) { Text("Close") }
+            },
+        )
+    }
+
+    if (movingTacticalObj != null) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(bottom = 80.dp),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Tap map to move", style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = { movingTacticalObj = null }) { Text("Cancel") }
+                }
+            }
+        }
     }
 }
 

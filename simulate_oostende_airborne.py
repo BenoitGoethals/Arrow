@@ -981,8 +981,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=f"OPERATION SEAGULL — {BN_NAME} airborne assault on Oostende Airport")
     parser.add_argument("--backend",
-                        default=os.environ.get("ARROW_BACKEND_URL", "http://localhost:6001"),
-                        help="Backend URL (default: ARROW_BACKEND_URL env, else localhost)")
+                        default=os.environ.get("ARROW_BACKEND_URL", "https://78.21.255.210:6200/api"),
+                        help="Backend URL (default: ARROW_BACKEND_URL env, else production)")
     parser.add_argument("--admin",        default="benoit",   help="ADMIN callsign")
     parser.add_argument("--password",     default="ranger14", help="ADMIN password")
     parser.add_argument("--op-password",  default="rangers!", help="Operator password")

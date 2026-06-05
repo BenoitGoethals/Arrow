@@ -33,7 +33,7 @@ parser = argparse.ArgumentParser(description="Send 10 NATO LOGREPs to Arrow back
 parser.add_argument("--backend",
                     default=(os.environ.get("ARROW_BACKEND_URL")
                              or sim_utils.load_saved_backend()
-                             or "http://localhost:6001"))
+                             or "https://78.21.255.210:6200/api"))
 parser.add_argument("--mission", default="Op LOGREP SIM",
                     help="Mission name (created if absent)")
 parser.add_argument("--delay", type=float, default=0.3,

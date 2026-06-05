@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from backend.api.schemas import TacticalObjectIn, TacticalObjectOut
+from backend.api.schemas import TacticalObjectIn, TacticalObjectOut, TacticalObjectPatch
 from backend.auth.jwt_auth import get_current_operator
 from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
@@ -47,6 +47,31 @@ async def create_object(
         "channel": "tactical-object",
         "event": "created",
         "mission_id": mission.id if mission else None,
+        "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
+    })
+    return obj
+
+
+@router.patch("/{object_id}", response_model=TacticalObjectOut)
+async def patch_object(
+    object_id: int,
+    payload: TacticalObjectPatch,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> TacticalObject:
+    obj = db.get(TacticalObject, object_id)
+    if not obj:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if obj.created_by != current.id and current.role not in {"ADMIN", "BATTLE_CAPTAIN"}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN)
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(obj, field, value)
+    db.commit()
+    db.refresh(obj)
+    await broadcaster.broadcast({
+        "channel": "tactical-object",
+        "event": "updated",
+        "mission_id": obj.mission_id,
         "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
     })
     return obj

@@ -419,7 +419,7 @@ def main() -> None:
     default_backend = (
         os.environ.get("ARROW_BACKEND_URL")
         or sim_utils.load_saved_backend()
-        or "http://localhost:6001"
+        or "https://78.21.255.210:6200/api"
     )
     parser = argparse.ArgumentParser(
         description="Operation IRON SHROUD — full-spectrum CBRN strike on Russia")

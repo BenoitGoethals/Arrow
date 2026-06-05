@@ -709,7 +709,7 @@ def main() -> None:
     # Falls back to ARROW_BACKEND_URL so deployments share the same env var
     # the Flask side uses; explicit --backend always wins.
     parser.add_argument("--backend",
-                        default=os.environ.get("ARROW_BACKEND_URL", "http://localhost:6001"),
+                        default=os.environ.get("ARROW_BACKEND_URL", "https://78.21.255.210:6200/api"),
                         help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, "
                              "then localhost. e.g. https://78.21.255.210:6001")
     parser.add_argument("--admin",    default="benoit", help="ADMIN callsign")

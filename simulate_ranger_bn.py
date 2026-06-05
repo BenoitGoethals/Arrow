@@ -37,7 +37,7 @@ import sim_utils
 
 parser = argparse.ArgumentParser(description="Ranger Bn hierarchy simulator")
 parser.add_argument("--backend",
-                    default=sim_utils.load_saved_backend() or "http://localhost:6001")
+                    default=sim_utils.load_saved_backend() or "https://78.21.255.210:6200/api")
 parser.add_argument("--seed-admin",          default="benoit")
 parser.add_argument("--seed-admin-password", default="ranger14")
 parser.add_argument("--mission-name",        default="Operation Bastogne")
