@@ -29,13 +29,13 @@ class StreamsPanel(QWidget):
         hdr = QHBoxLayout()
         hdr.setContentsMargins(8, 6, 8, 4)
         hdr.addWidget(QLabel("STREAMS",
-            styleSheet="color:#8b949e;font-size:9px;font-weight:700;letter-spacing:2px;"))
+            styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;"))
         hdr.addStretch()
         r = QPushButton("⟳")
         r.setFixedSize(26, 24)
         r.setToolTip("Reload streams from server")
         r.setStyleSheet("QPushButton{background:#21262d;border:1px solid #30363d;"
-                        "color:#8b949e;font-size:13px;border-radius:2px;}"
+                        "color:#8b949e;font-size:15px;border-radius:2px;}"
                         "QPushButton:hover{color:#c9d1d9;}")
         r.clicked.connect(self.refresh_requested.emit)
         hdr.addWidget(r)
@@ -47,7 +47,7 @@ class StreamsPanel(QWidget):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
         self._tabs.setStyleSheet(
-            "QTabBar::tab{font-size:8px;padding:4px 8px;letter-spacing:1px;}")
+            "QTabBar::tab{font-size:11px;padding:4px 8px;letter-spacing:1px;}")
 
         # LIVE
         self._live_list = self._make_list()
@@ -60,7 +60,7 @@ class StreamsPanel(QWidget):
         add_btn.setFixedHeight(28)
         add_btn.setStyleSheet(
             "QPushButton{background:#1f6feb;border:1px solid #388bfd;"
-            "color:#fff;font-size:9px;font-weight:700;padding:0 10px;"
+            "color:#fff;font-size:12px;font-weight:700;padding:0 10px;"
             "border-radius:2px;margin:4px 6px;}"
             "QPushButton:hover{background:#388bfd;}")
         add_btn.clicked.connect(self.external_add_requested.emit)
@@ -90,7 +90,7 @@ class StreamsPanel(QWidget):
 
     def _make_list(self) -> QListWidget:
         lst = QListWidget()
-        lst.setFont(QFont("Courier New", 10))
+        lst.setFont(QFont("Courier New", 13))
         lst.setAlternatingRowColors(True)
         return lst
 

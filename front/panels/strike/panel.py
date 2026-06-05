@@ -45,14 +45,14 @@ class StrikePackagePanel(QWidget):
         hdr = QHBoxLayout()
         hdr.setContentsMargins(8, 6, 8, 4)
         hdr.addWidget(QLabel("STRIKE PACKAGES",
-            styleSheet="color:#8b949e;font-size:9px;font-weight:700;letter-spacing:2px;"))
+            styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;"))
         hdr.addStretch()
 
         refresh_btn = QPushButton("⟳")
         refresh_btn.setFixedSize(26, 24)
         refresh_btn.setStyleSheet(
             "QPushButton{background:#21262d;border:1px solid #30363d;"
-            "color:#8b949e;font-size:13px;border-radius:2px;}"
+            "color:#8b949e;font-size:15px;border-radius:2px;}"
             "QPushButton:hover{color:#c9d1d9;background:#30363d;}"
         )
         refresh_btn.setToolTip("Reload from server")
@@ -61,7 +61,7 @@ class StrikePackagePanel(QWidget):
 
         clear_btn = QPushButton("CLEAR")
         clear_btn.setFixedHeight(24); clear_btn.setFixedWidth(52)
-        clear_btn.setStyleSheet("font-size:9px;padding:0 4px;")
+        clear_btn.setStyleSheet("font-size:12px;padding:0 4px;")
         clear_btn.clicked.connect(self._clear)
         hdr.addWidget(clear_btn)
         root.addLayout(hdr)
@@ -71,7 +71,7 @@ class StrikePackagePanel(QWidget):
 
         # Package list
         self._list = QListWidget()
-        self._list.setFont(QFont("Courier New", 10))
+        self._list.setFont(QFont("Courier New", 13))
         self._list.setAlternatingRowColors(True)
         self._list.setFixedHeight(180)
         self._list.itemClicked.connect(self._on_select)
@@ -90,7 +90,7 @@ class StrikePackagePanel(QWidget):
         self._detail_layout.setSpacing(6)
         self._detail_layout.addWidget(
             QLabel("Select a strike package",
-                   styleSheet="color:#484f58;font-size:10px;font-family:'Courier New',monospace;"),
+                   styleSheet="color:#484f58;font-size:13px;font-family:'Courier New',monospace;"),
             alignment=Qt.AlignmentFlag.AlignCenter
         )
         scroll.setWidget(self._detail_widget)
@@ -105,7 +105,7 @@ class StrikePackagePanel(QWidget):
         self._overlay_btn.setEnabled(False)
         self._overlay_btn.setStyleSheet(
             "QPushButton{background:#1a3020;border:1px solid #3fb950;color:#3fb950;"
-            "font-size:9px;font-weight:700;padding:5px;border-radius:2px;}"
+            "font-size:12px;font-weight:700;padding:5px;border-radius:2px;}"
             "QPushButton:hover:!disabled{background:#3fb950;color:#0d1117;}"
             "QPushButton:disabled{color:#30363d;border-color:#21262d;}"
         )
@@ -115,7 +115,7 @@ class StrikePackagePanel(QWidget):
         self._planner_btn.setEnabled(False)
         self._planner_btn.setStyleSheet(
             "QPushButton{background:#1c2d3f;border:1px solid #1f6feb;color:#79c0ff;"
-            "font-size:9px;font-weight:700;padding:5px;border-radius:2px;}"
+            "font-size:12px;font-weight:700;padding:5px;border-radius:2px;}"
             "QPushButton:hover:!disabled{background:#1f6feb;color:#fff;}"
             "QPushButton:disabled{color:#30363d;border-color:#21262d;}"
         )
@@ -195,18 +195,18 @@ class StrikePackagePanel(QWidget):
         fms   = bundle.get("fire_missions")    or bundle.get("fire_mission_ids",    [])
         assets  = bundle.get("assets", {})
 
-        def _lbl(txt, style="color:#8b949e;font-size:9px;"):
+        def _lbl(txt, style="color:#8b949e;font-size:12px;"):
             l = QLabel(txt); l.setStyleSheet(style); return l
 
         def _val(txt):
             l = QLabel(txt)
-            l.setStyleSheet("color:#c9d1d9;font-size:10px;font-family:'Courier New',monospace;")
+            l.setStyleSheet("color:#c9d1d9;font-size:13px;font-family:'Courier New',monospace;")
             l.setWordWrap(True)
             return l
 
         # Name / status
         name_lbl = QLabel(f"  {STATUS_ICON.get(status,'?')}  {name}")
-        name_lbl.setStyleSheet(f"color:{color};font-size:11px;font-weight:700;"
+        name_lbl.setStyleSheet(f"color:{color};font-size:13px;font-weight:700;"
                                f"font-family:'Courier New',monospace;")
         self._detail_layout.addWidget(name_lbl)
 
@@ -236,7 +236,7 @@ class StrikePackagePanel(QWidget):
         ]
         for i, (k, v) in enumerate(stats):
             grid.addWidget(_lbl(k), i // 2, (i % 2) * 2)
-            vl = _val(v); vl.setStyleSheet("color:#79c0ff;font-size:11px;font-weight:700;")
+            vl = _val(v); vl.setStyleSheet("color:#79c0ff;font-size:13px;font-weight:700;")
             grid.addWidget(vl, i // 2, (i % 2) * 2 + 1)
         self._detail_layout.addLayout(grid)
         self._detail_layout.addStretch()
@@ -250,7 +250,7 @@ class StrikePackagePanel(QWidget):
             if c.widget(): c.widget().deleteLater()
         self._detail_layout.addWidget(
             QLabel("Select a strike package",
-                   styleSheet="color:#484f58;font-size:10px;"),
+                   styleSheet="color:#484f58;font-size:13px;"),
             alignment=Qt.AlignmentFlag.AlignCenter
         )
         self.package_cleared.emit()

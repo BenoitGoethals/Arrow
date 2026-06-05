@@ -14,6 +14,11 @@ class MapBridge(QObject):
     free_draw_saved       = pyqtSignal(str, str, str)   # type, geom_json, notes_json
     tactical_object_action = pyqtSignal(str, int)        # action ("delete"), obj_id
     tactical_object_move   = pyqtSignal(int, float, float)  # obj_id, lat, lon
+    route_drawn            = pyqtSignal(str, str)        # route_id, waypoints_json
+    route_draw_cancelled   = pyqtSignal(str)             # route_id
+    nav_waypoint_reached = pyqtSignal(str, int)   # route_id, wp_idx
+    nav_completed        = pyqtSignal(str)          # route_id
+    nav_stopped          = pyqtSignal()
 
     @pyqtSlot()
     def onReady(self):
@@ -58,3 +63,23 @@ class MapBridge(QObject):
     @pyqtSlot(int, float, float)
     def onTacticalObjectMove(self, obj_id: int, lat: float, lon: float):
         self.tactical_object_move.emit(obj_id, lat, lon)
+
+    @pyqtSlot(str, str)
+    def onRouteDrawn(self, route_id: str, waypoints_json: str):
+        self.route_drawn.emit(route_id, waypoints_json)
+
+    @pyqtSlot(str)
+    def onRouteDrawCancelled(self, route_id: str):
+        self.route_draw_cancelled.emit(route_id)
+
+    @pyqtSlot(str, int)
+    def onNavWaypointReached(self, route_id: str, wp_idx: int):
+        self.nav_waypoint_reached.emit(route_id, wp_idx)
+
+    @pyqtSlot(str)
+    def onNavCompleted(self, route_id: str):
+        self.nav_completed.emit(route_id)
+
+    @pyqtSlot()
+    def onNavStopped(self):
+        self.nav_stopped.emit()

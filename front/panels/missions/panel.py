@@ -43,7 +43,7 @@ class MissionsPanel(QWidget):
         top = QHBoxLayout()
         top.setContentsMargins(8, 6, 8, 4)
         top.addWidget(QLabel("MISSIONS",
-            styleSheet="color:#8b949e;font-size:9px;font-weight:700;letter-spacing:2px;"))
+            styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;"))
         top.addStretch()
 
         refresh_btn = QPushButton("⟳")
@@ -51,7 +51,7 @@ class MissionsPanel(QWidget):
         refresh_btn.setFixedSize(26, 24)
         refresh_btn.setStyleSheet(
             "QPushButton{background:#21262d;border:1px solid #30363d;"
-            "color:#8b949e;font-size:13px;border-radius:2px;}"
+            "color:#8b949e;font-size:15px;border-radius:2px;}"
             "QPushButton:hover{background:#30363d;color:#c9d1d9;}"
         )
         refresh_btn.clicked.connect(self.refresh_requested.emit)
@@ -60,7 +60,7 @@ class MissionsPanel(QWidget):
         clear_btn = QPushButton("CLEAR")
         clear_btn.setFixedHeight(24)
         clear_btn.setFixedWidth(52)
-        clear_btn.setStyleSheet("font-size:9px;padding:0 4px;")
+        clear_btn.setStyleSheet("font-size:12px;padding:0 4px;")
         clear_btn.clicked.connect(self._clear)
         top.addWidget(clear_btn)
         layout.addLayout(top)
@@ -72,7 +72,7 @@ class MissionsPanel(QWidget):
 
         # Mission list
         self._list = QListWidget()
-        self._list.setFont(QFont("Courier New", 10))
+        self._list.setFont(QFont("Courier New", 13))
         self._list.setAlternatingRowColors(True)
         self._list.itemClicked.connect(self._on_select)
         splitter.addWidget(self._list)
@@ -89,7 +89,7 @@ class MissionsPanel(QWidget):
 
         self._ops_tree = QTreeWidget()
         self._ops_tree.setHeaderHidden(True)
-        self._ops_tree.setFont(QFont("Courier New", 10))
+        self._ops_tree.setFont(QFont("Courier New", 13))
         self._ops_tree.setAlternatingRowColors(True)
         dl.addWidget(self._ops_tree, 1)
 
@@ -139,7 +139,7 @@ class MissionsPanel(QWidget):
             item.setForeground(QBrush(QColor(color)))
             item.setData(Qt.ItemDataRole.UserRole, m)
             if m.get("id") == self._active_id:
-                f = QFont("Courier New", 10); f.setBold(True)
+                f = QFont("Courier New", 13); f.setBold(True)
                 item.setFont(f)
             self._list.addItem(item)
 
@@ -181,8 +181,8 @@ class MissionsPanel(QWidget):
         if mission.get("id") == self._active_id:
             self._clear()
             return
-        f_bold = QFont("Courier New", 10); f_bold.setBold(True)
-        f_norm = QFont("Courier New", 10); f_norm.setBold(False)
+        f_bold = QFont("Courier New", 13); f_bold.setBold(True)
+        f_norm = QFont("Courier New", 13); f_norm.setBold(False)
         for i in range(self._list.count()):
             it = self._list.item(i)
             it.setFont(f_bold if it is item else f_norm)
@@ -200,7 +200,7 @@ class MissionsPanel(QWidget):
             f"<b style='color:#f85149'>Delete ALL {n} mission{'s' if n!=1 else ''}?</b>"
             f"<br><br>This will permanently remove every mission from the server.<br>"
             f"This action <b>cannot be undone</b>.<br><br>"
-            f"<span style='color:#8b949e;font-size:10px'>Requires ADMIN role.</span>"
+            f"<span style='color:#8b949e;font-size:13px'>Requires ADMIN role.</span>"
         )
         msg.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
@@ -220,7 +220,7 @@ class MissionsPanel(QWidget):
         self._active_id = None
         self._list.clearSelection()
         self._list.setCurrentItem(None)
-        f = QFont("Courier New", 10); f.setBold(False)
+        f = QFont("Courier New", 13); f.setBold(False)
         for i in range(self._list.count()):
             self._list.item(i).setFont(f)
         self.set_active_mission(None)
