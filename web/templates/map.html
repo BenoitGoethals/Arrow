@@ -364,9 +364,9 @@
     </div>
     <!-- Marker right-click context menu -->
     <div id="marker-ctx">
-        <button id="ctx-move-btn" onclick="ctxMove()">📌 Move here…</button>
+        <button id="ctx-move-btn">📌 Move here…</button>
         <hr/>
-        <button id="ctx-delete-btn" class="danger" onclick="ctxDelete()">🗑 Delete</button>
+        <button id="ctx-delete-btn" class="danger">🗑 Delete</button>
     </div>
 
     <div style="position:relative">
@@ -1438,7 +1438,6 @@
 
     // ── Marker context menu ────────────────────────────────────────────────────
     let _ctxObjId = null;
-    let _ctxMoveMode = false;
 
     function showMarkerCtx(e, objId) {
         closeMarkerCtx();
@@ -1452,7 +1451,17 @@
         if (y + h > vh) y = vh - h - 4;
         ctx.style.left = x + 'px';
         ctx.style.top  = y + 'px';
-        document.addEventListener('click', closeMarkerCtx, { once: true });
+        // close on outside click (stopPropagation inside the menu prevents this for button clicks)
+        setTimeout(() => document.addEventListener('mousedown', _ctxOutside, { once: true }), 0);
+    }
+
+    function _ctxOutside(ev) {
+        if (!document.getElementById('marker-ctx').contains(ev.target)) {
+            closeMarkerCtx();
+        } else {
+            // click was inside the menu — re-arm for the next outside click
+            setTimeout(() => document.addEventListener('mousedown', _ctxOutside, { once: true }), 0);
+        }
     }
 
     function closeMarkerCtx() {
@@ -1474,17 +1483,15 @@
 
     function ctxMove() {
         if (!_ctxObjId) return;
+        const id = _ctxObjId;  // capture before closeMarkerCtx nulls it
         closeMarkerCtx();
-        _ctxMoveMode = true;
-        const key = `to-${_ctxObjId}`;
+        const key = `to-${id}`;
         const m = state.markers.get(key);
         if (m) m.setOpacity(0.4);
         map.getContainer().style.cursor = 'crosshair';
         map.once('click', async (e) => {
             map.getContainer().style.cursor = '';
-            _ctxMoveMode = false;
-            const id = _ctxObjId;
-            if (!id) return;
+            if (m) m.setOpacity(1);
             const { lat, lng } = e.latlng;
             const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id, {
                 method: 'PATCH',
@@ -1495,11 +1502,15 @@
                 const obj = await r.json();
                 state.tacticalObjects.set(obj.id, obj);
                 const mk = state.markers.get(`to-${obj.id}`);
-                if (mk) { mk.setLatLng([obj.latitude, obj.longitude]); mk.setOpacity(1); }
+                if (mk) mk.setLatLng([obj.latitude, obj.longitude]);
                 else { state.markers.delete(`to-${obj.id}`); refreshEnemies(); }
             }
         });
     }
+
+    // Wire up ctx menu buttons inside the IIFE (onclick attrs can't reach functions in closures)
+    document.getElementById('ctx-delete-btn').addEventListener('click', ctxDelete);
+    document.getElementById('ctx-move-btn').addEventListener('click', ctxMove);
 
     function refreshAllMarkers() {
         // placeOperator() already handles create-or-update-in-place.
