@@ -86,7 +86,7 @@ class _ThumbCard(QFrame):
 
         name = item.get("original_name") or item.get("filename") or ""
         lbl = QLabel(name)
-        lbl.setFont(QFont("Courier New", 7))
+        lbl.setFont(QFont("Courier New", 10))
         lbl.setStyleSheet("color:#8b949e;")
         lbl.setMaximumWidth(120)
         lbl.setWordWrap(False)
@@ -166,7 +166,7 @@ class MediaPanel(QWidget):
         bar_layout.setSpacing(6)
 
         title = QLabel("MEDIA GALLERY")
-        title.setFont(QFont("Courier New", 9))
+        title.setFont(QFont("Courier New", 12))
         title.setStyleSheet("color:#6e7681;font-weight:700;letter-spacing:1px;")
         bar_layout.addWidget(title, 1)
 
@@ -174,7 +174,7 @@ class MediaPanel(QWidget):
         upload_btn.setFixedHeight(24)
         upload_btn.setStyleSheet(
             "QPushButton{background:#21262d;border:1px solid #30363d;"
-            "color:#c9d1d9;font-size:10px;border-radius:2px;padding:0 8px;}"
+            "color:#c9d1d9;font-size:13px;border-radius:2px;padding:0 8px;}"
             "QPushButton:hover{border-color:#388bfd;color:#58a6ff;}"
         )
         upload_btn.clicked.connect(self._upload)
@@ -183,7 +183,7 @@ class MediaPanel(QWidget):
         refresh_btn.setFixedSize(24, 24)
         refresh_btn.setStyleSheet(
             "QPushButton{background:#21262d;border:1px solid #30363d;"
-            "color:#c9d1d9;font-size:12px;border-radius:2px;}"
+            "color:#c9d1d9;font-size:14px;border-radius:2px;}"
             "QPushButton:hover{border-color:#388bfd;}"
         )
         refresh_btn.clicked.connect(self.refresh)
@@ -195,7 +195,7 @@ class MediaPanel(QWidget):
         # ── Status label ───────────────────────────────────────────────
         self._status = QLabel("Click ↻ to load media")
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status.setStyleSheet("color:#6e7681;font-size:9px;padding:4px;")
+        self._status.setStyleSheet("color:#6e7681;font-size:12px;padding:4px;")
         root.addWidget(self._status)
 
         # ── Scroll grid ────────────────────────────────────────────────

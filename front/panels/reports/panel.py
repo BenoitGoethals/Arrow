@@ -72,7 +72,7 @@ class ReportsPanel(QWidget):
 
         # Report list
         self._list = QListWidget()
-        self._list.setFont(QFont("Courier New", 9))
+        self._list.setFont(QFont("Courier New", 12))
         self._list.setAlternatingRowColors(True)
         self._list.itemClicked.connect(self._on_click)
         self._list.itemDoubleClicked.connect(self._show_detail)
@@ -196,7 +196,7 @@ class ReportDetailDialog(QDialog):
         # Payload viewer
         viewer = QTextEdit()
         viewer.setReadOnly(True)
-        viewer.setFont(QFont("Courier New", 10))
+        viewer.setFont(QFont("Courier New", 13))
         viewer.setPlainText(self._format_payload(report.payload))
         layout.addWidget(viewer, 1)
 

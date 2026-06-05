@@ -119,6 +119,54 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 }
 
 /* ================================================================
+   NAVIGATION HUD
+   ================================================================ */
+#nav-hud{
+  display:none;position:absolute;bottom:20px;left:50%;margin-left:-185px;
+  z-index:1800;width:370px;
+  background:rgba(10,13,18,.97);border:1px solid #30363d;border-radius:4px;
+  box-shadow:0 4px 20px rgba(0,0,0,.8);font-family:'Courier New',monospace;
+  overflow:hidden;
+}
+#nav-hud.active{display:block;}
+#nav-dir-row{
+  display:flex;align-items:center;gap:10px;padding:10px 12px 8px;
+  border-bottom:1px solid #21262d;
+}
+#nav-arrow-wrap{
+  width:52px;height:52px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:#161b22;border:1px solid #30363d;border-radius:50%;
+}
+#nav-bearing-info{flex:1;}
+#nav-bearing-deg{font-size:22px;font-weight:700;color:#e6edf3;letter-spacing:1px;}
+#nav-turn-hint{font-size:9px;font-weight:700;color:#79c0ff;letter-spacing:1px;margin-top:2px;min-height:13px;}
+#nav-wp-badge{
+  font-size:9px;font-weight:700;color:#0d1117;
+  padding:3px 8px;border-radius:2px;letter-spacing:1px;align-self:flex-start;
+}
+#nav-wp-row{padding:7px 12px;border-bottom:1px solid #21262d;}
+#nav-wp-label{font-size:12px;font-weight:700;color:#e6edf3;letter-spacing:.3px;}
+#nav-wp-stats{font-size:10px;color:#8b949e;margin-top:3px;}
+#nav-progress-row{
+  display:flex;align-items:center;gap:8px;
+  padding:5px 12px;border-bottom:1px solid #21262d;
+}
+#nav-progress-bar{flex:1;height:4px;background:#21262d;border-radius:2px;overflow:hidden;}
+#nav-progress-fill{height:100%;background:#3fb950;width:0%;border-radius:2px;}
+#nav-progress-text{font-size:9px;color:#6e7681;white-space:nowrap;}
+#nav-ctrl-row{display:flex;gap:5px;padding:7px 12px;}
+#nav-ctrl-row button{
+  flex:1;background:#21262d;border:1px solid #30363d;color:#c9d1d9;
+  font-family:'Courier New',monospace;font-size:9px;font-weight:700;
+  padding:5px 4px;border-radius:2px;cursor:pointer;letter-spacing:.3px;
+}
+#nav-ctrl-row button:hover{background:#30363d;color:#e6edf3;}
+#nav-stop-btn{color:#f85149 !important;border-color:#f85149 !important;}
+#nav-stop-btn:hover{background:rgba(248,81,73,.15) !important;}
+#nav-home-btn:hover{background:rgba(63,185,80,.15) !important;color:#3fb950 !important;}
+
+/* ================================================================
    SYMBOL PICKER OVERLAY
    ================================================================ */
 #sym-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;align-items:center;justify-content:center;}
@@ -363,6 +411,35 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
   <button id="tobj-move-cancel" onclick="_cancelTobjMove()">✕ CANCEL</button>
 </div>
 
+<!-- Navigation HUD -->
+<div id="nav-hud">
+  <div id="nav-dir-row">
+    <div id="nav-arrow-wrap">
+      <svg id="nav-arrow-svg" viewBox="0 0 48 48" width="44" height="44">
+        <polygon id="nav-arrow-poly" points="24,5 38,38 24,29 10,38" fill="#3fb950" opacity="0.95"/>
+      </svg>
+    </div>
+    <div id="nav-bearing-info">
+      <div id="nav-bearing-deg">---°</div>
+      <div id="nav-turn-hint"></div>
+    </div>
+    <div id="nav-wp-badge">WP</div>
+  </div>
+  <div id="nav-wp-row">
+    <div id="nav-wp-label">---</div>
+    <div id="nav-wp-stats"></div>
+  </div>
+  <div id="nav-progress-row">
+    <div id="nav-progress-bar"><div id="nav-progress-fill"></div></div>
+    <div id="nav-progress-text">-- / --</div>
+  </div>
+  <div id="nav-ctrl-row">
+    <button id="nav-pause-btn" onclick="_navTogglePause()">⏸ PAUSE</button>
+    <button id="nav-home-btn" onclick="_navGoHome()">🏠 HOME</button>
+    <button id="nav-stop-btn" onclick="stopNavigation()">■ STOP</button>
+  </div>
+</div>
+
 <!-- Symbol picker overlay -->
 <!-- Symbol picker overlay -->
 <div id="sym-overlay">
@@ -490,6 +567,7 @@ if (typeof L === 'undefined') {
 // STATE
 // ================================================================
 const tracks={}, trails={}, graphics={}, cotTracks={}, fireMissions={}, alertMarkers={}, kmlLayers={}, cbrnZones={};
+const _routeLayers={};   // route_id → {line, markers:[], labels:[]}
 let bridge=null, drawMode='pointer', drawHandler=null, measurePoints=[], measureLine=null;
 let radialLatLng=null, pickerLat=null, pickerLon=null, selectedFunc=null, selectedDim='G';
 let pickerAff='F', pickerEch='--', pickerEchCode='--';
@@ -528,6 +606,7 @@ const LAYERS={
   alerts:L.layerGroup().addTo(map),    graphics:L.layerGroup().addTo(map),
   kml:L.layerGroup().addTo(map),       cbrn:L.layerGroup().addTo(map),
   weather:L.layerGroup().addTo(map),   freedraw:L.layerGroup().addTo(map),
+  routes:L.layerGroup().addTo(map),
 };
 
 // ================================================================
@@ -1062,9 +1141,488 @@ function _setDrawBanner(txt){
 document.addEventListener('keydown',function(e){
   if(e.key !== 'Escape') return;
   if(typeof _tobjMoveId!=='undefined'&&_tobjMoveId!==null){_cancelTobjMove();return;}
+  if(drawMode==='routedraw')         { cancelRouteDrawing(); return; }
   if(_drawType)          { cancelDraw(); return; }
   if(_fdTool !== 'none') { _fdStopAll(); drawMode='pointer'; }
 });
+
+// ================================================================
+// ROUTE PLANNING
+// ================================================================
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const _ROUTE_WP_COLORS = {
+  START:'#3fb950', END:'#f85149', IP:'#ff9e64', RV:'#d2a8ff',
+  CP:'#79c0ff', RP:'#d29922', HOLD:'#8b949e', WP:null,
+};
+
+function _haversineM(a, b) {
+  const R=6371000, dlat=(b.lat-a.lat)*Math.PI/180, dlon=(b.lon-a.lon)*Math.PI/180;
+  const la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
+  const x=Math.sin(dlat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dlon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(Math.max(0,x)));
+}
+
+function _fmtRouteDist(m) {
+  if(m>=10000) return (m/1000).toFixed(1)+' km';
+  if(m>=1000)  return (m/1000).toFixed(2)+' km';
+  return Math.round(m)+' m';
+}
+
+function _fmtRouteEta(mins) {
+  if(mins<1)  return '<1m';
+  if(mins<60) return Math.round(mins)+'m';
+  return Math.floor(mins/60)+'h '+Math.round(mins%60).toString().padStart(2,'0')+'m';
+}
+
+function _routeWpIcon(type, idx, routeColor) {
+  const c = _ROUTE_WP_COLORS[type] || routeColor || '#79c0ff';
+  const lbl = {START:'S',END:'E',IP:'IP',RV:'RV',CP:'CP',RP:'RP',HOLD:'H'}[type] || String(idx);
+  const fs = lbl.length > 1 ? 7 : 10;
+  const r = 11;
+  const svg = `<svg width="${r*2}" height="${r*2}" viewBox="0 0 ${r*2} ${r*2}">
+    <circle cx="${r}" cy="${r}" r="${r-1.5}" fill="${c}" fill-opacity=".92" stroke="#0d1117" stroke-width="1.5"/>
+    <text x="${r}" y="${r}" text-anchor="middle" dominant-baseline="middle"
+      font-family="Courier New,monospace" font-size="${fs}" font-weight="700" fill="#fff">${lbl}</text>
+  </svg>`;
+  return L.divIcon({
+    html: svg, className:'mil-icon',
+    iconSize:[r*2,r*2], iconAnchor:[r,r], popupAnchor:[0,-r-2]
+  });
+}
+
+function _routeWpPopup(wp, routeName, idx, cumDist, etaMin) {
+  const c = _ROUTE_WP_COLORS[wp.type||'WP'] || '#79c0ff';
+  const typeLabel = wp.type || 'WP';
+  const labelPart = wp.label ? ` — ${esc(wp.label)}` : '';
+  return `<div style="font-family:'Courier New',monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px">
+    <div style="font-weight:700;color:${c};border-bottom:1px solid #30363d;padding-bottom:4px;margin-bottom:6px">
+      ${typeLabel}${labelPart}
+    </div>
+    ${wp.notes ? `<div style="margin-bottom:4px">${esc(wp.notes)}</div>` : ''}
+    <div style="color:#6e7681;font-size:9px">${latLonToMGRS(wp.lat,wp.lon)}</div>
+    ${cumDist !== undefined ? `<div style="color:#3fb950;font-size:9px;margin-top:3px">📏 ${_fmtRouteDist(cumDist)} from START</div>` : ''}
+    ${etaMin  !== undefined ? `<div style="color:#d29922;font-size:9px">⏱ H+${_fmtRouteEta(etaMin)} @ route speed</div>` : ''}
+    <div style="color:#484f58;font-size:8px;margin-top:2px">Route: ${esc(routeName||'')}</div>
+  </div>`;
+}
+
+// ── Drawing mode ──────────────────────────────────────────────────────────────
+let _routeDrawId    = null;
+let _routeDrawColor = '#3fb950';
+let _routeDrawPts   = [];
+let _routeDrawMks   = [];
+let _routeDrawLine  = null;
+
+function startRouteDrawing(routeId, color) {
+  cancelRouteDrawing();
+  _routeDrawId    = routeId;
+  _routeDrawColor = color || '#3fb950';
+  _routeDrawPts   = [];
+  drawMode = 'routedraw';
+  map.doubleClickZoom.disable();
+  map.getContainer().style.cursor = 'crosshair';
+  _setDrawBanner('ROUTE DRAW  ·  click to add waypoints  ·  right-click / dbl-click to finish  ·  ESC cancels');
+  map.on('click',       _rdClick);
+  map.on('mousemove',   _rdMove);
+  map.on('dblclick',    _rdFinish);
+  map.on('contextmenu', _rdFinishCtx);
+}
+
+function cancelRouteDrawing() {
+  if (!_routeDrawId && drawMode !== 'routedraw') return;
+  map.off('click',       _rdClick);
+  map.off('mousemove',   _rdMove);
+  map.off('dblclick',    _rdFinish);
+  map.off('contextmenu', _rdFinishCtx);
+  _routeDrawMks.forEach(l => map.removeLayer(l));
+  _routeDrawMks = [];
+  if (_routeDrawLine) { map.removeLayer(_routeDrawLine); _routeDrawLine = null; }
+  const id = _routeDrawId;
+  _routeDrawPts  = [];
+  _routeDrawId   = null;
+  drawMode = 'pointer';
+  map.doubleClickZoom.enable();
+  map.getContainer().style.cursor = '';
+  _setDrawBanner('');
+  if (id && bridge) bridge.onRouteDrawCancelled(id);
+}
+
+function _rdClick(e) {
+  const n = _routeDrawPts.length + 1;
+  _routeDrawPts.push({lat:e.latlng.lat, lon:e.latlng.lng});
+  const type = n === 1 ? 'START' : 'WP';
+  const mk = L.marker(e.latlng, {
+    icon: _routeWpIcon(type, n, _routeDrawColor),
+    zIndexOffset: 800, interactive: false
+  }).addTo(map);
+  _routeDrawMks.push(mk);
+  _rdUpdatePreview(e.latlng);
+}
+
+function _rdMove(e) {
+  if (_routeDrawPts.length === 0) return;
+  _rdUpdatePreview(e.latlng);
+}
+
+function _rdUpdatePreview(cursorLL) {
+  const pts = [..._routeDrawPts.map(p=>[p.lat,p.lon]),[cursorLL.lat,cursorLL.lng]];
+  if (_routeDrawLine) { map.removeLayer(_routeDrawLine); _routeDrawLine = null; }
+  if (pts.length >= 2)
+    _routeDrawLine = L.polyline(pts, {
+      color:_routeDrawColor, weight:2.5, dashArray:'8,5', opacity:.8
+    }).addTo(map);
+}
+
+function _rdFinishCtx(e) {
+  e.originalEvent.preventDefault();
+  e.originalEvent.stopPropagation();
+  _rdFinish();
+}
+
+function _rdFinish() {
+  if (_routeDrawPts.length < 2) { cancelRouteDrawing(); return; }
+  const wps = _routeDrawPts.map((p,i) => ({
+    lat:p.lat, lon:p.lon,
+    type: i === 0 ? 'START' : i === _routeDrawPts.length-1 ? 'END' : 'WP',
+    label:'', notes:''
+  }));
+  const id = _routeDrawId;
+  // Clean up draw state (without emitting cancel)
+  map.off('click',       _rdClick);
+  map.off('mousemove',   _rdMove);
+  map.off('dblclick',    _rdFinish);
+  map.off('contextmenu', _rdFinishCtx);
+  _routeDrawMks.forEach(l => map.removeLayer(l));
+  _routeDrawMks = [];
+  if (_routeDrawLine) { map.removeLayer(_routeDrawLine); _routeDrawLine = null; }
+  _routeDrawPts = [];
+  _routeDrawId  = null;
+  drawMode = 'pointer';
+  map.doubleClickZoom.enable();
+  map.getContainer().style.cursor = '';
+  _setDrawBanner('');
+  if (bridge) bridge.onRouteDrawn(id, JSON.stringify(wps));
+}
+
+// ── Route render / remove ─────────────────────────────────────────────────────
+
+function addRoute(route) {
+  removeRoute(route.id);
+  if (route.visible === false) return;
+  const color = route.color || '#3fb950';
+  const wps   = route.waypoints || [];
+  if (wps.length < 1) return;
+
+  const grp = {line:null, markers:[], labels:[]};
+  const speed = route.speed_kmh || 30;
+
+  // Cumulative distances
+  const cumDists = [0];
+  for (let i = 1; i < wps.length; i++)
+    cumDists.push(cumDists[i-1] + _haversineM(wps[i-1], wps[i]));
+
+  // Route line
+  if (wps.length >= 2) {
+    grp.line = L.polyline(wps.map(w=>[w.lat,w.lon]), {
+      color, weight:3, dashArray:'10,6', opacity:.9, lineCap:'round', lineJoin:'round'
+    }).addTo(LAYERS.routes);
+  }
+
+  // Waypoint markers
+  wps.forEach((wp, i) => {
+    const etaMin = cumDists[i] / 1000 / speed * 60;
+    const mk = L.marker([wp.lat, wp.lon], {
+      icon: _routeWpIcon(wp.type||'WP', i+1, color), zIndexOffset: 700
+    })
+    .bindPopup(_routeWpPopup(wp, route.name, i+1, cumDists[i], etaMin), {maxWidth:250})
+    .addTo(LAYERS.routes);
+    grp.markers.push(mk);
+  });
+
+  // Leg labels (mid-point: segment distance + cumulative ETA at end)
+  for (let i = 1; i < wps.length; i++) {
+    const seg    = _haversineM(wps[i-1], wps[i]);
+    const etaEnd = cumDists[i] / 1000 / speed * 60;
+    const midLat = (wps[i-1].lat + wps[i].lat) / 2;
+    const midLon = (wps[i-1].lon + wps[i].lon) / 2;
+    const lbl = L.marker([midLat, midLon], {
+      interactive: false,
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:rgba(0,0,0,.78);border:1px solid ${color};color:${color};font-family:'Courier New',monospace;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;white-space:nowrap;transform:translate(-50%,-100%)">${_fmtRouteDist(seg)} · H+${_fmtRouteEta(etaEnd)}</div>`,
+        iconSize:[0,0]
+      })
+    }).addTo(LAYERS.routes);
+    grp.labels.push(lbl);
+  }
+
+  // Route name label at first waypoint
+  const nameLbl = L.marker([wps[0].lat, wps[0].lon], {
+    interactive: false,
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="background:rgba(0,0,0,.84);border:1px solid ${color};color:${color};font-family:'Courier New',monospace;font-size:9px;font-weight:700;padding:1px 7px;border-radius:2px;white-space:nowrap;transform:translate(-50%,18px);letter-spacing:.5px">${esc(route.name||'Route')}</div>`,
+      iconSize:[0,0]
+    })
+  }).addTo(LAYERS.routes);
+  grp.labels.push(nameLbl);
+
+  _routeLayers[route.id] = grp;
+}
+
+function removeRoute(id) {
+  const g = _routeLayers[id];
+  if (!g) return;
+  if (g.line) LAYERS.routes.removeLayer(g.line);
+  g.markers.forEach(m => LAYERS.routes.removeLayer(m));
+  g.labels.forEach(l => LAYERS.routes.removeLayer(l));
+  delete _routeLayers[id];
+}
+
+function setRouteVisible(id, visible) {
+  const g = _routeLayers[id];
+  if (!g) return;
+  const op = visible ? 1 : 0;
+  if (g.line) g.line.setStyle({opacity: op * 0.9});
+  g.markers.forEach(m => m.setOpacity(op));
+  g.labels.forEach(l => l.setOpacity(op));
+}
+
+function centerOnRoute(id) {
+  const g = _routeLayers[id];
+  if (!g || !g.line) return;
+  const lls = g.line.getLatLngs();
+  if (lls.length) map.fitBounds(L.latLngBounds(lls).pad(0.15));
+}
+
+// ================================================================
+// NAVIGATION
+// Follows a route with GPS tracking. All state is JS-only; Python is
+// notified of waypoint-reached and route-complete events via bridge.
+// No CSS transitions — see compositor-constraint note at top of file.
+// ================================================================
+
+let _navState    = 'idle';   // 'idle' | 'navigating' | 'paused'
+let _navRoute    = null;     // full route dict currently being navigated
+let _navWpIdx    = 0;        // index of next target waypoint
+let _navWatchId  = null;     // navigator.geolocation watchPosition ID
+let _navLastLat  = null;
+let _navLastLon  = null;
+let _navPosLyr   = null;     // blue GPS dot
+let _navLineLyr  = null;     // solid highlight of route line
+
+const _NAV_ARRIVAL_M = 50;   // metres within which a WP is considered reached
+
+// WP type → badge background colour
+const _NAV_WP_BG = {
+  START:'#3fb950', END:'#f85149', IP:'#ff9e64', RV:'#d2a8ff',
+  CP:'#79c0ff',   RP:'#d29922',  HOLD:'#8b949e', WP:'#e6edf3'
+};
+
+function startNavigation(route) {
+  stopNavigation();
+  if (!route || !route.waypoints || route.waypoints.length < 1) return;
+  _navRoute = route;
+  _navWpIdx = 0;
+  _navState = 'navigating';
+
+  // Solid route highlight (rendered above the dashed route layer)
+  const pts = route.waypoints.map(w => [w.lat, w.lon]);
+  if (pts.length >= 2) {
+    _navLineLyr = L.polyline(pts, {
+      color: route.color || '#79c0ff', weight: 5, opacity: 0.85,
+      lineCap: 'round', lineJoin: 'round'
+    }).addTo(map);
+    map.fitBounds(_navLineLyr.getBounds(), {padding:[60,60]});
+  }
+
+  _navUpdateHud();
+  document.getElementById('nav-hud').classList.add('active');
+  document.getElementById('nav-pause-btn').textContent = '⏸ PAUSE';
+
+  if (navigator.geolocation) {
+    _navWatchId = navigator.geolocation.watchPosition(
+      _navOnGps,
+      function(e){ console.warn('[NAV] GPS error:', e.message); },
+      {enableHighAccuracy:true, maximumAge:2000, timeout:15000}
+    );
+  }
+}
+
+function stopNavigation() {
+  if (_navWatchId !== null) {
+    navigator.geolocation.clearWatch(_navWatchId);
+    _navWatchId = null;
+  }
+  if (_navPosLyr)  { map.removeLayer(_navPosLyr);  _navPosLyr  = null; }
+  if (_navLineLyr) { map.removeLayer(_navLineLyr); _navLineLyr = null; }
+  _navState   = 'idle';
+  _navRoute   = null;
+  _navWpIdx   = 0;
+  _navLastLat = null;
+  _navLastLon = null;
+  document.getElementById('nav-hud').classList.remove('active');
+  if (bridge) bridge.onNavStopped();
+}
+
+function pauseNavigation() {
+  if (_navState !== 'navigating') return;
+  _navState = 'paused';
+  document.getElementById('nav-pause-btn').textContent = '▶ RESUME';
+}
+
+function resumeNavigation() {
+  if (_navState !== 'paused') return;
+  _navState = 'navigating';
+  document.getElementById('nav-pause-btn').textContent = '⏸ PAUSE';
+}
+
+function _navTogglePause() {
+  if (_navState === 'paused')     resumeNavigation();
+  else if (_navState === 'navigating') pauseNavigation();
+}
+
+function _navGoHome() {
+  if (!_navRoute) return;
+  _navWpIdx = 0;
+  _navUpdateHud(_navLastLat, _navLastLon, null, null);
+  // Pan to first waypoint so user can see where home is
+  const wp0 = _navRoute.waypoints[0];
+  if (wp0 && _navLastLat === null) map.panTo([wp0.lat, wp0.lon]);
+}
+
+function _navOnGps(pos) {
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+  const hdg = pos.coords.heading;    // degrees true north; null when stationary
+  const spd = pos.coords.speed;      // m/s; null if unavailable
+  _navLastLat = lat;
+  _navLastLon = lon;
+
+  // Update / create GPS position dot
+  if (!_navPosLyr) {
+    _navPosLyr = L.circleMarker([lat, lon], {
+      radius:9, color:'#fff', weight:2, fillColor:'#388bfd', fillOpacity:1
+    }).addTo(map);
+  } else {
+    _navPosLyr.setLatLng([lat, lon]);
+  }
+
+  if (_navState !== 'navigating' || !_navRoute) return;
+
+  const wps = _navRoute.waypoints;
+  if (_navWpIdx < wps.length) {
+    const wp = wps[_navWpIdx];
+    const d  = _haversineM({lat, lon}, {lat:wp.lat, lon:wp.lon});
+    if (d < _NAV_ARRIVAL_M && _navWpIdx < wps.length - 1) {
+      const arrived = _navWpIdx;
+      _navWpIdx++;
+      if (bridge) bridge.onNavWaypointReached(_navRoute.id, arrived);
+    }
+  }
+  if (_navWpIdx >= wps.length) {
+    _navCompleteRoute();
+    return;
+  }
+
+  map.panTo([lat, lon]);
+  _navUpdateHud(lat, lon, hdg, spd);
+}
+
+function _navBearing(fromLat, fromLon, toLat, toLon) {
+  const dlon = (toLon - fromLon) * Math.PI / 180;
+  const la1  = fromLat * Math.PI / 180;
+  const la2  = toLat   * Math.PI / 180;
+  const y = Math.sin(dlon) * Math.cos(la2);
+  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dlon);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+function _navUpdateHud(lat, lon, hdg, spd) {
+  if (!_navRoute) return;
+  const wps = _navRoute.waypoints;
+  if (_navWpIdx >= wps.length) return;
+  const wp = wps[_navWpIdx];
+
+  // ── Direction arrow + bearing text ─────────────────────────────────
+  let bearing = null;
+  let turnHint = '';
+  if (lat !== null && lat !== undefined) {
+    bearing = _navBearing(lat, lon, wp.lat, wp.lon);
+    if (hdg !== null && hdg !== undefined) {
+      let rel = ((bearing - hdg) + 360) % 360;
+      if (rel > 180) rel -= 360;           // −180..+180 (negative = left)
+      if (Math.abs(rel) < 12) turnHint = '↑ STRAIGHT AHEAD';
+      else if (rel > 0)       turnHint = `↱ TURN RIGHT ${rel.toFixed(0)}°`;
+      else                    turnHint = `↰ TURN LEFT ${Math.abs(rel).toFixed(0)}°`;
+    } else {
+      turnHint = `BRG ${bearing.toFixed(0)}° (T)`;
+    }
+  }
+
+  const svg = document.getElementById('nav-arrow-svg');
+  if (svg) svg.style.transform = bearing !== null ? `rotate(${bearing.toFixed(0)}deg)` : 'rotate(0deg)';
+
+  document.getElementById('nav-bearing-deg').textContent =
+    bearing !== null ? `${bearing.toFixed(0)}°` : '---°';
+  document.getElementById('nav-turn-hint').textContent = turnHint;
+
+  // ── WP badge ────────────────────────────────────────────────────────
+  const wpType = wp.type || 'WP';
+  const badge  = document.getElementById('nav-wp-badge');
+  badge.textContent  = wpType;
+  badge.style.background = _NAV_WP_BG[wpType] || '#e6edf3';
+  badge.style.color  = '#0d1117';
+
+  // ── WP label & stats ────────────────────────────────────────────────
+  document.getElementById('nav-wp-label').textContent =
+    wp.label || wp.type || `Waypoint ${_navWpIdx + 1}`;
+
+  let statsText = '';
+  if (lat !== null && lat !== undefined) {
+    const distToWp = _haversineM({lat, lon}, {lat:wp.lat, lon:wp.lon});
+    let remDist = distToWp;
+    for (let i = _navWpIdx; i < wps.length - 1; i++)
+      remDist += _haversineM({lat:wps[i].lat,lon:wps[i].lon},{lat:wps[i+1].lat,lon:wps[i+1].lon});
+    const spdMs = (spd && spd > 0.5) ? spd : (_navRoute.speed_kmh || 30) / 3.6;
+    const etaTot = remDist / spdMs;
+    statsText = `${_fmtRouteDist(distToWp)} to ${wpType}  ·  ${_fmtRouteDist(remDist)} left  ·  ETA ${_fmtRouteEta(etaTot / 60)}`;
+  } else {
+    let remDist = 0;
+    for (let i = _navWpIdx; i < wps.length - 1; i++)
+      remDist += _haversineM({lat:wps[i].lat,lon:wps[i].lon},{lat:wps[i+1].lat,lon:wps[i+1].lon});
+    statsText = `${_fmtRouteDist(remDist)} remaining  ·  acquiring GPS…`;
+  }
+  document.getElementById('nav-wp-stats').textContent = statsText;
+
+  // ── Progress bar ────────────────────────────────────────────────────
+  let totalDist = 0, coveredDist = 0;
+  for (let i = 0; i < wps.length - 1; i++) {
+    const leg = _haversineM({lat:wps[i].lat,lon:wps[i].lon},{lat:wps[i+1].lat,lon:wps[i+1].lon});
+    totalDist += leg;
+    if (i < _navWpIdx) coveredDist += leg;
+  }
+  const pct = totalDist > 0 ? (coveredDist / totalDist * 100) : 0;
+  document.getElementById('nav-progress-fill').style.width = `${Math.min(100, pct).toFixed(1)}%`;
+  document.getElementById('nav-progress-text').textContent =
+    `WP ${_navWpIdx + 1} / ${wps.length}`;
+}
+
+function _navCompleteRoute() {
+  const id = _navRoute ? _navRoute.id : '';
+  document.getElementById('nav-wp-label').textContent   = '✓ ROUTE COMPLETE';
+  document.getElementById('nav-wp-stats').textContent   = 'Destination reached';
+  document.getElementById('nav-progress-fill').style.width = '100%';
+  document.getElementById('nav-progress-text').textContent = 'DONE';
+  document.getElementById('nav-bearing-deg').textContent  = '---°';
+  document.getElementById('nav-turn-hint').textContent    = '';
+  const badge = document.getElementById('nav-wp-badge');
+  badge.textContent = 'END'; badge.style.background = '#f85149';
+  const svg = document.getElementById('nav-arrow-svg');
+  if (svg) { svg.querySelector('polygon').setAttribute('fill','#3fb950'); svg.style.transform='rotate(0deg)'; }
+  _navState = 'idle';
+  if (bridge) bridge.onNavCompleted(id);
+}
 
 // ================================================================
 // APP-6 / MIL-STD-2525C TACTICAL GRAPHICS RENDERER
@@ -1978,6 +2536,7 @@ map.on('contextmenu', function(e) {
   e.originalEvent.preventDefault();
   e.originalEvent.stopPropagation();
   if (_tobjMoveId !== null)                        { _cancelTobjMove(); return; }
+  if (drawMode === 'routedraw')                    { return; }  // _rdFinishCtx registered handler takes it
   if (_drawType)                                   { _drawFinishCtx(e); return; }
   if (_fdTool !== 'none')                          { return; }  // free draw: ignore right-click
   if (_measActive)                                 { _stopMeasure(null); return; }

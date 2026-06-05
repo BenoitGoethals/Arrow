@@ -42,6 +42,7 @@ from front.app.toast_manager      import ToastManager
 from front.app.settings_dialog    import ConfigDialog, read_gps_config, load as _settings_load, _bool as _settings_bool
 from front.app.voice_alerts       import VoiceAlertPlayer
 from front.panels.mbtiles.dialog  import MBTilesDialog
+from front.panels.routes.panel    import RoutesPanel, RoutePropertiesDialog
 
 CBRN_TYPES = {"CBRN_1","CBRN_2","CBRN_3","CBRN_4","CBRN_5","CBRN_6"}
 
@@ -72,6 +73,8 @@ class MainWindow(QMainWindow):
         self._voice      = VoiceAlertPlayer(self)
         self._voice.enabled = _settings_bool(_settings_load("display_voice_alerts"), True)
 
+        # Pending route colors: route_id → color (set when draw is requested)
+        self._pending_route_colors: dict[str, str] = {}
         # MBTiles overlay registry: mbt_id → {path, name, min_zoom, max_zoom, visible}
         self._mbtiles: dict[str, dict] = {}
         self._mbtiles_dlg = MBTilesDialog(self)
@@ -117,6 +120,7 @@ class MainWindow(QMainWindow):
         self._media_panel    = MediaPanel()
         self._mumble_panel   = MumblePanel()
         self._log_panel      = LogPanel()
+        self._routes_panel   = RoutesPanel()
         self._planner_windows: list[StrikePlannerWindow] = []
         self._opord_windows:   list[OpordWindow]         = []
         self._stream_viewers:  list[StreamViewerWindow]  = []
@@ -134,6 +138,7 @@ class MainWindow(QMainWindow):
         self._info.add_panel("media",    "🖼",  "MEDIA",  self._media_panel,    "9")
         self._info.add_panel("mumble",   "🎙",  "VOICE",  self._mumble_panel,   "0")
         self._info.add_panel("log",      "📋",  "LOG",    self._log_panel,      "L")
+        self._info.add_panel("routes",   "🗺",  "ROUTE",  self._routes_panel,   "N")
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
@@ -229,7 +234,20 @@ class MainWindow(QMainWindow):
         self._map.bridge.free_draw_saved.connect(self._on_free_draw_saved)
         self._map.bridge.tactical_object_action.connect(self._on_tactical_object_action)
         self._map.bridge.tactical_object_move.connect(self._on_tactical_object_move)
+        self._map.bridge.route_drawn.connect(self._on_route_drawn)
+        self._map.bridge.route_draw_cancelled.connect(self._on_route_draw_cancelled_from_map)
         self._map.file_dropped.connect(self._on_file_dropped_on_map)
+
+        self._routes_panel.route_draw_requested.connect(self._on_route_draw_requested)
+        self._routes_panel.route_draw_cancelled.connect(lambda: self._map.cancel_route_drawing())
+        self._routes_panel.route_deleted.connect(self._on_route_deleted)
+        self._routes_panel.route_visibility_changed.connect(self._map.set_route_visible)
+        self._routes_panel.route_focus_requested.connect(self._map.center_on_route)
+        self._routes_panel.route_edit_done.connect(self._on_route_updated)
+        self._routes_panel.route_add_requested.connect(self._on_route_add)
+        self._routes_panel.navigate_requested.connect(self._on_navigate_requested)
+        self._map.bridge.nav_completed.connect(self._on_nav_completed)
+        self._map.bridge.nav_stopped.connect(lambda: None)
         self._missions_panel.mission_selected.connect(self._on_mission_selected)
         self._missions_panel.mission_cleared.connect(self._on_mission_cleared)
         self._missions_panel.refresh_requested.connect(self._load_missions)
@@ -289,6 +307,7 @@ class MainWindow(QMainWindow):
         self._loaded = True
         self._suppress_toasts = True
         self._restore_mbtiles()
+        self._load_saved_routes()
         self._apply_gps_config()
         self._resolve_role()
         self._load_hierarchy()
@@ -1267,6 +1286,84 @@ class MainWindow(QMainWindow):
                 self._client.patch_tactical_object(obj_id, lat, lon)
             except Exception as e:
                 self.statusBar().showMessage(f"Move failed: {e}", 3000)
+
+    # ================================================================
+    # ROUTE PLANNING
+    # ================================================================
+
+    def _on_navigate_requested(self, route_id: str):
+        route = self._routes_panel._routes.get(route_id)
+        if not route:
+            return
+        self._map.start_navigation(route)
+        self._right_panel.collapse()   # maximize map space while navigating
+
+    def _on_nav_completed(self, route_id: str):
+        name = self._routes_panel._routes.get(route_id, {}).get("name", "Route")
+        self._toasts.show("info", "ROUTE COMPLETE", name.upper())
+
+    def _on_route_draw_requested(self, route_id: str, color: str):
+        self._pending_route_colors[route_id] = color
+        self._map.start_route_drawing(route_id, color)
+        self._right_panel.expand()
+        self._info.activate("routes")
+
+    def _on_route_drawn(self, route_id: str, wps_json: str):
+        from PyQt6.QtWidgets import QDialog
+        try:
+            wps = json.loads(wps_json)
+        except Exception:
+            wps = []
+        self._routes_panel.on_draw_cancelled_from_map()   # clear banner
+
+        color = self._pending_route_colors.pop(route_id, "#3fb950")
+        route = {
+            "id": route_id, "name": "Route",
+            "color": color, "speed_kmh": 30.0,
+            "waypoints": wps, "visible": True,
+        }
+        dlg = RoutePropertiesDialog(route, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        route = dlg.get_result()
+        route["visible"] = True
+        self._routes_panel.add_route(route)
+        self._map.add_route(route)
+        self._save_routes()
+        self._right_panel.expand()
+        self._info.activate("routes")
+
+    def _on_route_draw_cancelled_from_map(self, route_id: str):
+        self._routes_panel.on_draw_cancelled_from_map()
+
+    def _on_route_deleted(self, route_id: str):
+        self._map.remove_route(route_id)
+        self._save_routes()
+
+    def _on_route_updated(self, route: dict):
+        self._map.add_route(route)
+        self._save_routes()
+
+    def _on_route_add(self, route: dict):
+        self._map.add_route(route)
+        self._save_routes()
+
+    def _save_routes(self):
+        s = QSettings("Arrow", "ArrowFront")
+        s.setValue("routes/v1", json.dumps(self._routes_panel.get_routes()))
+
+    def _load_saved_routes(self):
+        s = QSettings("Arrow", "ArrowFront")
+        raw = s.value("routes/v1", None)
+        if not raw:
+            return
+        try:
+            routes = json.loads(raw)
+        except Exception:
+            return
+        self._routes_panel.load_routes(routes)
+        for r in routes:
+            self._map.add_route(r)
 
     def _on_graphic_drawn(self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY"):
         """Persist a drawn tactical graphic to the backend (synced to web + android).

@@ -18,7 +18,7 @@ from front.mumble.client import MumbleClient, list_audio_devices
 
 _S = QSettings("Arrow", "ArrowFront")
 
-_MONO = QFont("Courier New", 9)
+_MONO = QFont("Courier New", 12)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ class _ConnectDialog(QDialog):
         self._test_btn.clicked.connect(self._do_test)
         self._test_lbl = QLabel("")
         self._test_lbl.setFont(_MONO)
-        self._test_lbl.setStyleSheet("font-size:9px;color:#6e7681;")
+        self._test_lbl.setStyleSheet("font-size:12px;color:#6e7681;")
         test_row.addWidget(self._test_btn)
         test_row.addWidget(self._test_lbl, 1)
         lay.addLayout(test_row)
@@ -108,11 +108,11 @@ class _ConnectDialog(QDialog):
         port = self._port.value()
         if not host:
             self._test_lbl.setText("Enter a server address first")
-            self._test_lbl.setStyleSheet("font-size:9px;color:#d29922;")
+            self._test_lbl.setStyleSheet("font-size:12px;color:#d29922;")
             return
         self._test_btn.setEnabled(False)
         self._test_lbl.setText("Probing…")
-        self._test_lbl.setStyleSheet("font-size:9px;color:#6e7681;")
+        self._test_lbl.setStyleSheet("font-size:12px;color:#6e7681;")
 
         def _probe():
             t0 = _time.monotonic()
@@ -137,7 +137,7 @@ class _ConnectDialog(QDialog):
         self._test_btn.setEnabled(True)
         color = "#3fb950" if ok else "#f85149"
         self._test_lbl.setText(msg)
-        self._test_lbl.setStyleSheet(f"font-size:9px;color:{color};")
+        self._test_lbl.setStyleSheet(f"font-size:12px;color:{color};")
 
     def _restore_combo(self, combo: QComboBox, saved):
         if saved is None:
@@ -203,7 +203,7 @@ class MumblePanel(QWidget):
         hl.setContentsMargins(8, 6, 8, 6)
 
         self._led = QLabel("●")
-        self._led.setFont(QFont("Courier New", 13))
+        self._led.setFont(QFont("Courier New", 15))
         self._led.setStyleSheet("color:#484f58;")
         hl.addWidget(self._led)
 
@@ -236,7 +236,7 @@ class MumblePanel(QWidget):
         # ── User list ────────────────────────────────────────────────────
         user_lbl = QLabel("USERS IN CHANNEL")
         user_lbl.setStyleSheet(
-            "color:#484f58;font-size:8px;font-weight:700;letter-spacing:2px;"
+            "color:#484f58;font-size:11px;font-weight:700;letter-spacing:2px;"
         )
         root.addWidget(user_lbl)
 
@@ -266,7 +266,7 @@ class MumblePanel(QWidget):
         self._ptt_btn.setStyleSheet(
             "QPushButton{background:#1c2d3f;border:1px solid #388bfd;"
             "color:#79c0ff;font-weight:700;font-family:'Courier New',monospace;"
-            "font-size:10px;letter-spacing:0.5px;border-radius:2px;}"
+            "font-size:13px;letter-spacing:0.5px;border-radius:2px;}"
             "QPushButton:pressed{background:#388bfd;color:#fff;border-color:#388bfd;}"
             "QPushButton:disabled{background:#161b22;color:#484f58;border-color:#21262d;}"
         )
@@ -422,7 +422,7 @@ class MumblePanel(QWidget):
         self._ptt_btn.setStyleSheet(
             "QPushButton{background:#388bfd;border:1px solid #58a6ff;"
             "color:#fff;font-weight:700;font-family:'Courier New',monospace;"
-            "font-size:10px;letter-spacing:0.5px;border-radius:2px;}"
+            "font-size:13px;letter-spacing:0.5px;border-radius:2px;}"
         )
 
     def _ptt_release(self):
@@ -430,7 +430,7 @@ class MumblePanel(QWidget):
         self._ptt_btn.setStyleSheet(
             "QPushButton{background:#1c2d3f;border:1px solid #388bfd;"
             "color:#79c0ff;font-weight:700;font-family:'Courier New',monospace;"
-            "font-size:10px;letter-spacing:0.5px;border-radius:2px;}"
+            "font-size:13px;letter-spacing:0.5px;border-radius:2px;}"
             "QPushButton:pressed{background:#388bfd;color:#fff;border-color:#388bfd;}"
             "QPushButton:disabled{background:#161b22;color:#484f58;border-color:#21262d;}"
         )
@@ -526,6 +526,6 @@ def _set_speaking(item: QTreeWidgetItem, speaking: bool):
 def _lbl(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setStyleSheet(
-        "color:#8b949e;font-size:9px;font-weight:600;letter-spacing:1.2px;"
+        "color:#8b949e;font-size:12px;font-weight:600;letter-spacing:1.2px;"
     )
     return lbl

@@ -38,7 +38,7 @@ class AlertsPanel(QWidget):
         layout.setSpacing(0)
 
         self._list = QListWidget()
-        self._list.setFont(QFont("Courier New", 10))
+        self._list.setFont(QFont("Courier New", 13))
         self._list.setAlternatingRowColors(True)
         layout.addWidget(self._list, 1)
 
@@ -61,7 +61,7 @@ class AlertsPanel(QWidget):
             f"{icon}  {alert_type:<16}  {operator:<12}  {ts}"
         )
         item.setForeground(QColor(color))
-        font = QFont("Courier New", 10)
+        font = QFont("Courier New", 13)
         font.setBold(True)
         item.setFont(font)
 

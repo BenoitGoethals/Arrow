@@ -261,6 +261,43 @@ class MapView(QWebEngineView):
     def free_draw_clear(self):
         self._js("clearFreeDrawLayer()")
 
+    # ---- Route planning -------------------------------------------------
+
+    def start_route_drawing(self, route_id: str, color: str):
+        self._js(f"startRouteDrawing({json.dumps(route_id)}, {json.dumps(color)})")
+
+    def cancel_route_drawing(self):
+        self._js("cancelRouteDrawing()")
+
+    def add_route(self, route: dict):
+        self._js(f"addRoute({json.dumps(route)})")
+
+    def remove_route(self, route_id: str):
+        self._js(f"removeRoute({json.dumps(route_id)})")
+
+    def set_route_visible(self, route_id: str, visible: bool):
+        self._js(f"setRouteVisible({json.dumps(route_id)}, {json.dumps(visible)})")
+
+    def center_on_route(self, route_id: str):
+        self._js(f"centerOnRoute({json.dumps(route_id)})")
+
+    # ---- Navigation -------------------------------------------------
+
+    def start_navigation(self, route: dict):
+        self._js(f"startNavigation({json.dumps(route)})")
+
+    def stop_navigation(self):
+        self._js("stopNavigation()")
+
+    def pause_navigation(self):
+        self._js("pauseNavigation()")
+
+    def resume_navigation(self):
+        self._js("resumeNavigation()")
+
+    def nav_go_home(self):
+        self._js("_navGoHome()")
+
     # ---- Drag-and-drop (media files → map) --------------------------------
 
     def eventFilter(self, obj, event):

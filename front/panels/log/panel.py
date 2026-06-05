@@ -10,7 +10,7 @@ from PyQt6.QtGui import QFont, QColor, QTextCharFormat, QTextCursor
 
 from front.utils.log_setup import get_recent_lines, log_file_path
 
-_MONO = QFont("Courier New", 9)
+_MONO = QFont("Courier New", 12)
 
 # Colour map by log level keyword
 _LEVEL_COLORS: dict[str, str] = {
@@ -43,7 +43,7 @@ class LogPanel(QWidget):
         tb = QHBoxLayout()
 
         lbl = QLabel("LEVEL")
-        lbl.setStyleSheet("color:#484f58;font-size:9px;font-weight:700;")
+        lbl.setStyleSheet("color:#484f58;font-size:12px;font-weight:700;")
         tb.addWidget(lbl)
 
         self._level_filter = QComboBox()
@@ -91,8 +91,8 @@ class LogPanel(QWidget):
 
         # ── Status bar ───────────────────────────────────────────────────
         self._status = QLabel(f"Log: {log_file_path()}")
-        self._status.setStyleSheet("color:#484f58;font-size:8px;")
-        self._status.setFont(QFont("Courier New", 8))
+        self._status.setStyleSheet("color:#484f58;font-size:11px;")
+        self._status.setFont(QFont("Courier New", 11))
         root.addWidget(self._status)
 
     # ── Refresh ───────────────────────────────────────────────────────────

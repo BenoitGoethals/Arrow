@@ -30,14 +30,14 @@ class OpordPanel(QWidget):
         hdr = QHBoxLayout()
         hdr.setContentsMargins(8, 6, 8, 4)
         hdr.addWidget(QLabel("OPERATION ORDERS",
-            styleSheet="color:#8b949e;font-size:9px;font-weight:700;letter-spacing:2px;"))
+            styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;"))
         hdr.addStretch()
 
         refresh_btn = QPushButton("⟳")
         refresh_btn.setFixedSize(26, 24)
         refresh_btn.setStyleSheet(
             "QPushButton{background:#21262d;border:1px solid #30363d;"
-            "color:#8b949e;font-size:13px;border-radius:2px;}"
+            "color:#8b949e;font-size:15px;border-radius:2px;}"
             "QPushButton:hover{color:#c9d1d9;background:#30363d;}")
         refresh_btn.clicked.connect(self.refresh_requested.emit)
         hdr.addWidget(refresh_btn)
@@ -47,7 +47,7 @@ class OpordPanel(QWidget):
         new_btn.setFixedWidth(56)
         new_btn.setStyleSheet(
             "QPushButton{background:#1f6feb;border:1px solid #388bfd;"
-            "color:#fff;font-size:9px;font-weight:700;border-radius:2px;}"
+            "color:#fff;font-size:12px;font-weight:700;border-radius:2px;}"
             "QPushButton:hover{background:#388bfd;}")
         new_btn.clicked.connect(self.create_requested.emit)
         hdr.addWidget(new_btn)
@@ -57,7 +57,7 @@ class OpordPanel(QWidget):
         root.addWidget(sep)
 
         self._list = QListWidget()
-        self._list.setFont(QFont("Courier New", 10))
+        self._list.setFont(QFont("Courier New", 13))
         self._list.setAlternatingRowColors(True)
         self._list.itemDoubleClicked.connect(self._on_open)
         root.addWidget(self._list, 1)

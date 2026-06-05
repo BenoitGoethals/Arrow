@@ -74,14 +74,14 @@ class MessagesPanel(QWidget):
         scope_layout.setSpacing(4)
 
         scope_layout.addWidget(
-            QLabel("TO:", styleSheet="color:#6e7681;font-size:9px;font-weight:700;letter-spacing:1px;")
+            QLabel("TO:", styleSheet="color:#6e7681;font-size:12px;font-weight:700;letter-spacing:1px;")
         )
 
         self._scope_combo = QComboBox()
         self._scope_combo.addItems(["BROADCAST", "DIRECT", "MISSION"])
         self._scope_combo.setFixedHeight(24)
         self._scope_combo.setStyleSheet(
-            "QComboBox{font-family:'Courier New',monospace;font-size:10px;}"
+            "QComboBox{font-family:'Courier New',monospace;font-size:13px;}"
         )
         self._scope_combo.currentTextChanged.connect(self._on_scope_changed)
         scope_layout.addWidget(self._scope_combo)
@@ -90,7 +90,7 @@ class MessagesPanel(QWidget):
         self._recipient_combo.setFixedHeight(24)
         self._recipient_combo.setMinimumWidth(140)
         self._recipient_combo.setStyleSheet(
-            "QComboBox{font-family:'Courier New',monospace;font-size:10px;}"
+            "QComboBox{font-family:'Courier New',monospace;font-size:13px;}"
         )
         self._recipient_combo.setVisible(False)
         scope_layout.addWidget(self._recipient_combo, 1)
@@ -100,7 +100,7 @@ class MessagesPanel(QWidget):
         # ── Message history ───────────────────────────────────────────────
         self._history = QTextEdit()
         self._history.setReadOnly(True)
-        self._history.setFont(QFont("Courier New", 10))
+        self._history.setFont(QFont("Courier New", 13))
         self._history.setStyleSheet(
             "QTextEdit{background:#0d1117;border:none;color:#c9d1d9;}"
         )
@@ -121,12 +121,12 @@ class MessagesPanel(QWidget):
         attach_layout.setContentsMargins(6, 3, 6, 3)
         attach_layout.setSpacing(6)
         self._attach_label = QLabel()
-        self._attach_label.setStyleSheet("color:#8b949e;font-size:9px;")
+        self._attach_label.setStyleSheet("color:#8b949e;font-size:12px;")
         attach_layout.addWidget(self._attach_label, 1)
         clear_btn = QPushButton("✕")
         clear_btn.setFixedSize(18, 18)
         clear_btn.setStyleSheet(
-            "QPushButton{background:transparent;color:#8b949e;border:none;font-size:10px;}"
+            "QPushButton{background:transparent;color:#8b949e;border:none;font-size:13px;}"
             "QPushButton:hover{color:#f85149;}"
         )
         clear_btn.clicked.connect(self._clear_attachment)
@@ -144,14 +144,14 @@ class MessagesPanel(QWidget):
         attach_btn.setToolTip("Attach photo or video")
         attach_btn.setStyleSheet(
             "QPushButton{background:#161b22;border:1px solid #30363d;"
-            "color:#c9d1d9;font-size:13px;border-radius:2px;}"
+            "color:#c9d1d9;font-size:15px;border-radius:2px;}"
             "QPushButton:hover{border-color:#388bfd;}"
         )
         attach_btn.clicked.connect(self._pick_attachment)
 
         self._input = _ComposeField()
         self._input.setPlaceholderText("Type message…  Enter to send")
-        self._input.setFont(QFont("Courier New", 10))
+        self._input.setFont(QFont("Courier New", 13))
         self._input.setFixedHeight(46)
         self._input.setStyleSheet(
             "QTextEdit{background:#161b22;border:1px solid #30363d;"
@@ -165,7 +165,7 @@ class MessagesPanel(QWidget):
         send_btn.setObjectName("primaryButton")
         send_btn.setStyleSheet(
             "QPushButton{background:#1f6feb;border:1px solid #388bfd;"
-            "color:#fff;font-size:14px;border-radius:2px;}"
+            "color:#fff;font-size:15px;border-radius:2px;}"
             "QPushButton:hover{background:#388bfd;}"
         )
         send_btn.clicked.connect(self._send)
@@ -283,7 +283,7 @@ class MessagesPanel(QWidget):
             url = f"{self._server_url}/photos/{photo_id}"
             if mime_type and mime_type.startswith("video/"):
                 media_html = (
-                    f'<br><span style="color:#8b949e;font-size:9px">'
+                    f'<br><span style="color:#8b949e;font-size:12px">'
                     f'&#9654; <a href="{_esc(url)}" style="color:#58a6ff;">Video attachment</a>'
                     f'</span>'
                 )
@@ -296,15 +296,15 @@ class MessagesPanel(QWidget):
                     )
                 else:
                     media_html = (
-                        '<br><span style="color:#484f58;font-size:9px;">'
+                        '<br><span style="color:#484f58;font-size:12px;">'
                         '[image loading…]</span>'
                     )
 
         return (
             f'<div style="margin:3px 0;text-align:{align}">'
-            f'<span style="color:#484f58;font-size:9px">{ts}{scope_tag}&nbsp;</span>'
+            f'<span style="color:#484f58;font-size:12px">{ts}{scope_tag}&nbsp;</span>'
             f'<b style="color:{color_sender}">{_esc(sender)}</b>'
-            f'<br><span style="color:#c9d1d9;font-size:10px">'
+            f'<br><span style="color:#c9d1d9;font-size:13px">'
             f'&nbsp;&nbsp;{_esc(content)}'
             f'</span>'
             f'{media_html}'

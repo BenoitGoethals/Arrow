@@ -101,14 +101,14 @@ class DrawPanel(QWidget):
 
         # Instruction header
         hdr = QLabel("  Pick a graphic, then click on the map.")
-        hdr.setStyleSheet("color:#8b949e;font-size:10px;padding:6px 8px;background:#161b22;border-bottom:1px solid #21262d;")
+        hdr.setStyleSheet("color:#8b949e;font-size:13px;padding:6px 8px;background:#161b22;border-bottom:1px solid #21262d;")
         outer.addWidget(hdr)
 
         # Echelon row
         ech_row = QHBoxLayout()
         ech_row.setContentsMargins(8, 6, 8, 4)
         ech_row.setSpacing(4)
-        ech_row.addWidget(QLabel("ECHELON", styleSheet="color:#6e7681;font-size:9px;font-weight:700;letter-spacing:1.5px;"))
+        ech_row.addWidget(QLabel("ECHELON", styleSheet="color:#6e7681;font-size:12px;font-weight:700;letter-spacing:1.5px;"))
         self._ech_group = QButtonGroup(self)
         for label, code in ECHELON_LABELS:
             btn = QPushButton(label)
@@ -161,7 +161,7 @@ class DrawPanel(QWidget):
         self._cancel_btn = QPushButton("✕  Cancel drawing")
         self._cancel_btn.setEnabled(False)
         self._cancel_btn.setStyleSheet(
-            "QPushButton{background:#3d1c1c;border:1px solid #f85149;color:#f85149;padding:8px;font-size:10px;font-weight:600;}"
+            "QPushButton{background:#3d1c1c;border:1px solid #f85149;color:#f85149;padding:8px;font-size:13px;font-weight:600;}"
             "QPushButton:hover{background:#f85149;color:#fff;}"
             "QPushButton:disabled{background:#21262d;border-color:#30363d;color:#484f58;}"
         )
@@ -197,7 +197,7 @@ class DrawPanel(QWidget):
         # Thickness row
         thick_row = QHBoxLayout()
         thick_row.setSpacing(4)
-        thick_row.addWidget(QLabel("PX", styleSheet="color:#6e7681;font-size:9px;font-weight:700;"))
+        thick_row.addWidget(QLabel("PX", styleSheet="color:#6e7681;font-size:12px;font-weight:700;"))
         self._fd_thick_btns: list[QPushButton] = []
         for t in _FD_THICK:
             btn = QPushButton(str(t))
@@ -230,7 +230,7 @@ class DrawPanel(QWidget):
         undo_btn = QPushButton("↩ Undo")
         undo_btn.setFixedHeight(28)
         undo_btn.setStyleSheet(
-            "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:10px;padding:0 6px;}"
+            "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:13px;padding:0 6px;}"
             "QPushButton:hover{background:#30363d;color:#c9d1d9;}"
         )
         undo_btn.clicked.connect(self.free_draw_undo.emit)
@@ -239,7 +239,7 @@ class DrawPanel(QWidget):
         clr_btn = QPushButton("✕ Clear")
         clr_btn.setFixedHeight(28)
         clr_btn.setStyleSheet(
-            "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:10px;padding:0 6px;}"
+            "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:13px;padding:0 6px;}"
             "QPushButton:hover{background:#3d1c1c;border-color:#f85149;color:#f85149;}"
         )
         clr_btn.clicked.connect(self.free_draw_clear.emit)
@@ -314,18 +314,18 @@ class DrawPanel(QWidget):
     def _fd_thick_style(active: bool) -> str:
         if active:
             return ("QPushButton{background:#1c2d3f;border:1px solid #1f6feb;"
-                    "color:#79c0ff;font-size:10px;font-weight:700;}")
+                    "color:#79c0ff;font-size:13px;font-weight:700;}")
         return ("QPushButton{background:#21262d;border:1px solid #30363d;"
-                "color:#8b949e;font-size:10px;}"
+                "color:#8b949e;font-size:13px;}"
                 "QPushButton:hover{background:#30363d;color:#c9d1d9;}")
 
     @staticmethod
     def _fd_tool_style(active: bool) -> str:
         if active:
             return ("QPushButton{background:#1c2d3f;border:1px solid #388bfd;"
-                    "color:#79c0ff;font-size:10px;font-weight:600;padding:0 6px;}")
+                    "color:#79c0ff;font-size:13px;font-weight:600;padding:0 6px;}")
         return ("QPushButton{background:#21262d;border:1px solid #30363d;"
-                "color:#8b949e;font-size:10px;padding:0 6px;}"
+                "color:#8b949e;font-size:13px;padding:0 6px;}"
                 "QPushButton:hover{background:#30363d;color:#c9d1d9;}")
 
     # ---- Builders --------------------------------------------------------
@@ -333,7 +333,7 @@ class DrawPanel(QWidget):
     def _section_header(self, title: str, color: str) -> QLabel:
         lbl = QLabel(f"  {title}")
         lbl.setStyleSheet(
-            f"color:{color};font-size:10px;font-weight:700;letter-spacing:1px;"
+            f"color:{color};font-size:13px;font-weight:700;letter-spacing:1px;"
             f"padding:5px 4px 3px;border-left:3px solid {color};background:#0d1117;"
         )
         return lbl
@@ -405,14 +405,14 @@ class DrawPanel(QWidget):
     @staticmethod
     def _ech_style(active: bool) -> str:
         if active:
-            return "QPushButton{background:#1c2d3f;border:1px solid #1f6feb;color:#79c0ff;font-size:10px;font-weight:700;}"
-        return "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:10px;}"
+            return "QPushButton{background:#1c2d3f;border:1px solid #1f6feb;color:#79c0ff;font-size:13px;font-weight:700;}"
+        return "QPushButton{background:#21262d;border:1px solid #30363d;color:#8b949e;font-size:13px;}"
 
     @staticmethod
     def _gfx_btn_style(color: str, active: bool) -> str:
         if active:
             return (f"QPushButton{{background:{color}22;border:1px solid {color};"
-                    f"color:{color};font-size:10px;text-align:left;padding:0 6px;font-weight:600;}}")
+                    f"color:{color};font-size:13px;text-align:left;padding:0 6px;font-weight:600;}}")
         return (f"QPushButton{{background:#161b22;border:1px solid #30363d;"
-                f"color:#8b949e;font-size:10px;text-align:left;padding:0 6px;}}"
+                f"color:#8b949e;font-size:13px;text-align:left;padding:0 6px;}}"
                 f"QPushButton:hover{{background:{color}15;border-color:{color};color:{color};}}")
