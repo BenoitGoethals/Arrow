@@ -735,7 +735,11 @@
     }
     const api = (p) => fetch(window.ARROW_BACKEND_URL + p, { headers: missionHeaders() });
 
-    const map = L.map('map').setView([50.85, 4.35], 8);
+    // maxZoom must be set on the map itself: the marker-cluster group is added
+    // below (before any tile layer), and Leaflet.markercluster throws
+    // "Map has no maxZoom specified" if the map can't report one yet. 19 matches
+    // the OSM base layer.
+    const map = L.map('map', { maxZoom: 19 }).setView([50.85, 4.35], 8);
 
     // ── Marker clustering ───────────────────────────────────────────────────
     // Point entities (operators, COT tracks, point tactical objects) are added
