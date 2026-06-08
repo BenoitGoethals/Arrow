@@ -2,8 +2,8 @@
 {% block title %}Tactical Map — Arrow{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/markercluster/MarkerCluster.css') }}"/>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/markercluster/MarkerCluster.Default.css') }}"/>
 <style>
     /* ── Marker clustering (zoom-out grouping) ──────────────────────
        Dark, tactical-styled cluster badge that replaces the default
@@ -709,7 +709,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="{{ url_for('static', filename='vendor/markercluster/leaflet.markercluster.js') }}"></script>
 <script src="https://unpkg.com/milsymbol@2.2.0/dist/milsymbol.js"></script>
 <script>
 (function () {
@@ -743,25 +743,41 @@
     // into a count badge when zoomed out and spread back out as you zoom in.
     // Tactical control graphics (polygons/lines) and other shape layers stay on
     // the map directly — only true point markers go through the cluster.
-    const entityCluster = L.markerClusterGroup({
-        showCoverageOnHover: false,
-        spiderfyOnMaxZoom:   true,
-        // Stop merging once the user is zoomed in close — individual symbols
-        // matter more than grouping at tactical scale.
-        disableClusteringAtZoom: 17,
-        maxClusterRadius:    50,
-        iconCreateFunction(cluster) {
-            const n = cluster.getChildCount();
-            const size = n < 10 ? 36 : n < 100 ? 44 : 52;
-            const cls  = n < 10 ? '' : n < 100 ? ' arrow-cluster-md' : ' arrow-cluster-lg';
-            return L.divIcon({
-                html:      `<span>${n}</span>`,
-                className: 'arrow-cluster' + cls,
-                iconSize:  L.point(size, size),
-            });
-        },
-    });
-    map.addLayer(entityCluster);
+    // The markercluster plugin is loaded from a CDN; if it's unavailable
+    // (offline deploy, blocked CDN) we MUST NOT let that take down the whole
+    // map. Build the real cluster group when the plugin is present, otherwise
+    // fall back to a tiny shim with the same interface that just adds markers
+    // straight to the map (no grouping, but a working map).
+    let entityCluster;
+    if (typeof L.markerClusterGroup === 'function') {
+        entityCluster = L.markerClusterGroup({
+            showCoverageOnHover: false,
+            spiderfyOnMaxZoom:   true,
+            // Stop merging once the user is zoomed in close — individual symbols
+            // matter more than grouping at tactical scale.
+            disableClusteringAtZoom: 17,
+            maxClusterRadius:    50,
+            iconCreateFunction(cluster) {
+                const n = cluster.getChildCount();
+                const size = n < 10 ? 36 : n < 100 ? 44 : 52;
+                const cls  = n < 10 ? '' : n < 100 ? ' arrow-cluster-md' : ' arrow-cluster-lg';
+                return L.divIcon({
+                    html:      `<span>${n}</span>`,
+                    className: 'arrow-cluster' + cls,
+                    iconSize:  L.point(size, size),
+                });
+            },
+        });
+        map.addLayer(entityCluster);
+    } else {
+        console.warn('[arrow] Leaflet.markercluster unavailable — markers will not be clustered');
+        entityCluster = {
+            addLayer(m)        { m.addTo(map); return this; },
+            removeLayer(m)     { map.removeLayer(m); return this; },
+            hasLayer(m)        { return map.hasLayer(m); },
+            refreshClusters()  { /* no-op without the plugin */ },
+        };
+    }
 
     // Route a point marker through the cluster instead of the bare map.
     function addEntityMarker(m) { entityCluster.addLayer(m); return m; }
