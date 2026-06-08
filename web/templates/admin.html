@@ -624,8 +624,27 @@ main { padding: 0; }
                     <a class="btn btn-ghost" href="/download/">Open download page →</a>
                 </div>
             </div>
+        </div>
+
+        <div class="cfg-section" id="session-timeout-section">
+            <h3>⏱ Session Timeout</h3>
+            <div style="padding:1rem">
+                <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 1rem">
+                    Automatically log out inactive users after the configured period.
+                    Set to <strong>0</strong> to disable. Users receive a 30–60 second
+                    warning before being logged out.
+                </p>
+                <div class="field">
+                    <label>Inactivity timeout <span style="color:#475569">(minutes · 0 = disabled)</span></label>
+                    <input id="session-timeout-input" type="number" min="0" max="1440" step="1" placeholder="0" style="width:120px"/>
+                </div>
+                <div id="session-timeout-status" style="font-size:0.8rem;color:#64748b;margin-bottom:0.6rem"></div>
+                <div id="session-timeout-err" class="form-error"></div>
+                <button class="btn btn-primary" onclick="saveSessionTimeout()">💾 Save</button>
+            </div>
         </div>`;
         loadApkConfig();
+        loadSessionConfig();
     }
 
     function applyApkKindUi() {
@@ -680,6 +699,37 @@ main { padding: 0; }
         });
         if (!r.ok) { errEl.textContent = `Save failed: ${r.status} ${await r.text()}`; return; }
         await loadApkConfig();
+    };
+
+    // ── Session timeout config ─────────────────────────────────────────────
+    async function loadSessionConfig() {
+        const r = await api('/admin/session-config');
+        if (!r.ok) return;
+        const c = await r.json();
+        const input  = document.getElementById('session-timeout-input');
+        const status = document.getElementById('session-timeout-status');
+        if (input)  input.value = c.inactivity_timeout_minutes || 0;
+        if (status) status.textContent = c.inactivity_timeout_minutes > 0
+            ? `Auto-logout after ${c.inactivity_timeout_minutes} minute${c.inactivity_timeout_minutes === 1 ? '' : 's'} of inactivity`
+            : 'Auto-logout disabled';
+    }
+
+    window.saveSessionTimeout = async function() {
+        const input  = document.getElementById('session-timeout-input');
+        const errEl  = document.getElementById('session-timeout-err');
+        errEl.textContent = '';
+        const minutes = parseInt(input.value, 10);
+        if (isNaN(minutes) || minutes < 0) {
+            errEl.textContent = 'Enter a valid number (0 to disable).';
+            return;
+        }
+        const r = await api('/admin/session-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inactivity_timeout_minutes: minutes }),
+        });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status}`; return; }
+        await loadSessionConfig();
     };
 
     // ── Alerts ─────────────────────────────────────────────────────────────

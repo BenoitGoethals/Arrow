@@ -587,6 +587,36 @@ def _set_setting(db: Session, key: str, value: str) -> None:
     db.commit()
 
 
+class SessionConfigIn(BaseModel):
+    inactivity_timeout_minutes: int
+
+
+@router.get("/session-config")
+def get_session_config(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> dict:
+    """Return the session inactivity timeout setting.
+
+    Accessible to all authenticated operators so the frontend can read it on
+    page load without requiring admin privileges.
+    """
+    val = _setting(db, "session.inactivity_timeout", "0")
+    return {"inactivity_timeout_minutes": int(val)}
+
+
+@router.put("/session-config")
+def update_session_config(
+    body: SessionConfigIn,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Update the session inactivity timeout (admin only). 0 = disabled."""
+    minutes = max(0, body.inactivity_timeout_minutes)
+    _set_setting(db, "session.inactivity_timeout", str(minutes))
+    return {"inactivity_timeout_minutes": minutes}
+
+
 class OctopusConfigIn(BaseModel):
     url:     str | None = None
     api_key: str | None = None

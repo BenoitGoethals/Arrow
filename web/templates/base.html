@@ -349,7 +349,12 @@
             ...(mid ? { 'X-Mission-ID': String(mid) } : {}),
             ...(opts.headers || {}),
         };
-        return fetch(window.ARROW_BACKEND_URL + path, { ...opts, headers });
+        return fetch(window.ARROW_BACKEND_URL + path, { ...opts, headers }).then(function(r) {
+            if (r.status === 401 && typeof window.arrowForceLogout === 'function') {
+                window.arrowForceLogout('expired');
+            }
+            return r;
+        });
     };
 
     // Switch mission: update localStorage, reload nav badge, fire event
@@ -1452,6 +1457,97 @@
             } catch (_) {}
         };
     }
+    // ── Force-logout helper ───────────────────────────────────────────────────
+    // Called on inactivity timeout or when the backend returns 401.
+    window.arrowForceLogout = function(reason) {
+        localStorage.removeItem('arrow_token');
+        localStorage.removeItem('arrow_role');
+        try { sessionStorage.removeItem('arrow_mission'); } catch (_) {}
+        window.location.href = '/auth/login?reason=' + (reason || 'logout');
+    };
+
+    // ── Inactivity auto-logout ────────────────────────────────────────────────
+    (function() {
+        let _timeoutMs  = 0;
+        let _idleTimer  = null;
+        let _warnTimer  = null;
+        let _warnShown  = false;
+        let _countdownI = null;
+
+        function _getWarnEl() {
+            let el = document.getElementById('idle-warn-overlay');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'idle-warn-overlay';
+                el.style.cssText = 'display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.7);align-items:center;justify-content:center;font-family:inherit';
+                el.innerHTML = [
+                    '<div style="background:#0f172a;border:2px solid #ef4444;border-radius:10px;',
+                    'padding:2rem 2.5rem;max-width:380px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.95)">',
+                    '<div style="font-size:2rem;margin-bottom:.4rem">⏱</div>',
+                    '<h3 style="color:#f8fafc;margin:0 0 .5rem;font-size:1.1rem">Session expiring</h3>',
+                    '<p style="color:#94a3b8;margin:0 0 1.2rem;font-size:.9rem">',
+                    'Logging out due to inactivity in ',
+                    '<strong id="idle-countdown" style="color:#ef4444;font-size:1.1em">60</strong>s',
+                    '</p>',
+                    '<button id="idle-stay-btn" style="background:#3b82f6;color:#fff;border:none;',
+                    'border-radius:6px;padding:.55rem 1.6rem;font-size:.95rem;cursor:pointer;',
+                    'font-family:inherit">Stay logged in</button>',
+                    '</div>',
+                ].join('');
+                document.body.appendChild(el);
+                el.querySelector('#idle-stay-btn').addEventListener('click', _resetTimer);
+            }
+            return el;
+        }
+
+        function _showWarning(warnSecs) {
+            _warnShown = true;
+            const el = _getWarnEl();
+            el.style.display = 'flex';
+            let remaining = Math.ceil(warnSecs);
+            const countEl = el.querySelector('#idle-countdown');
+            if (countEl) countEl.textContent = remaining;
+            _countdownI = setInterval(function() {
+                remaining--;
+                if (countEl) countEl.textContent = Math.max(0, remaining);
+            }, 1000);
+            _warnTimer = setTimeout(_doLogout, warnSecs * 1000);
+        }
+
+        function _hideWarning() {
+            _warnShown = false;
+            clearTimeout(_warnTimer);
+            clearInterval(_countdownI);
+            _warnTimer = null;
+            _countdownI = null;
+            const el = document.getElementById('idle-warn-overlay');
+            if (el) el.style.display = 'none';
+        }
+
+        function _doLogout() {
+            _hideWarning();
+            window.arrowForceLogout('idle');
+        }
+
+        function _resetTimer() {
+            if (_timeoutMs <= 0) return;
+            if (_warnShown) _hideWarning();
+            clearTimeout(_idleTimer);
+            // Warn for the last 20% of the timeout (min 30 s, max 60 s)
+            const warnMs = Math.min(60000, Math.max(30000, _timeoutMs * 0.2));
+            _idleTimer = setTimeout(function() { _showWarning(warnMs / 1000); }, _timeoutMs - warnMs);
+        }
+
+        api('/admin/session-config').then(function(r) { return r.ok ? r.json() : null; }).then(function(cfg) {
+            if (!cfg || cfg.inactivity_timeout_minutes <= 0) return;
+            _timeoutMs = cfg.inactivity_timeout_minutes * 60 * 1000;
+            ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(function(evt) {
+                document.addEventListener(evt, _resetTimer, { passive: true });
+            });
+            _resetTimer();
+        });
+    })();
+
     window.arrowWsReady = false;
     connectWS();
 })();
