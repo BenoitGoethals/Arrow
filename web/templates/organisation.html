@@ -114,8 +114,10 @@ main { padding: 0; }
   <div class="org-panel">
     <div class="panel-hdr">
       <h2>🏛 Hierarchy</h2>
-      <button class="btn btn-ghost btn-sm" onclick="openImportModal('hierarchy')" title="Import Excel">⬆</button>
-      <button class="btn btn-ghost btn-sm" onclick="downloadTemplate('hierarchy')" title="Download template">⬇</button>
+      <button class="btn btn-ghost btn-sm" onclick="openImportModal('hierarchy')" title="Import Excel">⬆ XLS</button>
+      <button class="btn btn-ghost btn-sm" onclick="downloadTemplate('hierarchy')" title="Download Excel template">⬇ XLS</button>
+      <button class="btn btn-ghost btn-sm" onclick="importHierarchyJson()" title="Import JSON snapshot">⬆ JSON</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportHierarchyJson()" title="Export JSON snapshot">⬇ JSON</button>
       <button class="btn btn-primary btn-sm" onclick="addNode('company',null,'')">+ Company</button>
     </div>
     <div class="panel-body" id="htree-root"></div>
@@ -238,6 +240,24 @@ main { padding: 0; }
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-import')">Cancel</button>
       <button class="btn btn-primary" id="import-btn" style="display:none" onclick="confirmImport()">Import</button>
+    </div>
+  </div>
+</div>
+<!-- ── Import JSON snapshot ───────────────────────────────────────────────── -->
+<div class="modal-bg" id="modal-json-import">
+  <div class="modal" style="width:480px">
+    <h3>⬆ Import JSON Snapshot</h3>
+    <p style="font-size:.8rem;color:#94a3b8;margin:.3rem 0 .9rem">
+      Select a <code>hierarchy_export.json</code> file. Existing nodes are kept; new ones are created. Operators are upserted by callsign.
+    </p>
+    <div class="field">
+      <label>JSON file *</label>
+      <input type="file" id="json-import-file" accept=".json" style="color:#e2e8f0"/>
+    </div>
+    <div id="json-import-status"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-json-import')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmJsonImport()">Import</button>
     </div>
   </div>
 </div>
@@ -777,6 +797,44 @@ main { padding: 0; }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...rows]), 'Import');
     XLSX.writeFile(wb, `arrow_${kind}_template.xlsx`);
+  };
+
+  // ── JSON export / import ──────────────────────────────────────────────────
+
+  window.exportHierarchyJson = async function() {
+    const r = await api('/export/hierarchy');
+    if (!r.ok) { alert(`Export failed (${r.status})`); return; }
+    const blob = new Blob([JSON.stringify(await r.json(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'hierarchy_export.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  window.importHierarchyJson = function() {
+    document.getElementById('json-import-file').value = '';
+    document.getElementById('json-import-status').innerHTML = '';
+    openModal('modal-json-import');
+  };
+
+  window.confirmJsonImport = async function() {
+    const statusEl = document.getElementById('json-import-status');
+    const file = document.getElementById('json-import-file').files[0];
+    if (!file) { statusEl.innerHTML = '<span style="color:#f59e0b;font-size:.8rem">Select a file first.</span>'; return; }
+    statusEl.innerHTML = '<span style="color:#94a3b8;font-size:.8rem">Importing…</span>';
+    let payload;
+    try { payload = JSON.parse(await file.text()); } catch {
+      statusEl.innerHTML = '<span style="color:#ef4444;font-size:.8rem">Invalid JSON file.</span>'; return;
+    }
+    const r = await api('/import/hierarchy-json', { method:'POST', body: JSON.stringify(payload) });
+    if (r.ok) {
+      const res = await r.json();
+      statusEl.innerHTML = `<div class="import-ok">✓ Companies: +${res.companies_created}  Platoons: +${res.platoons_created}  Sections: +${res.sections_created}  Teams: +${res.teams_created}  Operators: +${res.operators_created} created / ${res.operators_updated} updated.</div>`;
+      await loadAll(); renderTree(); renderOps();
+    } else {
+      statusEl.innerHTML = `<div class="import-err">Error ${r.status}: ${esc(await r.text())}</div>`;
+    }
   };
 
   // ── Init ───────────────────────────────────────────────────────────────────

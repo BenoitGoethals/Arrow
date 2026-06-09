@@ -18,6 +18,7 @@ from backend.history.router import router as history_router
 from backend.cot.router import router as cot_router
 from backend.photos.router import router as photos_router
 from backend.api.companies import router as companies_router
+from backend.api.exports import router as exports_router
 from backend.api.hierarchy import router as hierarchy_router
 from backend.api.imports import router as imports_router
 from backend.api.operators import router as operators_router
@@ -204,6 +205,7 @@ def create_app() -> FastAPI:
     app.include_router(companies_router)
     app.include_router(hierarchy_router)
     app.include_router(imports_router)
+    app.include_router(exports_router)
     app.include_router(missions_router)
     app.include_router(tactical_objects_router)
     app.include_router(alerts_router)
