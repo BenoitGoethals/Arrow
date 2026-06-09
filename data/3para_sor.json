@@ -1,0 +1,466 @@
+{
+  "version": "1",
+  "description": "3rd Parachute Battalion - Special Operations Regiment (3 Para / SOR-RSO) Belgium. Full ORBAT at reduced strength. Passwords default to 'changeme' — change before operational use.",
+  "companies": [
+    {
+      "name": "3 PARA / SOR",
+      "platoons": [
+
+        {
+          "name": "BHQ - Battalion Headquarters",
+          "sections": [
+            {
+              "name": "Command Element",
+              "teams": [
+                {
+                  "name": "CO's Party",
+                  "operators": [
+                    { "callsign": "HAMMER-6",  "rank": "OF-4", "role": "BATTLE_CAPTAIN", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "HAMMER-5",  "rank": "OF-3", "role": "OPS",            "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "HAMMER-9",  "rank": "OR-9", "role": "OPERATOR",       "team_role": "LEADER",         "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "S2 Intelligence Cell",
+                  "operators": [
+                    { "callsign": "GHOST-6",   "rank": "OF-2", "role": "INTEL",    "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "GHOST-1",   "rank": "OR-6", "role": "INTEL",    "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "GHOST-2",   "rank": "OR-5", "role": "INTEL",    "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "S3 Operations Cell",
+                  "operators": [
+                    { "callsign": "OPS-6",     "rank": "OF-3", "role": "OPS",      "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "OPS-1",     "rank": "OF-2", "role": "OPS",      "team_role": "RADIO_OPERATOR", "password": "changeme" },
+                    { "callsign": "OPS-2",     "rank": "OR-6", "role": "OPS",      "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Fire Support Cell",
+                  "operators": [
+                    { "callsign": "FIRE-6",    "rank": "OF-2", "role": "FO",       "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "FIRE-1",    "rank": "OR-6", "role": "FO",       "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "FIRE-2",    "rank": "OR-5", "role": "FO",       "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Signals Platoon",
+              "teams": [
+                {
+                  "name": "Comms Alpha",
+                  "operators": [
+                    { "callsign": "RADIO-6",   "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "RADIO-1",   "rank": "OR-6", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" },
+                    { "callsign": "RADIO-2",   "rank": "OR-5", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Comms Bravo",
+                  "operators": [
+                    { "callsign": "RADIO-3",   "rank": "OR-5", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" },
+                    { "callsign": "RADIO-4",   "rank": "OR-4", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Bn Aid Station",
+              "teams": [
+                {
+                  "name": "Medical Team",
+                  "operators": [
+                    { "callsign": "DOC-6",     "rank": "OF-2", "role": "MED",      "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "DOC-1",     "rank": "OR-6", "role": "MED",      "team_role": "MEDIC",          "password": "changeme" },
+                    { "callsign": "DOC-2",     "rank": "OR-5", "role": "MED",      "team_role": "MEDIC",          "password": "changeme" },
+                    { "callsign": "DOC-3",     "rank": "OR-4", "role": "MED",      "team_role": "MEDIC",          "password": "changeme" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "ECHO CIE - HQ Company",
+          "sections": [
+            {
+              "name": "Company HQ",
+              "teams": [
+                {
+                  "name": "OC's Party",
+                  "operators": [
+                    { "callsign": "ECHO-6",    "rank": "OF-2", "role": "BATTLE_CAPTAIN", "team_role": "LEADER",   "password": "changeme" },
+                    { "callsign": "ECHO-9",    "rank": "OR-8", "role": "OPERATOR",        "team_role": "LEADER",   "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Logistique - Log Platoon",
+              "teams": [
+                {
+                  "name": "Log Team",
+                  "operators": [
+                    { "callsign": "LOG-6",     "rank": "OF-1", "role": "LOG",      "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "LOG-1",     "rank": "OR-7", "role": "LOG",      "team_role": "DRIVER",         "password": "changeme" },
+                    { "callsign": "LOG-2",     "rank": "OR-5", "role": "LOG",      "team_role": "DRIVER",         "password": "changeme" },
+                    { "callsign": "LOG-3",     "rank": "OR-4", "role": "LOG",      "team_role": "DRIVER",         "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Pionniers - Pioneer Platoon",
+              "teams": [
+                {
+                  "name": "Pioneer Alpha",
+                  "operators": [
+                    { "callsign": "PION-6",    "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "PION-1",    "rank": "OR-6", "role": "OPERATOR", "team_role": "SAPPER",         "password": "changeme" },
+                    { "callsign": "PION-2",    "rank": "OR-5", "role": "OPERATOR", "team_role": "BREACHER",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Pioneer Bravo",
+                  "operators": [
+                    { "callsign": "PION-3",    "rank": "OR-6", "role": "OPERATOR", "team_role": "SAPPER",         "password": "changeme" },
+                    { "callsign": "PION-4",    "rank": "OR-5", "role": "OPERATOR", "team_role": "SAPPER",         "password": "changeme" },
+                    { "callsign": "PION-5",    "rank": "OR-4", "role": "OPERATOR", "team_role": "BREACHER",       "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Reconnaissance Platoon",
+              "teams": [
+                {
+                  "name": "Recon Team",
+                  "operators": [
+                    { "callsign": "RECON-6",   "rank": "OF-1", "role": "INTEL",    "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "RECON-1",   "rank": "OR-6", "role": "INTEL",    "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "RECON-2",   "rank": "OR-5", "role": "INTEL",    "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "ALPHA CIE - 1st Para Company",
+          "sections": [
+            {
+              "name": "Company HQ",
+              "teams": [
+                {
+                  "name": "OC's Party",
+                  "operators": [
+                    { "callsign": "ALPHA-6",   "rank": "OF-2", "role": "BATTLE_CAPTAIN", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-9",   "rank": "OR-8", "role": "OPERATOR",        "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-6A",  "rank": "OF-1", "role": "OPS",             "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "1er Peloton - 1st Platoon",
+              "teams": [
+                {
+                  "name": "PLT 1 HQ",
+                  "operators": [
+                    { "callsign": "ALPHA-11",  "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-12",  "rank": "OR-6", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 1-1",
+                  "operators": [
+                    { "callsign": "ALPHA-111", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-112", "rank": "OR-5", "role": "OPERATOR", "team_role": "GRENADIER",      "password": "changeme" },
+                    { "callsign": "ALPHA-113", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "ALPHA-114", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 1-2",
+                  "operators": [
+                    { "callsign": "ALPHA-121", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-122", "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "ALPHA-123", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "ALPHA-124", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "2eme Peloton - 2nd Platoon",
+              "teams": [
+                {
+                  "name": "PLT 2 HQ",
+                  "operators": [
+                    { "callsign": "ALPHA-21",  "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-22",  "rank": "OR-6", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 2-1",
+                  "operators": [
+                    { "callsign": "ALPHA-211", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-212", "rank": "OR-5", "role": "OPERATOR", "team_role": "GRENADIER",      "password": "changeme" },
+                    { "callsign": "ALPHA-213", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "ALPHA-214", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 2-2",
+                  "operators": [
+                    { "callsign": "ALPHA-221", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "ALPHA-222", "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "ALPHA-223", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "ALPHA-224", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "BRAVO CIE - 2nd Para Company",
+          "sections": [
+            {
+              "name": "Company HQ",
+              "teams": [
+                {
+                  "name": "OC's Party",
+                  "operators": [
+                    { "callsign": "BRAVO-6",   "rank": "OF-2", "role": "BATTLE_CAPTAIN", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-9",   "rank": "OR-8", "role": "OPERATOR",        "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-6A",  "rank": "OF-1", "role": "OPS",             "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "1er Peloton - 1st Platoon",
+              "teams": [
+                {
+                  "name": "PLT 1 HQ",
+                  "operators": [
+                    { "callsign": "BRAVO-11",  "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-12",  "rank": "OR-6", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 1-1",
+                  "operators": [
+                    { "callsign": "BRAVO-111", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-112", "rank": "OR-5", "role": "OPERATOR", "team_role": "GRENADIER",      "password": "changeme" },
+                    { "callsign": "BRAVO-113", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "BRAVO-114", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 1-2",
+                  "operators": [
+                    { "callsign": "BRAVO-121", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-122", "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "BRAVO-123", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "BRAVO-124", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "2eme Peloton - 2nd Platoon",
+              "teams": [
+                {
+                  "name": "PLT 2 HQ",
+                  "operators": [
+                    { "callsign": "BRAVO-21",  "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-22",  "rank": "OR-6", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 2-1",
+                  "operators": [
+                    { "callsign": "BRAVO-211", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-212", "rank": "OR-5", "role": "OPERATOR", "team_role": "GRENADIER",      "password": "changeme" },
+                    { "callsign": "BRAVO-213", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "BRAVO-214", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 2-2",
+                  "operators": [
+                    { "callsign": "BRAVO-221", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "BRAVO-222", "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "BRAVO-223", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "BRAVO-224", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "CHARLIE CIE - 3rd Para Company",
+          "sections": [
+            {
+              "name": "Company HQ",
+              "teams": [
+                {
+                  "name": "OC's Party",
+                  "operators": [
+                    { "callsign": "CHARLIE-6",   "rank": "OF-2", "role": "BATTLE_CAPTAIN", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-9",   "rank": "OR-8", "role": "OPERATOR",        "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-6A",  "rank": "OF-1", "role": "OPS",             "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "1er Peloton - 1st Platoon",
+              "teams": [
+                {
+                  "name": "PLT 1 HQ",
+                  "operators": [
+                    { "callsign": "CHARLIE-11",  "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-12",  "rank": "OR-6", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 1-1",
+                  "operators": [
+                    { "callsign": "CHARLIE-111", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-112", "rank": "OR-5", "role": "OPERATOR", "team_role": "GRENADIER",      "password": "changeme" },
+                    { "callsign": "CHARLIE-113", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "CHARLIE-114", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 1-2",
+                  "operators": [
+                    { "callsign": "CHARLIE-121", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-122", "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "CHARLIE-123", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "CHARLIE-124", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "2eme Peloton - 2nd Platoon",
+              "teams": [
+                {
+                  "name": "PLT 2 HQ",
+                  "operators": [
+                    { "callsign": "CHARLIE-21",  "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-22",  "rank": "OR-6", "role": "OPERATOR", "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 2-1",
+                  "operators": [
+                    { "callsign": "CHARLIE-211", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-212", "rank": "OR-5", "role": "OPERATOR", "team_role": "GRENADIER",      "password": "changeme" },
+                    { "callsign": "CHARLIE-213", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "CHARLIE-214", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Section 2-2",
+                  "operators": [
+                    { "callsign": "CHARLIE-221", "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "CHARLIE-222", "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "CHARLIE-223", "rank": "OR-5", "role": "OPERATOR", "team_role": "MACHINE_GUNNER", "password": "changeme" },
+                    { "callsign": "CHARLIE-224", "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "DELTA CIE - Support Company",
+          "sections": [
+            {
+              "name": "Company HQ",
+              "teams": [
+                {
+                  "name": "OC's Party",
+                  "operators": [
+                    { "callsign": "DELTA-6",   "rank": "OF-2", "role": "BATTLE_CAPTAIN", "team_role": "LEADER",   "password": "changeme" },
+                    { "callsign": "DELTA-9",   "rank": "OR-8", "role": "OPERATOR",        "team_role": "LEADER",   "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Mortiers - Mortar Platoon",
+              "teams": [
+                {
+                  "name": "Mortar Section",
+                  "operators": [
+                    { "callsign": "MORT-6",    "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "MORT-1",    "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "MORT-2",    "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "MORT-3",    "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "MORT-4",    "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Mortar FOO Party",
+                  "operators": [
+                    { "callsign": "MORT-5",    "rank": "OF-1", "role": "FO",       "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "MORT-6A",   "rank": "OR-5", "role": "FO",       "team_role": "RADIO_OPERATOR", "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Tireurs d'Elite - Sniper Section",
+              "teams": [
+                {
+                  "name": "Sniper Team Alpha",
+                  "operators": [
+                    { "callsign": "SNIPER-1",  "rank": "OR-6", "role": "OPERATOR", "team_role": "SNIPER",         "password": "changeme" },
+                    { "callsign": "SNIPER-2",  "rank": "OR-5", "role": "OPERATOR", "team_role": "SNIPER",         "password": "changeme" }
+                  ]
+                },
+                {
+                  "name": "Sniper Team Bravo",
+                  "operators": [
+                    { "callsign": "SNIPER-3",  "rank": "OR-6", "role": "OPERATOR", "team_role": "SNIPER",         "password": "changeme" },
+                    { "callsign": "SNIPER-4",  "rank": "OR-5", "role": "OPERATOR", "team_role": "SNIPER",         "password": "changeme" }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Anti-Chars - Anti-Tank Platoon",
+              "teams": [
+                {
+                  "name": "AT Section",
+                  "operators": [
+                    { "callsign": "AT-6",      "rank": "OF-1", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "AT-1",      "rank": "OR-6", "role": "OPERATOR", "team_role": "LEADER",         "password": "changeme" },
+                    { "callsign": "AT-2",      "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "AT-3",      "rank": "OR-5", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" },
+                    { "callsign": "AT-4",      "rank": "OR-4", "role": "OPERATOR", "team_role": "INFANTRY",       "password": "changeme" }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+
+      ]
+    }
+  ]
+}

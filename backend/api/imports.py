@@ -81,6 +81,105 @@ def import_hierarchy(
     return HierarchyImportResult(created=created, total_rows=len(body.rows))
 
 
+# ── Nested JSON import ────────────────────────────────────────────────────────
+
+class HierarchyJsonOperator(BaseModel):
+    callsign: str
+    rank: str = "OR-1"
+    role: str = "OPERATOR"
+    team_role: str | None = None
+    password: str = "changeme"
+
+
+class HierarchyJsonTeam(BaseModel):
+    name: str
+    operators: list[HierarchyJsonOperator] = []
+
+
+class HierarchyJsonSection(BaseModel):
+    name: str
+    teams: list[HierarchyJsonTeam] = []
+
+
+class HierarchyJsonPlatoon(BaseModel):
+    name: str
+    sections: list[HierarchyJsonSection] = []
+
+
+class HierarchyJsonCompany(BaseModel):
+    name: str
+    platoons: list[HierarchyJsonPlatoon] = []
+
+
+class HierarchyJsonBody(BaseModel):
+    version: str = "1"
+    companies: list[HierarchyJsonCompany]
+
+
+class HierarchyJsonResult(BaseModel):
+    companies_created: int
+    platoons_created: int
+    sections_created: int
+    teams_created: int
+    operators_created: int
+    operators_updated: int
+
+
+@router.post("/hierarchy-json", response_model=HierarchyJsonResult)
+def import_hierarchy_json(
+    body: HierarchyJsonBody,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_role("ADMIN")),
+) -> HierarchyJsonResult:
+    """Import a full nested hierarchy snapshot (companies → operators). Idempotent."""
+    counts: dict[str, int] = {
+        "companies_created": 0, "platoons_created": 0,
+        "sections_created": 0, "teams_created": 0,
+        "operators_created": 0, "operators_updated": 0,
+    }
+
+    def gc(model: type, key: str, **kw: object) -> object:
+        obj = db.query(model).filter_by(**kw).first()
+        if obj:
+            return obj
+        obj = model(**kw)
+        db.add(obj)
+        db.flush()
+        counts[key] += 1
+        return obj
+
+    for co_data in body.companies:
+        co = gc(Company, "companies_created", name=co_data.name)
+        for plt_data in co_data.platoons:
+            plt = gc(Platoon, "platoons_created", name=plt_data.name, company_id=co.id)
+            for sec_data in plt_data.sections:
+                sec = gc(Section, "sections_created", name=sec_data.name, platoon_id=plt.id)
+                for team_data in sec_data.teams:
+                    team = gc(Team, "teams_created", name=team_data.name, section_id=sec.id)
+                    for op_data in team_data.operators:
+                        existing = db.query(Operator).filter_by(callsign=op_data.callsign).first()
+                        if existing:
+                            existing.rank = op_data.rank
+                            existing.role = op_data.role
+                            existing.team_id = team.id
+                            existing.team_role = op_data.team_role
+                            counts["operators_updated"] += 1
+                        else:
+                            db.add(Operator(
+                                callsign=op_data.callsign,
+                                password_hash=hash_password(op_data.password),
+                                rank=op_data.rank,
+                                role=op_data.role,
+                                team_id=team.id,
+                                team_role=op_data.team_role,
+                                last_seen=datetime.now(timezone.utc),
+                            ))
+                            counts["operators_created"] += 1
+
+    db.commit()
+    return HierarchyJsonResult(**counts)
+
+
 @router.post("/operators", response_model=OperatorImportResult)
 def import_operators(
     body: OperatorImportBody,
