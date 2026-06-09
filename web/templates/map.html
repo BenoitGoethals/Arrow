@@ -2,7 +2,25 @@
 {% block title %}Tactical Map — Arrow{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/markercluster/MarkerCluster.css') }}"/>
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/markercluster/MarkerCluster.Default.css') }}"/>
 <style>
+    /* ── Marker clustering (zoom-out grouping) ──────────────────────
+       Dark, tactical-styled cluster badge that replaces the default
+       pastel circles so groups read clearly against the map. */
+    .arrow-cluster {
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid #6ee7b7;
+        border-radius: 50%;
+        box-shadow: 0 0 8px rgba(110, 231, 183, 0.4);
+        color: #e6f9f0;
+        font-weight: 700;
+        font-family: monospace;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .arrow-cluster span { line-height: 1; }
+    .arrow-cluster.arrow-cluster-md { border-color: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.4); }
+    .arrow-cluster.arrow-cluster-lg { border-color: #f87171; box-shadow: 0 0 10px rgba(248, 113, 113, 0.5); }
     .map-shell { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 60px); gap: 0; }
     #sidebar { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.75rem; }
     #sidebar h3 { margin: 0.25rem 0 0.5rem; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: #94a3b8; }
@@ -691,6 +709,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='vendor/markercluster/leaflet.markercluster.js') }}"></script>
 <script src="https://unpkg.com/milsymbol@2.2.0/dist/milsymbol.js"></script>
 <script>
 (function () {
@@ -716,7 +735,62 @@
     }
     const api = (p) => fetch(window.ARROW_BACKEND_URL + p, { headers: missionHeaders() });
 
-    const map = L.map('map').setView([50.85, 4.35], 8);
+    // maxZoom must be set on the map itself: the marker-cluster group is added
+    // below (before any tile layer), and Leaflet.markercluster throws
+    // "Map has no maxZoom specified" if the map can't report one yet. 19 matches
+    // the OSM base layer.
+    const map = L.map('map', { maxZoom: 19 }).setView([50.85, 4.35], 8);
+
+    // ── Marker clustering ───────────────────────────────────────────────────
+    // Point entities (operators, COT tracks, point tactical objects) are added
+    // to a single cluster group instead of straight onto the map, so they merge
+    // into a count badge when zoomed out and spread back out as you zoom in.
+    // Tactical control graphics (polygons/lines) and other shape layers stay on
+    // the map directly — only true point markers go through the cluster.
+    // The markercluster plugin is loaded from a CDN; if it's unavailable
+    // (offline deploy, blocked CDN) we MUST NOT let that take down the whole
+    // map. Build the real cluster group when the plugin is present, otherwise
+    // fall back to a tiny shim with the same interface that just adds markers
+    // straight to the map (no grouping, but a working map).
+    let entityCluster;
+    if (typeof L.markerClusterGroup === 'function') {
+        entityCluster = L.markerClusterGroup({
+            showCoverageOnHover: false,
+            spiderfyOnMaxZoom:   true,
+            // Stop merging once the user is zoomed in close — individual symbols
+            // matter more than grouping at tactical scale.
+            disableClusteringAtZoom: 17,
+            maxClusterRadius:    50,
+            iconCreateFunction(cluster) {
+                const n = cluster.getChildCount();
+                const size = n < 10 ? 36 : n < 100 ? 44 : 52;
+                const cls  = n < 10 ? '' : n < 100 ? ' arrow-cluster-md' : ' arrow-cluster-lg';
+                return L.divIcon({
+                    html:      `<span>${n}</span>`,
+                    className: 'arrow-cluster' + cls,
+                    iconSize:  L.point(size, size),
+                });
+            },
+        });
+        map.addLayer(entityCluster);
+    } else {
+        console.warn('[arrow] Leaflet.markercluster unavailable — markers will not be clustered');
+        entityCluster = {
+            addLayer(m)        { m.addTo(map); return this; },
+            removeLayer(m)     { map.removeLayer(m); return this; },
+            hasLayer(m)        { return map.hasLayer(m); },
+            refreshClusters()  { /* no-op without the plugin */ },
+        };
+    }
+
+    // Route a point marker through the cluster instead of the bare map.
+    function addEntityMarker(m) { entityCluster.addLayer(m); return m; }
+    // Remove a marker whether it lives in the cluster or directly on the map
+    // (graphics featureGroups are added straight to the map). Safe for both.
+    function removeEntityMarker(m) {
+        if (entityCluster.hasLayer(m)) entityCluster.removeLayer(m);
+        else map.removeLayer(m);
+    }
 
     // ── Base-layer + overlay switcher ──────────────────────────────────────
     // OSM is *always* the bottom layer — it fills any gaps where a chosen
@@ -1033,15 +1107,16 @@
         const key      = `cot-${track.id}`;
         const existing = state.markers.get(key);
         if (!enemyLayerVisible()) {
-            if (existing) { map.removeLayer(existing); state.markers.delete(key); }
+            if (existing) { removeEntityMarker(existing); state.markers.delete(key); }
             return;
         }
         if (existing) {
             existing.setLatLng([track.latitude, track.longitude]);
+            entityCluster.refreshClusters(existing);
             return;
         }
         const icon = cotTrackIcon(track);
-        const m = L.marker([track.latitude, track.longitude], { icon }).addTo(map);
+        const m = addEntityMarker(L.marker([track.latitude, track.longitude], { icon }));
         m.bindPopup(
             `<b>${escHtml(track.callsign || track.cot_uid)}</b><br/>` +
             `Type: ${escHtml(track.cot_type)}<br/>` +
@@ -1076,7 +1151,7 @@
         const isMe   = state.me != null && op.id === state.me.id;
         const existing = state.markers.get(key);
         if (!markerVisible(op)) {
-            if (existing) { map.removeLayer(existing); state.markers.delete(key); }
+            if (existing) { removeEntityMarker(existing); state.markers.delete(key); }
             return;
         }
         const icon = operatorIcon(op, isMe);
@@ -1089,8 +1164,9 @@
         if (existing) {
             existing.setLatLng([op.latitude, op.longitude]);
             existing.setIcon(icon);
+            entityCluster.refreshClusters(existing);
         } else {
-            const m = L.marker([op.latitude, op.longitude], { icon }).addTo(map);
+            const m = addEntityMarker(L.marker([op.latitude, op.longitude], { icon }));
             m.bindPopup(popup);
             // Ensure own marker stays on top
             if (isMe) m.setZIndexOffset(1000);
@@ -1402,11 +1478,12 @@
         const existing = state.markers.get(key);
         if (existing) {
             existing.setLatLng([obj.latitude, obj.longitude]);
+            entityCluster.refreshClusters(existing);
             return;
         }
         const isObjective = obj.type === 'OBJECTIVE';
         const icon = isObjective ? objectiveIcon(obj) : enemyIcon(obj);
-        const m = L.marker([obj.latitude, obj.longitude], { icon }).addTo(map);
+        const m = addEntityMarker(L.marker([obj.latitude, obj.longitude], { icon }));
         // Photo endpoint requires auth → use data-photo-id placeholder, swapped to a
         // blob URL by arrowApplyPhotos() on popup open (see base.html).
         const photoHtml = obj.photo_id
@@ -1608,7 +1685,7 @@
             await fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id,
                 { method: 'DELETE', headers: missionHeaders() });
             const key = `to-${id}`;
-            if (state.markers.has(key)) { map.removeLayer(state.markers.get(key)); state.markers.delete(key); }
+            if (state.markers.has(key)) { removeEntityMarker(state.markers.get(key)); state.markers.delete(key); }
             state.tacticalObjects.delete(id);
             refreshEnemies();
         } else if (label === 'Move') {
@@ -1628,7 +1705,7 @@
                     const obj = await r.json();
                     state.tacticalObjects.set(obj.id, obj);
                     const upd = state.markers.get(`to-${obj.id}`);
-                    if (upd) upd.setLatLng([obj.latitude, obj.longitude]);
+                    if (upd) { upd.setLatLng([obj.latitude, obj.longitude]); entityCluster.refreshClusters(upd); }
                     else { state.markers.delete(`to-${obj.id}`); refreshEnemies(); }
                 }
             });
@@ -1645,7 +1722,7 @@
             if (!key.startsWith('op-')) return;
             const id = parseInt(key.slice(3), 10);
             if (!state.visibility.operators || !state.operators.has(id)) {
-                map.removeLayer(m); state.markers.delete(key);
+                removeEntityMarker(m); state.markers.delete(key);
             }
         });
         const onlineCount = [...state.operators.values()].filter(o => o.online).length;
@@ -1718,7 +1795,7 @@
         // Remove markers for objects that were deleted or are no longer visible.
         state.markers.forEach((m, key) => {
             if ((key.startsWith('to-') || key.startsWith('cot-')) && !wanted.has(key)) {
-                map.removeLayer(m); state.markers.delete(key);
+                removeEntityMarker(m); state.markers.delete(key);
             }
         });
     }
@@ -3314,7 +3391,7 @@
     function clearCbrnLayer(id) {
         const layers = state.cbrnLayers.get(id);
         if (!layers) return;
-        layers.forEach(l => map.removeLayer(l));
+        layers.forEach(l => removeEntityMarker(l));
         state.cbrnLayers.delete(id);
     }
 
@@ -3353,8 +3430,8 @@
             layers.push(poly);
         }
 
-        // Marker
-        const m = L.marker([lat, lon], { icon: cbrnIcon(cat) }).addTo(map);
+        // Marker (clustered when zoomed out; hazard zones stay on the map)
+        const m = addEntityMarker(L.marker([lat, lon], { icon: cbrnIcon(cat) }));
         m.bindPopup(cbrnPopup(p));
         layers.push(m);
 
@@ -3582,7 +3659,7 @@
 
     function refreshFmMarkers() {
         // Remove old markers + impact layers
-        state.fmMarkers.forEach(m => map.removeLayer(m));
+        state.fmMarkers.forEach(m => removeEntityMarker(m));
         state.fmMarkers.clear();
         state.fmImpactLayers.forEach(l => map.removeLayer(l));
         state.fmImpactLayers.clear();
@@ -3594,7 +3671,7 @@
         state.fireMissions.forEach(fm => {
             if (fm.status === 'CANCELLED') return;
             const grid = toMgrs(fm.latitude, fm.longitude);
-            const m = L.marker([fm.latitude, fm.longitude], { icon: fmIcon(fm) }).addTo(map);
+            const m = addEntityMarker(L.marker([fm.latitude, fm.longitude], { icon: fmIcon(fm) }));
             m.bindPopup(`
                 <b>🎯 ${(fm.mission_type||'').replace(/_/g,' ')}</b><br>
                 <code style="font-size:0.85rem">${escHtml(grid)}</code><br>
@@ -5092,10 +5169,37 @@
         // Note: undo is local-only — we don't delete from server to keep simplicity
     };
 
-    window.fdClear = function() {
+    window.fdClear = async function() {
+        // Free-draw strokes/labels are persisted as FREEDRAW_* tactical objects,
+        // so wiping only the local layer would let them reappear on reload (and
+        // they'd still exist for everyone else). Clear = permanent delete.
+        const ids = [...state.tacticalObjects.values()]
+            .filter(o => isFdType(o.type))
+            .map(o => o.id);
+
+        if (ids.length && !confirm(
+                `Permanently delete ${ids.length} drawing${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) {
+            return;
+        }
+
+        // Wipe the local rendering + in-session history immediately so the UI
+        // feels instant; drop the fd-* bookkeeping so a late WS event or reload
+        // can't double-render.
         fdLayer.clearLayers();
         fdHistory = [];
         fdCurLyr  = null;
+        state.markers.forEach((_, key) => { if (key.startsWith('fd-')) state.markers.delete(key); });
+
+        // Delete each from the backend. The server emits a tactical-object
+        // 'deleted' broadcast per id, so other connected clients drop them too.
+        // Objects the current operator isn't allowed to delete (403) are left
+        // intact server-side and will return on the next load — by design.
+        await Promise.all(ids.map(id =>
+            fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id,
+                  { method: 'DELETE', headers: missionHeaders() })
+                .catch(e => console.warn('[freedraw] delete failed', id, e))
+        ));
+        ids.forEach(id => state.tacticalObjects.delete(id));
     };
 
     // ── Handle inbound FREEDRAW objects (load + WS) ───────────────────────
