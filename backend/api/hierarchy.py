@@ -61,7 +61,11 @@ def get_hierarchy(
 
     q = db.query(Operator)
     if mission:
-        q = q.filter(Operator.mission_id == mission.id)
+        # Show operators in this mission OR operators not assigned to any mission.
+        # This ensures freshly imported operators (no mission_id) are always visible.
+        q = q.filter(
+            (Operator.mission_id == mission.id) | (Operator.mission_id.is_(None))
+        )
     operators = q.all()
     by_team: dict[int, list[Operator]] = {}
     unassigned: list[Operator] = []
