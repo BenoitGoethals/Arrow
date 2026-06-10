@@ -90,7 +90,9 @@ def set_password(
     op = db.get(Operator, operator_id)
     if not op:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    op.password_hash = hash_password(payload.password)
+    op.password_hash      = hash_password(payload.password)
+    op.failed_login_count = 0
+    op.locked_until       = None
     db.commit()
     log_event(db, "PASSWORD_RESET", operator_id=current.id,
               resource=f"operator:{operator_id}")
