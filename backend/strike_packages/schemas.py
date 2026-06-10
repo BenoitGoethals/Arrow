@@ -105,6 +105,7 @@ class StrikePackageIn(BaseModel):
     tactical_object_ids: list[int] = []
     fire_mission_ids: list[int] = []
     report_ids: list[int] = []
+    vehicle_ids: list[int] = []
     assets: PackageAssets = Field(default_factory=PackageAssets)
 
 
@@ -117,6 +118,7 @@ class StrikePackageUpdate(BaseModel):
     tactical_object_ids: list[int] | None = None
     fire_mission_ids: list[int] | None = None
     report_ids: list[int] | None = None
+    vehicle_ids: list[int] | None = None
     assets: PackageAssets | None = None
 
 
@@ -135,9 +137,10 @@ class StrikePackageOut(ORMModel):
     tactical_object_ids: list[int]
     fire_mission_ids: list[int]
     report_ids: list[int]
+    vehicle_ids: list[int]
     assets: PackageAssets
 
-    @field_validator("operator_ids", "tactical_object_ids", "fire_mission_ids", "report_ids", mode="before")
+    @field_validator("operator_ids", "tactical_object_ids", "fire_mission_ids", "report_ids", "vehicle_ids", mode="before")
     @classmethod
     def _parse_id_list(cls, v: object) -> list[int]:
         if isinstance(v, str):

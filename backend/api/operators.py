@@ -2,12 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.audit import log_event
-from backend.api.schemas import OperatorOut, OperatorUpdate, PasswordReset
+from backend.api.schemas import OperatorOut, OperatorUpdate, OpsStatusUpdate, PasswordReset
 from backend.auth.jwt_auth import get_current_operator, hash_password, require_role
 from backend.storage.database import get_db
 from backend.storage.models import Operator
+from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/operators", tags=["operators"])
+
+VALID_OPS_STATUS = {"OPS", "INOPS", "KIA", "MIA"}
 
 
 @router.get("", response_model=list[OperatorOut])
@@ -47,6 +50,33 @@ def update_operator(
     db.refresh(op)
     log_event(db, "OPERATOR_UPDATE", operator_id=current.id,
               resource=f"operator:{operator_id}", detail=str(changes))
+    return op
+
+
+@router.patch("/{operator_id}/ops-status", response_model=OperatorOut)
+async def set_ops_status(
+    operator_id: int,
+    payload: OpsStatusUpdate,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> Operator:
+    value = payload.ops_status.upper()
+    if value not in VALID_OPS_STATUS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"ops_status must be one of {sorted(VALID_OPS_STATUS)}")
+    op = db.get(Operator, operator_id)
+    if not op:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    op.ops_status = value
+    db.commit()
+    db.refresh(op)
+    log_event(db, "OPERATOR_OPS_STATUS", operator_id=current.id,
+              resource=f"operator:{operator_id}", detail=value)
+    await broadcaster.broadcast({
+        "channel": "presence",
+        "event": "ops_status",
+        "data": {"operator_id": op.id, "callsign": op.callsign, "ops_status": value},
+    })
     return op
 
 

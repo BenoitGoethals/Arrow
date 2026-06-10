@@ -17,8 +17,9 @@ from backend.cot.cot import CotEvent
 from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
 from backend.storage.models import (
-    FireMission, Mission, Operator, Report, StrikePackage, TacticalObject,
+    FireMission, Mission, Operator, Report, StrikePackage, TacticalObject, Vehicle,
 )
+from backend.vehicles.service import derived_position
 from backend.strike_packages.schemas import (
     PackageAssets, StrikePackageIn, StrikePackageOut, StrikePackageUpdate,
 )
@@ -93,6 +94,7 @@ async def create_package(
         tactical_object_ids=json.dumps(payload.tactical_object_ids),
         fire_mission_ids=json.dumps(payload.fire_mission_ids),
         report_ids=json.dumps(payload.report_ids),
+        vehicle_ids=json.dumps(payload.vehicle_ids),
         assets=payload.assets.model_dump_json(),
     )
     db.add(pkg)
@@ -127,6 +129,8 @@ async def update_package(
         pkg.fire_mission_ids = json.dumps(payload.fire_mission_ids)
     if payload.report_ids is not None:
         pkg.report_ids = json.dumps(payload.report_ids)
+    if payload.vehicle_ids is not None:
+        pkg.vehicle_ids = json.dumps(payload.vehicle_ids)
     if payload.assets is not None:
         pkg.assets = payload.assets.model_dump_json()
 
@@ -219,6 +223,7 @@ def bundle(
     to_ids  = json.loads(pkg.tactical_object_ids or "[]")
     fm_ids  = json.loads(pkg.fire_mission_ids or "[]")
     rep_ids = json.loads(pkg.report_ids or "[]")
+    veh_ids = json.loads(pkg.vehicle_ids or "[]")
     assets  = json.loads(pkg.assets or "{}")
 
     def _op(op: Operator) -> dict:
@@ -242,10 +247,18 @@ def bundle(
         return {"id": r.id, "type": r.type, "status": r.status,
                 "payload": json.loads(r.payload or "{}")}
 
+    def _veh(v: Vehicle) -> dict:
+        lat, lon, _online = derived_position(db, v)
+        return {"id": v.id, "callsign": v.callsign, "vehicle_type": v.vehicle_type,
+                "symbol_code": v.symbol_code, "affiliation": v.affiliation,
+                "ops_status": v.ops_status, "team_id": v.team_id,
+                "operator_id": v.operator_id, "latitude": lat, "longitude": lon}
+
     ops  = [_op(db.get(Operator, oid))       for oid in op_ids  if db.get(Operator, oid)]
     tos  = [_to(db.get(TacticalObject, tid)) for tid in to_ids  if db.get(TacticalObject, tid)]
     fms  = [_fm(db.get(FireMission, fid))    for fid in fm_ids  if db.get(FireMission, fid)]
     reps = [_rep(db.get(Report, rid))        for rid in rep_ids if db.get(Report, rid)]
+    vehs = [_veh(db.get(Vehicle, vid))       for vid in veh_ids if db.get(Vehicle, vid)]
 
     return JSONResponse({
         "id": pkg.id,
@@ -262,6 +275,7 @@ def bundle(
         "tactical_objects": tos,
         "fire_missions": fms,
         "reports": reps,
+        "vehicles": vehs,
     })
 
 

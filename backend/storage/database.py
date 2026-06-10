@@ -182,6 +182,27 @@ def _migrate(conn: object) -> None:
         "  feedback_at DATETIME"
         ")",
         "CREATE INDEX IF NOT EXISTS ix_logrep_routes_report ON logrep_routes(report_id)",
+        # Operator operational status (independent of presence) — OPS/INOPS/KIA/MIA
+        "ALTER TABLE operators ADD COLUMN ops_status VARCHAR(10) DEFAULT 'OPS'",
+        # Vehicles — generic per-unit materiel, assigned to a team or operator
+        "CREATE TABLE IF NOT EXISTS vehicles ("
+        "  id INTEGER PRIMARY KEY,"
+        "  callsign VARCHAR(60) NOT NULL,"
+        "  vehicle_type VARCHAR(80) DEFAULT '',"
+        "  symbol_code VARCHAR(40) DEFAULT '',"
+        "  affiliation VARCHAR(12) DEFAULT 'FRIENDLY',"
+        "  ops_status VARCHAR(10) DEFAULT 'OPS',"
+        "  team_id INTEGER REFERENCES teams(id),"
+        "  operator_id INTEGER REFERENCES operators(id),"
+        "  mission_id INTEGER REFERENCES missions(id),"
+        "  notes TEXT DEFAULT '',"
+        "  created_by INTEGER REFERENCES operators(id),"
+        "  created_at DATETIME,"
+        "  updated_at DATETIME"
+        ")",
+        # Vehicles map-visibility toggle + strike-package vehicle links
+        "ALTER TABLE map_visibility ADD COLUMN vehicles BOOLEAN DEFAULT 1",
+        "ALTER TABLE strike_packages ADD COLUMN vehicle_ids TEXT DEFAULT '[]'",
     ]
     for sql in migrations:
         try:
