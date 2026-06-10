@@ -44,6 +44,7 @@ from backend.logcop.router import router as logcop_router
 from backend.storage.database import init_db
 from backend.storage.seed import seed as seed_db
 from backend.tracking.router import router as tracking_router
+from backend.vehicles.router import router as vehicles_router
 from backend.websocket.router import router as ws_router
 from backend.mumble.router import router as mumble_router
 
@@ -213,6 +214,7 @@ def create_app() -> FastAPI:
     app.include_router(tracking_router)
     app.include_router(battles_router)
     app.include_router(strike_packages_router)
+    app.include_router(vehicles_router)
     app.include_router(map_router)
     app.include_router(kml_router)
     app.include_router(overlays_router)

@@ -168,8 +168,13 @@ class ORBATPanel(QWidget):
         col_n   = "#c9d1d9" if online else "#6e7681"
         col_led = "#3fb950" if online else "#6e7681"
         rank    = op.get("rank", "")
-        label   = f"       {rank}  {op['callsign']}" if rank else f"       {op['callsign']}"
+        ops_st  = (op.get("ops_status") or "OPS").upper()
+        suffix  = "" if ops_st == "OPS" else f"  [{ops_st}]"
+        label   = f"       {rank}  {op['callsign']}{suffix}" if rank else f"       {op['callsign']}{suffix}"
         item    = self._make_item(label, "●" if online else "○", color=col_n)
+        if ops_st != "OPS":
+            item.setForeground(0, QBrush(QColor(
+                {"INOPS": "#d29922", "KIA": "#f85149", "MIA": "#ff9e64"}.get(ops_st, "#c9d1d9"))))
         item.setForeground(1, QBrush(QColor(col_led)))
         item.setData(0, Qt.ItemDataRole.UserRole, op["id"])
         item.setToolTip(0, op.get("last_seen") or "")

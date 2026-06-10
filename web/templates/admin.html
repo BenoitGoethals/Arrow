@@ -148,6 +148,7 @@ main { padding: 0; }
     <h4>Organisation</h4>
     <button class="nav-btn" onclick="show('hierarchy',this)"><span class="ico">🏛</span> Hierarchy</button>
     <button class="nav-btn" onclick="show('orgchart',this)"><span class="ico">🎖</span> ORBAT Diagram</button>
+    <button class="nav-btn" onclick="show('vehicles',this)"><span class="ico">🚙</span> Vehicles</button>
 
     <h4>Operations</h4>
     <button class="nav-btn" onclick="show('strike-packages',this)"><span class="ico">⚡</span> Strike Packages</button>
@@ -239,6 +240,14 @@ main { padding: 0; }
         <option value="OFFLINE">OFFLINE</option>
       </select>
     </div>
+    <div class="field"><label>Ops status <span style="color:#475569">(operational state)</span></label>
+      <select id="edit-ops-status">
+        <option value="OPS">OPS — mission capable</option>
+        <option value="INOPS">INOPS — out of action</option>
+        <option value="KIA">KIA</option>
+        <option value="MIA">MIA</option>
+      </select>
+    </div>
     <div class="field"><label>Team</label><select id="edit-team"><option value="">— unassigned —</option></select></div>
     <div class="field"><label>Mission <span style="color:#475569">(optional — links operator to a mission)</span></label>
       <select id="edit-mission"><option value="">— no mission —</option></select>
@@ -251,6 +260,47 @@ main { padding: 0; }
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-op')">Cancel</button>
       <button class="btn btn-primary" onclick="saveOperator()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create / edit vehicle -->
+<div class="modal-bg" id="modal-vehicle">
+  <div class="modal">
+    <h3 id="modal-veh-title">Vehicle</h3>
+    <input type="hidden" id="veh-id"/>
+    <div class="field"><label>Callsign *</label><input id="veh-callsign" placeholder="e.g. WARHORSE-1"/></div>
+    <div class="field"><label>Type</label><input id="veh-type" placeholder="e.g. Boxer, LMV, MAN truck, RHIB"/></div>
+    <div class="field"><label>Affiliation</label>
+      <select id="veh-affiliation">
+        <option value="FRIENDLY">FRIENDLY</option>
+        <option value="ENEMY">ENEMY</option>
+        <option value="UNKNOWN">UNKNOWN</option>
+        <option value="NEUTRAL">NEUTRAL</option>
+      </select>
+    </div>
+    <div class="field"><label>Ops status</label>
+      <select id="veh-ops-status">
+        <option value="OPS">OPS — mission capable</option>
+        <option value="INOPS">INOPS — out of action</option>
+        <option value="KIA">KIA — destroyed</option>
+        <option value="MIA">MIA — missing</option>
+      </select>
+    </div>
+    <div class="field"><label>Assign to operator <span style="color:#475569">(position follows this operator)</span></label>
+      <select id="veh-operator" onchange="vehAssignChanged('operator')"><option value="">— none —</option></select>
+    </div>
+    <div class="field"><label>…or assign to team <span style="color:#475569">(uses team anchor operator)</span></label>
+      <select id="veh-team" onchange="vehAssignChanged('team')"><option value="">— none —</option></select>
+    </div>
+    <div class="field"><label>SIDC <span style="color:#475569">(optional MIL-STD-2525 symbol code)</span></label>
+      <input id="veh-symbol" placeholder="leave blank for default equipment symbol"/>
+    </div>
+    <div class="field"><label>Notes</label><input id="veh-notes" placeholder="optional"/></div>
+    <div id="veh-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vehicle')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveVehicle()">Save</button>
     </div>
   </div>
 </div>
@@ -311,19 +361,20 @@ main { padding: 0; }
     const api  = (p, o = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...o, headers: { ...hdr, ...(o.headers||{}) } });
 
     // ── Global data cache ──────────────────────────────────────────────────
-    let operators = [], teams = [], sections = [], platoons = [], companies = [], alertsList = [], missions = [];
+    let operators = [], teams = [], sections = [], platoons = [], companies = [], alertsList = [], missions = [], vehicles = [];
 
     async function loadAll() {
         // BCs can't hit the operators/hierarchy endpoints; skip them so the
         // Maps tab still loads cleanly without unauthorised noise.
         if (!isAdmin) return;
-        [operators, teams, sections, platoons, companies, missions] = await Promise.all([
+        [operators, teams, sections, platoons, companies, missions, vehicles] = await Promise.all([
             api('/operators').then(r => r.ok ? r.json() : []),
             api('/teams').then(r => r.ok ? r.json() : []),
             api('/sections').then(r => r.ok ? r.json() : []),
             api('/platoons').then(r => r.ok ? r.json() : []),
             api('/companies').then(r => r.ok ? r.json() : []),
             api('/missions').then(r => r.ok ? r.json() : []),
+            api('/vehicles').then(r => r.ok ? r.json() : []),
         ]);
     }
 
@@ -342,6 +393,7 @@ main { padding: 0; }
             case 'operators': main.innerHTML = ''; renderOperators(main); break;
             case 'hierarchy': main.innerHTML = ''; renderHierarchy(main); break;
             case 'orgchart':  main.innerHTML = ''; renderOrgChart(main); break;
+            case 'vehicles':  main.innerHTML = ''; renderVehicles(main); break;
             case 'config':    main.innerHTML = ''; renderConfig(main); break;
             case 'alerts':    main.innerHTML = ''; renderAlerts(main); break;
             case 'snapshots': main.innerHTML = ''; renderSnapshots(main); break;
@@ -421,7 +473,7 @@ main { padding: 0; }
                     <td><span class="badge ${badge}">${op.role}</span></td>
                     <td style="color:#94a3b8">${esc(team)}</td>
                     <td style="color:#64748b;font-size:0.78rem">${esc(mission)}</td>
-                    <td><span class="badge ${op.online?'badge-ok':'badge-warn'}">${op.online?'ONLINE':'OFFLINE'}</span></td>
+                    <td><span class="badge ${op.online?'badge-ok':'badge-warn'}">${op.online?'ONLINE':'OFFLINE'}</span>${(op.ops_status && op.ops_status !== 'OPS') ? ` <span class="badge" style="background:#7f1d1d;color:#fecaca">${esc(op.ops_status)}</span>` : ''}</td>
                     <td style="color:#64748b;font-size:0.78rem">${ts}</td>
                     <td>
                         <button class="btn btn-ghost btn-sm" onclick='openEditOp(${JSON.stringify(op)})'>Edit</button>
@@ -467,6 +519,7 @@ main { padding: 0; }
         document.getElementById('edit-rank').value   = op.rank;
         document.getElementById('edit-role').value   = op.role;
         document.getElementById('edit-status').value = op.status;
+        document.getElementById('edit-ops-status').value = op.ops_status || 'OPS';
         // Populate mission select
         const mSel = document.getElementById('edit-mission');
         mSel.innerHTML = '<option value="">— no mission —</option>' +
@@ -486,6 +539,7 @@ main { padding: 0; }
             rank:       document.getElementById('edit-rank').value,
             role:       document.getElementById('edit-role').value,
             status:     document.getElementById('edit-status').value,
+            ops_status: document.getElementById('edit-ops-status').value,
             team_id:    document.getElementById('edit-team').value
                         ? parseInt(document.getElementById('edit-team').value) : null,
             mission_id: missionVal ? parseInt(missionVal) : null,
@@ -505,6 +559,108 @@ main { padding: 0; }
         if (!confirm(`Delete operator "${callsign}"? This cannot be undone.`)) return;
         await api(`/operators/${id}`, { method:'DELETE' });
         await loadAll(); render('operators');
+    };
+
+    // ── Vehicles ───────────────────────────────────────────────────────────
+    // Generic per-unit materiel. Assigned to a single operator OR a whole team;
+    // position is derived server-side from the assignee, so there's no lat/lon
+    // field here. ops_status mirrors the operator set (OPS/INOPS/KIA/MIA).
+    const VEH_OPS_COL = { OPS:'badge-ok', INOPS:'badge-warn', KIA:'badge-err', MIA:'badge-warn' };
+
+    function renderVehicles(el) {
+        const opMap   = Object.fromEntries(operators.map(o => [o.id, o.callsign]));
+        const teamMap = Object.fromEntries(teams.map(t => [t.id, t.name]));
+        const assignee = (v) => v.operator_id ? `👤 ${esc(opMap[v.operator_id] || '#'+v.operator_id)}`
+                              : v.team_id ? `👥 ${esc(teamMap[v.team_id] || '#'+v.team_id)}`
+                              : '<span style="color:#64748b">unassigned</span>';
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Vehicles (${vehicles.length})</h2>
+            <button class="btn btn-primary" onclick="openVehicle()">➕ New vehicle</button>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            Each vehicle shows on the map at its assigned operator's (or team's) live position.
+        </p>
+        <table class="adm-table">
+            <thead><tr>
+                <th>Callsign</th><th>Type</th><th>Affiliation</th><th>Ops status</th>
+                <th>Assigned to</th><th>On map</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${vehicles.map(v => `<tr>
+                <td style="font-weight:600">${esc(v.callsign)}</td>
+                <td style="color:#94a3b8">${esc(v.vehicle_type || '—')}</td>
+                <td><code style="font-size:0.78rem">${esc(v.affiliation)}</code></td>
+                <td><span class="badge ${VEH_OPS_COL[v.ops_status] || 'badge-op'}">${esc(v.ops_status)}</span></td>
+                <td>${assignee(v)}</td>
+                <td>${v.latitude != null ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>'}</td>
+                <td>
+                    <button class="btn btn-ghost btn-sm" onclick='openVehicle(${JSON.stringify(v)})'>Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteVehicle(${v.id}, '${esc(v.callsign)}')">Del</button>
+                </td>
+            </tr>`).join('') || '<tr><td colspan="7" style="color:#64748b;padding:1rem">No vehicles yet.</td></tr>'}
+            </tbody>
+        </table>`;
+    }
+
+    window.openVehicle = function(v) {
+        v = v || {};
+        document.getElementById('veh-id').value          = v.id || '';
+        document.getElementById('veh-callsign').value    = v.callsign || '';
+        document.getElementById('veh-type').value        = v.vehicle_type || '';
+        document.getElementById('veh-symbol').value      = v.symbol_code || '';
+        document.getElementById('veh-affiliation').value = v.affiliation || 'FRIENDLY';
+        document.getElementById('veh-ops-status').value  = v.ops_status || 'OPS';
+        document.getElementById('veh-notes').value       = v.notes || '';
+        document.getElementById('veh-err').textContent   = '';
+        document.getElementById('modal-veh-title').textContent = v.id ? 'Edit vehicle' : 'New vehicle';
+        // Assignment selects
+        const opSel = document.getElementById('veh-operator');
+        opSel.innerHTML = '<option value="">— none —</option>' +
+            operators.map(o => `<option value="${o.id}" ${o.id == v.operator_id ? 'selected':''}>${esc(o.callsign)}</option>`).join('');
+        const tmSel = document.getElementById('veh-team');
+        tmSel.innerHTML = '<option value="">— none —</option>' +
+            teams.map(t => `<option value="${t.id}" ${t.id == v.team_id ? 'selected':''}>${esc(t.name)}</option>`).join('');
+        openModal('modal-vehicle');
+    };
+
+    // Operator and team are mutually exclusive — clear the other when one is set.
+    window.vehAssignChanged = function(which) {
+        if (which === 'operator' && document.getElementById('veh-operator').value)
+            document.getElementById('veh-team').value = '';
+        if (which === 'team' && document.getElementById('veh-team').value)
+            document.getElementById('veh-operator').value = '';
+    };
+
+    window.saveVehicle = async function() {
+        const id  = document.getElementById('veh-id').value;
+        const errEl = document.getElementById('veh-err');
+        const callsign = document.getElementById('veh-callsign').value.trim();
+        if (!callsign) { errEl.textContent = 'Callsign is required.'; return; }
+        const opVal = document.getElementById('veh-operator').value;
+        const tmVal = document.getElementById('veh-team').value;
+        const body = {
+            callsign,
+            vehicle_type: document.getElementById('veh-type').value.trim(),
+            symbol_code:  document.getElementById('veh-symbol').value.trim(),
+            affiliation:  document.getElementById('veh-affiliation').value,
+            ops_status:   document.getElementById('veh-ops-status').value,
+            operator_id:  opVal ? parseInt(opVal) : null,
+            team_id:      tmVal ? parseInt(tmVal) : null,
+            notes:        document.getElementById('veh-notes').value,
+        };
+        const r = id
+            ? await api(`/vehicles/${id}`, { method:'PATCH', body: JSON.stringify(body) })
+            : await api('/vehicles',       { method:'POST',  body: JSON.stringify(body) });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status} ${await r.text()}`; return; }
+        closeModal('modal-vehicle');
+        await loadAll(); render('vehicles');
+    };
+
+    window.deleteVehicle = async function(id, callsign) {
+        if (!confirm(`Delete vehicle "${callsign}"?`)) return;
+        await api(`/vehicles/${id}`, { method:'DELETE' });
+        await loadAll(); render('vehicles');
     };
 
     // ── Hierarchy ──────────────────────────────────────────────────────────
@@ -1224,6 +1380,8 @@ main { padding: 0; }
           desc: 'Imported KML/KMZ overlay features (points / lines / polygons).' },
         { key: 'overlays',         icon: '📚', label: 'Saved overlays',
           desc: 'Named bundles of TacticalObject ids used as map filters.' },
+        { key: 'vehicles',         icon: '🚙', label: 'Vehicles',
+          desc: 'Unit vehicles, positioned at their assigned operator/team.' },
     ];
     const NOTIF_CATEGORIES = [
         { key: 'notif_chat',          icon: '💬', label: 'Chat toasts',

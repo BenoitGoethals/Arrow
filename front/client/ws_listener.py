@@ -26,6 +26,8 @@ class WSListener(QThread):
     message_received   = pyqtSignal(dict)
     # Tactical objects / graphics
     graphic_received   = pyqtSignal(dict)
+    # Vehicles
+    vehicle_received   = pyqtSignal(dict)
     # Fire missions
     fire_mission_received = pyqtSignal(dict)
     # KML layers
@@ -90,6 +92,7 @@ class WSListener(QThread):
             "report":          self.report_received,
             "chat":            self.message_received,
             "tactical-object": self.graphic_received,
+            "vehicle":         self.vehicle_received,
             "fire-mission":    self.fire_mission_received,
             "kml-layer":       self.kml_received,
             "overlay":         self.overlay_received,
