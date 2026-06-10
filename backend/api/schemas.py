@@ -61,6 +61,7 @@ class OperatorOut(ORMModel):
     callsign: str
     rank: str
     status: str
+    ops_status: str = "OPS"
     role: str
     team_id: int | None
     team_role: str | None
@@ -85,9 +86,14 @@ class OperatorUpdate(BaseModel):
     rank: str | None = None
     role: str | None = None
     status: str | None = None
+    ops_status: str | None = None
     team_id: int | None = None
     team_role: str | None = None
     mission_id: int | None = None
+
+
+class OpsStatusUpdate(BaseModel):
+    ops_status: str  # OPS | INOPS | KIA | MIA
 
 
 class PasswordReset(BaseModel):

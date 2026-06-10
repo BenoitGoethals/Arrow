@@ -30,6 +30,7 @@ def _operator_dict(op: Operator, online: bool) -> dict:
         "callsign": op.callsign,
         "rank": op.rank,
         "role": op.role,
+        "ops_status": op.ops_status,
         "team_id": op.team_id,
         "online": online,
         "latitude": op.latitude,

@@ -87,7 +87,10 @@ class Operator(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     callsign: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     rank: Mapped[str] = mapped_column(String(40), default="OR-1")
-    status: Mapped[str] = mapped_column(String(20), default="OFFLINE")
+    status: Mapped[str] = mapped_column(String(20), default="OFFLINE")  # presence: ONLINE/OFFLINE
+    # Operational status, independent of presence — set by BC/ADMIN.
+    # OPS (mission-capable) | INOPS (out of action) | KIA | MIA
+    ops_status: Mapped[str] = mapped_column(String(10), default="OPS")
     role: Mapped[str] = mapped_column(String(20), default="OPERATOR")  # ADMIN, BATTLE_CAPTAIN, OPERATOR, LOG, FO, CAS, INTEL, OPS, MED, CBRN, FBC
     password_hash: Mapped[str] = mapped_column(String(255))
 
@@ -140,6 +143,39 @@ class OperatorPosition(Base):
     operator: Mapped["Operator"] = relationship(back_populates="positions")
 
 
+class Vehicle(Base):
+    """A tactical vehicle owned/used by a unit.
+
+    Generic across the order of battle — any unit type has its own vehicles
+    (the ``vehicle_type`` free-text field captures the platform: LMV, Boxer,
+    MAN truck, RHIB, …). A vehicle is assigned to **either** a single operator
+    (``operator_id``) **or** a whole team (``team_id``); both nullable, at most
+    one set. The vehicle has no GPS of its own — its map position is derived
+    from the assigned operator (or, for a team, that team's anchor operator).
+
+    ``ops_status`` mirrors the operator set: OPS | INOPS | KIA | MIA
+    (KIA/MIA read as destroyed/missing for materiel).
+    """
+    __tablename__ = "vehicles"
+
+    id:          Mapped[int]           = mapped_column(primary_key=True)
+    callsign:    Mapped[str]           = mapped_column(String(60))
+    vehicle_type: Mapped[str]          = mapped_column(String(80), default="")
+    # MIL-STD-2525 equipment SIDC (rendered on the map); empty = generic equipment.
+    symbol_code: Mapped[str]           = mapped_column(String(40), default="")
+    affiliation: Mapped[str]           = mapped_column(String(12), default="FRIENDLY")
+    ops_status:  Mapped[str]           = mapped_column(String(10), default="OPS")
+    team_id:     Mapped[int | None]    = mapped_column(ForeignKey("teams.id"), nullable=True)
+    operator_id: Mapped[int | None]    = mapped_column(ForeignKey("operators.id"), nullable=True)
+    mission_id:  Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
+    notes:       Mapped[str]           = mapped_column(Text, default="")
+    created_by:  Mapped[int]           = mapped_column(ForeignKey("operators.id"))
+    created_at:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at:  Mapped[datetime]      = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    )
+
+
 class Photo(Base):
     __tablename__ = "photos"
 
@@ -175,6 +211,7 @@ class MapVisibility(Base):
     cot_tracks:       Mapped[bool] = mapped_column(default=True)
     kml_layers:       Mapped[bool] = mapped_column(default=True)
     overlays:         Mapped[bool] = mapped_column(default=True)
+    vehicles:         Mapped[bool] = mapped_column(default=True)
     # Notification axis — what pops up as a toast card on the right.
     notif_chat:          Mapped[bool] = mapped_column(default=True)
     notif_fire_missions: Mapped[bool] = mapped_column(default=True)
@@ -590,6 +627,7 @@ class StrikePackage(Base):
     tactical_object_ids: Mapped[str]          = mapped_column(Text, default="[]")
     fire_mission_ids:    Mapped[str]          = mapped_column(Text, default="[]")
     report_ids:          Mapped[str]          = mapped_column(Text, default="[]")
+    vehicle_ids:         Mapped[str]          = mapped_column(Text, default="[]")
     # Full asset manifest — JSON-encoded PackageAssets structure
     assets:             Mapped[str]           = mapped_column(Text, default="{}")
 
