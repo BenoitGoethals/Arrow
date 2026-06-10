@@ -62,6 +62,9 @@ class ArrowClient:
     def operators(self) -> list:
         return self._get("/operators")
 
+    def vehicles(self) -> list:
+        return self._get("/vehicles")
+
     # ---- Tracking ---------------------------------------------------
     def live_operators(self) -> list:
         return self._get("/tracking/live")

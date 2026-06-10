@@ -493,7 +493,7 @@ async def map_snapshot_restore(
 # axes; PUT accepts any subset of fields (partial patch).
 _VIS_FIELDS = (
     "tactical_objects", "operators", "fire_missions", "alerts",
-    "reports", "cot_tracks", "kml_layers", "overlays",
+    "reports", "cot_tracks", "kml_layers", "overlays", "vehicles",
     "notif_chat", "notif_fire_missions", "notif_alerts", "notif_streams",
 )
 
@@ -508,6 +508,7 @@ class MapVisibilityIn(BaseModel):
     cot_tracks:       bool | None = None
     kml_layers:       bool | None = None
     overlays:         bool | None = None
+    vehicles:         bool | None = None
     # Notification axis
     notif_chat:           bool | None = None
     notif_fire_missions:  bool | None = None

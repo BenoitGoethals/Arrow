@@ -221,6 +221,12 @@ class MapView(QWebEngineView):
     def remove_tactical_object(self, obj_id: str):
         self._js(f"removeTacticalObject({json.dumps(obj_id)})")
 
+    def update_vehicle(self, vehicle: dict):
+        self._js(f"updateVehicle({json.dumps(vehicle)})")
+
+    def remove_vehicle(self, vehicle_id: int):
+        self._js(f"removeVehicle({json.dumps(vehicle_id)})")
+
     def add_fire_mission(self, fm: dict):
         self._js(f"addFireMission({json.dumps(fm)})")
 

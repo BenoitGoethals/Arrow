@@ -876,6 +876,7 @@
     const state = {
         hierarchy: null,
         operators: new Map(),
+        vehicles: new Map(),       // id -> vehicle dto (position derived from assigned operator)
         tacticalObjects: new Map(),
         cotTracks: new Map(),
         fireMissions: new Map(),    // id -> fire mission dto
@@ -898,6 +899,7 @@
             fire_missions:    true,  alerts:        true,
             reports:          true,  cot_tracks:    true,
             kml_layers:       true,  overlays:      true,
+            vehicles:         true,
         },
     };
 
@@ -941,6 +943,7 @@
         // is cheap because the data is already cached in `state.*` Maps.
         refreshAllMarkers();
         refreshEnemies();
+        refreshVehicles();
         loadFmMarkers();
         loadMapFireMissions();
         loadMapReports();
@@ -1172,6 +1175,87 @@
             if (isMe) m.setZIndexOffset(1000);
             state.markers.set(key, m);
         }
+    }
+
+    // ── Vehicles ───────────────────────────────────────────────────────────────
+    // A vehicle has no GPS of its own — the backend derives its lat/lon from the
+    // assigned operator/team. We render an equipment mil-symbol at that point,
+    // dimmed/labelled by ops_status (OPS / INOPS / KIA / MIA).
+    const OPS_STATUS_COLOR = { OPS: '#22c55e', INOPS: '#f59e0b', KIA: '#ef4444', MIA: '#f97316' };
+
+    function vehicleSidc(v) {
+        if (v.symbol_code && v.symbol_code.length >= 10) return v.symbol_code;
+        const aff = ({ FRIENDLY: 'F', ENEMY: 'H', UNKNOWN: 'U', NEUTRAL: 'N' }[v.affiliation] || 'F');
+        return `S${aff}GPEVC--------`;   // ground equipment / vehicle
+    }
+
+    function vehicleIcon(v) {
+        const s = msSvg(vehicleSidc(v), 26);
+        const st = (v.ops_status || 'OPS').toUpperCase();
+        const dim = (st === 'INOPS' || st === 'KIA' || st === 'MIA') ? 0.5 : 1;
+        const pill = st === 'OPS' ? '' :
+            `<span style="background:${OPS_STATUS_COLOR[st] || '#94a3b8'};color:#0a0a0a;font-size:8px;
+                          font-weight:800;padding:0 3px;border-radius:2px;letter-spacing:.04em">${st}</span>`;
+        const cs = escHtml(v.callsign || '');
+        const html =
+            `<div style="display:flex;flex-direction:column;align-items:center;gap:1px;opacity:${dim}">
+                <div>${s.svg}</div>
+                <div style="display:flex;gap:2px;align-items:center">
+                    <span style="background:rgba(13,17,23,.85);color:#fbbf24;font-size:9px;font-weight:700;
+                                 padding:1px 4px;border-radius:3px;white-space:nowrap;font-family:monospace">${cs}</span>
+                    ${pill}
+                </div>
+            </div>`;
+        return L.divIcon({ className: 'vehicle-icon', html,
+                           iconSize: [Math.max(s.w, 60), s.h + 16], iconAnchor: [Math.max(s.w, 60) / 2, s.ay] });
+    }
+
+    function placeVehicle(v) {
+        const key = `veh-${v.id}`;
+        const existing = state.markers.get(key);
+        const show = state.visibility.vehicles && v.latitude != null && v.longitude != null
+                     && state.overlayMode !== 'none' && state.overlayMode !== 'enemies';
+        if (!show) {
+            if (existing) { removeEntityMarker(existing); state.markers.delete(key); }
+            return;
+        }
+        const icon = vehicleIcon(v);
+        const popup =
+            `<b>🚙 ${escHtml(v.callsign)}</b><br/>` +
+            `${escHtml(v.vehicle_type || 'vehicle')}<br/>` +
+            `Status: <b style="color:${OPS_STATUS_COLOR[(v.ops_status||'OPS').toUpperCase()] || '#cbd5e1'}">${escHtml(v.ops_status || 'OPS')}</b><br/>` +
+            (v.operator_id ? `Operator #${v.operator_id}` : (v.team_id ? `Team #${v.team_id}` : 'Unassigned'));
+        if (existing) {
+            existing.setLatLng([v.latitude, v.longitude]);
+            existing.setIcon(icon);
+            existing.getPopup() && existing.setPopupContent(popup);
+            entityCluster.refreshClusters(existing);
+        } else {
+            const m = addEntityMarker(L.marker([v.latitude, v.longitude], { icon }));
+            m.bindPopup(popup);
+            state.markers.set(key, m);
+        }
+    }
+
+    function refreshVehicles() {
+        state.vehicles.forEach(v => placeVehicle(v));
+        // Drop markers for vehicles no longer present.
+        [...state.markers.keys()].filter(k => k.startsWith('veh-')).forEach(k => {
+            const id = Number(k.slice(4));
+            if (!state.vehicles.has(id)) {
+                removeEntityMarker(state.markers.get(k)); state.markers.delete(k);
+            }
+        });
+    }
+
+    async function loadVehicles() {
+        try {
+            const r = await api('/vehicles');
+            if (!r.ok) return;
+            const list = await r.json();
+            state.vehicles = new Map(list.map(v => [v.id, v]));
+            refreshVehicles();
+        } catch (_) { /* best-effort */ }
     }
 
     // NATO-style OBJ control measure — green-outlined rectangle with corner
@@ -2038,10 +2122,14 @@
         const root = document.getElementById('tree');
         if (!state.hierarchy) { root.textContent = 'Loading…'; return; }
 
+        const OPS_COL = { OPS: '#22c55e', INOPS: '#f59e0b', KIA: '#ef4444', MIA: '#f97316' };
         const opIcons = (op) => {
             const badges = [];
             if (op.role === 'ADMIN') badges.push('<span class="badge adm">ADM</span>');
             else if (op.role === 'BATTLE_CAPTAIN') badges.push('<span class="badge bc">BC</span>');
+            const st = (op.ops_status || 'OPS').toUpperCase();
+            if (st !== 'OPS') badges.push(
+                `<span class="badge" style="background:${OPS_COL[st] || '#94a3b8'};color:#0a0a0a">${st}</span>`);
             return badges.join(' ');
         };
 
@@ -4583,6 +4671,13 @@
                 op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
                 state.operators.set(op.id, op);
                 placeOperator(op);
+                // Vehicles assigned to this operator inherit its position.
+                state.vehicles.forEach(v => {
+                    if (v.operator_id === d.operator_id) {
+                        v.latitude = d.latitude; v.longitude = d.longitude; v.online = true;
+                        placeVehicle(v);
+                    }
+                });
             } else if (msg.channel === 'cot-track' && msg.event === 'update') {
                 state.cotTracks.set(msg.data.id, msg.data);
                 placeCotTrack(msg.data);
@@ -4609,6 +4704,16 @@
                 loadMapAlerts();
             } else if (msg.channel === 'presence') {
                 loadHierarchy();
+                if (msg.event === 'ops_status') loadVehicles();  // vehicle status may follow operator
+            } else if (msg.channel === 'vehicle') {
+                const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
+                if (_mid && msg.data.mission_id && msg.data.mission_id !== _mid) return;
+                if (msg.event === 'deleted') {
+                    state.vehicles.delete(msg.data.id);
+                } else {
+                    state.vehicles.set(msg.data.id, msg.data);
+                }
+                refreshVehicles();
             } else if (msg.channel === 'chat') {
                 loadMapMessages();
             } else if (msg.channel === 'report') {
@@ -4664,7 +4769,7 @@
             .catch(() => {});
     }
     function reloadAllMapData() {
-        loadHierarchy(); loadEnemies(); loadCotTracks();
+        loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles();
         loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
         loadMapAlerts(); loadMapMessages();
     }
@@ -4674,7 +4779,8 @@
     });
     flyToActiveMission();
 
-    loadHierarchy(); loadEnemies(); loadCotTracks(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages();
+    loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages();
+    setInterval(loadVehicles, 20000);
     setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);
     setInterval(loadMapReports, 30000);

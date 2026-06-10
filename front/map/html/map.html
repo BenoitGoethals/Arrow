@@ -606,8 +606,9 @@ const LAYERS={
   alerts:L.layerGroup().addTo(map),    graphics:L.layerGroup().addTo(map),
   kml:L.layerGroup().addTo(map),       cbrn:L.layerGroup().addTo(map),
   weather:L.layerGroup().addTo(map),   freedraw:L.layerGroup().addTo(map),
-  routes:L.layerGroup().addTo(map),
+  routes:L.layerGroup().addTo(map),    vehicles:L.layerGroup().addTo(map),
 };
+const vehicleMarkers={};
 
 // ================================================================
 // 15-CHAR SIDC HELPERS (milsymbol v1.x / APP-6B legacy)
@@ -806,6 +807,33 @@ function updateCotTrack(t){
   else{cotTracks[t.cot_uid]=L.marker([t.latitude,t.longitude],{icon}).bindPopup(pop,{maxWidth:250}).addTo(LAYERS.cotTracks);}
 }
 function removeCotTrack(uid){if(cotTracks[uid]){LAYERS.cotTracks.removeLayer(cotTracks[uid]);delete cotTracks[uid];}}
+
+// ================================================================
+// VEHICLES — position follows the assigned operator (derived server-side)
+// ================================================================
+const OPS_STATUS_COLOR={OPS:'#3fb950',INOPS:'#d29922',KIA:'#f85149',MIA:'#ff9e64'};
+function vehicleSidc(v){
+  if(v.symbol_code&&v.symbol_code.length>=10)return v.symbol_code;
+  const aff={FRIENDLY:'F',ENEMY:'H',UNKNOWN:'U',NEUTRAL:'N'}[v.affiliation]||'F';
+  return `S${aff}GPEVC--------`;   // ground equipment / vehicle
+}
+function updateVehicle(v){
+  // No fix yet (unassigned or assignee offline without position) → drop it.
+  if(v.latitude==null||v.longitude==null){removeVehicle(v.id);return;}
+  const st=(v.ops_status||'OPS').toUpperCase();
+  const icon=buildMilIcon(vehicleSidc(v),`🚙 ${v.callsign||''}`,v.vehicle_type||'',null);
+  const pop=`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px">
+    <div style="font-weight:bold;color:#79c0ff;border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">🚙 ${esc(v.callsign||'')}</div>
+    <div>TYPE ${esc(v.vehicle_type||'vehicle')}</div>
+    <div>STATUS <span style="color:${OPS_STATUS_COLOR[st]||'#c9d1d9'}">${esc(st)}</span></div>
+    <div>MGRS ${latLonToMGRS(v.latitude,v.longitude)}</div>
+    <div>${v.operator_id?('OP #'+v.operator_id):(v.team_id?('TEAM #'+v.team_id):'unassigned')}</div>
+  </div>`;
+  const op=(st==='OPS')?1:0.5;
+  if(vehicleMarkers[v.id]){vehicleMarkers[v.id].setLatLng([v.latitude,v.longitude]).setIcon(icon).setPopupContent(pop).setOpacity(op);}
+  else{vehicleMarkers[v.id]=L.marker([v.latitude,v.longitude],{icon,opacity:op}).bindPopup(pop,{maxWidth:250}).addTo(LAYERS.vehicles);}
+}
+function removeVehicle(id){if(vehicleMarkers[id]){LAYERS.vehicles.removeLayer(vehicleMarkers[id]);delete vehicleMarkers[id];}}
 
 // ================================================================
 // TACTICAL OBJECTS

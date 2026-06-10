@@ -201,9 +201,11 @@ class StrikePlannerWindow(QMainWindow):
         tobjs  = b.get("tactical_objects") or b.get("tactical_object_ids", [])
         fms_   = b.get("fire_missions")    or b.get("fire_mission_ids",    [])
         reps_  = b.get("reports")          or b.get("report_ids",          [])
+        vehs_  = b.get("vehicles")         or b.get("vehicle_ids",          [])
         assets = b.get("assets", {})
         stats   = [
             ("OPERATORS",    len(ops)),
+            ("VEHICLES",     len(vehs_)),
             ("TACT OBJECTS", len(tobjs)),
             ("FIRE MISSIONS",len(fms_)),
             ("REPORTS",      len(reps_)),

@@ -287,6 +287,7 @@ class MainWindow(QMainWindow):
         self._ws.report_received.connect(self._on_report)
         self._ws.message_received.connect(self._on_message)
         self._ws.graphic_received.connect(self._on_tact_obj_event)
+        self._ws.vehicle_received.connect(self._on_vehicle_event)
         self._ws.fire_mission_received.connect(self._on_fm_event)
         self._ws.kml_received.connect(self._on_kml_event)
         self._ws.presence_changed.connect(self._on_presence)
@@ -317,6 +318,7 @@ class MainWindow(QMainWindow):
         self._load_strike_packages()
         self._load_live_operators()
         self._load_cot_tracks()
+        self._load_vehicles()
         self._load_tactical_objects()
         self._load_fire_missions()
         self._load_kml_layers()
@@ -571,6 +573,15 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _load_vehicles(self):
+        self._vehicles = {}      # id -> vehicle dto; position follows assigned operator
+        try:
+            for v in self._client.vehicles():
+                self._vehicles[v["id"]] = v
+                self._map.update_vehicle(v)
+        except Exception:
+            pass
+
     def _load_tactical_objects(self):
         try:
             for obj in self._client.tactical_objects():
@@ -646,6 +657,15 @@ class MainWindow(QMainWindow):
                   data.get("callsign"), data.get("lat",0), data.get("lon",0), data.get("heading"))
         self._push_track(data)
         self._orbat_panel.update_from_tracking(data)
+        # Vehicles assigned to this operator inherit its position.
+        op_id = data.get("operator_id") or data.get("id")
+        lat = data.get("lat") or data.get("latitude")
+        lon = data.get("lon") or data.get("longitude")
+        if op_id is not None and lat and lon:
+            for v in getattr(self, "_vehicles", {}).values():
+                if v.get("operator_id") == op_id:
+                    v["latitude"], v["longitude"] = float(lat), float(lon)
+                    self._map.update_vehicle(v)
 
     def _on_cot(self, data: dict):
         event = data.get("event", "update")
@@ -695,6 +715,18 @@ class MainWindow(QMainWindow):
             self._map.remove_tactical_object(str(data.get("id", "")))
         else:
             self._map.add_tactical_object(data)
+
+    def _on_vehicle_event(self, data: dict):
+        cache = getattr(self, "_vehicles", None)
+        if cache is None:
+            cache = self._vehicles = {}
+        # The 'deleted' broadcast carries only {"id": ...} — no callsign.
+        if "callsign" not in data:
+            cache.pop(data.get("id"), None)
+            self._map.remove_vehicle(data.get("id"))
+        else:
+            cache[data["id"]] = data
+            self._map.update_vehicle(data)
 
     def _on_fm_event(self, data: dict):
         self._map.add_fire_mission(data)

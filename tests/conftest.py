@@ -100,9 +100,9 @@ def _seed_admin(engine) -> None:
         if not exists:
             conn.execute(text(
                 "INSERT INTO operators "
-                "(callsign,rank,status,role,password_hash,last_seen,"
+                "(callsign,rank,status,ops_status,role,password_hash,last_seen,"
                 " failed_login_count,mfa_enabled) "
-                "VALUES ('benoit','OF-3','OFFLINE','ADMIN',:pw,datetime('now'),0,0)"
+                "VALUES ('benoit','OF-3','OFFLINE','OPS','ADMIN',:pw,datetime('now'),0,0)"
             ), {"pw": pw})
 
 

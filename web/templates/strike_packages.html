@@ -184,6 +184,7 @@ let _allOps = [];        // operators from hierarchy
 let _allTOs = [];        // tactical objects
 let _allFMs = [];        // fire missions
 let _allReps = [];       // reports
+let _allVehs = [];       // vehicles
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────
 function api(method, path, body) {
@@ -239,16 +240,18 @@ async function loadMeta() {
     const mid = window.arrowGetMissionId ? arrowGetMissionId() : null;
     // When a mission is active, only show operators assigned to that mission.
     const opsPath = mid ? `/missions/${mid}/operators` : '/operators';
-    const [ops, tos, fms, reps] = await Promise.all([
+    const [ops, tos, fms, reps, vehs] = await Promise.all([
         api('GET', opsPath).catch(()=>[]),
         api('GET', '/tactical-objects').catch(()=>[]),
         api('GET', '/fire-missions').catch(()=>[]),
         api('GET', '/reports').catch(()=>[]),
+        api('GET', '/vehicles').catch(()=>[]),
     ]);
     _allOps  = ops;
     _allTOs  = tos;
     _allFMs  = fms;
     _allReps = reps;
+    _allVehs = vehs;
 }
 
 // ── Sidebar list ──────────────────────────────────────────────────────────
@@ -332,6 +335,16 @@ function renderDetail() {
           <span>${esc(op.callsign)}</span>
           <span style="color:#64748b;font-size:.72rem">${op.rank} · ${op.status}</span>
         </label>`).join('')}
+    </div>
+    <div class="sec-hdr"><h4>Vehicles</h4></div>
+    <div class="pick-list" id="vehs-pick">
+      ${_allVehs.map(v => `
+        <label class="pick-item">
+          <input type="checkbox" value="${v.id}"
+            ${(p.vehicle_ids||[]).includes(v.id) ? 'checked' : ''}>
+          <span>🚙 ${esc(v.callsign)}</span>
+          <span style="color:#64748b;font-size:.72rem">${esc(v.vehicle_type||'vehicle')} · ${esc(v.ops_status||'OPS')}</span>
+        </label>`).join('') || '<span style="color:#475569;font-size:.78rem">No vehicles defined</span>'}
     </div>
   </div>
 
@@ -467,6 +480,10 @@ function renderOverview(p, assets) {
         const op = _allOps.find(o=>o.id===id);
         return op ? `<span class="ov-tag tag-op">${esc(op.callsign)}</span>` : '';
     }).join('');
+    const vehs = (p.vehicle_ids||[]).map(id => {
+        const v = _allVehs.find(x=>x.id===id);
+        return v ? `<span class="ov-tag tag-op">🚙 ${esc(v.callsign)}</span>` : '';
+    }).join('');
     const drones = (assets.drones||[]).map(d =>
         `<span class="ov-tag tag-drone">${esc(d.callsign||d.platform||'Drone')}</span>`).join('');
     const isr = (assets.isr||[]).map(s =>
@@ -486,6 +503,7 @@ function renderOverview(p, assets) {
       <thead><tr><th>Element</th><th>Assets</th><th>Count</th></tr></thead>
       <tbody>
         <tr><td>Personnel</td><td>${ops||'<span style="color:#334155">—</span>'}</td><td>${(p.operator_ids||[]).length}</td></tr>
+        <tr><td>Vehicles</td><td>${vehs||'<span style="color:#334155">—</span>'}</td><td>${(p.vehicle_ids||[]).length}</td></tr>
         <tr><td>Drones / UAS</td><td>${drones||'<span style="color:#334155">—</span>'}</td><td>${(assets.drones||[]).length}</td></tr>
         <tr><td>ISR</td><td>${isr||'<span style="color:#334155">—</span>'}</td><td>${(assets.isr||[]).length}</td></tr>
         <tr><td>Air Support</td><td>${cas||'<span style="color:#334155">—</span>'}</td><td>${(assets.air_support||[]).length}</td></tr>
@@ -702,6 +720,7 @@ function buildPatchPayload() {
         tactical_object_ids: collectChecked('to-pick'),
         fire_mission_ids: collectChecked('fm-pick'),
         report_ids: collectChecked('reps-pick'),
+        vehicle_ids: collectChecked('vehs-pick'),
         assets: {
             drones: collectRows('drones-container', 'drone'),
             isr: collectRows('isr-container', 'isr'),
