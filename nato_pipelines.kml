@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>NATO Pipeline System (NPS) — overview</name>
+    <description>Approximate routings of the NATO multi-fuel pipeline networks operated by NSPA. CEPS (Central Europe), NEPS (North Europe), NIPS (Italy), Greek &amp; Turkish systems, plus major intake/depot/airbase off-takes. Coordinates are nominal — for planning awareness only, not engineering use.</description>
+
+    <!-- ── Style catalogue ─────────────────────────────────────────────── -->
+    <Style id="ceps">
+      <LineStyle><color>ffffff00</color><width>3</width></LineStyle>
+    </Style>
+    <Style id="cepsBranch">
+      <LineStyle><color>ffffaa00</color><width>2</width></LineStyle>
+    </Style>
+    <Style id="neps">
+      <LineStyle><color>ffff7700</color><width>3</width></LineStyle>
+    </Style>
+    <Style id="nips">
+      <LineStyle><color>ff00aaff</color><width>3</width></LineStyle>
+    </Style>
+    <Style id="greek">
+      <LineStyle><color>ff00ff00</color><width>3</width></LineStyle>
+    </Style>
+    <Style id="turk">
+      <LineStyle><color>ff0000ff</color><width>3</width></LineStyle>
+    </Style>
+    <Style id="depot">
+      <IconStyle><color>ff00ffff</color></IconStyle>
+    </Style>
+    <Style id="intake">
+      <IconStyle><color>ffff00ff</color></IconStyle>
+    </Style>
+    <Style id="airbase">
+      <IconStyle><color>ff00aaff</color></IconStyle>
+    </Style>
+    <Style id="pumpStation">
+      <IconStyle><color>ffffff00</color></IconStyle>
+    </Style>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         CEPS — Central Europe Pipeline System
+         ~5,300 km across BE / NL / LU / FR / DE serving 31 storage depots
+         and 31+ commercial/military off-takes.
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Placemark>
+      <name>CEPS — Antwerp ↔ Liège ↔ German border</name>
+      <description>Main east branch from Port of Antwerp through the Meuse valley to the German pipeline grid.</description>
+      <styleUrl>#ceps</styleUrl>
+      <LineString><coordinates>
+        4.40,51.23  4.85,51.05  5.30,50.85  5.57,50.65  5.85,50.65  6.05,50.95  6.69,49.97
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Antwerp ↔ Eindhoven ↔ Ruhr</name>
+      <description>North-east branch crossing the Belgian-Dutch border, feeding Eindhoven AB and continuing to the Ruhr industrial belt.</description>
+      <styleUrl>#ceps</styleUrl>
+      <LineString><coordinates>
+        4.40,51.23  4.78,51.30  5.10,51.40  5.37,51.45  5.85,51.45  6.10,51.30  6.76,51.27  7.14,50.87
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Rotterdam (Pernis) ↔ Venlo ↔ Ruhr</name>
+      <description>Northern intake from the Pernis refinery cluster east through Limburg to the German backbone.</description>
+      <styleUrl>#ceps</styleUrl>
+      <LineString><coordinates>
+        4.39,51.88  4.65,51.85  5.00,51.70  5.50,51.55  6.10,51.45  6.76,51.27
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Pernis ↔ Schiphol off-take</name>
+      <description>Jet-A1 supply spur to Schiphol airport.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        4.39,51.88  4.55,52.00  4.70,52.15  4.76,52.31
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Brussels off-take</name>
+      <description>Spur to Brussels (Zaventem) airport.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        4.40,51.23  4.45,50.95  4.48,50.90
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — German backbone (Aachen ↔ Frankfurt ↔ Mannheim)</name>
+      <description>Cross-Germany trunk feeding the Rhein-Main, Spangdahlem, Ramstein and Mannheim depots.</description>
+      <styleUrl>#ceps</styleUrl>
+      <LineString><coordinates>
+        6.05,50.95  6.69,49.97  7.60,49.44  8.56,50.04  8.51,49.49  7.62,48.55
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Frankfurt (Rhein-Main) off-take</name>
+      <description>Spur to Frankfurt airport fuel farm — largest commercial off-take on CEPS.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        7.14,50.87  8.10,50.30  8.56,50.04
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Spangdahlem AB off-take</name>
+      <description>USAFE F-16 wing; primary CEPS military draw west of the Rhine.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        6.05,50.95  6.69,49.97
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Ramstein AB off-take</name>
+      <description>USAFE HQ + KC-46/C-5 operations.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        6.69,49.97  7.60,49.44
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — France west branch (Dunkerque ↔ Cambrai ↔ Metz)</name>
+      <description>French segment with intake at Dunkerque/Le Havre, joining the German trunk near Strasbourg.</description>
+      <styleUrl>#ceps</styleUrl>
+      <LineString><coordinates>
+        2.36,51.05  2.80,50.70  3.24,50.18  4.10,49.50  5.00,49.20  6.18,49.12  7.05,48.85  7.62,48.55
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Le Havre intake spur</name>
+      <description>Atlantic intake refinery; ties into the western French branch.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        0.10,49.49  1.20,49.55  2.20,49.70  3.24,50.18
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Cambrai ↔ Chievres ↔ Antwerp loop</name>
+      <description>North-east loop joining the French branch back into the Antwerp hub.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        3.24,50.18  3.80,50.55  4.05,50.55  4.40,51.23
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>CEPS — Luxembourg crossover</name>
+      <description>Cross-border link between French and German trunk segments.</description>
+      <styleUrl>#cepsBranch</styleUrl>
+      <LineString><coordinates>
+        6.18,49.12  6.13,49.61  6.69,49.97
+      </coordinates></LineString>
+    </Placemark>
+
+    <!-- ── CEPS — major nodes ──────────────────────────────────────────── -->
+    <Placemark>
+      <name>Antwerp intake (CEPS hub)</name>
+      <description>Sea-water intake refineries (Total, ExxonMobil); main CEPS injection point.</description>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>4.40,51.23,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Rotterdam–Pernis intake (CEPS)</name>
+      <description>Shell Pernis refinery cluster; secondary CEPS injection.</description>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>4.39,51.88,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Le Havre intake (CEPS)</name>
+      <description>Atlantic injection point feeding the French branch.</description>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>0.10,49.49,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Dunkerque intake (CEPS)</name>
+      <description>Northern French injection.</description>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>2.36,51.05,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Schiphol fuel farm (CEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>4.76,52.31,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Brussels-Zaventem (CEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>4.48,50.90,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Eindhoven AB (CEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>5.37,51.45,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Geilenkirchen AB / NAEW (CEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>6.05,50.96,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Köln-Bonn (CEPS pump station)</name>
+      <styleUrl>#pumpStation</styleUrl>
+      <Point><coordinates>7.14,50.87,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Frankfurt am Main (CEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>8.56,50.04,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Spangdahlem AB (CEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>6.69,49.97,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Ramstein AB (CEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>7.60,49.44,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Mannheim depot (CEPS)</name>
+      <styleUrl>#depot</styleUrl>
+      <Point><coordinates>8.51,49.49,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Strasbourg (CEPS junction)</name>
+      <styleUrl>#pumpStation</styleUrl>
+      <Point><coordinates>7.62,48.55,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Cambrai (CEPS junction)</name>
+      <styleUrl>#pumpStation</styleUrl>
+      <Point><coordinates>3.24,50.18,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Metz / Luxembourg (CEPS junction)</name>
+      <styleUrl>#pumpStation</styleUrl>
+      <Point><coordinates>6.18,49.12,0</coordinates></Point>
+    </Placemark>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         NEPS — North European Pipeline System
+         Norway (and the historic UK GPSS, kept here for context although
+         the GPSS is now disposed of under MOD ownership).
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Placemark>
+      <name>NEPS — Stavanger → Sola AB → Karmøy depot</name>
+      <description>Norwegian segment serving Sola AFB and the Karmøy storage cluster.</description>
+      <styleUrl>#neps</styleUrl>
+      <LineString><coordinates>
+        5.73,58.90  5.64,58.88  5.27,59.20
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>NEPS — Trondheim ↔ Værnes AB ↔ Ørland depot</name>
+      <description>Central Norway segment feeding Ørland (F-35) and Værnes.</description>
+      <styleUrl>#neps</styleUrl>
+      <LineString><coordinates>
+        10.40,63.42  10.92,63.46  9.60,63.70
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>NEPS — Bodø ↔ Evenes</name>
+      <description>Northern segment supporting the new F-35 main operating base at Evenes.</description>
+      <styleUrl>#neps</styleUrl>
+      <LineString><coordinates>
+        14.36,67.27  16.68,68.49
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>Sola AB (NEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>5.64,58.88,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Ørland MOB (NEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>9.60,63.70,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Evenes MOB (NEPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>16.68,68.49,0</coordinates></Point>
+    </Placemark>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         NIPS — Northern Italy Pipeline System
+         Genoa intake → Po valley → Friuli; serves Aviano, Ghedi, Cameri.
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Placemark>
+      <name>NIPS — Genoa ↔ Po valley ↔ Aviano</name>
+      <description>Tyrrhenian intake at Genoa across the Po plain to Aviano AB (USAFE 31 FW).</description>
+      <styleUrl>#nips</styleUrl>
+      <LineString><coordinates>
+        8.93,44.41  9.70,45.05  10.27,45.43  10.99,45.43  12.10,45.80  12.60,46.03
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>NIPS — Cameri spur</name>
+      <description>Spur from the Po backbone to Cameri AB (F-35 FACO).</description>
+      <styleUrl>#nips</styleUrl>
+      <LineString><coordinates>
+        9.70,45.05  8.67,45.55
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>NIPS — Camp Darby (Livorno) spur</name>
+      <description>Logistics depot for US Army in Europe; coastal spur off the Tyrrhenian intake.</description>
+      <styleUrl>#nips</styleUrl>
+      <LineString><coordinates>
+        8.93,44.41  9.85,44.10  10.40,43.59
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>Genoa intake (NIPS)</name>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>8.93,44.41,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Aviano AB (NIPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>12.60,46.03,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Ghedi AB (NIPS off-take)</name>
+      <description>Italian Tornado / F-35 base; B61 nuclear-sharing site.</description>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>10.27,45.43,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Cameri AB (NIPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>8.67,45.55,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Camp Darby (NIPS depot)</name>
+      <styleUrl>#depot</styleUrl>
+      <Point><coordinates>10.40,43.59,0</coordinates></Point>
+    </Placemark>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         Greek Pipeline System (HPS)
+         Tied to the Aegean intake; supports Larissa, Andravida, Souda.
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Placemark>
+      <name>HPS — Thessaloniki ↔ Larissa</name>
+      <description>Aegean intake at Thessaloniki south to the central Greek depots.</description>
+      <styleUrl>#greek</styleUrl>
+      <LineString><coordinates>
+        22.95,40.64  22.70,40.05  22.41,39.65
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>HPS — Larissa ↔ Andravida</name>
+      <description>Cross-Peloponnese segment to Andravida AB.</description>
+      <styleUrl>#greek</styleUrl>
+      <LineString><coordinates>
+        22.41,39.65  22.10,38.90  21.50,38.50  21.30,37.92
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>HPS — Souda Bay (Crete) intake</name>
+      <description>Naval intake and storage at Souda Bay.</description>
+      <styleUrl>#greek</styleUrl>
+      <LineString><coordinates>
+        24.06,35.49  24.15,35.53
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>Thessaloniki intake (HPS)</name>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>22.95,40.64,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Larissa AB (HPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>22.41,39.65,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Andravida AB (HPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>21.30,37.92,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Souda Bay NSA (HPS depot)</name>
+      <styleUrl>#depot</styleUrl>
+      <Point><coordinates>24.15,35.53,0</coordinates></Point>
+    </Placemark>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         Turkish Pipeline System (TUPS — eastern + western branches)
+         ════════════════════════════════════════════════════════════════════ -->
+
+    <Placemark>
+      <name>TUPS — Iskenderun ↔ Adana ↔ Incirlik</name>
+      <description>Eastern branch from the Mediterranean intake at Iskenderun to Incirlik AB.</description>
+      <styleUrl>#turk</styleUrl>
+      <LineString><coordinates>
+        36.17,36.59  35.80,36.80  35.32,36.98  35.43,37.00
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>TUPS — Aegean ↔ Eskişehir ↔ Ankara</name>
+      <description>Western branch from the Aegean coast through central Anatolia.</description>
+      <styleUrl>#turk</styleUrl>
+      <LineString><coordinates>
+        27.15,38.42  29.07,40.18  30.52,39.78  32.99,39.95
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>TUPS — Konya spur</name>
+      <description>Spur to Konya AB (E-7 AEW&amp;C and exercise base).</description>
+      <styleUrl>#turk</styleUrl>
+      <LineString><coordinates>
+        32.99,39.95  32.55,37.97
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>Iskenderun intake (TUPS)</name>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>36.17,36.59,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Incirlik AB (TUPS off-take)</name>
+      <description>USAFE detachment + nuclear-sharing site (B61).</description>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>35.43,37.00,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Izmir intake (TUPS)</name>
+      <description>Aegean injection point for the western branch.</description>
+      <styleUrl>#intake</styleUrl>
+      <Point><coordinates>27.15,38.42,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Eskişehir AB (TUPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>30.52,39.78,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Ankara / Mürted-Akıncı (TUPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>32.55,40.07,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Konya AB (TUPS off-take)</name>
+      <styleUrl>#airbase</styleUrl>
+      <Point><coordinates>32.55,37.97,0</coordinates></Point>
+    </Placemark>
+
+  </Document>
+</kml>

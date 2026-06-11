@@ -1,0 +1,2262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Arrow — Soldier System{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    {% block head %}{% endblock %}
+<style>
+/* ── Floating stream windows (multi-window) ───────────────────────────────── */
+.stream-float-win {
+    position: fixed;
+    bottom: 80px; right: 20px;
+    width: 360px; height: 230px;
+    min-width: 220px; min-height: 150px;
+    background: #0d1117;
+    border: 1px solid #7c3aed;
+    border-radius: 8px;
+    box-shadow: 0 6px 28px rgba(0,0,0,.85);
+    overflow: hidden;
+    resize: both;
+    display: flex;
+    flex-direction: column;
+}
+.stream-float-win.minimised { height: 32px !important; resize: none; }
+.sf-bar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px;
+    background: #1a0d30;
+    cursor: move;
+    user-select: none;
+    flex-shrink: 0;
+}
+.sf-bar .sf-live  { width:8px;height:8px;border-radius:50%;background:#22c55e;
+                    box-shadow:0 0 6px #22c55e;animation:sflive 1s infinite;flex-shrink:0; }
+@keyframes sflive { 0%,100%{opacity:1} 50%{opacity:.3} }
+.sf-bar .sf-call  { color:#a78bfa;font-weight:700;font-size:.82rem;flex:1; }
+.sf-bar .sf-fps   { font-size:.7rem;font-family:monospace;color:#475569; }
+.sf-btn { background:none;border:0;color:#64748b;cursor:pointer;
+          font-size:.85rem;padding:0 3px;line-height:1; }
+.sf-btn:hover { color:#e2e8f0; }
+.sf-video-wrap { flex:1;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden; }
+.sf-img { max-width:100%;max-height:100%;object-fit:contain;display:block; }
+.sf-no-feed { color:#475569;font-size:.8rem;text-align:center; }
+</style>
+</head>
+<body>
+<nav class="nav">
+    <span class="brand">ARROW</span>
+
+    <!-- Dashboard -->
+    <div class="nav-item">
+        <a class="nav-link nav-internal" href="{{ url_for('dashboard.index') }}">Dashboard</a>
+    </div>
+
+    <!-- Tactical Map -->
+    <div class="nav-item">
+        <a class="nav-link nav-internal" href="{{ url_for('tactical_map.index') }}">🗺 Map</a>
+    </div>
+
+    <!-- Messaging -->
+    <div class="nav-item">
+        <a class="nav-link nav-internal" href="{{ url_for('messaging.index') }}">💬 Messaging</a>
+    </div>
+
+    <!-- Ops dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">Ops ▾</span>
+        <div class="nav-dropdown">
+            <a href="/missions/" style="color:#f59e0b">🎯 Missions</a>
+            <a href="{{ url_for('fire_missions.index') }}" style="color:#ef4444">🎯 Fire Missions</a>
+            <a href="{{ url_for('objectives.index') }}" style="color:#22c55e">🚩 Objectives</a>
+            <a href="{{ url_for('opord.index') }}" style="color:#60a5fa">📋 OPORDs</a>
+            <a href="{{ url_for('strike_packages.index') }}" style="color:#f97316">⚡ Strike Packages</a>
+            <a href="{{ url_for('cas_capacity.index') }}" style="color:#fb923c">✈ CAS Capacity</a>
+            <a href="{{ url_for('cop.index') }}" style="color:#38bdf8">🗂 COP Docs</a>
+            <a href="{{ url_for('weather.index') }}" style="color:#34d399">⛅ Weather</a>
+        </div>
+    </div>
+
+    <!-- COPs dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">COPs ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('cop_hub.index') }}" style="color:#e2e8f0;font-weight:700">⊞ COP Hub</a>
+            <hr style="border-color:#1e293b;margin:4px 0">
+            <a href="{{ url_for('taccop.index') }}"  style="color:#34d399">🗺 TACCOP — Tactical</a>
+            <a href="{{ url_for('logcop.index') }}"  style="color:#fb923c">📦 LOGCOP — Logistics</a>
+            <a href="{{ url_for('medcop.index') }}"  style="color:#f472b6">🏥 MEDCOP — Medical</a>
+            <a href="{{ url_for('intcop.index') }}"  style="color:#818cf8">🔍 INTCOP — Intelligence</a>
+            <a href="{{ url_for('firescop.index') }}" style="color:#ef4444">🔥 FIRESCOP — Fire Spt</a>
+            <a href="{{ url_for('cbrncop.index') }}" style="color:#fbbf24">☢ CBRNCOP — CBRN</a>
+        </div>
+    </div>
+
+    <!-- Reporting dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">Reporting ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('reports.index') }}">📝 Reports</a>
+            <a href="{{ url_for('logrep.index') }}" style="color:#0ea5e9">📦 LOGREP</a>
+            <a href="{{ url_for('history.index') }}">📜 History</a>
+            <a href="{{ url_for('tracks.index') }}" style="color:#6ee7b7">🗺 Tracks</a>
+            <a href="{{ url_for('history.photos') }}">📷 Media</a>
+        </div>
+    </div>
+
+    <!-- ISR dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">ISR ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('streams.index') }}" style="color:#a78bfa">📡 Live Streams</a>
+            <a href="{{ url_for('streams.recordings') }}" style="color:#a78bfa">⏺ Recordings</a>
+        </div>
+    </div>
+
+    <!-- Admin dropdown -->
+    <div class="nav-item">
+        <span class="nav-link nav-internal" tabindex="0">Admin ▾</span>
+        <div class="nav-dropdown">
+            <a href="{{ url_for('organisation.index') }}" style="color:#34d399">🏛 Personnel</a>
+            <a href="{{ url_for('admin.index') }}">⚙ Admin</a>
+            <a href="{{ url_for('apk.index') }}" style="color:#34d399">📱 APK</a>
+        </div>
+    </div>
+
+    <span class="spacer"></span>
+
+    <!-- Z / Local clock — centred between the two spacers -->
+    <span id="nav-clock" style="
+        display:flex;align-items:center;gap:14px;
+        cursor:default;user-select:none;white-space:nowrap;">
+        <!-- Zulu -->
+        <span style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:.65rem;font-weight:700;color:#475569;
+                         letter-spacing:.09em;text-transform:uppercase">Z</span>
+            <span id="nav-clock-z"
+                  style="font-family:monospace;font-size:.9rem;font-weight:700;
+                         color:#7dd3fc;letter-spacing:.04em">00:00:00</span>
+        </span>
+        <span style="color:#1e293b;font-size:.9rem">|</span>
+        <!-- Local -->
+        <span style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:.65rem;font-weight:700;color:#475569;
+                         letter-spacing:.09em;text-transform:uppercase">LCL</span>
+            <span id="nav-clock-l"
+                  style="font-family:monospace;font-size:.9rem;font-weight:700;
+                         color:#94a3b8;letter-spacing:.04em">00:00</span>
+        </span>
+    </span>
+
+    <span class="spacer"></span>
+    <!-- Mission selector -->
+    <span id="nav-mission-wrap" style="display:none;align-items:center;gap:6px;margin-right:10px">
+        <span style="font-size:.72rem;color:#94a3b8;letter-spacing:.05em">MISSION</span>
+        <select id="nav-mission-select"
+                style="background:#1e293b;color:#f8fafc;border:1px solid #334155;
+                       border-radius:5px;padding:2px 6px;font-size:.8rem;cursor:pointer"
+                onchange="arrowSwitchMission(this.value)">
+            <option value="">— none —</option>
+        </select>
+        <span id="nav-mission-status"
+              style="font-size:.68rem;padding:1px 6px;border-radius:4px;
+                     background:#1e3a5f;color:#60a5fa"></span>
+    </span>
+    <span id="nav-user" class="nav-user"></span>
+    <a id="nav-auth" href="{{ url_for('login') }}">Sign in</a>
+
+    <!-- Mumble voice button -->
+    <button id="mumble-nav-btn" onclick="mumbleTogglePanel()"
+            title="Voice (Mumble)" class="nav-item"
+            style="background:none;border:1px solid #1e293b;border-radius:5px;
+                   color:#64748b;cursor:pointer;padding:3px 10px;font-size:.82rem;
+                   margin-left:6px;display:none;align-items:center;gap:5px;">
+        <span id="mumble-led" style="width:7px;height:7px;border-radius:50%;
+              background:#334155;display:inline-block;flex-shrink:0"></span>
+        🎙 VOICE
+    </button>
+</nav>
+<style>
+.nav-item { display: none; }
+#nav-mission-wrap { display: none; }
+@media (min-width: 900px) { #nav-mission-wrap { display: flex !important; } }
+</style>
+<script>
+    (function () {
+        const token = localStorage.getItem('arrow_token');
+        const role  = (localStorage.getItem('arrow_role') || '').toUpperCase();
+        const user  = document.getElementById('nav-user');
+        const auth  = document.getElementById('nav-auth');
+        if (token) {
+            user.textContent = role ? `Signed in (${role})` : 'Signed in';
+            auth.textContent = 'Sign out';
+            auth.href = '/logout';
+            // Use 'flex' explicitly — overrides the CSS class display:none
+            document.querySelectorAll('.nav-item').forEach(el => { el.style.display = 'flex'; });
+        }
+        // Role-based nav restrictions.
+        // Role-based nav access.
+        // ADMIN and BATTLE_CAPTAIN see everything — no restrictions.
+        // All other roles get a filtered view; paths listed are what they CAN access.
+        // Roles not in this table see all nav (fallback = no restriction).
+        const ROLE_ACCESS = {
+            OPERATOR: {
+                home:    '/dashboard/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/cops', '/taccop', '/logout', '/login'],
+            },
+            FO: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/fire-missions', '/cops', '/taccop', '/logout', '/login'],
+            },
+            CAS: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/fire-missions', '/cas', '/cops', '/taccop', '/logout', '/login'],
+            },
+            LOG: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/logrep',
+                          '/cops', '/logcop', '/logout', '/login'],
+            },
+            MED: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/cops', '/medcop', '/logout', '/login'],
+            },
+            CBRN: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/cops', '/cbrncop', '/logout', '/login'],
+            },
+            INTEL: {
+                home:    '/map/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports',
+                          '/streams', '/cops', '/intcop', '/taccop', '/logout', '/login'],
+            },
+            OPS: {
+                home:    '/dashboard/',
+                allowed: ['/dashboard', '/map', '/messaging', '/reports', '/missions',
+                          '/fire-missions', '/objectives', '/opord', '/strike-packages',
+                          '/streams', '/cops', '/taccop', '/history', '/tracks',
+                          '/logout', '/login'],
+            },
+        };
+
+        const access = ROLE_ACCESS[role];
+        if (token && access) {
+            document.querySelectorAll('.nav-item').forEach(navItem => {
+                // For dropdown nav-items: hide individual links that aren't permitted.
+                const dropdown = navItem.querySelector('.nav-dropdown');
+                if (dropdown) {
+                    let visible = 0;
+                    dropdown.querySelectorAll('a[href]').forEach(a => {
+                        const href = a.getAttribute('href') || '';
+                        if (access.allowed.some(p => href.startsWith(p))) { visible++; }
+                        else { a.style.display = 'none'; }
+                    });
+                    if (visible === 0) navItem.style.display = 'none';
+                } else {
+                    // Direct-link nav-item.
+                    const a = navItem.querySelector('a[href]');
+                    const href = a ? (a.getAttribute('href') || '') : '';
+                    if (!access.allowed.some(p => href.startsWith(p))) navItem.style.display = 'none';
+                }
+            });
+        }
+    })();
+</script>
+<!-- Floating stream windows are created dynamically by sfOpen() -->
+
+<main>
+    {% block content %}{% endblock %}
+</main>
+
+<div id="arrow-toast-container"></div>
+<div id="arrow-chat-toast-container"></div>
+
+<!-- ── No-mission modal — shown automatically when no missions exist ──────── -->
+<div id="new-mission-modal" style="
+    display:none;position:fixed;inset:0;z-index:9000;
+    background:rgba(0,0,0,.72);align-items:center;justify-content:center;">
+  <div style="
+      background:#111827;border:1px solid #2a3142;border-radius:10px;
+      width:420px;max-width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.85);
+      font-family:inherit;color:#e2e8f0;overflow:hidden;">
+    <!-- header -->
+    <div style="padding:18px 22px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:1.4rem">🎯</span>
+      <div>
+        <div style="font-size:1rem;font-weight:700;color:#38bdf8;letter-spacing:.04em">CREATE FIRST MISSION</div>
+        <div style="font-size:.75rem;color:#64748b;margin-top:1px">No missions are registered — create one to get started.</div>
+      </div>
+    </div>
+    <!-- form -->
+    <form id="new-mission-form" style="padding:18px 22px 20px;display:flex;flex-direction:column;gap:12px;">
+      <div>
+        <label style="font-size:.72rem;color:#64748b;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px">Mission name *</label>
+        <input id="nm-name" name="name" required autofocus
+               style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #334155;
+                      color:#e2e8f0;border-radius:5px;padding:8px 11px;font-size:.88rem;"
+               placeholder="e.g. Operation Nightfall">
+      </div>
+      <div>
+        <label style="font-size:.72rem;color:#64748b;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px">Description</label>
+        <textarea id="nm-desc" name="description" rows="2"
+                  style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #334155;
+                         color:#e2e8f0;border-radius:5px;padding:8px 11px;font-size:.88rem;resize:vertical;"
+                  placeholder="Optional brief…"></textarea>
+      </div>
+      <p id="nm-msg" style="font-size:.8rem;color:#f87171;min-height:1.2em;margin:0"></p>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+        <button type="submit"
+                style="flex:1;background:#0ea5e9;border:none;color:#fff;border-radius:5px;
+                       padding:9px 0;font-size:.9rem;font-weight:600;cursor:pointer;">
+          ✚ Create &amp; Activate
+        </button>
+        <button type="button" id="nm-skip"
+                style="background:none;border:1px solid #334155;color:#64748b;border-radius:5px;
+                       padding:9px 14px;font-size:.85rem;cursor:pointer;">
+          Skip
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+    window.ARROW_BACKEND_URL = "{{ backend_url }}";
+    window.ARROW_WS_URL = "{{ ws_url }}";
+
+    // ── Mission context ───────────────────────────────────────────────────────
+    // Active mission id is stored in localStorage['arrow_mission_id'].
+    // Every API call goes through arrowFetch() which injects the header.
+    window.arrowGetMissionId = function() {
+        return parseInt(localStorage.getItem('arrow_mission_id') || '0') || null;
+    };
+    window.arrowSetMission = function(id) {
+        if (id) localStorage.setItem('arrow_mission_id', String(id));
+        else     localStorage.removeItem('arrow_mission_id');
+        window.dispatchEvent(new CustomEvent('arrow-mission-changed', { detail: { id } }));
+    };
+
+    // Augmented fetch — adds Authorization + X-Mission-ID to every backend call
+    window.arrowFetch = function(path, opts = {}) {
+        const tok = localStorage.getItem('arrow_token') || '';
+        const mid = arrowGetMissionId();
+        const headers = {
+            'Authorization': 'Bearer ' + tok,
+            ...(mid ? { 'X-Mission-ID': String(mid) } : {}),
+            ...(opts.headers || {}),
+        };
+        return fetch(window.ARROW_BACKEND_URL + path, { ...opts, headers }).then(function(r) {
+            if (r.status === 401 && typeof window.arrowForceLogout === 'function') {
+                window.arrowForceLogout('expired');
+            }
+            return r;
+        });
+    };
+
+    // Switch mission: update localStorage, reload nav badge, fire event
+    window.arrowSwitchMission = function(idStr) {
+        const id = parseInt(idStr) || null;
+        arrowSetMission(id);
+        _refreshNavMission();
+        // Let map/list pages know to reload their data
+        window.dispatchEvent(new Event('arrow-mission-changed'));
+    };
+
+    function _esc(s) {
+        return String(s).replace(/[&<>"']/g, c =>
+            ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // ── MGRS encode / decode (WGS-84, DMATM 8358.1) ──────────────────────────
+    // window.mgrsEncode(lat, lon [, precision=5]) → "31UCU 12345 67890"
+    // window.mgrsDecode(str) → [lat, lon] or null
+    (function () {
+        const A=6378137,F=1/298.257223563,E2=2*F-F*F,E4=E2*E2,E6=E4*E2,EP2=E2/(1-E2),K0=0.9996;
+        const BANDS='CDEFGHJKLMNPQRSTUVWX';
+        const COLS=['ABCDEFGH','JKLMNPQR','STUVWXYZ'];
+        const RODD='ABCDEFGHJKLMNPQRSTUV', REVEN='FGHJKLMNPQRSTUVABCDE';
+
+        function _zone(lat,lon){
+            if(lat>=56&&lat<64&&lon>=3&&lon<12) return 32;
+            if(lat>=72&&lat<=84){if(lon<9)return 31;if(lon<21)return 33;if(lon<33)return 35;if(lon<42)return 37;}
+            return Math.floor((lon+180)/6)+1;
+        }
+        function _toUtm(lat,lon,z){
+            const lr=lat*Math.PI/180,lo=lon*Math.PI/180,lo0=((z-1)*6-180+3)*Math.PI/180;
+            const N=A/Math.sqrt(1-E2*Math.sin(lr)**2),T=Math.tan(lr)**2,C=EP2*Math.cos(lr)**2,av=Math.cos(lr)*(lo-lo0);
+            const M=A*((1-E2/4-3*E4/64-5*E6/256)*lr-(3*E2/8+3*E4/32+45*E6/1024)*Math.sin(2*lr)+(15*E4/256+45*E6/1024)*Math.sin(4*lr)-(35*E6/3072)*Math.sin(6*lr));
+            let e=K0*N*(av+(1-T+C)*av**3/6+(5-18*T+T**2+72*C-58*EP2)*av**5/120)+500000;
+            let n=K0*(M+N*Math.tan(lr)*(av**2/2+(5-T+9*C+4*C**2)*av**4/24+(61-58*T+T**2+600*C-330*EP2)*av**6/720));
+            if(lat<0) n+=10000000;
+            return [e,n];
+        }
+
+        window.mgrsEncode = function(lat, lon, precision) {
+            precision = precision || 5;
+            try {
+                const z=_zone(lat,lon), b=BANDS[Math.min(19,Math.floor((lat+80)/8))];
+                const [e,n]=_toUtm(lat,lon,z);
+                const col=COLS[(z-1)%3][Math.max(0,Math.min(7,Math.floor(e/100000)-1))];
+                const row=(z%2===1?RODD:REVEN)[Math.floor(n/100000)%20];
+                const es=String(Math.floor(e%100000)).padStart(5,'0').slice(0,precision);
+                const ns=String(Math.floor(n%100000)).padStart(5,'0').slice(0,precision);
+                return `${z}${b}${col}${row} ${es}${ns}`;
+            } catch(_){ return `${lat.toFixed(4)},${lon.toFixed(4)}`; }
+        };
+
+        window.mgrsDecode = function(str) {
+            try {
+                const s=str.replace(/\s/g,'').toUpperCase();
+                let i=0; while(i<s.length&&/\d/.test(s[i]))i++;
+                if(i===0||i>2) return null;
+                const zone=parseInt(s.slice(0,i),10), band=s[i++];
+                if(!BANDS.includes(band)) return null;
+                const sq1=s[i++], sq2=s[i++];
+                const half=Math.floor((s.length-i)/2);
+                if(half<1||half>5) return null;
+                const eStr=s.slice(i,i+half).padEnd(5,'0'), nStr=s.slice(i+half).padEnd(5,'0');
+                const set=(zone-1)%3, colIdx=COLS[set].indexOf(sq1);
+                if(colIdx<0) return null;
+                const e100=(colIdx+1)*100000.0;
+                const rowLetters=(zone%2===1)?RODD:REVEN, rowIdx=rowLetters.indexOf(sq2);
+                if(rowIdx<0) return null;
+                let n100=rowIdx*100000.0;
+                const bandIdx=BANDS.indexOf(band), minLat=bandIdx*8.0-80.0;
+                const approxN=minLat>=0?minLat*110574:minLat*110574+10000000;
+                while(n100<approxN-100000) n100+=2000000.0;
+                if(n100-approxN>1000000) n100-=2000000.0;
+                // UTM → lat/lon
+                const x=e100+parseFloat(eStr)-500000, northern=band>='N';
+                const y=northern?n100+parseFloat(nStr):(n100+parseFloat(nStr))-10000000;
+                const lon0=((zone-1)*6-180+3)*Math.PI/180;
+                const e1=(1-Math.sqrt(1-E2))/(1+Math.sqrt(1-E2));
+                const m=y/K0, mu=m/(A*(1-E2/4-3*E4/64-5*E6/256));
+                const latR=mu+(3*e1/2-27*e1**3/32)*Math.sin(2*mu)+(21*e1**2/16-55*e1**4/32)*Math.sin(4*mu)+(151*e1**3/96)*Math.sin(6*mu)+(1097*e1**4/512)*Math.sin(8*mu);
+                const n1=A/Math.sqrt(1-E2*Math.sin(latR)**2),t1=Math.tan(latR)**2,c1=EP2*Math.cos(latR)**2;
+                const r1=A*(1-E2)/(1-E2*Math.sin(latR)**2)**1.5, d=x/(n1*K0);
+                const lat=(latR-(n1*Math.tan(latR)/r1)*(d**2/2-(5+3*t1+10*c1-4*c1**2-9*EP2)*d**4/24+(61+90*t1+298*c1+45*t1**2-252*EP2-3*c1**2)*d**6/720))*180/Math.PI;
+                const lon=(lon0+(d-(1+2*t1+c1)*d**3/6+(5-2*c1+28*t1-3*c1**2+8*EP2+24*t1**2)*d**5/120)/Math.cos(latR))*180/Math.PI;
+                return [lat, lon];
+            } catch { return null; }
+        };
+    })();
+    // Helper: show as MGRS when coords available, else "—"
+    window.mgrsOrDash = function(lat, lon) {
+        return (lat != null && lon != null) ? window.mgrsEncode(lat, lon) : '—';
+    };
+
+    // Populate the nav mission picker
+    function _refreshNavMission() {
+        const tok  = localStorage.getItem('arrow_token');
+        const role = (localStorage.getItem('arrow_role') || '').toUpperCase();
+        if (!tok) return;
+        fetch(window.ARROW_BACKEND_URL + '/missions', {
+            headers: { Authorization: 'Bearer ' + tok },
+        }).then(r => r.ok ? r.json() : []).then(missions => {
+            const sel  = document.getElementById('nav-mission-select');
+            const wrap = document.getElementById('nav-mission-wrap');
+            if (!sel) return;
+            const cur = arrowGetMissionId();
+            const activeMissions = missions.filter(m => m.status !== 'ENDED');
+            // If the currently selected mission ended, deselect it
+            if (cur && missions.find(m => m.id === cur)?.status === 'ENDED') {
+                arrowSetMissionId(null);
+            }
+            sel.innerHTML = '<option value="">— none —</option>' +
+                activeMissions.map(m =>
+                    `<option value="${m.id}" ${m.id === cur ? 'selected' : ''}>
+                        ${_esc(m.name)} [${m.status}]
+                    </option>`
+                ).join('');
+            wrap.style.display = activeMissions.length ? 'flex' : 'none';
+            // Status badge
+            const active = activeMissions.find(m => m.id === arrowGetMissionId());
+            const badge  = document.getElementById('nav-mission-status');
+            if (badge && active) {
+                const colors = { ACTIVE:'#22c55e', PLANNING:'#f59e0b', ENDED:'#ef4444' };
+                badge.textContent = active.status;
+                badge.style.background = (colors[active.status] || '#475569') + '22';
+                badge.style.color = colors[active.status] || '#94a3b8';
+            }
+            // Show create-mission modal when no missions exist and user can create them
+            const modal = document.getElementById('new-mission-modal');
+            if (modal && missions.length === 0 &&
+                ['ADMIN','BATTLE_CAPTAIN'].includes(role) &&
+                !sessionStorage.getItem('nm-skipped')) {
+                modal.style.display = 'flex';
+                document.getElementById('nm-name')?.focus();
+            }
+        }).catch(() => {});
+    }
+
+    // ── New-mission modal handlers ────────────────────────────────────────────
+    function _closeNewMissionModal() {
+        const modal = document.getElementById('new-mission-modal');
+        if (modal) modal.style.display = 'none';
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const skip = document.getElementById('nm-skip');
+        if (skip) skip.addEventListener('click', function () {
+            sessionStorage.setItem('nm-skipped', '1');
+            _closeNewMissionModal();
+        });
+
+        const form = document.getElementById('new-mission-form');
+        if (!form) return;
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const tok  = localStorage.getItem('arrow_token') || '';
+            const msg  = document.getElementById('nm-msg');
+            const name = document.getElementById('nm-name').value.trim();
+            const desc = document.getElementById('nm-desc').value.trim();
+            if (!name) { msg.textContent = 'Mission name is required.'; return; }
+            msg.textContent = 'Creating…';
+            try {
+                const r = await fetch(window.ARROW_BACKEND_URL + '/missions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+                    body: JSON.stringify({ name, description: desc }),
+                });
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    msg.textContent = err.detail || `Error ${r.status}`;
+                    return;
+                }
+                const mission = await r.json();
+                arrowSetMission(mission.id);
+                _closeNewMissionModal();
+                _refreshNavMission();
+            } catch (err) {
+                msg.textContent = `Network error: ${err.message}`;
+            }
+        });
+    });
+
+    // Call on load and whenever missions change
+    document.addEventListener('DOMContentLoaded', _refreshNavMission);
+    window.addEventListener('arrow-mission-changed', _refreshNavMission);
+
+    /* ── Z-time / local clock ────────────────────────────────────────────── */
+    (function () {
+        function _pad(n) { return String(n).padStart(2, '0'); }
+        function _tick() {
+            const now = new Date();
+            const elZ = document.getElementById('nav-clock-z');
+            const elL = document.getElementById('nav-clock-l');
+            if (elZ) elZ.textContent =
+                `${_pad(now.getUTCHours())}:${_pad(now.getUTCMinutes())}:${_pad(now.getUTCSeconds())}`;
+            if (elL) elL.textContent =
+                `${_pad(now.getHours())}:${_pad(now.getMinutes())}`;
+        }
+        _tick();
+        setInterval(_tick, 1000);
+    })();
+
+    /* Photo loader — `/photos/{id}` requires Authorization: Bearer, which an
+       <img> tag cannot send. Fetch with auth, expose as blob URL, cache by id. */
+    (function () {
+        const cache = new Map();   // id -> Promise<blobUrl>
+        window.arrowPhotoUrl = function (id) {
+            if (cache.has(id)) return cache.get(id);
+            const tok = localStorage.getItem('arrow_token') || '';
+            const p = fetch(window.ARROW_BACKEND_URL + '/photos/' + id, {
+                headers: { Authorization: 'Bearer ' + tok },
+            }).then(r => r.ok ? r.blob() : Promise.reject(r.status))
+              .then(b => URL.createObjectURL(b));
+            cache.set(id, p);
+            return p;
+        };
+        window.arrowApplyPhotos = function (root) {
+            (root || document).querySelectorAll('img[data-photo-id]').forEach(img => {
+                if (img.dataset.photoLoaded) return;
+                img.dataset.photoLoaded = '1';
+                window.arrowPhotoUrl(img.dataset.photoId)
+                    .then(url => { img.src = url; })
+                    .catch(()  => { img.alt = '⚠ photo unavailable'; });
+            });
+        };
+    })();
+</script>
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) return;
+
+    let meId = null;
+    const api = (path, opts = {}) => fetch(window.ARROW_BACKEND_URL + path, {
+        ...opts, headers: { Authorization: 'Bearer ' + token, ...(opts.headers || {}) },
+    });
+
+    api('/auth/me').then(r => r.ok ? r.json() : null).then(me => { if (me) meId = me.id; });
+
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+
+    // ── Per-operator notification preferences ─────────────────────────────
+    // Stored in localStorage under ``arrow_visibility_prefs`` (same blob the
+    // admin page edits and the map page reads). Each operator controls their
+    // own toast stack; reload on cross-tab or same-tab changes. Defaults
+    // to all-on so a missing-key never silences a critical alert.
+    const VIS_LS_KEY = 'arrow_visibility_prefs';
+    const notifVis = {
+        notif_chat:               true,
+        notif_fire_missions:      true,
+        notif_alerts:             true,
+        notif_streams:            true,
+        notif_octopus_detections: true,
+        sound_enabled:            true,
+    };
+    function _applyNotifVis(prefs) {
+        if (!prefs) return;
+        for (const k of Object.keys(notifVis)) {
+            if (k in prefs) notifVis[k] = !!prefs[k];
+        }
+    }
+    try {
+        const raw = localStorage.getItem(VIS_LS_KEY);
+        if (raw) _applyNotifVis(JSON.parse(raw));
+        else api('/admin/map-visibility').then(r => r.ok ? r.json() : null).then(v => {
+            if (v) { localStorage.setItem(VIS_LS_KEY, JSON.stringify(v)); _applyNotifVis(v); }
+        });
+    } catch (_) {}
+    window.addEventListener('arrow-visibility-changed', e => _applyNotifVis(e.detail));
+    window.addEventListener('storage', e => {
+        if (e.key !== VIS_LS_KEY || !e.newValue) return;
+        try { _applyNotifVis(JSON.parse(e.newValue)); } catch (_) {}
+    });
+
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function recipientLabel(msgType, groupId) {
+        if (msgType === 'BROADCAST') return '📢 Broadcast';
+        if (msgType === 'GROUP') return '⭐ ' + (groupId || 'Group');
+        return 'Direct';
+    }
+
+    function openHref(msgType, groupId, senderId) {
+        if (msgType === 'BROADCAST') return '/messaging/?open=broadcast';
+        if (msgType === 'GROUP')     return '/messaging/?open=group:' + groupId;
+        return '/messaging/?open=direct:' + senderId;
+    }
+
+    // Auto-dismiss a toast after `ms` (default 5 s). Pauses the countdown while
+    // the user is hovering or focused inside an input — so they can finish typing.
+    function autoDismissToast(toast, ms = 5000) {
+        let timer = null;
+        const start = () => { clearTimeout(timer); timer = setTimeout(() => toast.remove(), ms); };
+        const stop  = () => { clearTimeout(timer); timer = null; };
+        toast.addEventListener('mouseenter', stop);
+        toast.addEventListener('mouseleave', start);
+        toast.querySelectorAll('input, textarea').forEach(el => {
+            el.addEventListener('focus', stop);
+            el.addEventListener('blur',  start);
+        });
+        start();
+    }
+
+    function showToast(evt) {
+        const data = evt.data || {};
+        if (meId && data.sender_id === meId) return;
+        // Admin can mute chat toasts globally via the Map visibility page.
+        if (!notifVis.notif_chat) return;
+        // Suppress in-page toast when already viewing messaging and tab is focused
+        if (location.pathname.startsWith('/messaging') && document.visibilityState === 'visible') return;
+
+        const from     = evt.from || 'Unknown';
+        const content  = data.content || '';
+        const msgType  = (data.message_type || 'DIRECT').toUpperCase();
+        const senderId = data.sender_id;
+        const groupId  = data.group_id || null;
+        const href     = openHref(msgType, groupId, senderId);
+
+        // Browser notification for background / other-tab case
+        if (document.visibilityState !== 'visible' && Notification.permission === 'granted') {
+            const n = new Notification('Arrow — ' + from, { body: content, tag: 'arrow-chat' });
+            n.onclick = () => { window.location.href = href; n.close(); };
+        }
+
+        // Personal chats (DIRECT / GROUP) → separate left-side box with reply,
+        // 10-minute auto-dismiss. BROADCAST / system → right-side box, 5 s.
+        const replyable = (msgType === 'DIRECT' || msgType === 'GROUP');
+
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from">
+                    <a href="${href}">💬 ${esc(from)}</a>
+                    <em>${esc(recipientLabel(msgType, groupId))}</em>
+                </span>
+                <button class="arrow-toast-close" title="Dismiss">✕</button>
+            </div>
+            <div class="arrow-toast-body">${esc(content)}</div>
+            ${replyable ? `
+            <div class="arrow-toast-reply">
+                <input class="arrow-toast-input" type="text" placeholder="Reply…" autocomplete="off" />
+                <button class="arrow-toast-send">Send</button>
+            </div>` : ''}`;
+
+        const containerId = replyable ? 'arrow-chat-toast-container' : 'arrow-toast-container';
+        document.getElementById(containerId).appendChild(toast);
+
+        toast.querySelector('.arrow-toast-close').addEventListener('click', () => toast.remove());
+
+        if (replyable) {
+            const input = toast.querySelector('.arrow-toast-input');
+            const send  = toast.querySelector('.arrow-toast-send');
+            async function sendReply() {
+                const text = input.value.trim();
+                if (!text) return;
+                send.disabled = true;
+                const body = msgType === 'GROUP'
+                    ? { content: text, message_type: 'GROUP', group_id: groupId }
+                    : { content: text, message_type: 'DIRECT', receiver_id: senderId };
+                const res = await api('/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (res.ok) { toast.remove(); }
+                else { send.disabled = false; }
+            }
+            send.addEventListener('click', sendReply);
+            input.addEventListener('keydown', e => { if (e.key === 'Enter') sendReply(); });
+        }
+
+        // 10 min for replyable chats, 30 s for system broadcasts.
+        autoDismissToast(toast, replyable ? 10 * 60 * 1000 : 30 * 1000);
+    }
+
+    // ── Floating stream windows (multi-window) ────────────────────────────────
+    const _sfWins = new Map(); // streamId → { el, ws, fpsTick, ping }
+    let _sfZTop = 9990;
+
+    function makeDraggable(el, handle) {
+        let dragging = false, ox = 0, oy = 0;
+        handle.addEventListener('mousedown', e => {
+            dragging = true;
+            const r = el.getBoundingClientRect();
+            ox = e.clientX - r.left;
+            oy = e.clientY - r.top;
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', e => {
+            if (!dragging) return;
+            el.style.left   = Math.max(0, e.clientX - ox) + 'px';
+            el.style.top    = Math.max(0, e.clientY - oy) + 'px';
+            el.style.right  = 'auto';
+            el.style.bottom = 'auto';
+        });
+        document.addEventListener('mouseup', () => { dragging = false; });
+    }
+
+    function sfFocus(id) {
+        const win = _sfWins.get(id);
+        if (win) win.el.style.zIndex = ++_sfZTop;
+    }
+
+    function sfOpen(id, callsign) {
+        if (_sfWins.has(id)) { sfFocus(id); return; }
+
+        const offset = _sfWins.size * 30;
+        const el = document.createElement('div');
+        el.className = 'stream-float-win';
+        el.style.cssText = `right:${20 + offset}px;bottom:${80 + offset}px;z-index:${++_sfZTop}`;
+        el.innerHTML = `
+            <div class="sf-bar">
+                <span class="sf-live"></span>
+                <span class="sf-call">${esc(callsign)}</span>
+                <span class="sf-fps">— fps</span>
+                <button class="sf-btn sf-btn-min" title="Minimise">_</button>
+                <button class="sf-btn sf-btn-full" title="Fullscreen">⛶</button>
+                <button class="sf-btn sf-btn-close" title="Close">✕</button>
+            </div>
+            <div class="sf-video-wrap">
+                <div class="sf-no-feed">Connecting…</div>
+                <img class="sf-img" alt="Stream" style="display:none"/>
+            </div>`;
+
+        el.querySelector('.sf-btn-min').addEventListener('click',   () => sfMinimise(id));
+        el.querySelector('.sf-btn-full').addEventListener('click',  () => sfFullscreen(id));
+        el.querySelector('.sf-btn-close').addEventListener('click', () => sfClose(id));
+        el.addEventListener('mousedown', () => sfFocus(id));
+        document.body.appendChild(el);
+        makeDraggable(el, el.querySelector('.sf-bar'));
+
+        const tok = localStorage.getItem('arrow_token') || '';
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws')
+            + `/streams/${encodeURIComponent(id)}/consume?token=${encodeURIComponent(tok)}`;
+        const ws = new WebSocket(wsUrl);
+        ws.binaryType = 'arraybuffer';
+
+        const img     = el.querySelector('.sf-img');
+        const noFeed  = el.querySelector('.sf-no-feed');
+        const fpsEl   = el.querySelector('.sf-fps');
+        let frames = 0, lastT = Date.now();
+
+        ws.onmessage = e => {
+            if (typeof e.data === 'string') {
+                try { if (JSON.parse(e.data).event === 'ended') sfClose(id); } catch(_){}
+                return;
+            }
+            const blob = new Blob([e.data], { type: 'image/jpeg' });
+            const prev = img.src;
+            img.src = URL.createObjectURL(blob);
+            if (prev.startsWith('blob:')) URL.revokeObjectURL(prev);
+            noFeed.style.display = 'none';
+            img.style.display = 'block';
+            frames++;
+        };
+        ws.onclose = () => { if (_sfWins.has(id) && _sfWins.get(id).ws === ws) sfClose(id); };
+
+        const fpsTick = setInterval(() => {
+            const now = Date.now();
+            fpsEl.textContent = Math.round(frames / ((now - lastT) / 1000)) + ' fps';
+            frames = 0; lastT = now;
+        }, 1000);
+
+        const ping = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+            else clearInterval(ping);
+        }, 15000);
+
+        _sfWins.set(id, { el, ws, fpsTick, ping });
+    }
+    window.sfOpen = sfOpen;
+
+    window.sfClose = function(id) {
+        const win = _sfWins.get(id);
+        if (!win) return;
+        win.ws.close();
+        clearInterval(win.fpsTick);
+        clearInterval(win.ping);
+        const img = win.el.querySelector('.sf-img');
+        if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+        win.el.remove();
+        _sfWins.delete(id);
+    };
+
+    window.sfMinimise = function(id) {
+        const win = _sfWins.get(id);
+        if (win) win.el.classList.toggle('minimised');
+    };
+
+    window.sfFullscreen = function(id) {
+        const win = _sfWins.get(id);
+        if (!win) return;
+        const wrap = win.el.querySelector('.sf-video-wrap');
+        if (wrap.requestFullscreen) wrap.requestFullscreen();
+        else if (wrap.webkitRequestFullscreen) wrap.webkitRequestFullscreen();
+    };
+
+    function handleStreamEvent(evt) {
+        // Admin can mute live-stream notifications.
+        if (!notifVis.notif_streams) return;
+        const d = evt.data || {};
+        console.log('[arrow] stream event', evt);
+        if (evt.event === 'started') {
+            if (notifVis.sound_enabled) {
+                try {
+                    const ctx  = audioCtx();
+                    const now  = ctx.currentTime;
+                    const osc  = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(880, now);
+                    osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.start(now); osc.stop(now + 0.45);
+                } catch (_) {}
+            }
+
+            const toast = document.createElement('div');
+            toast.className = 'arrow-toast';
+            toast.style.borderLeftColor = '#7c3aed';
+            toast.style.borderLeftWidth = '4px';
+            const streamId = d.id, streamCs = d.callsign;
+            toast.innerHTML = `
+                <div class="arrow-toast-header">
+                    <span class="arrow-toast-from">
+                        <span style="color:#a78bfa">📡 LIVE STREAM</span>
+                        <em style="color:#7c3aed">${esc(streamCs)}</em>
+                    </span>
+                    <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
+                </div>
+                <div class="arrow-toast-body">Tactical video stream — ${esc(streamCs)}</div>
+                <div class="arrow-toast-reply" style="gap:.5rem">
+                    <button class="sf-toast-accept arrow-toast-send"
+                            style="background:#7c3aed;border:0;cursor:pointer;font:inherit">
+                        ▶ Accept &amp; View
+                    </button>
+                    <button onclick="this.closest('.arrow-toast').remove()"
+                            style="background:#1f2937;border:1px solid #2a3142;border-radius:4px;
+                                   color:#64748b;cursor:pointer;padding:0 .6rem;font-size:.8rem;font:inherit">
+                        Decline
+                    </button>
+                </div>`;
+            toast.querySelector('.sf-toast-accept').addEventListener('click', () => {
+                sfOpen(streamId, streamCs);
+                toast.remove();
+            });
+            document.getElementById('arrow-toast-container').appendChild(toast);
+            autoDismissToast(toast, 30 * 1000);
+
+            if (Notification.permission === 'granted') {
+                const n = new Notification(`📡 LIVE — ${d.callsign}`,
+                    { body: 'Tactical video stream started. Click to view.', tag: 'arrow-stream' });
+                n.onclick = () => { sfOpen(d.id, d.callsign); n.close(); };
+            }
+        } else if (evt.event === 'ended') {
+            if (d.id) sfClose(d.id);
+        }
+    }
+
+    function showFireMissionAlert(evt) {
+        // Admin can mute the FM toast banner globally; audio is suppressed
+        // by the caller (connectWS) which also reads the same flag.
+        if (!notifVis.notif_fire_missions) return;
+        const d    = evt.data || {};
+        const cs   = d.callsign || 'Unknown';
+        const type = (d.mission_type || '').replace(/_/g, ' ');
+        const ammo = d.ammunition || '';
+        const grid = window.mgrsOrDash(d.latitude, d.longitude);
+
+        // Prominent red banner regardless of tab visibility
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.borderLeftColor = '#dc2626';
+        toast.style.borderLeftWidth = '4px';
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from">
+                    <a href="/fire-missions/" style="color:#ef4444">🎯 FIRE MISSION</a>
+                    <em style="color:#f87171">${esc(type)}</em>
+                </span>
+                <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            <div class="arrow-toast-body">
+                <strong>${esc(cs)}</strong> requests ${esc(ammo)} — Grid: ${esc(grid)}<br>
+                ${d.description ? `<span style="color:#94a3b8">${esc(d.description)}</span>` : ''}
+            </div>
+            <div class="arrow-toast-reply">
+                <a href="/fire-missions/" class="arrow-toast-send" style="text-decoration:none;text-align:center">
+                    Open FDC →
+                </a>
+            </div>`;
+
+        document.getElementById('arrow-toast-container').appendChild(toast);
+        autoDismissToast(toast, 30 * 1000);
+
+        // Browser notification
+        if (Notification.permission === 'granted') {
+            const n = new Notification('🎯 FIRE MISSION — ' + cs,
+                { body: `${type} · ${ammo} · ${grid}`, tag: 'arrow-fire' });
+            n.onclick = () => { window.location.href = '/fire-missions/'; n.close(); };
+        }
+    }
+
+    function esc(s) {
+        return String(s||'').replace(/[&<>"']/g, c =>
+            ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // ── Audio alert system ─────────────────────────────────────────────────────
+    let _audioCtx = null;
+    function audioCtx() {
+        if (!_audioCtx || _audioCtx.state === 'closed')
+            _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_audioCtx.state === 'suspended') _audioCtx.resume();
+        return _audioCtx;
+    }
+
+    // Pre-warm the AudioContext on first user gesture so it is already running
+    // when an alert fires (browsers block AudioContext creation without a prior
+    // user interaction — alerts arrive via WebSocket with no gesture context).
+    function _warmAudioCtx() {
+        try { audioCtx(); } catch (_) {}
+        document.removeEventListener('click',   _warmAudioCtx, true);
+        document.removeEventListener('keydown', _warmAudioCtx, true);
+        document.removeEventListener('touchstart', _warmAudioCtx, true);
+    }
+    document.addEventListener('click',      _warmAudioCtx, true);
+    document.addEventListener('keydown',    _warmAudioCtx, true);
+    document.addEventListener('touchstart', _warmAudioCtx, true);
+
+    /**
+     * triggerAudioAlert(type)
+     *   'fire' → says "Fire mission" then plays a 5-second pulsing alarm (880 Hz sawtooth)
+     *   'tic'  → says "Contact" then plays a 5-second alarm (1200 Hz square)
+     */
+    function triggerAudioAlert(type) {
+        if (!notifVis.sound_enabled) return;
+        const isFireMission = type === 'fire';
+        const text     = isFireMission ? 'Fire mission, fire mission, fire mission' : 'Contact, contact, contact';
+        const freq     = isFireMission ? 880  : 1200;
+        const waveform = isFireMission ? 'sawtooth' : 'square';
+        const duration = 5;      // seconds of alarm after voice
+
+        // 1. Voice call (speech synthesis)
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();            // clear queue
+            const utt  = new SpeechSynthesisUtterance(text);
+            utt.lang   = 'en-US';
+            utt.rate   = 0.85;
+            utt.volume = 1;
+            utt.pitch  = isFireMission ? 1.0 : 1.3;
+            // Play alarm after voice finishes
+            utt.onend  = () => playAlarmTone(freq, waveform, duration);
+            speechSynthesis.speak(utt);
+        } else {
+            playAlarmTone(freq, waveform, duration);
+        }
+    }
+
+    function playAlarmTone(freq, waveform, duration) {
+        try {
+            const ctx  = audioCtx();
+            const now  = ctx.currentTime;
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type          = waveform;
+            osc.frequency.value = freq;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            // Pulsing: 0.3 s on / 0.2 s off
+            gain.gain.setValueAtTime(0, now);
+            const pulse = 0.5;   // period seconds
+            const onRatio = 0.6; // fraction of period that's "on"
+            for (let t = 0; t < duration; t += pulse) {
+                gain.gain.setValueAtTime(0.6,  now + t);
+                gain.gain.setValueAtTime(0,    now + t + pulse * onRatio);
+            }
+
+            osc.start(now);
+            osc.stop(now + duration);
+        } catch (_) {}
+    }
+
+    // Distinctive "drone buzz" — modulated triangle wave with rapid 0.1s pulses.
+    // Sounds clearly different from the steady TIC alarm so operators can tell
+    // a drone-spotted alert from a contact alert without looking at the screen.
+    function playDroneBuzz(duration) {
+        try {
+            const ctx  = audioCtx();
+            const now  = ctx.currentTime;
+            const osc  = ctx.createOscillator();
+            const lfo  = ctx.createOscillator();   // modulator → "buzz" effect
+            const lfoGain = ctx.createGain();
+            const gain = ctx.createGain();
+
+            osc.type = 'triangle';
+            osc.frequency.value = 540;             // mid-band carrier
+            lfo.type = 'square';
+            lfo.frequency.value = 12;              // 12 Hz buzz
+            lfoGain.gain.value = 180;              // ± 180 Hz modulation depth
+            lfo.connect(lfoGain).connect(osc.frequency);
+            osc.connect(gain).connect(ctx.destination);
+
+            // Rapid 0.1s on / 0.05s off pulses for the whole duration
+            const pulse = 0.15, onRatio = 0.66;
+            gain.gain.setValueAtTime(0, now);
+            for (let t = 0; t < duration; t += pulse) {
+                gain.gain.setValueAtTime(0.5, now + t);
+                gain.gain.setValueAtTime(0,   now + t + pulse * onRatio);
+            }
+            osc.start(now); lfo.start(now);
+            osc.stop(now + duration); lfo.stop(now + duration);
+        } catch (_) {}
+    }
+
+    // Handle TIC / MEDICAL / EVAC / LOST_COMMS / DRONE_SPOTTED alerts from WebSocket
+    function handleTacAlert(evt) {
+        if (evt.event !== 'triggered') return;
+        // Admin can mute TIC / MEDICAL / EVAC / LOST_COMMS / DRONE toasts globally.
+        if (!notifVis.notif_alerts) return;
+        const d = evt.data || {};
+        const type = (d.type || '').toUpperCase();
+
+        // Choose voice text by alert type
+        const voiceMap = {
+            TIC:            'Contact! Troops in contact!',
+            MEDICAL:        'Medical emergency! Casevac required!',
+            EVAC:           'Evacuation! All units evacuate!',
+            LOST_COMMS:     'Lost communications! Check radio!',
+            DRONE_SPOTTED:  'Drone spotted! Drone spotted!',
+        };
+        const voice = voiceMap[type] || `Alert: ${type}`;
+
+        // Drone gets the distinctive buzz; everything else gets the contact alarm.
+        if (type === 'DRONE_SPOTTED') {
+            triggerAudioAlertWithText('drone', voice);
+        } else {
+            triggerAudioAlertWithText('tic', voice);
+        }
+
+        // Build the toast body. Drone alerts pull extra detail from the event.
+        let bodyHtml = `<div class="arrow-toast-body" style="color:#fca5a5">${esc(voice)}</div>`;
+        let headerColor = '#ef4444';
+        let headerIcon  = '🚨';
+        let headerLabel = `${type} ALERT`;
+
+        if (type === 'DRONE_SPOTTED') {
+            headerColor = '#c084fc';
+            headerIcon  = '🛸';
+            headerLabel = 'DRONE SPOTTED';
+            const fmt = v => (v === undefined || v === null || v === '') ? '—' : v;
+            const altTxt = (d.altitude_m   != null) ? `${Math.round(d.altitude_m)} m` : '—';
+            const dirTxt = (d.direction_deg!= null) ? `${Math.round(d.direction_deg)}°` : '—';
+            const locTxt = window.mgrsOrDash(d.latitude, d.longitude);
+            bodyHtml = `
+                <div class="arrow-toast-body" style="color:#e9d5ff;font-size:13px;line-height:1.45">
+                    <div><b>Type:</b> ${esc(fmt(d.drone_type))} &nbsp;·&nbsp; <b>Behavior:</b> ${esc(fmt(d.behavior))}</div>
+                    <div><b>Alt:</b> ${esc(altTxt)} &nbsp;·&nbsp; <b>Heading:</b> ${esc(dirTxt)}</div>
+                    <div><b>Pos:</b> ${esc(locTxt)}</div>
+                    ${d.observer_callsign ? `<div style="color:#a78bfa;margin-top:4px">spotted by ${esc(d.observer_callsign)}</div>` : ''}
+                </div>`;
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.cssText += `border-left-color:${headerColor};border-left-width:4px`;
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from" style="color:${headerColor}">
+                    ${headerIcon} ${esc(headerLabel)}
+                </span>
+                <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            ${bodyHtml}`;
+        document.getElementById('arrow-toast-container').appendChild(toast);
+        autoDismissToast(toast, 30 * 1000);
+
+        if (Notification.permission === 'granted') {
+            const notifBody = (type === 'DRONE_SPOTTED')
+                ? `${d.drone_type || 'Unknown'} · ${d.behavior || ''} · alt ${d.altitude_m ?? '—'} m`
+                : voice;
+            new Notification(`${headerIcon} ${headerLabel}`, { body: notifBody, tag: 'arrow-alert' });
+        }
+    }
+
+    // ── CAS request events ────────────────────────────────────────────────────
+    function handleCasEvent(evt) {
+        if (!notifVis.notif_alerts) return;
+        const d = evt.data || {};
+
+        // Asset status changes (asset_created/updated/deleted) — silent, no toast needed.
+        if (evt.event !== 'request') return;
+
+        const isTic        = !!d.tic;
+        const reportId     = d.id;
+        const callsign     = d.operator_callsign || `op #${d.operator_id}`;
+        const targetLoc    = d.target_location || d.target_desc || '—';
+        const foCallsign   = d.fo_callsign || null;
+        const locText      = window.mgrsOrDash ? window.mgrsOrDash(d.target_lat, d.target_lon) : targetLoc;
+
+        // TIC = max priority: full alarm + speech + auto-navigate toast
+        if (isTic) {
+            triggerAudioAlertWithText('tic', 'Troops in contact! CAS request inbound!');
+            if (Notification.permission === 'granted') {
+                new Notification('⚡ TIC — CAS REQUEST', {
+                    body: `${callsign} → ${targetLoc}`,
+                    tag:  'arrow-cas-tic',
+                });
+            }
+        }
+
+        const borderColor = isTic ? '#ef4444' : '#f97316';
+        const headerColor = isTic ? '#fca5a5' : '#fdba74';
+        const icon        = isTic ? '⚡' : '✈';
+        const headerLabel = isTic ? 'TIC — CAS REQUEST' : 'CAS REQUEST';
+
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.cssText += `border-left-color:${borderColor};border-left-width:4px;`;
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from" style="color:${borderColor}">
+                    ${icon} ${esc(headerLabel)}
+                </span>
+                <button class="arrow-toast-close"
+                        onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            <div class="arrow-toast-body" style="color:${headerColor};font-size:13px;line-height:1.5">
+                <div><b>From:</b> ${esc(callsign)}</div>
+                <div><b>Target:</b> ${esc(locText)}</div>
+                ${foCallsign ? `<div><b>FO:</b> ${esc(foCallsign)}</div>` : ''}
+            </div>
+            <div style="padding:4px 10px 8px">
+                <button onclick="openCasReport(${reportId}, this)"
+                        style="padding:3px 12px;background:#1e3a5f;color:#60a5fa;
+                               border:1px solid #2563eb;border-radius:5px;
+                               font:inherit;font-size:12px;cursor:pointer;width:100%">
+                    Open CAS request ↗
+                </button>
+            </div>`;
+        document.getElementById('arrow-toast-container').appendChild(toast);
+        // TIC stays until dismissed; non-TIC auto-dismisses
+        if (!isTic) autoDismissToast(toast, 60 * 1000);
+    }
+
+    window.openCasReport = function(reportId, btn) {
+        // Navigate to /reports and highlight the row
+        const reportsUrl = '/reports';
+        if (location.pathname !== reportsUrl) {
+            sessionStorage.setItem('arrow_highlight_report', String(reportId));
+            location.href = reportsUrl;
+        } else {
+            highlightReport(reportId);
+            btn?.closest('.arrow-toast')?.remove();
+        }
+    };
+
+    // Called on /reports page load — scroll to and open the highlighted report
+    (function applyHighlightFromSession() {
+        const id = sessionStorage.getItem('arrow_highlight_report');
+        if (!id) return;
+        sessionStorage.removeItem('arrow_highlight_report');
+        // Wait for the reports table to render (it loads async)
+        let tries = 0;
+        const poll = setInterval(() => {
+            if (highlightReport(parseInt(id)) || ++tries > 20) clearInterval(poll);
+        }, 300);
+    })();
+
+    function highlightReport(id) {
+        const row = document.getElementById(`rep-row-${id}`);
+        if (!row) return false;
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Open the detail panel
+        const btn = row.querySelector('button[onclick^="toggleDetail"]');
+        const detail = row.querySelector('.rep-detail');
+        if (detail && detail.style.display !== 'block') {
+            if (btn) btn.click();
+        }
+        row.style.transition = 'background .3s';
+        row.style.background = 'rgba(239,68,68,.15)';
+        setTimeout(() => { row.style.background = ''; }, 2500);
+        return true;
+    }
+
+    // Variant that takes explicit voice text + alert kind for distinct tones.
+    function triggerAudioAlertWithText(type, text) {
+        if (!notifVis.sound_enabled) return;
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();
+            const utt = new SpeechSynthesisUtterance(text);
+            utt.lang  = 'en-US'; utt.rate = 0.9; utt.volume = 1;
+            utt.onend = () => playAlertTone(type);
+            speechSynthesis.speak(utt);
+        } else {
+            playAlertTone(type);
+        }
+    }
+
+    function playAlertTone(type) {
+        if (type === 'drone') { playDroneBuzz(4); return; }
+        const isFireMission = type === 'fire';
+        const freq     = isFireMission ? 880  : 1200;
+        const waveform = isFireMission ? 'sawtooth' : 'square';
+        playAlarmTone(freq, waveform, 5);
+    }
+
+    // ── Octopus detection toasts ───────────────────────────────────────────────
+    const _DET_COLOURS = {
+        person:   { border: '#ef4444', header: '#fca5a5', icon: '🚶' },
+        drone:    { border: '#c084fc', header: '#e9d5ff', icon: '🛸' },
+        vehicle:  { border: '#f59e0b', header: '#fde68a', icon: '🚗' },
+        car:      { border: '#f59e0b', header: '#fde68a', icon: '🚗' },
+        truck:    { border: '#f59e0b', header: '#fde68a', icon: '🚛' },
+        animal:   { border: '#34d399', header: '#a7f3d0', icon: '🐾' },
+    };
+
+    function _detColour(label) {
+        return _DET_COLOURS[(label || '').toLowerCase()] ||
+               { border: '#38bdf8', header: '#bae6fd', icon: '📸' };
+    }
+
+    function playDetectionTone(label) {
+        if (!notifVis.sound_enabled) return;
+        try {
+            const ctx  = audioCtx();
+            const now  = ctx.currentTime;
+            // Two sharp pings — distinct from alarm tones
+            [0, 0.18].forEach(offset => {
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const freq = label === 'drone' ? 1800 : label === 'person' ? 1400 : 1200;
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.35, now + offset);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.14);
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.start(now + offset); osc.stop(now + offset + 0.15);
+            });
+        } catch (_) {}
+    }
+
+    function handleOctopusDetection(evt) {
+        if (evt.event !== 'detection') return;
+        if (!notifVis.notif_octopus_detections) return;
+        const d   = evt.data || {};
+        const col = _detColour(d.label);
+        const pct = d.confidence != null ? Math.round(d.confidence * 100) : '?';
+        const ts  = d.occurred_at ? new Date(d.occurred_at).toLocaleTimeString() : '';
+
+        playDetectionTone(d.label);
+
+        const toast = document.createElement('div');
+        toast.className = 'arrow-toast';
+        toast.style.cssText += `border-left-color:${col.border};border-left-width:4px;max-width:320px`;
+        toast.innerHTML = `
+            <div class="arrow-toast-header">
+                <span class="arrow-toast-from" style="color:${col.border}">
+                    ${col.icon} DETECTION
+                    <em style="color:${col.header};margin-left:.4rem;font-style:normal;font-weight:700">
+                        ${esc(d.label || '').toUpperCase()}
+                    </em>
+                </span>
+                <button class="arrow-toast-close" onclick="this.closest('.arrow-toast').remove()">✕</button>
+            </div>
+            <div class="arrow-toast-body" style="padding:.35rem .55rem .1rem">
+                <div style="display:flex;gap:.5rem;align-items:flex-start">
+                    <div id="det-snap-${d.id}" style="width:96px;height:72px;flex-shrink:0;
+                         background:#0d1117;border-radius:3px;overflow:hidden;display:flex;
+                         align-items:center;justify-content:center;color:#475569;font-size:.7rem">
+                        Loading…
+                    </div>
+                    <div style="font-size:.78rem;line-height:1.5;min-width:0">
+                        <div style="color:#e2e8f0">${esc(d.description || d.label)}</div>
+                        <div style="color:#94a3b8">
+                            Confidence: <b style="color:${col.header}">${pct}%</b>
+                        </div>
+                        <div style="color:#64748b">Stream: <code>${esc(d.stream_id || '')}</code></div>
+                        ${ts ? `<div style="color:#475569;font-size:.7rem">${esc(ts)}</div>` : ''}
+                    </div>
+                </div>
+                ${Array.isArray(d.bbox) && d.bbox.length === 4
+                    ? `<div style="font-size:.68rem;color:#475569;margin-top:.3rem;font-family:monospace">
+                        bbox [${d.bbox.map(Math.round).join(', ')}]
+                       </div>`
+                    : ''}
+                <div style="margin-top:.5rem">
+                    <a href="/streams/?octopus=${encodeURIComponent(d.stream_id)}"
+                       style="display:inline-block;background:#f59e0b22;color:#fbbf24;
+                              border:1px solid #f59e0b44;border-radius:4px;
+                              padding:3px 10px;font-size:.75rem;text-decoration:none">
+                        ▶ View Stream
+                    </a>
+                </div>
+            </div>`;
+
+        document.getElementById('arrow-toast-container').appendChild(toast);
+        autoDismissToast(toast, 30 * 1000);
+
+        // Load snapshot — always attempt, proxy falls back to live frame if needed
+        (async () => {
+            const box = document.getElementById(`det-snap-${d.id}`);
+            if (!box) return;
+            try {
+                const r = await api(d.snapshot_url);
+                if (!r.ok) {
+                    box.innerHTML = '<span style="font-size:.65rem;color:#334155">No image</span>';
+                    return;
+                }
+                const blob = await r.blob();
+                if (!blob.size) {
+                    box.innerHTML = '<span style="font-size:.65rem;color:#334155">No image</span>';
+                    return;
+                }
+                const url = URL.createObjectURL(blob);
+                box.innerHTML = '';
+                const img = document.createElement('img');
+                img.style.cssText = 'width:100%;height:100%;object-fit:cover;cursor:pointer';
+                img.title = 'Click to open full image';
+                img.src = url;
+                img.onload  = () => URL.revokeObjectURL(url);
+                img.onclick = () => window.open(window.ARROW_BACKEND_URL + d.snapshot_url, '_blank');
+                box.appendChild(img);
+            } catch (_) {
+                if (box) box.innerHTML = '<span style="font-size:.65rem;color:#334155">No image</span>';
+            }
+        })();
+
+        // Browser notification when tab is in background
+        if (document.visibilityState !== 'visible' && Notification.permission === 'granted') {
+            new Notification(`${col.icon} ${(d.label || 'Detection').toUpperCase()} — ${pct}%`,
+                { body: d.description || d.stream_id, tag: 'arrow-detection' });
+        }
+    }
+
+    // One-shot listeners: map channel → array of {resolve, reject, timerId}
+    const _wsOnce = {};
+    window.arrowWsOnce = function(channel, timeoutMs = 8000) {
+        return new Promise((resolve, reject) => {
+            if (!_wsOnce[channel]) _wsOnce[channel] = [];
+            const timerId = setTimeout(() => {
+                _wsOnce[channel] = (_wsOnce[channel] || []).filter(e => e.timerId !== timerId);
+                reject(new Error('timeout'));
+            }, timeoutMs);
+            _wsOnce[channel].push({ resolve, reject, timerId });
+        });
+    };
+
+    function connectWS() {
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const ws = new WebSocket(wsUrl);
+        window.arrowWs = ws;
+        ws.onopen  = () => { window.arrowWsReady = true;  document.dispatchEvent(new Event('arrow-ws-open'));  };
+        ws.onclose = () => { window.arrowWsReady = false; document.dispatchEvent(new Event('arrow-ws-close')); setTimeout(connectWS, 3000); };
+        ws.onmessage = ev => {
+            try {
+                const e = JSON.parse(ev.data);
+
+                // Mission filter — drop events that belong to a different mission.
+                // Events with no mission_id (legacy or global) always pass through.
+                const activeMid = arrowGetMissionId();
+                if (activeMid && e.mission_id && e.mission_id !== activeMid) return;
+
+                // Mission lifecycle events — refresh nav picker + let map pages react
+                if (e.channel === 'mission') {
+                    window.dispatchEvent(new CustomEvent('arrow-mission-event', { detail: e }));
+                    // If our active mission was reset, prompt a page reload
+                    if (e.event === 'reset' && e.mission_id === activeMid) {
+                        window.dispatchEvent(new Event('arrow-mission-reset'));
+                    }
+                    return;
+                }
+
+                // Fire one-shot listeners first
+                if (_wsOnce[e.channel] && _wsOnce[e.channel].length) {
+                    const entry = _wsOnce[e.channel].shift();
+                    clearTimeout(entry.timerId);
+                    entry.resolve(e);
+                }
+                if (e.channel === 'chat')         showToast(e);
+                if (e.channel === 'fire-mission') {
+                    showFireMissionAlert(e);
+                    if (notifVis.notif_fire_missions &&
+                        (e.data||{}).weapon !== 'L16_81MM') triggerAudioAlert('fire');
+                }
+                if (e.channel === 'alert')             handleTacAlert(e);
+                if (e.channel === 'cas')               handleCasEvent(e);
+                if (e.channel === 'stream')            handleStreamEvent(e);
+                if (e.channel === 'octopus-detection') handleOctopusDetection(e);
+            } catch (_) {}
+        };
+    }
+    // ── Force-logout helper ───────────────────────────────────────────────────
+    // Called on inactivity timeout or when the backend returns 401.
+    window.arrowForceLogout = function(reason) {
+        localStorage.removeItem('arrow_token');
+        localStorage.removeItem('arrow_role');
+        try { sessionStorage.removeItem('arrow_mission'); } catch (_) {}
+        window.location.href = '/auth/login?reason=' + (reason || 'logout');
+    };
+
+    // ── Inactivity auto-logout ────────────────────────────────────────────────
+    (function() {
+        let _timeoutMs  = 0;
+        let _idleTimer  = null;
+        let _warnTimer  = null;
+        let _warnShown  = false;
+        let _countdownI = null;
+
+        function _getWarnEl() {
+            let el = document.getElementById('idle-warn-overlay');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'idle-warn-overlay';
+                el.style.cssText = 'display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.7);align-items:center;justify-content:center;font-family:inherit';
+                el.innerHTML = [
+                    '<div style="background:#0f172a;border:2px solid #ef4444;border-radius:10px;',
+                    'padding:2rem 2.5rem;max-width:380px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.95)">',
+                    '<div style="font-size:2rem;margin-bottom:.4rem">⏱</div>',
+                    '<h3 style="color:#f8fafc;margin:0 0 .5rem;font-size:1.1rem">Session expiring</h3>',
+                    '<p style="color:#94a3b8;margin:0 0 1.2rem;font-size:.9rem">',
+                    'Logging out due to inactivity in ',
+                    '<strong id="idle-countdown" style="color:#ef4444;font-size:1.1em">60</strong>s',
+                    '</p>',
+                    '<button id="idle-stay-btn" style="background:#3b82f6;color:#fff;border:none;',
+                    'border-radius:6px;padding:.55rem 1.6rem;font-size:.95rem;cursor:pointer;',
+                    'font-family:inherit">Stay logged in</button>',
+                    '</div>',
+                ].join('');
+                document.body.appendChild(el);
+                el.querySelector('#idle-stay-btn').addEventListener('click', _resetTimer);
+            }
+            return el;
+        }
+
+        function _showWarning(warnSecs) {
+            _warnShown = true;
+            const el = _getWarnEl();
+            el.style.display = 'flex';
+            let remaining = Math.ceil(warnSecs);
+            const countEl = el.querySelector('#idle-countdown');
+            if (countEl) countEl.textContent = remaining;
+            _countdownI = setInterval(function() {
+                remaining--;
+                if (countEl) countEl.textContent = Math.max(0, remaining);
+            }, 1000);
+            _warnTimer = setTimeout(_doLogout, warnSecs * 1000);
+        }
+
+        function _hideWarning() {
+            _warnShown = false;
+            clearTimeout(_warnTimer);
+            clearInterval(_countdownI);
+            _warnTimer = null;
+            _countdownI = null;
+            const el = document.getElementById('idle-warn-overlay');
+            if (el) el.style.display = 'none';
+        }
+
+        function _doLogout() {
+            _hideWarning();
+            window.arrowForceLogout('idle');
+        }
+
+        function _resetTimer() {
+            if (_timeoutMs <= 0) return;
+            if (_warnShown) _hideWarning();
+            clearTimeout(_idleTimer);
+            // Warn for the last 20% of the timeout (min 30 s, max 60 s)
+            const warnMs = Math.min(60000, Math.max(30000, _timeoutMs * 0.2));
+            _idleTimer = setTimeout(function() { _showWarning(warnMs / 1000); }, _timeoutMs - warnMs);
+        }
+
+        api('/admin/session-config').then(function(r) { return r.ok ? r.json() : null; }).then(function(cfg) {
+            if (!cfg || cfg.inactivity_timeout_minutes <= 0) return;
+            _timeoutMs = cfg.inactivity_timeout_minutes * 60 * 1000;
+            ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(function(evt) {
+                document.addEventListener(evt, _resetTimer, { passive: true });
+            });
+            _resetTimer();
+        });
+    })();
+
+    window.arrowWsReady = false;
+    connectWS();
+})();
+</script>
+<!-- ═══════════════════════════════════════════════════════════════════
+     MUMBLE VOICE PANEL  (floating, draggable) — presence + browser voice
+     ═══════════════════════════════════════════════════════════════════ -->
+<div id="mumble-panel" style="
+    display:none;position:fixed;bottom:70px;right:20px;z-index:8500;
+    width:310px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;
+    box-shadow:0 8px 32px rgba(0,0,0,.85);font-family:inherit;overflow:hidden;">
+
+  <!-- Title bar (drag handle) -->
+  <div id="mumble-bar" style="display:flex;align-items:center;gap:8px;padding:8px 12px;
+      background:#1e293b;cursor:move;user-select:none;border-bottom:1px solid #0f172a;">
+    <span id="mumble-panel-led" style="width:8px;height:8px;border-radius:50%;
+          background:#334155;flex-shrink:0"></span>
+    <span style="color:#94a3b8;font-size:.78rem;font-weight:700;letter-spacing:.06em;flex:1">
+      🎙 VOICE — MUMBLE</span>
+    <span id="mumble-srv-label" style="color:#475569;font-size:.68rem;font-family:monospace"></span>
+    <button onclick="mumbleTogglePanel()" style="background:none;border:0;color:#475569;
+            cursor:pointer;font-size:.9rem;padding:0 2px;line-height:1">✕</button>
+  </div>
+
+  <!-- Channel presence (always shown — fed by monitor bot) -->
+  <div id="mumble-channels" style="max-height:200px;overflow-y:auto;padding:6px 0;
+       font-size:.78rem;color:#94a3b8;font-family:monospace;border-bottom:1px solid #1e293b;">
+    <div style="padding:6px 14px;color:#475569">Loading…</div>
+  </div>
+
+  <!-- Voice controls -->
+  <div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px;">
+
+    <!-- Status row -->
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span id="mv-led" style="width:7px;height:7px;border-radius:50%;
+            background:#334155;flex-shrink:0"></span>
+      <span id="mv-status" style="font-size:.72rem;color:#475569;
+            font-family:monospace;flex:1">Voice not connected</span>
+      <button id="mv-join-btn" onclick="mvJoin()"
+              style="background:#166534;border:1px solid #16a34a;color:#4ade80;
+                     border-radius:4px;padding:3px 10px;font-size:.72rem;cursor:pointer;
+                     font:inherit">Join</button>
+      <button id="mv-leave-btn" onclick="mvLeave()"
+              style="display:none;background:#7f1d1d;border:1px solid #dc2626;color:#fca5a5;
+                     border-radius:4px;padding:3px 10px;font-size:.72rem;cursor:pointer;
+                     font:inherit">Leave</button>
+    </div>
+
+    <!-- Voice controls (shown when connected) -->
+    <div id="mv-controls" style="display:none;flex-direction:column;gap:5px;">
+
+      <!-- PTT -->
+      <button id="mv-ptt"
+              style="width:100%;padding:10px;background:#1e3a5f;border:1px solid #2563eb;
+                     color:#93c5fd;font-size:.82rem;font-weight:700;letter-spacing:.04em;
+                     border-radius:5px;cursor:pointer;font:inherit;user-select:none;
+                     -webkit-user-select:none;">
+        🎙 HOLD TO TALK
+      </button>
+
+      <!-- Mute / Deafen -->
+      <div style="display:flex;gap:5px;">
+        <button id="mv-mute-btn" onclick="mvToggleMute()"
+                style="flex:1;padding:5px;background:#1e293b;border:1px solid #334155;
+                       color:#94a3b8;border-radius:4px;font-size:.75rem;cursor:pointer;font:inherit">
+          🎤 Mute
+        </button>
+        <button id="mv-deaf-btn" onclick="mvToggleDeaf()"
+                style="flex:1;padding:5px;background:#1e293b;border:1px solid #334155;
+                       color:#94a3b8;border-radius:4px;font-size:.75rem;cursor:pointer;font:inherit">
+          🔇 Deafen
+        </button>
+      </div>
+
+      <!-- Volume -->
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:.7rem;color:#475569;width:22px">Vol</span>
+        <input id="mv-vol" type="range" min="0" max="100" value="80"
+               style="flex:1;accent-color:#2563eb;"
+               oninput="mvSetVolume(this.value)">
+        <span id="mv-vol-lbl" style="font-size:.7rem;color:#475569;width:24px">80</span>
+      </div>
+    </div>
+
+    <!-- Join dialog (shown before connecting voice) -->
+    <div id="mv-join-form" style="display:none;flex-direction:column;gap:5px;">
+      <div style="font-size:.68rem;color:#475569;letter-spacing:.08em">
+        YOUR MUMBLE CREDENTIALS
+      </div>
+      <input id="mv-host" placeholder="murmur:64738  or  IP:64738"
+             style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                    border-radius:4px;padding:4px 8px;font-size:.75rem;
+                    width:100%;box-sizing:border-box">
+      <div style="display:flex;gap:5px">
+        <input id="mv-uname" placeholder="Username"
+               style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                      border-radius:4px;padding:4px 6px;font-size:.75rem;flex:1">
+        <input id="mv-pwd" type="password" placeholder="Password"
+               style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                      border-radius:4px;padding:4px 6px;font-size:.75rem;flex:1">
+      </div>
+      <div style="display:flex;gap:5px">
+        <button onclick="mvConnect()"
+                style="flex:1;background:#1d4ed8;border:0;color:#fff;border-radius:4px;
+                       padding:5px;font-size:.75rem;cursor:pointer;font:inherit">
+          Connect Voice
+        </button>
+        <button onclick="mvHideJoinForm()"
+                style="background:#1e293b;border:1px solid #334155;color:#64748b;
+                       border-radius:4px;padding:5px 8px;font-size:.75rem;
+                       cursor:pointer;font:inherit">
+          Cancel
+        </button>
+      </div>
+      <div id="mv-msg" style="font-size:.7rem;color:#f87171;min-height:.8em"></div>
+    </div>
+
+    <!-- Bot config + open link (admin) -->
+    <div style="display:flex;gap:5px;flex-wrap:wrap;padding-top:2px;
+                border-top:1px solid #1e293b;margin-top:2px;">
+      <a id="mumble-open-link" href="#" style="display:none;flex:1;text-align:center;
+         background:#172554;color:#60a5fa;border:1px solid #1d4ed8;border-radius:4px;
+         padding:3px 0;font-size:.72rem;text-decoration:none">▶ Open app</a>
+      <button id="mumble-ping-btn" onclick="mumblePing()" style="display:none;
+              background:#1e293b;border:1px solid #334155;color:#64748b;
+              border-radius:4px;padding:3px 8px;font-size:.72rem;cursor:pointer">
+        🔗 Ping
+      </button>
+      <button id="mumble-cfg-btn" onclick="mumbleShowConfig()" style="display:none;
+              background:#1e293b;border:1px solid #334155;color:#64748b;
+              border-radius:4px;padding:3px 8px;font-size:.72rem;cursor:pointer">
+        ⚙ Bot Config
+      </button>
+    </div>
+    <!-- Ping result row -->
+    <div id="mumble-ping-result" style="display:none;padding:4px 10px;
+         font-size:.7rem;font-family:monospace;border-bottom:1px solid #1e293b;"></div>
+
+    <!-- Bot config form -->
+    <div id="mumble-cfg-form" style="display:none;flex-direction:column;gap:5px;
+         padding-top:6px;border-top:1px solid #1e293b;">
+      <div style="font-size:.68rem;color:#475569;letter-spacing:.08em">MONITOR BOT SERVER</div>
+      <input id="mc-host" placeholder="murmur  (Docker) or IP" style="background:#0f172a;border:1px solid #334155;
+             color:#e2e8f0;border-radius:4px;padding:4px 8px;font-size:.75rem;
+             width:100%;box-sizing:border-box">
+      <div style="display:flex;gap:5px">
+        <input id="mc-port" type="number" value="64738" style="background:#0f172a;
+               border:1px solid #334155;color:#e2e8f0;border-radius:4px;
+               padding:4px 6px;font-size:.75rem;width:70px">
+        <input id="mc-user" placeholder="Bot username" style="background:#0f172a;
+               border:1px solid #334155;color:#e2e8f0;border-radius:4px;
+               padding:4px 6px;font-size:.75rem;flex:1">
+      </div>
+      <input id="mc-pwd" type="password" placeholder="Password" style="background:#0f172a;
+             border:1px solid #334155;color:#e2e8f0;border-radius:4px;padding:4px 8px;
+             font-size:.75rem;width:100%;box-sizing:border-box">
+      <div style="display:flex;gap:5px">
+        <button onclick="mumbleSaveConfig()" style="flex:1;background:#0ea5e9;border:0;
+                color:#fff;border-radius:4px;padding:5px;font-size:.75rem;
+                cursor:pointer;font:inherit">Save &amp; Connect Bot</button>
+        <button onclick="mumbleDeleteConfig()" style="background:#1e293b;
+                border:1px solid #334155;color:#f87171;border-radius:4px;
+                padding:5px 8px;font-size:.75rem;cursor:pointer;font:inherit">Stop</button>
+        <button onclick="document.getElementById('mumble-cfg-form').style.display='none'"
+                style="background:none;border:1px solid #1e293b;color:#475569;
+                       border-radius:4px;padding:5px 8px;font-size:.75rem;
+                       cursor:pointer;font:inherit">✕</button>
+      </div>
+      <div id="mc-msg" style="font-size:.7rem;color:#f87171;min-height:.8em"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+// ════════════════════════════════════════════════════════════════════
+// PRESENCE (monitor bot polling)
+// ════════════════════════════════════════════════════════════════════
+let _mumbleVisible = false;
+let _mumbleConfig  = null;   // { host, port } for deep link
+let _presencePoll  = null;
+
+window.mumbleTogglePanel = function () {
+    const panel = document.getElementById('mumble-panel');
+    _mumbleVisible = !_mumbleVisible;
+    panel.style.display = _mumbleVisible ? 'block' : 'none';
+    if (_mumbleVisible && !_presencePoll) {
+        _presenceFetch();
+        _presencePoll = setInterval(_presenceFetch, 5000);
+    }
+};
+
+// Draggable
+(function () {
+    const panel = document.getElementById('mumble-panel');
+    const bar   = document.getElementById('mumble-bar');
+    let drag = false, ox = 0, oy = 0;
+    bar.addEventListener('mousedown', e => {
+        drag = true;
+        const r = panel.getBoundingClientRect();
+        ox = e.clientX - r.left; oy = e.clientY - r.top;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!drag) return;
+        panel.style.left = Math.max(0, e.clientX - ox) + 'px';
+        panel.style.top  = Math.max(0, e.clientY - oy) + 'px';
+        panel.style.right = panel.style.bottom = 'auto';
+    });
+    document.addEventListener('mouseup', () => { drag = false; });
+})();
+
+function _presenceFetch() {
+    const tok = localStorage.getItem('arrow_token');
+    if (!tok) return;
+    fetch(window.ARROW_BACKEND_URL + '/mumble/status', {
+        headers: { Authorization: 'Bearer ' + tok },
+    }).then(r => r.ok ? r.json() : null).then(d => { if (d) _renderPresence(d); }).catch(() => {});
+}
+
+function _renderPresence(data) {
+    const led    = document.getElementById('mumble-panel-led');
+    const navLed = document.getElementById('mumble-led');
+    const chDiv  = document.getElementById('mumble-channels');
+    const srv    = document.getElementById('mumble-srv-label');
+    const link   = document.getElementById('mumble-open-link');
+
+    const connected = data.connected;
+    const color = connected ? '#22c55e' : (data.error ? '#ef4444' : '#334155');
+    led.style.background = navLed.style.background = color;
+
+    if (_mumbleConfig) {
+        srv.textContent  = _mumbleConfig.host + ':' + (_mumbleConfig.port || 64738);
+        link.href        = 'mumble://' + _mumbleConfig.host + ':' + (_mumbleConfig.port || 64738);
+        link.style.display = '';
+    }
+
+    const channels = data.channels || [];
+    const users    = data.users    || [];
+    if (!channels.length) {
+        chDiv.innerHTML = `<div style="padding:6px 14px;color:#475569">${
+            connected ? 'No channels' : (data.error ? data.error.slice(0,60) : 'Bot not configured')
+        }</div>`;
+        return;
+    }
+
+    // Build tree
+    const nm = {};
+    channels.forEach(c => { nm[c.id] = { ...c, children: [], users: [] }; });
+    users.forEach(u => { if (nm[u.channel_id]) nm[u.channel_id].users.push(u); });
+    const roots = [];
+    channels.forEach(c => {
+        if (c.parent_id >= 0 && nm[c.parent_id]) nm[c.parent_id].children.push(nm[c.id]);
+        else roots.push(nm[c.id]);
+    });
+
+    function rNode(n, d) {
+        const px = 14 + d * 12;
+        let h = `<div style="padding:2px ${px}px;color:#64748b;cursor:default" ondblclick="mvJoinChannel(${n.id})">📁 <span style="color:#94a3b8">${_e(n.name)}</span></div>`;
+        n.users.forEach(u => {
+            const sp  = _mvSpeaking[u.session] ? '🔊' : '👤';
+            const col = _mvSpeaking[u.session] ? '#4ade80' : (u.self ? '#60a5fa' : '#e2e8f0');
+            h += `<div style="padding:2px ${px+12}px;color:${col};">${sp} ${_e(u.name)}${u.muted?'🔴':''}${u.deafened?'🔇':''}</div>`;
+        });
+        n.children.forEach(c => { h += rNode(c, d + 1); });
+        return h;
+    }
+    chDiv.innerHTML = roots.map(r => rNode(r, 0)).join('');
+}
+
+function _e(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Bot config
+window.mumbleShowConfig = function () {
+    const f = document.getElementById('mumble-cfg-form');
+    f.style.display = (f.style.display === 'flex') ? 'none' : 'flex';
+    if (f.style.display === 'flex') {
+        const tok = localStorage.getItem('arrow_token');
+        fetch(window.ARROW_BACKEND_URL + '/mumble/config', { headers: { Authorization: 'Bearer ' + tok } })
+            .then(r => r.ok ? r.json() : null).then(cfg => {
+                if (cfg && cfg.host) {
+                    document.getElementById('mc-host').value = cfg.host;
+                    document.getElementById('mc-port').value = cfg.port || 64738;
+                    document.getElementById('mc-user').value = cfg.username || '';
+                } else {
+                    // Pre-fill from the voice credentials field so the server isn't typed twice
+                    const voiceHost = document.getElementById('mv-host').value.trim();
+                    if (voiceHost && !document.getElementById('mc-host').value) {
+                        const [h, p] = voiceHost.split(':');
+                        document.getElementById('mc-host').value = h || '';
+                        if (p) document.getElementById('mc-port').value = parseInt(p) || 64738;
+                    }
+                }
+            }).catch(() => {});
+    }
+};
+
+window.mumbleSaveConfig = function () {
+    const tok  = localStorage.getItem('arrow_token');
+    const host = document.getElementById('mc-host').value.trim();
+    const port = parseInt(document.getElementById('mc-port').value) || 64738;
+    const user = document.getElementById('mc-user').value.trim() || 'ArrowBot';
+    const pwd  = document.getElementById('mc-pwd').value;
+    const msg  = document.getElementById('mc-msg');
+    if (!host) { msg.textContent = 'Host required'; return; }
+    msg.textContent = 'Saving…';
+    fetch(window.ARROW_BACKEND_URL + '/mumble/config', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host, port, username: user, password: pwd }),
+    }).then(r => r.ok ? r.json() : Promise.reject(r))
+      .then(() => { _mumbleConfig = { host, port }; msg.textContent = ''; document.getElementById('mumble-cfg-form').style.display = 'none'; _presenceFetch(); })
+      .catch(() => { msg.textContent = 'Error saving'; });
+};
+
+window.mumblePing = function () {
+    const tok = localStorage.getItem('arrow_token');
+    const btn = document.getElementById('mumble-ping-btn');
+    const res = document.getElementById('mumble-ping-result');
+    btn.disabled = true;
+    btn.textContent = '…';
+    res.style.display = '';
+    res.textContent   = 'Probing…';
+    res.style.color   = '#94a3b8';
+    fetch(window.ARROW_BACKEND_URL + '/mumble/ping', { headers: { Authorization: 'Bearer ' + tok } })
+        .then(r => r.json()).then(d => {
+            btn.disabled = false; btn.textContent = '🔗 Ping';
+            if (d.ok) {
+                const botState = d.bot_connected
+                    ? `bot ✓`
+                    : (d.bot_error ? `bot ✗ ${d.bot_error.slice(0,30)}` : 'bot offline');
+                const uLabel = d.users > 0 ? ` · ${d.users} user${d.users > 1 ? 's' : ''}` : '';
+                res.textContent = `✓ TCP ${d.tcp_ms} ms · ${botState}${uLabel}`;
+                res.style.color = d.bot_connected ? '#4ade80' : '#fb923c';
+            } else {
+                res.textContent = `✗ ${d.msg}`;
+                res.style.color = '#f87171';
+            }
+        }).catch(() => {
+            btn.disabled = false; btn.textContent = '🔗 Ping';
+            res.textContent = '✗ request failed'; res.style.color = '#f87171';
+        });
+};
+
+window.mumbleDeleteConfig = function () {
+    const tok = localStorage.getItem('arrow_token');
+    fetch(window.ARROW_BACKEND_URL + '/mumble/config', { method: 'DELETE', headers: { Authorization: 'Bearer ' + tok } })
+        .then(() => { _mumbleConfig = null; document.getElementById('mumble-cfg-form').style.display = 'none'; _presenceFetch(); });
+};
+
+// ════════════════════════════════════════════════════════════════════
+// VOICE (WebSocket bridge + Web Audio)
+// ════════════════════════════════════════════════════════════════════
+let _mvWs             = null;       // WebSocket to /mumble/voice
+let _mvHandshakeDone  = false;      // true once we confirmed self in user list
+let _mvAudioCtx  = null;       // AudioContext (48 kHz)
+let _mvGainNode  = null;       // output gain for volume
+let _mvStream    = null;       // MediaStream from getUserMedia
+let _mvProcessor = null;       // ScriptProcessorNode
+let _mvPtt       = false;
+let _mvMuted     = false;
+let _mvDeafened  = false;
+let _mvVol       = 0.8;
+let _mvNextTime  = 0;          // next audio playback start time
+const _mvSpeaking = {};        // session → bool
+
+window.mvJoin = function mvJoin() {
+    const f   = document.getElementById('mv-join-form');
+    const msg = document.getElementById('mv-msg');
+
+    // Note if mic won't be available (listen-only mode will be used)
+    if (!window.isSecureContext || !navigator.mediaDevices) {
+        msg.textContent = 'ℹ HTTP: listen-only mode (HTTPS needed for mic).';
+        msg.style.color = '#d97706';
+    } else {
+        msg.textContent = '';
+        msg.style.color = '#f87171';
+    }
+
+    // Pre-fill host from monitor config
+    if (_mumbleConfig && !document.getElementById('mv-host').value)
+        document.getElementById('mv-host').value = _mumbleConfig.host + ':' + (_mumbleConfig.port || 64738);
+    // Pre-fill username from Arrow callsign
+    const cs = localStorage.getItem('arrow_callsign') || '';
+    if (cs && !document.getElementById('mv-uname').value)
+        document.getElementById('mv-uname').value = cs;
+
+    f.style.display = (f.style.display === 'flex') ? 'none' : 'flex';
+    document.getElementById('mv-join-btn').style.display = 'none';
+}
+
+window.mvHideJoinForm = function mvHideJoinForm() {
+    document.getElementById('mv-join-form').style.display = 'none';
+    document.getElementById('mv-join-btn').style.display = '';
+}
+
+window.mvConnect = async function mvConnect() {
+    const hostFull = document.getElementById('mv-host').value.trim();
+    const uname    = document.getElementById('mv-uname').value.trim();
+    const pwd      = document.getElementById('mv-pwd').value;
+    const msg      = document.getElementById('mv-msg');
+
+    if (!hostFull || !uname) { msg.textContent = 'Host and username required'; return; }
+
+    // Strip any protocol prefix — Mumble uses raw TCP, not HTTP
+    const cleanHost = hostFull.replace(/^https?:\/\//i, '').replace(/^mumble:\/\//i, '');
+    const colonIdx  = cleanHost.lastIndexOf(':');
+    const host      = colonIdx > 0 ? cleanHost.slice(0, colonIdx) : cleanHost;
+    const port      = colonIdx > 0 ? (parseInt(cleanHost.slice(colonIdx + 1)) || 64738) : 64738;
+
+    // Try mic — degrade gracefully to listen-only if HTTP or permission denied
+    const _canMic = window.isSecureContext && !!navigator.mediaDevices;
+    if (_canMic) {
+        msg.textContent = 'Requesting microphone…';
+        try {
+            _mvStream = await navigator.mediaDevices.getUserMedia({
+                audio: { sampleRate: 48000, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+            });
+        } catch (e) {
+            msg.textContent = '⚠ Mic denied — connecting listen-only.';
+            _mvStream = null;
+        }
+    } else {
+        msg.textContent = '⚠ HTTP: listen-only (HTTPS needed for mic).';
+        _mvStream = null;
+    }
+
+    msg.textContent = msg.textContent.replace('Requesting microphone…', '') || 'Connecting…';
+
+    // AudioContext — playback works over HTTP, only capture needs HTTPS
+    _mvAudioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    _mvGainNode = _mvAudioCtx.createGain();
+    _mvGainNode.gain.value = _mvVol;
+    _mvGainNode.connect(_mvAudioCtx.destination);
+
+    // Mic capture — only if we have a stream
+    const src = _mvStream ? _mvAudioCtx.createMediaStreamSource(_mvStream) : null;
+    _mvProcessor = _mvAudioCtx.createScriptProcessor(4096, 1, 1);
+    _mvProcessor.onaudioprocess = e => {
+        if (!_mvStream || !_mvPtt || !_mvWs || _mvWs.readyState !== WebSocket.OPEN) return;
+        const f32 = e.inputBuffer.getChannelData(0);
+        const i16 = new Int16Array(f32.length);
+        for (let i = 0; i < f32.length; i++)
+            i16[i] = Math.max(-32768, Math.min(32767, f32[i] * 32768));
+        _mvWs.send(i16.buffer);
+    };
+    if (src) { src.connect(_mvProcessor); }
+    _mvProcessor.connect(_mvAudioCtx.destination);
+
+    // WebSocket
+    const tok    = localStorage.getItem('arrow_token') || '';
+    const wsBase = window.ARROW_WS_URL.replace(/^http/, 'ws');
+    _mvWs = new WebSocket(wsBase + '/mumble/voice?token=' + encodeURIComponent(tok));
+    _mvWs.binaryType = 'arraybuffer';
+
+    _mvWs.onopen = () => {
+        _mvWs.send(JSON.stringify({ type: 'connect', host, port, username: uname, password: pwd }));
+    };
+
+    _mvWs.onmessage = e => {
+        if (e.data instanceof ArrayBuffer) {
+            // Received PCM int16 audio — play it
+            if (!_mvDeafened) _mvPlayPCM(e.data);
+        } else {
+            try {
+                const msg = JSON.parse(e.data);
+                _mvHandleMsg(msg);
+            } catch (_) {}
+        }
+    };
+
+    _mvWs.onclose = _mvWs.onerror = () => { _mvSetState('disconnected'); };
+}
+
+function _mvHandleMsg(msg) {
+    if (msg.type === 'state') {
+        if (msg.state === 'connected') _mvHandshakeDone = false;
+        _mvSetState(msg.state, msg.msg);
+    } else if (msg.type === 'update') {
+        if (msg.channels && msg.users) {
+            _renderPresence({ connected: true, channels: msg.channels, users: msg.users });
+            if (!_mvHandshakeDone && msg.users.length > 0) {
+                _mvHandshakeDone = true;
+                _mvShowHandshake(msg.users, msg.channels);
+            }
+        }
+    } else if (msg.type === 'speaking') {
+        _mvSpeaking[msg.session] = msg.speaking;
+        _presenceFetch();
+    }
+}
+
+function _mvShowHandshake(users, channels) {
+    const self = users.find(u => u.self);
+    const stat = document.getElementById('mv-status');
+    if (!stat) return;
+    if (self) {
+        stat.textContent = `✓ handshake OK · ${users.length} user${users.length > 1 ? 's' : ''} · ${channels.length} ch`;
+        stat.style.color = '#4ade80';
+    } else {
+        stat.textContent = '⚠ connected but not in user list';
+        stat.style.color = '#fb923c';
+    }
+    setTimeout(() => {
+        if (stat.textContent.startsWith('✓') || stat.textContent.startsWith('⚠')) {
+            stat.textContent = '● Voice connected';
+            stat.style.color = '#22c55e';
+        }
+    }, 5000);
+}
+
+function _mvSetState(state, errMsg) {
+    const led  = document.getElementById('mv-led');
+    const stat = document.getElementById('mv-status');
+    const ctrl = document.getElementById('mv-controls');
+    const form = document.getElementById('mv-join-form');
+    const join = document.getElementById('mv-join-btn');
+    const leave= document.getElementById('mv-leave-btn');
+
+    if (state === 'connecting') {
+        led.style.background  = '#d97706';
+        stat.style.color      = '#d97706';
+        stat.textContent      = 'Connecting…';
+        ctrl.style.display    = 'none';
+        join.style.display    = 'none';
+        leave.style.display   = '';
+    } else if (state === 'connected') {
+        led.style.background  = '#22c55e';
+        stat.style.color      = '#22c55e';
+        stat.textContent      = '● Voice connected';
+        ctrl.style.display    = 'flex';
+        form.style.display    = 'none';
+        join.style.display    = 'none';
+        leave.style.display   = '';
+        _mvNextTime           = 0;
+        _mvSetupPTT();
+    } else {                                      // disconnected / error
+        led.style.background  = state === 'error' ? '#ef4444' : '#334155';
+        stat.style.color      = state === 'error' ? '#f87171' : '#475569';
+        stat.textContent      = state === 'error' ? ('Error: ' + (errMsg||'').slice(0,50)) : 'Voice not connected';
+        ctrl.style.display    = 'none';
+        form.style.display    = 'none';
+        join.style.display    = '';
+        leave.style.display   = 'none';
+        _mvCleanup();
+    }
+}
+
+window.mvLeave = function mvLeave() {
+    if (_mvWs) { try { _mvWs.close(); } catch (_) {} }
+    _mvSetState('disconnected');
+}
+
+function _mvCleanup() {
+    if (_mvProcessor) { try { _mvProcessor.disconnect(); } catch (_) {} _mvProcessor = null; }
+    if (_mvStream)    { _mvStream.getTracks().forEach(t => t.stop()); _mvStream = null; }
+    if (_mvAudioCtx && _mvAudioCtx.state !== 'closed') {
+        try { _mvAudioCtx.close(); } catch (_) {}
+        _mvAudioCtx = null;
+    }
+    _mvGainNode = null;
+    _mvWs  = null;
+    _mvPtt = false;
+    Object.keys(_mvSpeaking).forEach(k => delete _mvSpeaking[k]);
+}
+
+// Audio playback — chain PCM chunks in time
+function _mvPlayPCM(buffer) {
+    if (!_mvAudioCtx || !_mvGainNode) return;
+    // Discard frames while suspended — prevents a time-scheduled backlog that
+    // would delay playback by N seconds after the context resumes.
+    if (_mvAudioCtx.state !== 'running') return;
+    try {
+        const i16  = new Int16Array(buffer);
+        const f32  = new Float32Array(i16.length);
+        for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
+        const ab   = _mvAudioCtx.createBuffer(1, f32.length, 48000);
+        ab.getChannelData(0).set(f32);
+        const src  = _mvAudioCtx.createBufferSource();
+        src.buffer = ab;
+        src.connect(_mvGainNode);
+        const now  = _mvAudioCtx.currentTime;
+        // If _mvNextTime has drifted more than 0.5 s into the future, reset it
+        // (can happen after a stall or rapid reconnect).
+        if (_mvNextTime > now + 0.5) _mvNextTime = now;
+        const when = Math.max(now + 0.04, _mvNextTime);
+        src.start(when);
+        _mvNextTime = when + ab.duration;
+    } catch (e) {
+        console.warn('[Mumble] _mvPlayPCM error:', e);
+    }
+}
+
+// PTT button events
+function _mvSetupPTT() {
+    const btn = document.getElementById('mv-ptt');
+    if (!btn) return;
+
+    if (!_mvStream) {
+        // Listen-only — disable PTT and show reason
+        btn.textContent      = '🎙 PTT — HTTPS required for mic';
+        btn.style.background = '#1e293b';
+        btn.style.color      = '#475569';
+        btn.style.cursor     = 'not-allowed';
+        btn.style.border     = '1px solid #334155';
+        return;
+    }
+
+    const press = () => {
+        if (_mvPtt) return;   // already transmitting
+        _mvPtt = true;
+        btn.style.background = '#1d4ed8';
+        btn.style.color      = '#fff';
+        btn.textContent      = '🔴 TRANSMITTING';
+        if (_mvAudioCtx) _mvAudioCtx.resume().then(() => { _mvNextTime = 0; });
+        if (_mvWs && _mvWs.readyState === WebSocket.OPEN)
+            _mvWs.send(JSON.stringify({ type: 'ptt_start' }));
+    };
+    const release = () => {
+        if (!_mvPtt) return;  // already released
+        _mvPtt = false;
+        btn.style.background = '#1e3a5f';
+        btn.style.color      = '#93c5fd';
+        btn.textContent      = '🎙 HOLD TO TALK';
+        if (_mvWs && _mvWs.readyState === WebSocket.OPEN)
+            _mvWs.send(JSON.stringify({ type: 'ptt_stop' }));
+    };
+
+    btn.addEventListener('mousedown',  press);
+    btn.addEventListener('mouseup',    release);
+    btn.addEventListener('mouseleave', release);
+    btn.addEventListener('touchstart', e => { e.preventDefault(); press(); });
+    btn.addEventListener('touchend',   e => { e.preventDefault(); release(); });
+}
+
+// Volume
+window.mvSetVolume = function (val) {
+    _mvVol = val / 100;
+    document.getElementById('mv-vol-lbl').textContent = val;
+    if (_mvGainNode) _mvGainNode.gain.value = _mvVol;
+};
+
+// Mute / Deafen
+window.mvToggleMute = function () {
+    _mvMuted = !_mvMuted;
+    const btn = document.getElementById('mv-mute-btn');
+    btn.textContent      = _mvMuted ? '🔴 Muted' : '🎤 Mute';
+    btn.style.color      = _mvMuted ? '#f87171' : '#94a3b8';
+    if (_mvWs && _mvWs.readyState === WebSocket.OPEN)
+        _mvWs.send(JSON.stringify({ type: _mvMuted ? 'mute' : 'unmute' }));
+};
+
+window.mvToggleDeaf = function () {
+    _mvDeafened = !_mvDeafened;
+    const btn = document.getElementById('mv-deaf-btn');
+    btn.textContent      = _mvDeafened ? '🔇 Deafened' : '🔇 Deafen';
+    btn.style.color      = _mvDeafened ? '#f87171' : '#94a3b8';
+    if (_mvWs && _mvWs.readyState === WebSocket.OPEN)
+        _mvWs.send(JSON.stringify({ type: _mvDeafened ? 'deafen' : 'undeafen' }));
+};
+
+// Double-click channel → join
+window.mvJoinChannel = function (channelId) {
+    if (_mvWs && _mvWs.readyState === WebSocket.OPEN)
+        _mvWs.send(JSON.stringify({ type: 'join', channel_id: channelId }));
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Init on login
+// ════════════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', function () {
+    const tok  = localStorage.getItem('arrow_token');
+    const role = (localStorage.getItem('arrow_role') || '').toUpperCase();
+    if (!tok) return;
+
+    document.getElementById('mumble-nav-btn').style.display = 'flex';
+
+    if (['ADMIN', 'BATTLE_CAPTAIN'].includes(role)) {
+        document.getElementById('mumble-cfg-btn').style.display  = '';
+        document.getElementById('mumble-ping-btn').style.display = '';
+    }
+
+    // Load bot config for deep link + presence server label
+    fetch(window.ARROW_BACKEND_URL + '/mumble/config', { headers: { Authorization: 'Bearer ' + tok } })
+        .then(r => r.ok ? r.json() : null)
+        .then(cfg => { if (cfg && cfg.host) _mumbleConfig = cfg; })
+        .catch(() => {});
+
+    // Background presence poll (LED in nav)
+    setInterval(() => {
+        fetch(window.ARROW_BACKEND_URL + '/mumble/status', { headers: { Authorization: 'Bearer ' + tok } })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data) return;
+                const c = data.connected ? '#22c55e' : (data.error ? '#ef4444' : '#334155');
+                document.getElementById('mumble-led').style.background = c;
+                if (_mumbleVisible) _renderPresence(data);
+            }).catch(() => {});
+    }, 10000);
+});
+
+})();
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

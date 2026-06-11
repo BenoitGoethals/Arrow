@@ -1,0 +1,2123 @@
+{% extends "base.html" %}
+{% block title %}Admin — Arrow{% endblock %}
+{% block head %}
+<style>
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.adm-shell  { display: grid; grid-template-columns: 220px 1fr; height: calc(100vh - 60px); }
+.adm-nav    { background: #0d1117; border-right: 1px solid #2a3142; padding: 1rem 0.5rem; display: flex; flex-direction: column; gap: 2px; }
+.adm-nav h4 { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.15em; color: #475569; margin: 0.75rem 0.5rem 0.2rem; }
+.nav-btn    { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.7rem; border-radius: 6px; cursor: pointer; border: 0; background: none; color: #94a3b8; width: 100%; text-align: left; font: inherit; font-size: 0.85rem; }
+.nav-btn:hover  { background: #1a2233; color: #e2e8f0; }
+.nav-btn.active { background: #1e3a2f; color: #34d399; font-weight: 600; }
+.nav-btn .ico   { font-size: 1rem; width: 20px; text-align: center; }
+.adm-main   { overflow-y: auto; padding: 1.5rem 2rem; }
+
+/* ── Stats cards ─────────────────────────────────────────────────────────── */
+.stat-grid  { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.stat-card  { background: #161b25; border: 1px solid #2a3142; border-radius: 8px; padding: 1rem; }
+.stat-card .val  { font-size: 2rem; font-weight: 700; color: #34d399; }
+.stat-card .lbl  { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+.stat-card.warn  .val { color: #f59e0b; }
+.stat-card.danger .val { color: #ef4444; }
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.adm-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.adm-table th { text-align: left; color: #64748b; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a3142; white-space: nowrap; }
+.adm-table td { padding: 0.55rem 0.75rem; border-bottom: 1px solid #1e2736; vertical-align: middle; }
+.adm-table tr:hover td { background: #1a1f29; }
+.dot-online  { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 5px #22c55e; }
+.dot-offline { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #475569; }
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.badge { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+.badge-adm  { background: #7c2d12; color: #fed7aa; }
+.badge-bc   { background: #1e40af; color: #bfdbfe; }
+.badge-op   { background: #1e293b; color: #94a3b8; }
+.badge-ok   { background: #166534; color: #86efac; }
+.badge-warn { background: #78350f; color: #fde68a; }
+.badge-err  { background: #7f1d1d; color: #fca5a5; }
+
+/* ── Section headers ─────────────────────────────────────────────────────── */
+.sec-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.sec-header h2 { margin: 0; font-size: 1.1rem; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn        { padding: 0.4rem 0.9rem; border: 0; border-radius: 6px; font: inherit; font-size: 0.82rem; cursor: pointer; }
+.btn-primary { background: #34d399; color: #0d1117; font-weight: 600; }
+.btn-primary:hover { background: #6ee7b7; }
+.btn-danger  { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #f87171; }
+.btn-ghost   { background: #1f2937; color: #94a3b8; border: 1px solid #2a3142; }
+.btn-ghost:hover { border-color: #475569; color: #e2e8f0; }
+.btn-sm      { padding: 0.2rem 0.55rem; font-size: 0.78rem; }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.modal-bg   { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; }
+.modal-bg.open { display: flex; }
+.modal      { background: #161b25; border: 1px solid #2a3142; border-radius: 10px; padding: 1.5rem; width: 440px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal h3   { margin: 0 0 1rem; font-size: 1rem; }
+.field      { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
+.field label { font-size: 0.78rem; color: #94a3b8; }
+.field input, .field select { background: #0d1117; color: #e2e8f0; border: 1px solid #2a3142; border-radius: 5px; padding: 0.45rem 0.6rem; font: inherit; font-size: 0.88rem; }
+.field input:focus, .field select:focus { outline: none; border-color: #34d399; }
+.field .hint { font-size: 0.72rem; color: #475569; }
+.modal-footer { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1.2rem; }
+.form-error { color: #ef4444; font-size: 0.8rem; margin-top: 0.4rem; }
+
+/* ── Hierarchy tree ──────────────────────────────────────────────────────── */
+.htree details { margin-left: 1rem; }
+.htree summary { cursor: pointer; padding: 0.3rem 0; display: flex; align-items: center; gap: 0.5rem; }
+.htree summary::marker { color: #34d399; }
+.htree .h-item { display: flex; align-items: center; gap: 0.5rem; }
+.htree .h-name { flex: 1; font-size: 0.88rem; }
+.htree .h-meta { font-size: 0.72rem; color: #475569; }
+
+/* ── ORBAT org-chart diagram ─────────────────────────────────────────────── */
+.orbat-wrap   { overflow: auto; padding: 1rem 0.5rem 3rem; }
+.orgtree, .orgtree ul { list-style: none; margin: 0; padding: 0; position: relative; }
+.orgtree { display: flex; justify-content: center; min-width: max-content; }
+.orgtree ul { display: flex; padding-top: 22px; }
+.orgtree li { position: relative; padding: 22px 10px 0; display: flex; flex-direction: column; align-items: center; }
+/* connector lines */
+.orgtree li::before, .orgtree li::after {
+  content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 22px;
+  border-top: 2px solid #2f3a4d; }
+.orgtree li::after { right: auto; left: 50%; border-left: 2px solid #2f3a4d; }
+.orgtree li:only-child::before, .orgtree li:only-child::after { display: none; }
+.orgtree li:only-child { padding-top: 0; }
+.orgtree li:first-child::before, .orgtree li:last-child::after { border: 0; }
+.orgtree li:last-child::before { border-right: 2px solid #2f3a4d; border-radius: 0 6px 0 0; }
+.orgtree li:first-child::after { border-radius: 6px 0 0 0; }
+.orgtree ul::before {
+  content: ''; position: absolute; top: 0; left: 50%; width: 2px; height: 22px;
+  background: #2f3a4d; }
+.org-node {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer;
+  background: #161b25; border: 1px solid #2a3142; border-radius: 8px;
+  padding: 8px 12px 7px; min-width: 84px; transition: border-color .12s, box-shadow .12s; }
+.org-node:hover    { border-color: #34d399; box-shadow: 0 0 0 1px #34d39955; }
+.org-node.selected { border-color: #34d399; box-shadow: 0 0 0 2px #34d399; }
+.org-node svg      { display: block; }
+.org-node .on-name { font-size: 0.78rem; font-weight: 600; color: #e2e8f0; max-width: 130px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.org-node .on-meta { font-size: 0.66rem; color: #64748b; letter-spacing: .04em; }
+.org-node.op-node  { min-width: 64px; padding: 6px 8px; }
+.org-node.op-node .on-name { font-size: 0.72rem; }
+.org-leg  { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.72rem; color: #64748b; margin-bottom: 0.5rem; }
+.org-leg b { color: #94a3b8; font-weight: 600; }
+
+/* Detail drawer */
+.org-detail { position: fixed; top: 60px; right: 0; width: 320px; height: calc(100vh - 60px);
+  background: #0d1117; border-left: 1px solid #2a3142; box-shadow: -8px 0 24px rgba(0,0,0,.4);
+  transform: translateX(100%); transition: transform .18s ease; z-index: 800; overflow-y: auto; }
+.org-detail.open { transform: translateX(0); }
+.org-detail .od-hdr { display: flex; align-items: center; gap: .6rem; padding: 1rem; border-bottom: 1px solid #2a3142; }
+.org-detail .od-hdr h3 { margin: 0; font-size: .95rem; flex: 1; }
+.org-detail .od-close { background: none; border: 0; color: #64748b; font-size: 1.3rem; cursor: pointer; line-height: 1; }
+.org-detail .od-close:hover { color: #e2e8f0; }
+.org-detail .od-body { padding: 1rem; }
+.od-row { display: grid; grid-template-columns: 92px 1fr; gap: .4rem; padding: .35rem 0; border-bottom: 1px solid #1a2233; font-size: .82rem; }
+.od-row .k { color: #64748b; font-size: .76rem; }
+.od-row .v { color: #e2e8f0; }
+.od-sub  { margin-top: 1rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; color: #475569; }
+.od-op   { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; font-size: .82rem; border-bottom: 1px solid #1a2233; }
+
+/* ── Config ──────────────────────────────────────────────────────────────── */
+.cfg-section { background: #161b25; border: 1px solid #2a3142; border-radius: 8px; margin-bottom: 1rem; }
+.cfg-section h3 { margin: 0; padding: 0.75rem 1rem; border-bottom: 1px solid #2a3142; font-size: 0.88rem; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; }
+.cfg-row { display: grid; grid-template-columns: 180px 1fr; gap: 0; border-bottom: 1px solid #1e2736; }
+.cfg-row:last-child { border-bottom: 0; }
+.cfg-key { padding: 0.55rem 1rem; font-size: 0.8rem; color: #64748b; font-family: monospace; border-right: 1px solid #1e2736; }
+.cfg-val { padding: 0.55rem 1rem; font-size: 0.88rem; font-family: monospace; color: #e2e8f0; }
+.cfg-val.warn { color: #f59e0b; }
+
+main { padding: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="adm-shell">
+
+  <!-- ── Sidebar nav ─────────────────────────────────────────────────── -->
+  <nav class="adm-nav">
+    <h4>Overview</h4>
+    <button class="nav-btn active" onclick="show('overview',this)"><span class="ico">📊</span> Dashboard</button>
+
+    <h4>Users</h4>
+    <button class="nav-btn" onclick="show('operators',this)"><span class="ico">👥</span> Operators</button>
+
+    <h4>Organisation</h4>
+    <button class="nav-btn" onclick="show('hierarchy',this)"><span class="ico">🏛</span> Hierarchy</button>
+    <button class="nav-btn" onclick="show('orgchart',this)"><span class="ico">🎖</span> ORBAT Diagram</button>
+    <button class="nav-btn" onclick="show('vehicles',this)"><span class="ico">🚙</span> Vehicles</button>
+
+    <h4>Operations</h4>
+    <button class="nav-btn" onclick="show('strike-packages',this)"><span class="ico">⚡</span> Strike Packages</button>
+
+    <h4>System</h4>
+    <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
+    <button class="nav-btn" onclick="show('octopus',this)"><span class="ico">⏺</span> Octopus</button>
+    <button class="nav-btn" onclick="show('alerts',this)"><span class="ico">🚨</span> Alerts</button>
+    <button class="nav-btn" onclick="show('snapshots',this)"><span class="ico">🗺</span> Map snapshots</button>
+    <button class="nav-btn" onclick="show('visibility',this)"><span class="ico">👁</span> Map visibility</button>
+    <button class="nav-btn" onclick="show('maps',this)" data-role-any><span class="ico">🗂</span> Base maps</button>
+  </nav>
+
+  <!-- ── Main area ───────────────────────────────────────────────────── -->
+  <div class="adm-main" id="adm-main"></div>
+</div>
+
+<!-- ── Modals ──────────────────────────────────────────────────────────── -->
+
+<!-- Create operator -->
+<div class="modal-bg" id="modal-create-op">
+  <div class="modal">
+    <h3>➕ New Operator</h3>
+    <div class="field"><label>Callsign *</label><input id="new-callsign" placeholder="e.g. BRAVO-42"/></div>
+    <div class="field"><label>Password *</label><input id="new-password" type="password" placeholder="min 8 chars"/></div>
+    <div class="field"><label>Rank</label>
+      <select id="new-rank">
+        {% for r in ['OR-1','OR-2','OR-3','OR-4','OR-5','OR-6','OF-1','OF-2','OF-3'] %}
+        <option>{{ r }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Role</label>
+      <select id="new-role">
+        <option value="OPERATOR">OPERATOR</option>
+        <option value="BATTLE_CAPTAIN">BATTLE_CAPTAIN</option>
+        <option value="ADMIN">ADMIN</option>
+        <option value="LOG">LOG</option>
+        <option value="FO">FO</option>
+        <option value="CAS">CAS</option>
+        <option value="INTEL">INTEL</option>
+        <option value="OPS">OPS</option>
+        <option value="MED">MED</option>
+        <option value="CBRN">CBRN</option>
+        <option value="FBC">FBC</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Team <span style="color:#ef4444">*</span></label>
+      <select id="new-team"><option value="">— select a team —</option></select>
+      <span class="hint">Every operator must belong to a team.</span>
+    </div>
+    <div id="create-op-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-create-op')">Cancel</button>
+      <button class="btn btn-primary" onclick="createOperator()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit operator -->
+<div class="modal-bg" id="modal-edit-op">
+  <div class="modal">
+    <h3>✏️ Edit Operator: <span id="edit-callsign-label"></span></h3>
+    <input type="hidden" id="edit-op-id"/>
+    <div class="field"><label>Rank</label>
+      <select id="edit-rank">
+        {% for r in ['OR-1','OR-2','OR-3','OR-4','OR-5','OR-6','OF-1','OF-2','OF-3'] %}
+        <option>{{ r }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Role</label>
+      <select id="edit-role">
+        <option value="OPERATOR">OPERATOR</option>
+        <option value="BATTLE_CAPTAIN">BATTLE_CAPTAIN</option>
+        <option value="ADMIN">ADMIN</option>
+        <option value="LOG">LOG</option>
+        <option value="FO">FO</option>
+        <option value="CAS">CAS</option>
+        <option value="INTEL">INTEL</option>
+        <option value="OPS">OPS</option>
+        <option value="MED">MED</option>
+        <option value="CBRN">CBRN</option>
+        <option value="FBC">FBC</option>
+      </select>
+    </div>
+    <div class="field"><label>Status</label>
+      <select id="edit-status">
+        <option value="ONLINE">ONLINE</option>
+        <option value="OFFLINE">OFFLINE</option>
+      </select>
+    </div>
+    <div class="field"><label>Ops status <span style="color:#475569">(operational state)</span></label>
+      <select id="edit-ops-status">
+        <option value="OPS">OPS — mission capable</option>
+        <option value="INOPS">INOPS — out of action</option>
+        <option value="KIA">KIA</option>
+        <option value="MIA">MIA</option>
+      </select>
+    </div>
+    <div class="field"><label>Team</label><select id="edit-team"><option value="">— unassigned —</option></select></div>
+    <div class="field"><label>Mission <span style="color:#475569">(optional — links operator to a mission)</span></label>
+      <select id="edit-mission"><option value="">— no mission —</option></select>
+    </div>
+    <hr style="border-color:#2a3142;margin:1rem 0">
+    <div class="field"><label>New password <span style="color:#475569">(leave blank = no change)</span></label>
+      <input id="edit-password" type="password" placeholder="new password…"/>
+    </div>
+    <div id="edit-op-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-op')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveOperator()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create / edit vehicle -->
+<div class="modal-bg" id="modal-vehicle">
+  <div class="modal">
+    <h3 id="modal-veh-title">Vehicle</h3>
+    <input type="hidden" id="veh-id"/>
+    <div class="field"><label>Callsign *</label><input id="veh-callsign" placeholder="e.g. WARHORSE-1"/></div>
+    <div class="field"><label>Type</label><input id="veh-type" placeholder="e.g. Boxer, LMV, MAN truck, RHIB"/></div>
+    <div class="field"><label>Affiliation</label>
+      <select id="veh-affiliation">
+        <option value="FRIENDLY">FRIENDLY</option>
+        <option value="ENEMY">ENEMY</option>
+        <option value="UNKNOWN">UNKNOWN</option>
+        <option value="NEUTRAL">NEUTRAL</option>
+      </select>
+    </div>
+    <div class="field"><label>Ops status</label>
+      <select id="veh-ops-status">
+        <option value="OPS">OPS — mission capable</option>
+        <option value="INOPS">INOPS — out of action</option>
+        <option value="KIA">KIA — destroyed</option>
+        <option value="MIA">MIA — missing</option>
+      </select>
+    </div>
+    <div class="field"><label>Assign to operator <span style="color:#475569">(position follows this operator)</span></label>
+      <select id="veh-operator" onchange="vehAssignChanged('operator')"><option value="">— none —</option></select>
+    </div>
+    <div class="field"><label>…or assign to team <span style="color:#475569">(uses team anchor operator)</span></label>
+      <select id="veh-team" onchange="vehAssignChanged('team')"><option value="">— none —</option></select>
+    </div>
+    <div class="field"><label>SIDC <span style="color:#475569">(optional MIL-STD-2525 symbol code)</span></label>
+      <input id="veh-symbol" placeholder="leave blank for default equipment symbol"/>
+    </div>
+    <div class="field"><label>Notes</label><input id="veh-notes" placeholder="optional"/></div>
+    <div id="veh-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vehicle')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveVehicle()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add hierarchy node -->
+<div class="modal-bg" id="modal-add-node">
+  <div class="modal">
+    <h3 id="add-node-title">Add…</h3>
+    <div class="field"><label>Name *</label><input id="add-node-name" placeholder="Name"/></div>
+    <div class="field" id="add-node-parent-field" style="display:none">
+      <label id="add-node-parent-label">Parent</label>
+      <select id="add-node-parent"></select>
+    </div>
+    <div id="add-node-err" class="form-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-node')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNode()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- ORBAT node detail drawer -->
+<div class="org-detail" id="org-detail">
+  <div class="od-hdr">
+    <span id="od-symbol"></span>
+    <h3 id="od-title">Detail</h3>
+    <button class="od-close" onclick="closeOrgDetail()">×</button>
+  </div>
+  <div class="od-body" id="od-body"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/milsymbol/milsymbol.js') }}"></script>
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const role = localStorage.getItem('arrow_role') || '';
+    const isAdmin = role === 'ADMIN';
+    const isBC    = role === 'BATTLE_CAPTAIN';
+    if (!isAdmin && !isBC) {
+        document.getElementById('adm-main').innerHTML =
+            '<p style="color:#ef4444;padding:2rem">Access denied — ADMIN or BATTLE_CAPTAIN role required.</p>';
+        return;
+    }
+    // Battle Captains only have permission to manage base maps — hide every
+    // nav button except those marked `data-role-any`, and start them on the
+    // maps tab instead of the dashboard overview.
+    if (!isAdmin) {
+        document.querySelectorAll('.adm-nav .nav-btn').forEach(btn => {
+            if (!btn.hasAttribute('data-role-any')) btn.style.display = 'none';
+        });
+        document.querySelectorAll('.adm-nav h4').forEach(h => h.style.display = 'none');
+    }
+    const hdr  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    const api  = (p, o = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...o, headers: { ...hdr, ...(o.headers||{}) } });
+
+    // ── Global data cache ──────────────────────────────────────────────────
+    let operators = [], teams = [], sections = [], platoons = [], companies = [], alertsList = [], missions = [], vehicles = [];
+
+    async function loadAll() {
+        // BCs can't hit the operators/hierarchy endpoints; skip them so the
+        // Maps tab still loads cleanly without unauthorised noise.
+        if (!isAdmin) return;
+        [operators, teams, sections, platoons, companies, missions, vehicles] = await Promise.all([
+            api('/operators').then(r => r.ok ? r.json() : []),
+            api('/teams').then(r => r.ok ? r.json() : []),
+            api('/sections').then(r => r.ok ? r.json() : []),
+            api('/platoons').then(r => r.ok ? r.json() : []),
+            api('/companies').then(r => r.ok ? r.json() : []),
+            api('/missions').then(r => r.ok ? r.json() : []),
+            api('/vehicles').then(r => r.ok ? r.json() : []),
+        ]);
+    }
+
+    // ── Section router ─────────────────────────────────────────────────────
+    window.show = function(section, btn) {
+        if (typeof window.closeOrgDetail === 'function') window.closeOrgDetail();
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadAll().then(() => render(section));
+    };
+
+    function render(section) {
+        const main = document.getElementById('adm-main');
+        switch (section) {
+            case 'overview':  main.innerHTML = ''; renderOverview(main); break;
+            case 'operators': main.innerHTML = ''; renderOperators(main); break;
+            case 'hierarchy': main.innerHTML = ''; renderHierarchy(main); break;
+            case 'orgchart':  main.innerHTML = ''; renderOrgChart(main); break;
+            case 'vehicles':  main.innerHTML = ''; renderVehicles(main); break;
+            case 'config':    main.innerHTML = ''; renderConfig(main); break;
+            case 'alerts':    main.innerHTML = ''; renderAlerts(main); break;
+            case 'snapshots': main.innerHTML = ''; renderSnapshots(main); break;
+            case 'visibility':main.innerHTML = ''; renderVisibility(main); break;
+            case 'maps':      main.innerHTML = ''; renderMaps(main); break;
+            case 'octopus':         main.innerHTML = ''; renderOctopus(main); break;
+            case 'strike-packages': main.innerHTML = ''; renderStrikePackages(main); break;
+        }
+    }
+
+    // Battle Captains land directly on the Maps tab since other tabs are hidden.
+    if (!isAdmin) {
+        // Defer to the next tick so DOM is ready.
+        setTimeout(() => {
+            const btn = document.querySelector('[onclick*="show(\'maps\'"]');
+            if (btn) show('maps', btn);
+        }, 0);
+    }
+
+    // ── Overview ───────────────────────────────────────────────────────────
+    async function renderOverview(el) {
+        const stats = await api('/admin/stats').then(r => r.ok ? r.json() : null);
+        if (!stats) { el.innerHTML = '<p style="color:#ef4444">Could not load stats.</p>'; return; }
+        const roles = stats.operators.by_role || {};
+        el.innerHTML = `
+        <h2 style="margin-top:0">Dashboard</h2>
+        <div class="stat-grid">
+            <div class="stat-card"><div class="val">${stats.operators.total}</div><div class="lbl">Total operators</div></div>
+            <div class="stat-card"><div class="val">${stats.operators.online}</div><div class="lbl">Online now</div></div>
+            <div class="stat-card ${stats.operators.unassigned ? 'warn' : ''}">
+                <div class="val">${stats.operators.unassigned || 0}</div><div class="lbl">Unassigned</div></div>
+            <div class="stat-card ${stats.alerts.active ? 'danger' : ''}">
+                <div class="val">${stats.alerts.active}</div><div class="lbl">Active alerts</div></div>
+            <div class="stat-card"><div class="val">${stats.reports.total}</div><div class="lbl">Reports</div></div>
+            <div class="stat-card"><div class="val">${stats.tactical_objects.total}</div><div class="lbl">Tactical objects</div></div>
+            <div class="stat-card"><div class="val">${stats.messages.total}</div><div class="lbl">Messages</div></div>
+        </div>
+        <h3>Operators by role</h3>
+        <div class="stat-grid">
+            ${Object.entries(roles).map(([r,c]) => `<div class="stat-card"><div class="val">${c}</div><div class="lbl">${r}</div></div>`).join('')}
+        </div>`;
+    }
+
+    // ── Operators ──────────────────────────────────────────────────────────
+    function renderOperators(el) {
+        const teamMap    = Object.fromEntries(teams.map(t => [t.id, t.name]));
+        const unassigned = operators.filter(o => !o.team_id);
+        const warnBanner = unassigned.length
+            ? `<div style="background:#78350f22;border:1px solid #d97706;border-radius:6px;padding:0.65rem 1rem;margin-bottom:1rem;color:#fde68a;font-size:0.83rem">
+                ⚠️  <strong>${unassigned.length} operator${unassigned.length>1?'s':''} unassigned</strong>:
+                ${unassigned.map(o => `<span style="font-family:monospace">${esc(o.callsign)}</span>`).join(', ')}
+                — edit each operator and assign a team.
+               </div>` : '';
+        const missionMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Operators (${operators.length})</h2>
+            <button class="btn btn-primary" onclick="openCreateOp()">➕ New operator</button>
+        </div>
+        ${warnBanner}
+        <table class="adm-table">
+            <thead><tr>
+                <th></th><th>Callsign</th><th>Rank</th><th>Role</th>
+                <th>Team</th><th>Mission</th><th>Status</th><th>Last seen</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${operators.map(op => {
+                const badge = op.role === 'ADMIN' ? 'badge-adm' : op.role === 'BATTLE_CAPTAIN' ? 'badge-bc' : 'badge-op';
+                const dot   = op.online ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>';
+                const team  = op.team_id ? teamMap[op.team_id] || `#${op.team_id}` : '—';
+                const mission = op.mission_id ? missionMap[op.mission_id] || `#${op.mission_id}` : '—';
+                const ts    = (op.last_seen || '').slice(0, 16).replace('T', ' ');
+                return `<tr>
+                    <td>${dot}</td>
+                    <td style="font-weight:600">${esc(op.callsign)}</td>
+                    <td><code style="font-size:0.78rem">${esc(op.rank)}</code></td>
+                    <td><span class="badge ${badge}">${op.role}</span></td>
+                    <td style="color:#94a3b8">${esc(team)}</td>
+                    <td style="color:#64748b;font-size:0.78rem">${esc(mission)}</td>
+                    <td><span class="badge ${op.online?'badge-ok':'badge-warn'}">${op.online?'ONLINE':'OFFLINE'}</span>${(op.ops_status && op.ops_status !== 'OPS') ? ` <span class="badge" style="background:#7f1d1d;color:#fecaca">${esc(op.ops_status)}</span>` : ''}</td>
+                    <td style="color:#64748b;font-size:0.78rem">${ts}</td>
+                    <td>
+                        <button class="btn btn-ghost btn-sm" onclick='openEditOp(${JSON.stringify(op)})'>Edit</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteOp(${op.id}, '${esc(op.callsign)}')">Del</button>
+                    </td>
+                </tr>`;
+            }).join('')}
+            </tbody>
+        </table>`;
+    }
+
+    window.openCreateOp = function() {
+        document.getElementById('new-callsign').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('new-rank').value = 'OR-3';
+        document.getElementById('new-role').value = 'OPERATOR';
+        document.getElementById('create-op-err').textContent = '';
+        populateTeamSelect('new-team', null);
+        openModal('modal-create-op');
+    };
+
+    window.createOperator = async function() {
+        const callsign = document.getElementById('new-callsign').value.trim();
+        const password = document.getElementById('new-password').value;
+        const rank     = document.getElementById('new-rank').value;
+        const role     = document.getElementById('new-role').value;
+        const team_val = document.getElementById('new-team').value;
+        const errEl    = document.getElementById('create-op-err');
+        if (!callsign || !password) { errEl.textContent = 'Callsign and password are required.'; return; }
+        if (!team_val) { errEl.textContent = 'Please assign the operator to a team.'; return; }
+        const team_id = parseInt(team_val);
+        // Admin-only endpoint — creates operators with any role
+        const r = await api('/auth/register/admin', { method:'POST',
+            body: JSON.stringify({ callsign, password, rank, role, team_id }) });
+        if (!r.ok) { errEl.textContent = `Error ${r.status}: ${await r.text()}`; return; }
+        closeModal('modal-create-op');
+        await loadAll(); render('operators');
+    };
+
+    window.openEditOp = function(op) {
+        document.getElementById('edit-op-id').value = op.id;
+        document.getElementById('edit-callsign-label').textContent = op.callsign;
+        document.getElementById('edit-rank').value   = op.rank;
+        document.getElementById('edit-role').value   = op.role;
+        document.getElementById('edit-status').value = op.status;
+        document.getElementById('edit-ops-status').value = op.ops_status || 'OPS';
+        // Populate mission select
+        const mSel = document.getElementById('edit-mission');
+        mSel.innerHTML = '<option value="">— no mission —</option>' +
+            missions.map(m => `<option value="${m.id}" ${m.id == op.mission_id ? 'selected' : ''}>${esc(m.name)} (${m.status})</option>`).join('');
+        document.getElementById('edit-password').value = '';
+        document.getElementById('edit-op-err').textContent = '';
+        populateTeamSelect('edit-team', op.team_id);
+        openModal('modal-edit-op');
+    };
+
+    window.saveOperator = async function() {
+        const id  = document.getElementById('edit-op-id').value;
+        const pwd = document.getElementById('edit-password').value;
+        const errEl = document.getElementById('edit-op-err');
+        const missionVal = document.getElementById('edit-mission').value;
+        const body = {
+            rank:       document.getElementById('edit-rank').value,
+            role:       document.getElementById('edit-role').value,
+            status:     document.getElementById('edit-status').value,
+            ops_status: document.getElementById('edit-ops-status').value,
+            team_id:    document.getElementById('edit-team').value
+                        ? parseInt(document.getElementById('edit-team').value) : null,
+            mission_id: missionVal ? parseInt(missionVal) : null,
+        };
+        const r = await api(`/operators/${id}`, { method:'PATCH', body: JSON.stringify(body) });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status}`; return; }
+        if (pwd) {
+            const rp = await api(`/operators/${id}/set-password`,
+                { method:'POST', body: JSON.stringify({ password: pwd }) });
+            if (!rp.ok) { errEl.textContent = `Password update failed: ${rp.status}`; return; }
+        }
+        closeModal('modal-edit-op');
+        await loadAll(); render('operators');
+    };
+
+    window.deleteOp = async function(id, callsign) {
+        if (!confirm(`Delete operator "${callsign}"? This cannot be undone.`)) return;
+        await api(`/operators/${id}`, { method:'DELETE' });
+        await loadAll(); render('operators');
+    };
+
+    // ── Vehicles ───────────────────────────────────────────────────────────
+    // Generic per-unit materiel. Assigned to a single operator OR a whole team;
+    // position is derived server-side from the assignee, so there's no lat/lon
+    // field here. ops_status mirrors the operator set (OPS/INOPS/KIA/MIA).
+    const VEH_OPS_COL = { OPS:'badge-ok', INOPS:'badge-warn', KIA:'badge-err', MIA:'badge-warn' };
+
+    function renderVehicles(el) {
+        const opMap   = Object.fromEntries(operators.map(o => [o.id, o.callsign]));
+        const teamMap = Object.fromEntries(teams.map(t => [t.id, t.name]));
+        const assignee = (v) => v.operator_id ? `👤 ${esc(opMap[v.operator_id] || '#'+v.operator_id)}`
+                              : v.team_id ? `👥 ${esc(teamMap[v.team_id] || '#'+v.team_id)}`
+                              : '<span style="color:#64748b">unassigned</span>';
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Vehicles (${vehicles.length})</h2>
+            <button class="btn btn-primary" onclick="openVehicle()">➕ New vehicle</button>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            Each vehicle shows on the map at its assigned operator's (or team's) live position.
+        </p>
+        <table class="adm-table">
+            <thead><tr>
+                <th>Callsign</th><th>Type</th><th>Affiliation</th><th>Ops status</th>
+                <th>Assigned to</th><th>On map</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${vehicles.map(v => `<tr>
+                <td style="font-weight:600">${esc(v.callsign)}</td>
+                <td style="color:#94a3b8">${esc(v.vehicle_type || '—')}</td>
+                <td><code style="font-size:0.78rem">${esc(v.affiliation)}</code></td>
+                <td><span class="badge ${VEH_OPS_COL[v.ops_status] || 'badge-op'}">${esc(v.ops_status)}</span></td>
+                <td>${assignee(v)}</td>
+                <td>${v.latitude != null ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>'}</td>
+                <td>
+                    <button class="btn btn-ghost btn-sm" onclick='openVehicle(${JSON.stringify(v)})'>Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteVehicle(${v.id}, '${esc(v.callsign)}')">Del</button>
+                </td>
+            </tr>`).join('') || '<tr><td colspan="7" style="color:#64748b;padding:1rem">No vehicles yet.</td></tr>'}
+            </tbody>
+        </table>`;
+    }
+
+    window.openVehicle = function(v) {
+        v = v || {};
+        document.getElementById('veh-id').value          = v.id || '';
+        document.getElementById('veh-callsign').value    = v.callsign || '';
+        document.getElementById('veh-type').value        = v.vehicle_type || '';
+        document.getElementById('veh-symbol').value      = v.symbol_code || '';
+        document.getElementById('veh-affiliation').value = v.affiliation || 'FRIENDLY';
+        document.getElementById('veh-ops-status').value  = v.ops_status || 'OPS';
+        document.getElementById('veh-notes').value       = v.notes || '';
+        document.getElementById('veh-err').textContent   = '';
+        document.getElementById('modal-veh-title').textContent = v.id ? 'Edit vehicle' : 'New vehicle';
+        // Assignment selects
+        const opSel = document.getElementById('veh-operator');
+        opSel.innerHTML = '<option value="">— none —</option>' +
+            operators.map(o => `<option value="${o.id}" ${o.id == v.operator_id ? 'selected':''}>${esc(o.callsign)}</option>`).join('');
+        const tmSel = document.getElementById('veh-team');
+        tmSel.innerHTML = '<option value="">— none —</option>' +
+            teams.map(t => `<option value="${t.id}" ${t.id == v.team_id ? 'selected':''}>${esc(t.name)}</option>`).join('');
+        openModal('modal-vehicle');
+    };
+
+    // Operator and team are mutually exclusive — clear the other when one is set.
+    window.vehAssignChanged = function(which) {
+        if (which === 'operator' && document.getElementById('veh-operator').value)
+            document.getElementById('veh-team').value = '';
+        if (which === 'team' && document.getElementById('veh-team').value)
+            document.getElementById('veh-operator').value = '';
+    };
+
+    window.saveVehicle = async function() {
+        const id  = document.getElementById('veh-id').value;
+        const errEl = document.getElementById('veh-err');
+        const callsign = document.getElementById('veh-callsign').value.trim();
+        if (!callsign) { errEl.textContent = 'Callsign is required.'; return; }
+        const opVal = document.getElementById('veh-operator').value;
+        const tmVal = document.getElementById('veh-team').value;
+        const body = {
+            callsign,
+            vehicle_type: document.getElementById('veh-type').value.trim(),
+            symbol_code:  document.getElementById('veh-symbol').value.trim(),
+            affiliation:  document.getElementById('veh-affiliation').value,
+            ops_status:   document.getElementById('veh-ops-status').value,
+            operator_id:  opVal ? parseInt(opVal) : null,
+            team_id:      tmVal ? parseInt(tmVal) : null,
+            notes:        document.getElementById('veh-notes').value,
+        };
+        const r = id
+            ? await api(`/vehicles/${id}`, { method:'PATCH', body: JSON.stringify(body) })
+            : await api('/vehicles',       { method:'POST',  body: JSON.stringify(body) });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status} ${await r.text()}`; return; }
+        closeModal('modal-vehicle');
+        await loadAll(); render('vehicles');
+    };
+
+    window.deleteVehicle = async function(id, callsign) {
+        if (!confirm(`Delete vehicle "${callsign}"?`)) return;
+        await api(`/vehicles/${id}`, { method:'DELETE' });
+        await loadAll(); render('vehicles');
+    };
+
+    // ── Hierarchy ──────────────────────────────────────────────────────────
+    function renderHierarchy(el) {
+        const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
+        const pltMap = Object.fromEntries(platoons.map(p => [p.id, p]));
+
+        const teamsBySection  = groupBy(teams,    t => t.section_id);
+        const sectionsByPlt   = groupBy(sections, s => s.platoon_id);
+        const platoonsByCo    = groupBy(platoons, p => p.company_id);
+        const teamOpCount     = Object.fromEntries(teams.map(t => [t.id, operators.filter(o => o.team_id === t.id).length]));
+
+        const treeHtml = companies.length === 0
+            ? '<p style="color:#475569">No companies yet.</p>'
+            : companies.map(co => `
+              <details>
+                <summary>
+                  <span class="h-item">
+                    <strong>${esc(co.name)}</strong>
+                    <span class="h-meta">${(platoonsByCo[co.id]||[]).length} platoons</span>
+                    <button class="btn btn-ghost btn-sm" onclick="addNode('platoon',${co.id},'${esc(co.name)}')">+ Platoon</button>
+                    <button class="btn btn-danger btn-sm" onclick="delNode('companies',${co.id},'${esc(co.name)}')">×</button>
+                  </span>
+                </summary>
+                ${(platoonsByCo[co.id]||[]).map(plt => `
+                  <details>
+                    <summary>
+                      <span class="h-item">
+                        ${esc(plt.name)}
+                        <span class="h-meta">${(sectionsByPlt[plt.id]||[]).length} sections</span>
+                        <button class="btn btn-ghost btn-sm" onclick="addNode('section',${plt.id},'${esc(plt.name)}')">+ Section</button>
+                        <button class="btn btn-danger btn-sm" onclick="delNode('platoons',${plt.id},'${esc(plt.name)}')">×</button>
+                      </span>
+                    </summary>
+                    ${(sectionsByPlt[plt.id]||[]).map(sec => `
+                      <details>
+                        <summary>
+                          <span class="h-item">
+                            ${esc(sec.name)}
+                            <span class="h-meta">${(teamsBySection[sec.id]||[]).length} teams</span>
+                            <button class="btn btn-ghost btn-sm" onclick="addNode('team',${sec.id},'${esc(sec.name)}')">+ Team</button>
+                            <button class="btn btn-danger btn-sm" onclick="delNode('sections',${sec.id},'${esc(sec.name)}')">×</button>
+                          </span>
+                        </summary>
+                        ${(teamsBySection[sec.id]||[]).map(t => `
+                          <div style="margin-left:1rem;padding:0.25rem 0;display:flex;align-items:center;gap:0.5rem">
+                            <span style="font-size:0.82rem">${esc(t.name)}</span>
+                            <span class="h-meta">${teamOpCount[t.id]||0} ops</span>
+                            <button class="btn btn-danger btn-sm" onclick="delNode('teams',${t.id},'${esc(t.name)}')">×</button>
+                          </div>`).join('')}
+                      </details>`).join('')}
+                  </details>`).join('')}
+              </details>`).join('');
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Hierarchy</h2>
+            <button class="btn btn-primary" onclick="addNode('company',null,'')">➕ Add Company</button>
+        </div>
+        <div class="htree">${treeHtml}</div>`;
+    }
+
+    let _nodeType = '', _nodeParentId = null;
+
+    window.addNode = function(type, parentId, parentName) {
+        _nodeType = type; _nodeParentId = parentId;
+        const titles = { company:'Add Company', platoon:`Add Platoon to ${parentName}`,
+                         section:`Add Section to ${parentName}`, team:`Add Team to ${parentName}` };
+        document.getElementById('add-node-title').textContent = titles[type] || 'Add';
+        document.getElementById('add-node-name').value = '';
+        document.getElementById('add-node-err').textContent = '';
+        document.getElementById('add-node-parent-field').style.display = 'none';
+        openModal('modal-add-node');
+    };
+
+    window.saveNode = async function() {
+        const name = document.getElementById('add-node-name').value.trim();
+        const errEl = document.getElementById('add-node-err');
+        if (!name) { errEl.textContent = 'Name is required.'; return; }
+        const bodies = {
+            company:  { name },
+            platoon:  { name, company_id: _nodeParentId },
+            section:  { name, platoon_id: _nodeParentId },
+            team:     { name, section_id: _nodeParentId },
+        };
+        const paths = { company:'companies', platoon:'platoons', section:'sections', team:'teams' };
+        const r = await api(`/${paths[_nodeType]}`, { method:'POST', body: JSON.stringify(bodies[_nodeType]) });
+        if (!r.ok) { errEl.textContent = `Failed: ${r.status} ${await r.text()}`; return; }
+        closeModal('modal-add-node');
+        await loadAll(); render('hierarchy');
+    };
+
+    window.delNode = async function(path, id, name) {
+        if (!confirm(`Delete "${name}"? This will also delete all children.`)) return;
+        const r = await api(`/${path}/${id}`, { method:'DELETE' });
+        if (!r.ok) alert(`Delete failed: ${r.status}`);
+        await loadAll(); render('hierarchy');
+    };
+
+    // ── ORBAT org-chart diagram ────────────────────────────────────────────
+    // Friendly unit SIDC (MIL-STD-2525C / APP-6): S=symbol F=friend G=ground
+    // P=present U=unit. Echelon goes at index 11 (milsymbol.js 2.x reads
+    // echelon from charAt(11)). Operators use the infantry function id.
+    const ECH = { company: 'E', platoon: 'D', section: 'C', team: 'A' }; // COY/PLT/SEC/TM
+    function unitSidc(type) {
+        let s = 'SFGPU----------';           // generic friendly ground unit (15 chars)
+        const e = ECH[type];
+        if (e) s = s.slice(0, 11) + e + s.slice(12);
+        return s;
+    }
+    const OP_SIDC = 'SFGPUCI--------';        // friendly infantry (individual)
+
+    // SVG cache keyed by "sidc|size"
+    const _msCache = {};
+    function msSvg(sidc, size) {
+        const key = sidc + '|' + size;
+        if (!_msCache[key]) {
+            try { _msCache[key] = new ms.Symbol(sidc, { size }).asSVG(); }
+            catch (e) { _msCache[key] = `<svg width="${size}" height="${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2-2}" fill="none" stroke="#34d399"/></svg>`; }
+        }
+        return _msCache[key];
+    }
+
+    // Lookup tables + per-subtree rollups, rebuilt each render.
+    let _org = null;
+
+    function buildOrg() {
+        const pltByCo  = groupBy(platoons, p => p.company_id);
+        const secByPlt = groupBy(sections, s => s.platoon_id);
+        const tmBySec  = groupBy(teams,    t => t.section_id);
+        const opByTeam = groupBy(operators.filter(o => o.team_id), o => o.team_id);
+        const coMap  = Object.fromEntries(companies.map(c => [c.id, c]));
+        const pltMap = Object.fromEntries(platoons.map(p => [p.id, p]));
+        const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
+        const tmMap  = Object.fromEntries(teams.map(t => [t.id, t]));
+        _org = { pltByCo, secByPlt, tmBySec, opByTeam, coMap, pltMap, secMap, tmMap };
+    }
+
+    // Returns {teams, ops, online} totals for a subtree node.
+    function rollup(type, id) {
+        const o = _org;
+        let tms = [];
+        if (type === 'company')
+            for (const p of o.pltByCo[id] || [])
+                for (const s of o.secByPlt[p.id] || []) tms.push(...(o.tmBySec[s.id] || []));
+        else if (type === 'platoon')
+            for (const s of o.secByPlt[id] || []) tms.push(...(o.tmBySec[s.id] || []));
+        else if (type === 'section') tms = o.tmBySec[id] || [];
+        else if (type === 'team')    tms = o.tmMap[id] ? [o.tmMap[id]] : [];
+        let ops = 0, online = 0;
+        for (const t of tms) {
+            const m = o.opByTeam[t.id] || [];
+            ops += m.length; online += m.filter(x => x.online).length;
+        }
+        return { teams: tms.length, ops, online };
+    }
+
+    function teamPath(teamId) {
+        const t = _org.tmMap[teamId]; if (!t) return '—';
+        const s = _org.secMap[t.section_id];
+        const p = s ? _org.pltMap[s.platoon_id] : null;
+        const c = p ? _org.coMap[p.company_id] : null;
+        return [c?.name, p?.name, s?.name, t.name].filter(Boolean).join(' › ');
+    }
+
+    function orgNode(type, item) {
+        const isOp = type === 'operator';
+        const sidc = isOp ? OP_SIDC : unitSidc(type);
+        const size = isOp ? 26 : 34;
+        const name = isOp ? item.callsign : item.name;
+        let meta = '';
+        if (isOp) meta = `${esc(item.rank || '')}`;
+        else { const r = rollup(type, item.id); meta = `${r.ops} ops`; }
+        const key = `${type}:${item.id}`;
+        return `
+          <div class="org-node ${isOp ? 'op-node' : ''}" data-key="${key}" onclick="openOrgDetail('${key}')">
+            ${msSvg(sidc, size)}
+            <span class="on-name">${esc(name)}</span>
+            <span class="on-meta">${meta}</span>
+          </div>`;
+    }
+
+    function renderOrgChart(el) {
+        if (typeof ms === 'undefined' || !ms.Symbol) {
+            el.innerHTML = '<p style="color:#ef4444">milsymbol library failed to load — cannot draw symbols.</p>';
+            return;
+        }
+        buildOrg();
+        const o = _org;
+
+        const teamLi = t => {
+            const ops = o.opByTeam[t.id] || [];
+            const kids = ops.length
+                ? `<ul>${ops.map(op => `<li>${orgNode('operator', op)}</li>`).join('')}</ul>` : '';
+            return `<li>${orgNode('team', t)}${kids}</li>`;
+        };
+        const secLi = s => {
+            const tms = o.tmBySec[s.id] || [];
+            const kids = tms.length ? `<ul>${tms.map(teamLi).join('')}</ul>` : '';
+            return `<li>${orgNode('section', s)}${kids}</li>`;
+        };
+        const pltLi = p => {
+            const secs = o.secByPlt[p.id] || [];
+            const kids = secs.length ? `<ul>${secs.map(secLi).join('')}</ul>` : '';
+            return `<li>${orgNode('platoon', p)}${kids}</li>`;
+        };
+        const coTree = c => {
+            const plts = o.pltByCo[c.id] || [];
+            const kids = plts.length ? `<ul>${plts.map(pltLi).join('')}</ul>` : '';
+            return `<ul class="orgtree"><li>${orgNode('company', c)}${kids}</li></ul>`;
+        };
+
+        if (!companies.length) {
+            el.innerHTML = `<div class="sec-header"><h2>🎖 ORBAT Diagram</h2></div>
+                <p style="color:#475569">No companies yet — build the hierarchy first.</p>`;
+            return;
+        }
+
+        el.innerHTML = `
+        <div class="sec-header"><h2>🎖 ORBAT Diagram</h2></div>
+        <div class="org-leg">
+            <span><b>COY</b> Company</span><span><b>PLT</b> Platoon</span>
+            <span><b>SEC</b> Section</span><span><b>TM</b> Team</span>
+            <span>● individual = operator</span>
+            <span style="margin-left:auto">Click any symbol for details</span>
+        </div>
+        <div class="orbat-wrap">
+            ${companies.map(coTree).join('<div style="height:1.5rem"></div>')}
+        </div>`;
+    }
+
+    // ── Detail drawer ──────────────────────────────────────────────────────
+    window.openOrgDetail = function(key) {
+        const [type, idStr] = key.split(':');
+        const id = parseInt(idStr);
+        const drawer = document.getElementById('org-detail');
+        const symEl   = document.getElementById('od-symbol');
+        const titleEl = document.getElementById('od-title');
+        const bodyEl  = document.getElementById('od-body');
+
+        document.querySelectorAll('.org-node.selected').forEach(n => n.classList.remove('selected'));
+        const node = document.querySelector(`.org-node[data-key="${key}"]`);
+        if (node) node.classList.add('selected');
+
+        const row = (k, v) => `<div class="od-row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+        const typeLabel = { company:'Company', platoon:'Platoon', section:'Section', team:'Team', operator:'Operator' }[type];
+
+        if (type === 'operator') {
+            const op = operators.find(o => o.id === id);
+            if (!op) return;
+            symEl.innerHTML = msSvg(OP_SIDC, 30);
+            titleEl.textContent = op.callsign;
+            const pos = (window.mgrsOrDash && (op.latitude != null))
+                ? window.mgrsOrDash(op.latitude, op.longitude) : '—';
+            const ls = (op.last_seen || '').slice(0, 16).replace('T', ' ') || '—';
+            bodyEl.innerHTML =
+                row('Type', typeLabel) +
+                row('Rank', esc(op.rank || '—')) +
+                row('Role', `<span class="badge ${op.role==='ADMIN'?'badge-adm':op.role==='BATTLE_CAPTAIN'?'badge-bc':'badge-op'}">${esc(op.role)}</span>`) +
+                row('Team role', esc((op.team_role || '—').replace(/_/g,' '))) +
+                row('Status', op.online ? '<span class="dot-online"></span> ONLINE' : '<span class="dot-offline"></span> Offline') +
+                row('Last seen', ls) +
+                row('Position', `<span style="font-family:monospace;font-size:.78rem">${pos}</span>`) +
+                `<div class="od-sub">Chain of command</div>
+                 <div style="font-size:.8rem;color:#94a3b8;margin-top:.3rem">${op.team_id ? esc(teamPath(op.team_id)) : 'Unassigned'}</div>`;
+        } else {
+            const item = ({ company:_org.coMap, platoon:_org.pltMap, section:_org.secMap, team:_org.tmMap })[type][id];
+            if (!item) return;
+            symEl.innerHTML = msSvg(unitSidc(type), 30);
+            titleEl.textContent = item.name;
+            const r = rollup(type, id);
+            let rows = row('Type', typeLabel);
+            if (type === 'company') {
+                const plts = _org.pltByCo[id] || [];
+                let secCount = 0; for (const p of plts) secCount += (_org.secByPlt[p.id]||[]).length;
+                rows += row('Platoons', plts.length) + row('Sections', secCount);
+            } else if (type === 'platoon') {
+                const c = _org.coMap[item.company_id];
+                rows += row('Company', esc(c ? c.name : '—')) + row('Sections', (_org.secByPlt[id]||[]).length);
+            } else if (type === 'section') {
+                const p = _org.pltMap[item.platoon_id];
+                rows += row('Platoon', esc(p ? p.name : '—'));
+            } else if (type === 'team') {
+                const s = _org.secMap[item.section_id];
+                rows += row('Section', esc(s ? s.name : '—'));
+            }
+            rows += row('Teams', r.teams) + row('Operators', r.ops) +
+                    row('Online', `<span style="color:${r.online?'#34d399':'#64748b'}">${r.online} / ${r.ops}</span>`);
+
+            if (type === 'team') {
+                const ops = _org.opByTeam[id] || [];
+                rows += `<div class="od-sub">Members (${ops.length})</div>` +
+                    (ops.length ? ops.map(op => `
+                        <div class="od-op">
+                            <span class="${op.online ? 'dot-online' : 'dot-offline'}"></span>
+                            <span style="flex:1">${esc(op.callsign)}</span>
+                            <code style="font-size:.72rem;color:#64748b">${esc(op.rank||'')}</code>
+                            <span class="badge ${op.role==='ADMIN'?'badge-adm':op.role==='BATTLE_CAPTAIN'?'badge-bc':'badge-op'}">${op.role==='BATTLE_CAPTAIN'?'BC':esc(op.role)}</span>
+                        </div>`).join('')
+                       : '<div style="color:#475569;font-size:.8rem;padding:.3rem 0">No operators assigned.</div>');
+            }
+            bodyEl.innerHTML = rows;
+        }
+        drawer.classList.add('open');
+    };
+
+    window.closeOrgDetail = function() {
+        document.getElementById('org-detail').classList.remove('open');
+        document.querySelectorAll('.org-node.selected').forEach(n => n.classList.remove('selected'));
+    };
+
+    // ── Config ─────────────────────────────────────────────────────────────
+    async function renderConfig(el) {
+        const cfg = await api('/admin/config').then(r => r.ok ? r.json() : null);
+        if (!cfg) { el.innerHTML = '<p style="color:#ef4444">Could not load config. Admin role required.</p>'; return; }
+
+        const section = (title, rows) => `
+          <div class="cfg-section">
+            <h3>${title}</h3>
+            ${rows.map(([k,v,warn]) => `
+              <div class="cfg-row">
+                <div class="cfg-key">${k}</div>
+                <div class="cfg-val ${warn?'warn':''}">${esc(String(v))}</div>
+              </div>`).join('')}
+          </div>`;
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Configuration</h2>
+            <span style="color:#64748b;font-size:0.8rem">Source: config.xml · restart server to apply changes</span>
+        </div>
+        ${section('Server', [['host', cfg.server.host], ['port', cfg.server.port]])}
+        ${section('Database', [['url', cfg.database.url]])}
+        ${section('Authentication', [
+            ['secret',               cfg.auth.secret, cfg.auth.secret.includes('DEFAULT')],
+            ['algorithm',            cfg.auth.algorithm],
+            ['token_expire_minutes', cfg.auth.token_expire_minutes],
+        ])}
+        ${section('CoT (Cursor on Target)', [
+            ['multicast_group', cfg.cot.multicast_group],
+            ['port',            cfg.cot.port],
+        ])}
+        ${section('Maps', [['offline', cfg.maps.offline]])}
+        ${section('Default Operator', [['callsign', cfg.operator.callsign], ['team', cfg.operator.team]])}
+        <p style="color:#64748b;font-size:0.8rem;margin-top:1rem">
+            ℹ️  Edit <code>config.xml</code> in the project root to change these values, then restart the server.
+        </p>
+
+        <div class="cfg-section" id="apk-dist-section">
+            <h3>📱 APK Distribution</h3>
+            <div style="padding:1rem">
+                <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 1rem">
+                    Where the Android APK lives. Choose <strong>LOCAL</strong> for a filesystem path
+                    (use this for any NFS or SMB share you have mounted at the OS level), or
+                    <strong>SMB</strong> to read directly from a Windows/Samba server
+                    (requires the <code>smbprotocol</code> Python package).
+                </p>
+                <div class="field"><label>Transport</label>
+                    <select id="apk-kind">
+                        <option value="LOCAL">LOCAL (filesystem / mounted NFS|SMB)</option>
+                        <option value="SMB">SMB (direct, smbprotocol)</option>
+                    </select>
+                </div>
+                <div class="apk-smb-only">
+                    <div class="field"><label>SMB host</label>
+                        <input id="apk-host" placeholder="fileserver.lan or 10.0.0.5"/>
+                    </div>
+                    <div class="field"><label>SMB share</label>
+                        <input id="apk-share" placeholder="builds"/>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Path <span style="color:#475569">(LOCAL: filesystem path or directory; SMB: path within share)</span></label>
+                    <input id="apk-path" placeholder="/mnt/builds/arrow/  or  releases/2026-05"/>
+                </div>
+                <div class="field"><label>Filename</label>
+                    <input id="apk-filename" placeholder="arrow.apk"/>
+                </div>
+                <div class="apk-smb-only">
+                    <div class="field"><label>SMB username</label>
+                        <input id="apk-username" placeholder="DOMAIN\\user or user"/>
+                    </div>
+                    <div class="field"><label>SMB password
+                        <span style="color:#475569">(leave blank = no change)</span></label>
+                        <input id="apk-password" type="password" placeholder="••••••••"/>
+                    </div>
+                </div>
+                <div id="apk-status" style="font-size:0.8rem;color:#64748b;margin-bottom:0.6rem"></div>
+                <div id="apk-err" class="form-error"></div>
+                <div style="display:flex;gap:0.6rem;align-items:center">
+                    <button class="btn btn-primary" onclick="saveApkConfig()">💾 Save</button>
+                    <a class="btn btn-ghost" href="/download/">Open download page →</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="cfg-section" id="session-timeout-section">
+            <h3>⏱ Session Timeout</h3>
+            <div style="padding:1rem">
+                <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 1rem">
+                    Automatically log out inactive users after the configured period.
+                    Set to <strong>0</strong> to disable. Users receive a 30–60 second
+                    warning before being logged out.
+                </p>
+                <div class="field">
+                    <label>Inactivity timeout <span style="color:#475569">(minutes · 0 = disabled)</span></label>
+                    <input id="session-timeout-input" type="number" min="0" max="1440" step="1" placeholder="0" style="width:120px"/>
+                </div>
+                <div id="session-timeout-status" style="font-size:0.8rem;color:#64748b;margin-bottom:0.6rem"></div>
+                <div id="session-timeout-err" class="form-error"></div>
+                <button class="btn btn-primary" onclick="saveSessionTimeout()">💾 Save</button>
+            </div>
+        </div>`;
+        loadApkConfig();
+        loadSessionConfig();
+    }
+
+    function applyApkKindUi() {
+        const kind = document.getElementById('apk-kind').value;
+        document.querySelectorAll('.apk-smb-only').forEach(el => {
+            el.style.display = (kind === 'SMB') ? '' : 'none';
+        });
+    }
+
+    async function loadApkConfig() {
+        const r = await api('/admin/apk-config');
+        const status = document.getElementById('apk-status');
+        if (!r.ok) { status.innerHTML = '<span style="color:#ef4444">Could not load APK config.</span>'; return; }
+        const c = await r.json();
+        document.getElementById('apk-kind').value     = c.kind || 'LOCAL';
+        document.getElementById('apk-host').value     = c.host || '';
+        document.getElementById('apk-share').value    = c.share || '';
+        document.getElementById('apk-path').value     = c.path || '';
+        document.getElementById('apk-filename').value = c.filename || 'arrow.apk';
+        document.getElementById('apk-username').value = c.username || '';
+        document.getElementById('apk-password').value = '';
+        status.innerHTML = c.configured
+            ? `Currently configured — last updated ${c.updated_at ? c.updated_at.replace('T',' ').slice(0,16) : '—'}`
+              + (c.has_password ? ' · password set' : '')
+            : '<span style="color:#f59e0b">Not configured.</span>';
+        document.getElementById('apk-kind').addEventListener('change', applyApkKindUi);
+        applyApkKindUi();
+    }
+
+    window.saveApkConfig = async function() {
+        const body = {
+            kind:     document.getElementById('apk-kind').value,
+            host:     document.getElementById('apk-host').value.trim(),
+            share:    document.getElementById('apk-share').value.trim(),
+            path:     document.getElementById('apk-path').value.trim(),
+            filename: document.getElementById('apk-filename').value.trim() || 'arrow.apk',
+            username: document.getElementById('apk-username').value.trim(),
+            password: document.getElementById('apk-password').value,
+        };
+        const errEl = document.getElementById('apk-err');
+        errEl.textContent = '';
+        if (!body.path) { errEl.textContent = 'Path is required.'; return; }
+        if (body.kind === 'LOCAL' && /^(nfs|smb|cifs):\/\//i.test(body.path)) {
+            errEl.textContent = 'LOCAL mode needs a mounted filesystem path (e.g. /mnt/apks), not a URI. Mount the NFS/SMB share on the server first, then enter the local mount point here.';
+            return;
+        }
+        if (body.kind === 'SMB' && (!body.host || !body.share)) {
+            errEl.textContent = 'SMB host and share are required.'; return;
+        }
+        const r = await api('/admin/apk-config', {
+            method: 'PUT', body: JSON.stringify(body),
+        });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status} ${await r.text()}`; return; }
+        await loadApkConfig();
+    };
+
+    // ── Session timeout config ─────────────────────────────────────────────
+    async function loadSessionConfig() {
+        const r = await api('/admin/session-config');
+        if (!r.ok) return;
+        const c = await r.json();
+        const input  = document.getElementById('session-timeout-input');
+        const status = document.getElementById('session-timeout-status');
+        if (input)  input.value = c.inactivity_timeout_minutes || 0;
+        if (status) status.textContent = c.inactivity_timeout_minutes > 0
+            ? `Auto-logout after ${c.inactivity_timeout_minutes} minute${c.inactivity_timeout_minutes === 1 ? '' : 's'} of inactivity`
+            : 'Auto-logout disabled';
+    }
+
+    window.saveSessionTimeout = async function() {
+        const input  = document.getElementById('session-timeout-input');
+        const errEl  = document.getElementById('session-timeout-err');
+        errEl.textContent = '';
+        const minutes = parseInt(input.value, 10);
+        if (isNaN(minutes) || minutes < 0) {
+            errEl.textContent = 'Enter a valid number (0 to disable).';
+            return;
+        }
+        const r = await api('/admin/session-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ inactivity_timeout_minutes: minutes }),
+        });
+        if (!r.ok) { errEl.textContent = `Save failed: ${r.status}`; return; }
+        await loadSessionConfig();
+    };
+
+    // ── Alerts ─────────────────────────────────────────────────────────────
+    async function renderAlerts(el) {
+        const alerts = await api('/alerts').then(r => r.ok ? r.json() : []);
+        const opMap  = Object.fromEntries(operators.map(o => [o.id, o.callsign]));
+        const colors = { ACTIVE:'badge-err', ACKNOWLEDGED:'badge-warn', CLOSED:'badge-op' };
+        el.innerHTML = `
+        <div class="sec-header"><h2>Alerts (${alerts.length})</h2></div>
+        <table class="adm-table">
+            <thead><tr><th>Type</th><th>Operator</th><th>Location</th><th>Time</th><th>Status</th></tr></thead>
+            <tbody>
+            ${alerts.map(a => `<tr>
+                <td><strong>${esc(a.type)}</strong></td>
+                <td>${esc(opMap[a.operator_id] || '#' + a.operator_id)}</td>
+                <td style="font-size:0.78rem;font-family:monospace">${window.mgrsOrDash(a.latitude, a.longitude)}</td>
+                <td style="color:#64748b;font-size:0.78rem">${(a.timestamp||'').slice(0,16).replace('T',' ')}</td>
+                <td><span class="badge ${colors[a.status]||'badge-op'}">${a.status}</span></td>
+            </tr>`).join('') || '<tr><td colspan="5" style="color:#475569">No alerts</td></tr>'}
+            </tbody>
+        </table>`;
+    }
+
+    // ── Map snapshots — reset / history / restore ─────────────────────────
+    async function renderSnapshots(el) {
+        const [snapsR, toR, msgR, repR, alR, fmR] = await Promise.all([
+            api('/admin/map/snapshots'),
+            api('/tactical-objects'),
+            api('/messages'),
+            api('/reports'),
+            api('/alerts'),
+            api('/fire-missions'),
+        ]);
+        const snaps = snapsR.ok ? await snapsR.json() : [];
+        const live  = {
+            tactical_objects: toR.ok  ? (await toR.json()).length  : 0,
+            messages:         msgR.ok ? (await msgR.json()).length : 0,
+            reports:          repR.ok ? (await repR.json()).length : 0,
+            alerts:           alR.ok  ? (await alR.json()).length  : 0,
+            fire_missions:    fmR.ok  ? (await fmR.json()).length  : 0,
+        };
+        const liveTotal = Object.values(live).reduce((a, b) => a + b, 0);
+
+        const livePill = (n, lbl) =>
+            `<span style="background:#1a2233;border:1px solid #2a3142;border-radius:4px;
+                          padding:1px 7px;font-size:0.72rem;color:${n>0?'#34d399':'#475569'}">
+                <strong>${n}</strong> ${lbl}
+             </span>`;
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Map snapshots</h2>
+            <button class="btn btn-danger" onclick="snapReset()">
+                ⚠ Reset map (snapshot &amp; clear all)
+            </button>
+        </div>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
+            <span style="color:#94a3b8;font-size:0.78rem;margin-right:0.3rem">Live state:</span>
+            ${livePill(live.tactical_objects, 'tactical')}
+            ${livePill(live.messages,         'msgs')}
+            ${livePill(live.reports,          'reports')}
+            ${livePill(live.alerts,           'alerts')}
+            ${livePill(live.fire_missions,    'fire missions')}
+            <span style="color:#64748b;font-size:0.78rem;margin-left:auto">
+                ${liveTotal} record${liveTotal===1?'':'s'} total
+            </span>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            Reset captures every record into a snapshot then <b>wipes the map clean</b>:
+            tactical objects, messages, reports, alerts, fire missions, CoT tracks,
+            KML layers, saved overlays, and every non-ADMIN operator (sim accounts,
+            BCs, OPERATORs) along with their position history. ADMIN accounts,
+            company / platoon / section / team hierarchy, photos and audit logs
+            survive. Restore is additive: re-creates the snapshotted records with
+            fresh IDs (operator references that no longer exist get reassigned to you).
+        </p>
+        <table class="adm-table">
+            <thead><tr>
+                <th>#</th><th>Name</th><th>Created</th><th>Total</th><th>Breakdown</th><th></th>
+            </tr></thead>
+            <tbody id="snap-rows">
+            ${snaps.length === 0
+                ? '<tr><td colspan="6" style="color:#475569">No snapshots yet — press the red button above to take one.</td></tr>'
+                : snaps.map(s => `
+                    <tr id="snap-row-${s.id}">
+                        <td>#${s.id}</td>
+                        <td><strong>${esc(s.name)}</strong></td>
+                        <td style="color:#64748b;font-size:0.78rem">
+                            ${(s.created_at || '').replace('T',' ').slice(0,16)}
+                        </td>
+                        <td>${s.object_count}</td>
+                        <td><span style="color:#475569;font-size:0.75rem"
+                                  id="snap-bd-${s.id}">…</span></td>
+                        <td style="text-align:right;white-space:nowrap">
+                            <button class="btn btn-primary btn-sm" onclick="snapRestore(${s.id})">
+                                ↺ Restore
+                            </button>
+                            <button class="btn btn-ghost btn-sm" onclick="snapDelete(${s.id})">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>`).join('')
+            }
+            </tbody>
+        </table>`;
+
+        // Lazy-load each snapshot's per-category breakdown
+        snaps.forEach(s => loadSnapBreakdown(s.id));
+    }
+
+    async function loadSnapBreakdown(id) {
+        const r = await api(`/admin/map/snapshots/${id}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        const c = d.counts || {};
+        const parts = [];
+        if (c.tactical_objects) parts.push(`${c.tactical_objects} tac`);
+        if (c.messages)         parts.push(`${c.messages} msg`);
+        if (c.reports)          parts.push(`${c.reports} rpt`);
+        if (c.alerts)           parts.push(`${c.alerts} alt`);
+        if (c.fire_missions)    parts.push(`${c.fire_missions} FM`);
+        if (c.cot_tracks)       parts.push(`${c.cot_tracks} CoT`);
+        if (c.kml_layers)       parts.push(`${c.kml_layers} KML`);
+        if (c.overlays)         parts.push(`${c.overlays} ovl`);
+        if (c.operators)        parts.push(`${c.operators} ops`);
+        const el = document.getElementById(`snap-bd-${id}`);
+        if (el) el.textContent = parts.length ? parts.join(' · ') : '— empty —';
+    }
+
+    window.snapReset = async function() {
+        if (!confirm(
+            "Reset the map?\n\n" +
+            "EVERY live record will be deleted from the live system:\n" +
+            "  • tactical objects (enemies, OBJs, axes, FLET, …)\n" +
+            "  • messages / reports / alerts / fire missions\n" +
+            "  • CoT tracks (simulator + ATAK peers)\n" +
+            "  • KML layers + saved overlays\n" +
+            "  • EVERY non-ADMIN operator and their position history\n\n" +
+            "A snapshot is saved first so you can restore later.\n" +
+            "ADMIN accounts, unit hierarchy, photos and audit logs survive."
+        )) return;
+        const name = prompt("Optional snapshot name:", "");
+        const r = await api('/admin/map/reset', {
+            method: 'POST',
+            body:    JSON.stringify({ name: name || '' }),
+        });
+        if (r.ok) {
+            const out = await r.json();
+            const c   = out.counts || {};
+            const parts = [];
+            if (c.tactical_objects) parts.push(`${c.tactical_objects} tactical`);
+            if (c.messages)         parts.push(`${c.messages} messages`);
+            if (c.reports)          parts.push(`${c.reports} reports`);
+            if (c.alerts)           parts.push(`${c.alerts} alerts`);
+            if (c.fire_missions)    parts.push(`${c.fire_missions} fire missions`);
+            if (c.cot_tracks)       parts.push(`${c.cot_tracks} CoT tracks`);
+            if (c.kml_layers)       parts.push(`${c.kml_layers} KML layers`);
+            if (c.overlays)         parts.push(`${c.overlays} overlays`);
+            if (c.operators)        parts.push(`${c.operators} operators`);
+            alert(`Map reset. Snapshot #${out.id} saved with ${out.object_count} record(s)` +
+                  (parts.length ? `:\n  ${parts.join('\n  ')}` : '.'));
+            renderSnapshots(document.getElementById('adm-main'));
+        } else {
+            alert(`Reset failed (${r.status}).`);
+        }
+    };
+
+    window.snapRestore = async function(id) {
+        if (!confirm(`Restore snapshot #${id}?\n\n` +
+                     "Every snapshotted record is recreated with a fresh ID. " +
+                     "Restore is additive — existing live records are NOT removed. " +
+                     "Run a Reset first for a clean restore.")) return;
+        const r = await api(`/admin/map/snapshots/${id}/restore`, { method: 'POST' });
+        if (r.ok) {
+            const out = await r.json();
+            const c   = out.counts || {};
+            const parts = Object.entries(c).filter(([_, n]) => n).map(([k, n]) =>
+                `${n} ${k.replace('_', ' ')}`);
+            alert(`Restored ${out.restored} record(s)` +
+                  (parts.length ? `:\n  ${parts.join('\n  ')}` : '.'));
+        } else {
+            alert(`Restore failed (${r.status}).`);
+        }
+    };
+
+    window.snapDelete = async function(id) {
+        if (!confirm(`Delete snapshot #${id}? The data is gone for good — you can't restore from it after.`)) return;
+        const r = await api(`/admin/map/snapshots/${id}`, { method: 'DELETE' });
+        if (r.status === 204) {
+            renderSnapshots(document.getElementById('adm-main'));
+        } else {
+            alert(`Delete failed (${r.status}).`);
+        }
+    };
+
+    // ── Map + notification visibility — per-category global filter ─────────
+    // Two independent axes:
+    //   * MAP    — what gets drawn on the map canvas
+    //   * NOTIF  — what pops up as a toast card on the right of the screen
+    // Each entry matches a field on the MapVisibility singleton on the server.
+    // Toggling PUTs the change; every connected web/Android client respects it
+    // live via the WS broadcast on the ``map-visibility`` channel.
+    const MAP_CATEGORIES = [
+        { key: 'tactical_objects', icon: '🎯', label: 'Tactical objects',
+          desc: 'Enemies, POIs, objectives, tactical control graphics, ATK_AXIS, FLET, …' },
+        { key: 'operators',        icon: '👥', label: 'Operators',
+          desc: 'Friendly position markers (live tracking).' },
+        { key: 'fire_missions',    icon: '💥', label: 'Fire missions',
+          desc: 'CFF markers and impact splashes on the map.' },
+        { key: 'alerts',           icon: '🚨', label: 'Alerts',
+          desc: 'TIC / MEDICAL / EVAC / LOST_COMMS pulses and auto-zoom.' },
+        { key: 'reports',          icon: '📋', label: 'Reports',
+          desc: 'SPOT, CASEVAC, MEDEVAC, CAS, CBRN (also drives CBRN zones).' },
+        { key: 'cot_tracks',       icon: '📡', label: 'CoT tracks',
+          desc: 'Foreign-UID Cursor-on-Target tracks (simulator / ATAK peers).' },
+        { key: 'kml_layers',       icon: '📂', label: 'KML layers',
+          desc: 'Imported KML/KMZ overlay features (points / lines / polygons).' },
+        { key: 'overlays',         icon: '📚', label: 'Saved overlays',
+          desc: 'Named bundles of TacticalObject ids used as map filters.' },
+        { key: 'vehicles',         icon: '🚙', label: 'Vehicles',
+          desc: 'Unit vehicles, positioned at their assigned operator/team.' },
+    ];
+    const NOTIF_CATEGORIES = [
+        { key: 'notif_chat',          icon: '💬', label: 'Chat toasts',
+          desc: 'BROADCAST / DIRECT / GROUP chat messages popping up on the right.' },
+        { key: 'notif_fire_missions', icon: '🎯', label: 'Fire-mission toasts',
+          desc: 'Red "FIRE MISSION" cards (call-for-fire alerts), inc. audio.' },
+        { key: 'notif_alerts',        icon: '🚨', label: 'TIC / alert toasts',
+          desc: 'TIC, MEDICAL, EVAC, LOST_COMMS, DRONE_SPOTTED toast cards + voice alarms.' },
+        { key: 'notif_streams',       icon: '🎥', label: 'Stream toasts',
+          desc: 'Live-stream notifications (operator goes live / ends stream).' },
+        { key: 'notif_octopus_detections', icon: '📸', label: 'Octopus detections',
+          desc: 'Toast cards + ping sound when Octopus detects person / drone / vehicle.' },
+        { key: 'sound_enabled',       icon: '🔊', label: 'Sound',
+          desc: 'Audio alerts and voice for all events. Mute to silence everything.',
+          onLabel: 'ON', offLabel: 'OFF' },
+    ];
+    const VIS_CATEGORIES = MAP_CATEGORIES;   // kept for backward-compat refs
+
+    // ── Per-operator local prefs (no server PUT) ──────────────────────────
+    // Each device stores its own visibility choices in localStorage. The
+    // server endpoint is hit ONLY for first-time defaults — once the user
+    // has touched a toggle the local copy is authoritative. Other browser
+    // tabs on this device pick up the change via the ``storage`` event.
+    const VIS_LS_KEY = 'arrow_visibility_prefs';
+    function _allOnDefaults() {
+        const d = {};
+        [...MAP_CATEGORIES, ...NOTIF_CATEGORIES].forEach(c => d[c.key] = true);
+        return d;
+    }
+    function _readVisPrefs() {
+        try {
+            const raw = localStorage.getItem(VIS_LS_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (_) { return null; }
+    }
+    function _writeVisPrefs(prefs) {
+        localStorage.setItem(VIS_LS_KEY, JSON.stringify(prefs));
+        // Manually fire a storage event for same-tab listeners (the standard
+        // 'storage' event only fires on OTHER tabs of the same origin).
+        try {
+            window.dispatchEvent(new CustomEvent('arrow-visibility-changed',
+                { detail: prefs }));
+        } catch (_) {}
+    }
+
+    async function renderVisibility(el) {
+        // Start with locally saved prefs; if none, seed from the server's
+        // (admin-controlled) defaults so a brand-new install isn't all-off.
+        let cur = _readVisPrefs();
+        if (!cur) {
+            const r = await api('/admin/map-visibility');
+            cur = r.ok ? await r.json() : _allOnDefaults();
+            // Trim to known keys + persist so the next visit is offline-OK.
+            const trimmed = _allOnDefaults();
+            for (const k of Object.keys(trimmed)) {
+                if (k in cur) trimmed[k] = !!cur[k];
+            }
+            cur = trimmed;
+            _writeVisPrefs(cur);
+        }
+
+        const card = (c, on, onTone='#1e3a2f', offTone='#7f1d1d') => {
+            const safe = (s) => s.replace(/[<>&]/g, x => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[x]));
+            return `
+                <label style="display:flex; align-items:center; gap:0.6rem;
+                              background:#161b25; border:1px solid ${on?onTone:'#2a3142'};
+                              border-radius:6px; padding:0.7rem 0.9rem; cursor:pointer">
+                    <input type="checkbox" id="vis-${c.key}" ${on?'checked':''}
+                           onchange="visToggle('${c.key}', this.checked, this)"
+                           style="width:18px; height:18px; cursor:pointer"/>
+                    <div style="flex:1; min-width:0">
+                        <div style="font-weight:600; color:#e2e8f0">
+                            ${c.icon} ${safe(c.label)}
+                            <span style="font-size:0.72rem; color:${on?'#34d399':'#ef4444'};
+                                         font-weight:700; margin-left:0.4rem">
+                                ${on ? (c.onLabel || 'VISIBLE') : (c.offLabel || 'HIDDEN')}
+                            </span>
+                        </div>
+                        <div style="color:#94a3b8; font-size:0.78rem; margin-top:0.15rem">
+                            ${safe(c.desc)}
+                        </div>
+                    </div>
+                </label>`;
+        };
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Map + notification visibility</h2>
+            <div style="display:flex; gap:0.4rem">
+                <button class="btn btn-ghost" onclick="visAll(true)">Show all</button>
+                <button class="btn btn-ghost" onclick="visAll(false)">Hide all</button>
+                <button class="btn btn-ghost" onclick="visResetDefaults()" title="Re-fetch admin defaults">↺ Defaults</button>
+            </div>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            <b>These are your personal device preferences</b> — every operator has
+            their own settings, stored locally. Toggling a category here only
+            affects what <i>you</i> see; other operators are not impacted. Two
+            independent axes: <b>Map</b> controls what's drawn on the tactical map
+            canvas; <b>Notifications</b> controls the toast cards (chat,
+            fire-mission, alert, stream events).
+        </p>
+
+        <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
+                   text-transform:uppercase;margin:0.5rem 0 0.5rem">
+            🗺  On the map
+        </h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem">
+            ${MAP_CATEGORIES.map(c => card(c, cur[c.key])).join('')}
+        </div>
+
+        <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
+                   text-transform:uppercase;margin:1.2rem 0 0.5rem">
+            🔔  Notification toasts
+        </h3>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem">
+            ${NOTIF_CATEGORIES.map(c => card(c, cur[c.key])).join('')}
+        </div>`;
+    }
+
+    window.visToggle = function(key, on, _cbox) {
+        const cur = _readVisPrefs() || _allOnDefaults();
+        cur[key] = !!on;
+        _writeVisPrefs(cur);
+        renderVisibility(document.getElementById('adm-main'));
+    };
+
+    window.visAll = function(on) {
+        const cur = _allOnDefaults();
+        for (const k of Object.keys(cur)) cur[k] = !!on;
+        _writeVisPrefs(cur);
+        renderVisibility(document.getElementById('adm-main'));
+    };
+
+    window.visResetDefaults = async function() {
+        // Pull the admin-controlled server defaults again and overwrite local.
+        const r = await api('/admin/map-visibility');
+        if (!r.ok) { alert(`Could not fetch defaults (${r.status}).`); return; }
+        const server = await r.json();
+        const out = _allOnDefaults();
+        for (const k of Object.keys(out)) if (k in server) out[k] = !!server[k];
+        _writeVisPrefs(out);
+        renderVisibility(document.getElementById('adm-main'));
+    };
+
+    // ── Base maps (MBTiles) ────────────────────────────────────────────────
+    async function renderMaps(el) {
+        const sources = await api('/map/sources').then(r => r.ok ? r.json() : []);
+        const files = sources.filter(s => s.downloadable);   // exclude built-in OSM
+        const rows = files.length
+            ? files.map(s => `
+                <tr>
+                    <td style="font-family:monospace">${esc(s.title)}</td>
+                    <td>${s.format.toUpperCase()}</td>
+                    <td>z ${s.min_zoom}–${s.max_zoom}</td>
+                    <td>${humanSize(s.size_bytes || 0)}</td>
+                    <td style="text-align:right">
+                        <button class="btn btn-ghost" onclick="deleteMap('${esc(s.name)}')">🗑 Delete</button>
+                    </td>
+                </tr>`).join('')
+            : `<tr><td colspan="5" style="color:#475569;text-align:center;padding:1rem">
+                   No MBTiles uploaded yet — drop a file below to add one.
+               </td></tr>`;
+
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Base maps (${files.length})</h2>
+        </div>
+        <p style="color:#94a3b8;font-size:0.85rem;margin-top:-0.5rem">
+            MBTiles archives served as base layers to the web Leaflet map and the Android client.
+            Files are stored in <code>maps/</code> on the backend and read at request time —
+            uploading or deleting takes effect immediately (no restart required).
+        </p>
+        <table class="adm-table" style="margin-bottom:1rem">
+            <thead><tr>
+                <th>Name</th><th>Format</th><th>Zoom</th><th>Size</th><th></th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+
+        <div class="cfg-section">
+            <h3>Upload MBTiles</h3>
+            <div style="padding:0.75rem 1rem">
+                <input type="file" id="map-upload-file" accept=".mbtiles"
+                       style="display:block;margin-bottom:0.75rem;color:#cbd5e1"/>
+                <div style="display:flex;align-items:center;gap:0.75rem">
+                    <button class="btn btn-primary" id="map-upload-btn" onclick="uploadMap()">⬆ Upload</button>
+                    <progress id="map-upload-progress" value="0" max="1"
+                              style="flex:1;height:14px;display:none"></progress>
+                    <span id="map-upload-status" style="color:#94a3b8;font-size:0.83rem"></span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    window.deleteMap = async (name) => {
+        if (!confirm(`Delete map "${name}"? This removes the .mbtiles file from disk.`)) return;
+        const r = await api(`/map/sources/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        if (r.ok || r.status === 204) {
+            renderMaps(document.getElementById('adm-main'));
+        } else {
+            alert(`Delete failed (${r.status}).`);
+        }
+    };
+
+    // XHR (not fetch) so we can stream a 1+ GB upload with progress events.
+    // fetch() doesn't yet expose upload progress reliably across browsers.
+    window.uploadMap = () => {
+        const input = document.getElementById('map-upload-file');
+        const file  = input.files[0];
+        if (!file) { alert('Pick a .mbtiles file first.'); return; }
+        if (!file.name.toLowerCase().endsWith('.mbtiles')) {
+            alert('File must end in .mbtiles');
+            return;
+        }
+        const btn  = document.getElementById('map-upload-btn');
+        const bar  = document.getElementById('map-upload-progress');
+        const stat = document.getElementById('map-upload-status');
+        const form = new FormData();
+        form.append('file', file);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', window.ARROW_BACKEND_URL + '/map/sources');
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.upload.onprogress = e => {
+            if (e.lengthComputable) {
+                bar.value = e.loaded / e.total;
+                stat.textContent = `${humanSize(e.loaded)} / ${humanSize(e.total)}`;
+            }
+        };
+        xhr.onload = () => {
+            btn.disabled = false;
+            if (xhr.status >= 200 && xhr.status < 300) {
+                stat.textContent = 'Validating…';
+                bar.style.display = 'none';
+                input.value = '';
+                renderMaps(document.getElementById('adm-main'));
+            } else {
+                let msg = xhr.responseText;
+                try { msg = JSON.parse(xhr.responseText).detail || msg; } catch (_) {}
+                stat.textContent = `Upload failed (${xhr.status}): ${msg}`;
+                stat.style.color = '#ef4444';
+            }
+        };
+        xhr.onerror = () => {
+            btn.disabled = false;
+            stat.textContent = 'Network error during upload';
+            stat.style.color = '#ef4444';
+        };
+
+        btn.disabled = true;
+        bar.style.display = 'inline-block';
+        bar.value = 0;
+        stat.style.color = '#94a3b8';
+        stat.textContent = `Uploading ${humanSize(file.size)}…`;
+        xhr.send(form);
+    };
+
+    function humanSize(bytes) {
+        if (!bytes) return '0 B';
+        const u = ['B','KB','MB','GB','TB'];
+        let i = 0, n = bytes;
+        while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+        return `${n.toFixed(n < 10 ? 1 : 0)} ${u[i]}`;
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function populateTeamSelect(selectId, selected) {
+        const sel = document.getElementById(selectId);
+        sel.innerHTML = '<option value="">— unassigned —</option>' +
+            teams.map(t => `<option value="${t.id}" ${t.id == selected ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+    }
+
+    function groupBy(arr, fn) {
+        return arr.reduce((acc, x) => { const k = fn(x); (acc[k] = acc[k]||[]).push(x); return acc; }, {});
+    }
+
+    function esc(s) {
+        return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    window.openModal  = id => document.getElementById(id).classList.add('open');
+    // ── Octopus server config ──────────────────────────────────────────────
+    async function renderOctopus(el) {
+        el.innerHTML = '<p style="color:#64748b">Loading…</p>';
+        const r = await api('/admin/octopus');
+        if (!r.ok) { el.innerHTML = '<p style="color:#ef4444">Failed to load Octopus config.</p>'; return; }
+        const cfg = await r.json();
+
+        el.innerHTML = `
+        <div class="sec-header"><h2>⏺ Octopus Streaming Server</h2></div>
+        <p style="color:#64748b;font-size:.85rem;margin:0 0 1.4rem">
+            Configure the Octopus server URL and API key. Changes take effect immediately —
+            no restart required. The API key is stored encrypted-at-rest in the database
+            and is never returned in full after saving.
+        </p>
+
+        <div style="background:#0d1117;border:1px solid #2a3142;border-radius:8px;padding:1.4rem;max-width:540px">
+
+            <div style="margin-bottom:1rem">
+                <label style="display:block;font-size:.75rem;color:#94a3b8;margin-bottom:.35rem">
+                    Server URL
+                </label>
+                <div style="display:flex;gap:.5rem">
+                    <input id="oct-url-inp" type="url" value="${esc(cfg.url)}"
+                           placeholder="http://192.168.0.240:8080"
+                           style="flex:1;background:#161b25;border:1px solid #2a3142;border-radius:4px;
+                                  padding:.45rem .6rem;color:#e2e8f0;font:inherit;font-size:.88rem"/>
+                    <button onclick="octSaveUrl()"
+                            style="background:#0ea5e9;color:#fff;border:0;border-radius:4px;
+                                   padding:.4rem 1rem;font:inherit;cursor:pointer;white-space:nowrap">
+                        Save URL
+                    </button>
+                </div>
+                <div style="font-size:.72rem;color:#475569;margin-top:.3rem;display:flex;gap:.75rem;align-items:center">
+                    Base URL only — do not include <code>/api/client/streams</code>
+                    <span id="oct-url-status" style="font-size:.78rem"></span>
+                </div>
+            </div>
+
+            <div style="margin-bottom:1.2rem">
+                <label style="display:block;font-size:.75rem;color:#94a3b8;margin-bottom:.35rem">
+                    API Key
+                    <span id="oct-key-badge">${cfg.api_key_set
+                        ? `<span style="color:#22c55e;margin-left:.5rem">● Set</span>
+                           <span style="font-family:monospace;color:#64748b;margin-left:.5rem">${esc(cfg.api_key_preview)}</span>`
+                        : '<span style="color:#ef4444;margin-left:.5rem">● Not set</span>'}</span>
+                </label>
+                <div style="display:flex;gap:.5rem">
+                    <input id="oct-key-inp" type="password" placeholder="Enter new API key…"
+                           autocomplete="new-password"
+                           style="flex:1;background:#161b25;border:1px solid #2a3142;border-radius:4px;
+                                  padding:.45rem .6rem;color:#e2e8f0;font:inherit;font-size:.88rem"/>
+                    <button onclick="octSaveKey()"
+                            style="background:#0ea5e9;color:#fff;border:0;border-radius:4px;
+                                   padding:.4rem 1rem;font:inherit;cursor:pointer;white-space:nowrap">
+                        Save Key
+                    </button>
+                    ${cfg.api_key_set ? `
+                    <button onclick="octClearKey()"
+                            style="background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;border-radius:4px;
+                                   padding:.4rem .8rem;font:inherit;cursor:pointer;white-space:nowrap"
+                            title="Remove the API key — webhooks will be accepted unsigned">
+                        Clear Key
+                    </button>` : ''}
+                </div>
+                <div style="font-size:.72rem;color:#475569;margin-top:.3rem;display:flex;gap:.75rem;align-items:center">
+                    Leave blank to keep the current key. <b style="color:#f59e0b">Clear Key</b> disables HMAC verification — Octopus sends unsigned webhooks.
+                    <span id="oct-key-status" style="font-size:.78rem"></span>
+                </div>
+            </div>
+
+            <hr style="border:0;border-top:1px solid #2a3142;margin:.8rem 0 1rem"/>
+
+            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;font-size:.8rem">
+                <span style="color:#64748b">WebSocket:</span>
+                <span id="oct-ws-badge" style="padding:2px 8px;border-radius:99px;font-size:.75rem;
+                      background:#1f2937;color:#64748b;border:1px solid #2a3142">checking…</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <button onclick="octTest()"
+                        style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44;
+                               border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
+                    ⚡ Test Octopus connection
+                </button>
+                <button onclick="octCheckEndpoint()"
+                        style="background:#06476022;color:#67e8f9;border:1px solid #06476044;
+                               border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
+                    🌐 Check webhook endpoint
+                </button>
+                <button onclick="octTestWebhook()"
+                        style="background:#0e7490;color:#e0f2fe;border:1px solid #0891b2;
+                               border-radius:4px;padding:.35rem .9rem;font:inherit;cursor:pointer">
+                    🔔 Fire test detection
+                </button>
+                <span id="oct-test-result" style="font-size:.82rem;color:#64748b"></span>
+            </div>
+
+            <hr style="border:0;border-top:1px solid #2a3142;margin:.8rem 0 1rem"/>
+
+            <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem;font-weight:600">
+                Webhook URL (paste this into Octopus → Edit client)
+            </div>
+            <div style="display:flex;gap:.5rem;align-items:center">
+                <code id="oct-webhook-url" style="flex:1;background:#0d1117;border:1px solid #2a3142;
+                      border-radius:4px;padding:.4rem .6rem;color:#38bdf8;font-size:.8rem;
+                      word-break:break-all">${esc(window.location.origin)}/api/octopus/webhook</code>
+                <button onclick="navigator.clipboard.writeText(document.getElementById('oct-webhook-url').textContent)"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:4px;
+                               padding:.35rem .7rem;font:inherit;font-size:.75rem;cursor:pointer;white-space:nowrap">
+                    Copy
+                </button>
+            </div>
+            <div style="font-size:.72rem;color:#475569;margin-top:.4rem">
+                Octopus will POST detections here. Arrow verifies the HMAC-SHA256 signature
+                using the API key above.
+            </div>
+
+            <div style="margin-top:1rem;font-size:.75rem;color:#475569">
+                Source: <code>${esc(cfg.source)}</code>
+                — DB values override config.xml without restart.
+            </div>
+
+            <hr style="border:0;border-top:1px solid #2a3142;margin:1rem 0"/>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+                <div style="font-size:.78rem;color:#94a3b8;font-weight:600">
+                    Incoming webhook log <span style="font-weight:400;color:#475569">(last 20 calls)</span>
+                </div>
+                <button onclick="octRefreshLog()"
+                        style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:4px;
+                               padding:.2rem .6rem;font:inherit;font-size:.72rem;cursor:pointer">
+                    ↻ Refresh
+                </button>
+            </div>
+            <div id="oct-webhook-log" style="font-size:.75rem;color:#64748b">Loading…</div>
+        </div>`;
+
+        function _octFeedback(id, ok, msg, warn) {
+            const el2 = document.getElementById(id);
+            if (!el2) return;
+            el2.textContent = msg;
+            el2.style.color = ok ? '#22c55e' : warn ? '#f59e0b' : '#ef4444';
+            setTimeout(() => { el2.textContent = ''; el2.style.color = '#64748b'; }, 6000);
+        }
+
+        // ── Webhook call log ──────────────────────────────────────────────
+        const _STATUS_COLOUR = {
+            broadcast: '#22c55e', duplicate: '#94a3b8',
+            skipped:   '#f59e0b', rejected:  '#ef4444', error: '#ef4444',
+        };
+        const _STATUS_ICON = {
+            broadcast: '✓', duplicate: '~', skipped: '⚠', rejected: '✗', error: '✗',
+        };
+
+        window.octRefreshLog = async function() {
+            const box = document.getElementById('oct-webhook-log');
+            if (!box) return;
+            const r = await api('/octopus/webhook/log');
+            if (!r.ok) { box.innerHTML = `<span style="color:#ef4444">Failed to load log (HTTP ${r.status})</span>`; return; }
+            const entries = await r.json();
+            if (!entries.length) {
+                box.innerHTML = '<span style="color:#475569;font-style:italic">No webhook calls received yet.</span>';
+                return;
+            }
+            box.innerHTML = entries.map(e => {
+                const col  = _STATUS_COLOUR[e.status] || '#64748b';
+                const icon = _STATUS_ICON[e.status]   || '?';
+                const pay  = e.payload
+                    ? `<span style="color:#64748b;margin-left:.5rem">`
+                      + (e.payload.label ? `label=<b style="color:#e2e8f0">${esc(e.payload.label)}</b> ` : '')
+                      + (e.payload.stream_id ? `stream=${esc(e.payload.stream_id)} ` : '')
+                      + (e.payload.event != null ? `event=${esc(String(e.payload.event))}` : '')
+                      + `</span>`
+                    : '';
+                // Show raw payload for skipped calls so we can see what Octopus sends
+                const rawPayload = e.payload && e.status === 'skipped'
+                    ? `<div style="margin:.2rem 0 .4rem 1rem;font-family:monospace;font-size:.7rem;
+                                   color:#fbbf24;white-space:pre-wrap;background:#0d1117;
+                                   border:1px solid #1e2a3a;border-radius:3px;padding:.3rem .5rem">`
+                      + esc(JSON.stringify(e.payload, null, 2).slice(0, 800))
+                      + `</div>`
+                    : '';
+                // Show headers as expandable detail for rejected calls
+                const hdrs = e.headers && e.status === 'rejected'
+                    ? `<div style="margin:.2rem 0 .4rem 1rem;font-family:monospace;font-size:.7rem;
+                                   color:#64748b;white-space:pre-wrap;background:#0d1117;
+                                   border:1px solid #1e2a3a;border-radius:3px;padding:.3rem .5rem">`
+                      + Object.entries(e.headers).map(([k,v]) =>
+                          `<span style="color:#38bdf8">${esc(k)}</span>: ${esc(v)}`
+                        ).join('\n')
+                      + `</div>`
+                    : '';
+                return `<div style="padding:.25rem 0;border-bottom:1px solid #1e2a3a">
+                    <div style="display:flex;gap:.5rem;align-items:baseline">
+                        <span style="color:#475569;white-space:nowrap">${esc(e.ts)}</span>
+                        <span style="color:${col};font-weight:600;white-space:nowrap">${icon} ${esc(e.status)}</span>
+                        <span style="color:#94a3b8;white-space:nowrap">${esc(e.remote)}</span>
+                        <span style="color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                              title="${esc(e.detail)}">${esc(e.detail.slice(0, 120))}${e.detail.length > 120 ? '…' : ''}</span>
+                        ${pay}
+                    </div>
+                    ${rawPayload}
+                    ${hdrs}
+                </div>`;
+            }).join('');
+        };
+        octRefreshLog();
+
+        // ── WebSocket status badge ─────────────────────────────────────────
+        function _updateWsBadge() {
+            const badge = document.getElementById('oct-ws-badge');
+            if (!badge) return;
+            const connected = window.arrowWsReady === true;
+            badge.textContent  = connected ? '● connected' : '● disconnected';
+            badge.style.color  = connected ? '#22c55e' : '#ef4444';
+            badge.style.border = `1px solid ${connected ? '#22c55e44' : '#ef444444'}`;
+            badge.style.background = connected ? '#052e1622' : '#450a0a22';
+        }
+        _updateWsBadge();
+        document.addEventListener('arrow-ws-open',  _updateWsBadge);
+        document.addEventListener('arrow-ws-close', _updateWsBadge);
+
+        // Auto-refresh log whenever a real detection arrives via WebSocket
+        (function _pollDetections() {
+            if (typeof window.arrowWsOnce !== 'function') { setTimeout(_pollDetections, 500); return; }
+            window.arrowWsOnce('octopus-detection', 60000)
+                .then(() => { octRefreshLog(); _pollDetections(); })
+                .catch(() => _pollDetections());
+        })();
+
+        window.octSaveUrl = async function() {
+            const url = document.getElementById('oct-url-inp').value.trim();
+            if (!url) { _octFeedback('oct-url-status', false, 'URL cannot be empty.'); return; }
+            const btn = document.querySelector('[onclick="octSaveUrl()"]');
+            btn.disabled = true;
+            const r2 = await api('/admin/octopus', {
+                method: 'PUT',
+                body: JSON.stringify({ url }),
+            });
+            btn.disabled = false;
+            if (r2.ok) {
+                const d = await r2.json();
+                document.getElementById('oct-url-inp').value = d.url;
+                _octFeedback('oct-url-status', true, '✓ Saved');
+            } else {
+                _octFeedback('oct-url-status', false, 'Save failed: ' + r2.status);
+            }
+        };
+
+        window.octSaveKey = async function() {
+            const key = document.getElementById('oct-key-inp').value.trim();
+            if (!key) { _octFeedback('oct-key-status', false, 'Enter a key first.'); return; }
+            const btn = document.querySelector('[onclick="octSaveKey()"]');
+            btn.disabled = true;
+            const r2 = await api('/admin/octopus', {
+                method: 'PUT',
+                body: JSON.stringify({ api_key: key }),
+            });
+            btn.disabled = false;
+            if (r2.ok) {
+                const d = await r2.json();
+                document.getElementById('oct-key-inp').value = '';
+                const badge = document.getElementById('oct-key-badge');
+                if (badge) badge.innerHTML =
+                    '<span style="color:#22c55e;margin-left:.5rem">● Set</span>' +
+                    `<span style="font-family:monospace;color:#64748b;margin-left:.5rem">${esc(d.api_key_preview)}</span>`;
+                _octFeedback('oct-key-status', true, '✓ Key saved');
+            } else {
+                _octFeedback('oct-key-status', false, 'Save failed: ' + r2.status);
+            }
+        };
+
+        window.octClearKey = async function() {
+            if (!confirm('Remove the API key? Octopus webhooks will be accepted without HMAC signing.')) return;
+            const r2 = await api('/admin/octopus', {
+                method: 'PUT',
+                body: JSON.stringify({ api_key: '' }),
+            });
+            if (r2.ok) {
+                const badge = document.getElementById('oct-key-badge');
+                if (badge) badge.innerHTML = '<span style="color:#ef4444;margin-left:.5rem">● Not set</span>';
+                // Remove the Clear Key button itself
+                const clearBtn = document.querySelector('[onclick="octClearKey()"]');
+                if (clearBtn) clearBtn.remove();
+                _octFeedback('oct-key-status', true, '✓ Key cleared — webhooks accepted unsigned');
+            } else {
+                _octFeedback('oct-key-status', false, 'Clear failed: ' + r2.status);
+            }
+        };
+
+        window.octTest = async function() {
+            const res = document.getElementById('oct-test-result');
+            res.style.color = '#64748b'; res.textContent = 'Testing…';
+            const r2 = await api('/octopus/streams');
+            if (r2.ok) {
+                const list = await r2.json();
+                res.style.color = '#22c55e';
+                res.textContent = `Connected — ${list.length} stream${list.length !== 1 ? 's' : ''} available`;
+            } else {
+                res.style.color = '#ef4444';
+                res.textContent = `Failed (HTTP ${r2.status})`;
+            }
+        };
+
+        // Check webhook endpoint reachability (GET /octopus/webhook)
+        window.octCheckEndpoint = async function() {
+            const res = document.getElementById('oct-test-result');
+            res.style.color = '#64748b'; res.textContent = 'Probing webhook endpoint…';
+
+            // 1. WebSocket state
+            if (!window.arrowWsReady) {
+                _octFeedback('oct-test-result', false,
+                    'WebSocket not connected — toasts will not appear. Check network/auth.');
+                return;
+            }
+
+            // 2. Arrow webhook health (GET /octopus/webhook — no auth needed)
+            try {
+                const r = await fetch(window.location.origin + '/api/octopus/webhook');
+                if (!r.ok) {
+                    _octFeedback('oct-test-result', false,
+                        `Endpoint unreachable (HTTP ${r.status}) — check proxy/firewall`);
+                    return;
+                }
+                const health = await r.json();
+                const sigInfo = health.signature === 'required' ? ' · HMAC signature required' : ' · no API key (unsigned)';
+                _octFeedback('oct-test-result', true,
+                    `Endpoint OK ✓${sigInfo} · WebSocket connected ✓ — ready to receive`);
+            } catch (err) {
+                _octFeedback('oct-test-result', false,
+                    `Cannot reach webhook endpoint: ${err.message}`);
+            }
+        };
+
+        // Fire a real test detection and wait for it to arrive via WebSocket
+        window.octTestWebhook = async function() {
+            const res = document.getElementById('oct-test-result');
+
+            // Guard: WebSocket must be connected first
+            if (!window.arrowWsReady) {
+                _octFeedback('oct-test-result', false,
+                    'WebSocket not connected — connect first (check badge above)');
+                return;
+            }
+
+            res.style.color = '#64748b'; res.textContent = 'Firing test detection…';
+
+            // Register one-shot WS listener BEFORE firing so we don't miss it
+            const wsPromise = window.arrowWsOnce('octopus-detection', 8000);
+
+            const r2 = await api('/admin/octopus/test-webhook', { method: 'POST' });
+            if (!r2.ok) {
+                _octFeedback('oct-test-result', false,
+                    `HTTP ${r2.status} — could not reach test endpoint`);
+                return;
+            }
+            const d = await r2.json();
+            const sig = d.signed ? '(signed ✓)' : '(no key)';
+
+            if (!d.broadcast) {
+                const detail = d.duplicate ? 'duplicate' : d.skipped ? 'skipped (event type mismatch)'
+                    : (typeof d.message === 'object' ? JSON.stringify(d.message) : String(d.message));
+                _octFeedback('oct-test-result', false,
+                    `Backend did not broadcast: ${detail}`, d.duplicate || d.skipped);
+                return;
+            }
+
+            // Wait for the WS message to actually arrive in this browser
+            res.style.color = '#64748b'; res.textContent = `Backend broadcast OK ${sig} — waiting for WebSocket…`;
+            try {
+                await wsPromise;
+                _octFeedback('oct-test-result', true,
+                    `End-to-end OK ${sig} — detection received via WebSocket ✓ — toast fired`);
+            } catch (_) {
+                _octFeedback('oct-test-result', false,
+                    `Backend broadcast OK ${sig} but WebSocket message never arrived (8 s timeout) — check WS connection`);
+            }
+        };
+    }
+
+    // ── Strike Packages ────────────────────────────────────────────────────
+    async function renderStrikePackages(el) {
+        const pkgs = await api('/strike-packages').then(r => r.ok ? r.json() : []);
+        const sMap = {
+            PLANNING: 'badge-warn', ACTIVE: 'badge-err',
+            COMPLETE: 'badge-ok',   ABORTED: 'badge-op',
+        };
+        const fmt = iso => iso ? iso.slice(0, 16).replace('T', ' ') : '—';
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Strike Packages (${pkgs.length})</h2>
+            <a class="btn btn-ghost" href="/strike-packages" target="_blank">Open editor →</a>
+        </div>
+        <table class="adm-table">
+            <thead><tr>
+                <th>#</th><th>Name</th><th>Status</th><th>Mission</th>
+                <th>Ops</th><th>Target</th><th>Created</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${pkgs.length ? pkgs.map(p => `<tr>
+                <td style="color:#64748b;font-size:.78rem">${p.id}</td>
+                <td style="font-weight:600">${esc(p.name)}</td>
+                <td><span class="badge ${sMap[p.status]||'badge-op'}">${p.status}</span></td>
+                <td style="color:#64748b">${p.mission_id ? '#'+p.mission_id : '—'}</td>
+                <td style="color:#94a3b8">${(p.operator_ids||[]).length}</td>
+                <td style="font-family:monospace;font-size:.75rem">
+                    ${p.target_lat != null ? p.target_lat.toFixed(4)+', '+p.target_lon.toFixed(4) : '—'}
+                </td>
+                <td style="color:#64748b;font-size:.78rem">${fmt(p.created_at)}</td>
+                <td>
+                    ${p.status==='PLANNING' ? `<button class="btn btn-ghost btn-sm" onclick="spActivate(${p.id})">Activate</button>` : ''}
+                    ${p.status==='ACTIVE' ? `<button class="btn btn-ghost btn-sm" onclick="spComplete(${p.id})">Complete</button>` : ''}
+                    ${p.status!=='COMPLETE'&&p.status!=='ABORTED'
+                        ? `<button class="btn btn-ghost btn-sm" onclick="spAbort(${p.id})">Abort</button>` : ''}
+                    <button class="btn btn-danger btn-sm" onclick="spDelete(${p.id},'${esc(p.name)}')">Del</button>
+                </td>
+            </tr>`).join('') :
+            '<tr><td colspan="8" style="color:#475569;text-align:center;padding:1rem">No strike packages yet</td></tr>'}
+            </tbody>
+        </table>`;
+    }
+
+    window.spActivate = async function(id) {
+        const r = await api(`/strike-packages/${id}/activate`, { method:'POST' });
+        if (r.ok) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Activate failed (${r.status})`);
+    };
+    window.spComplete = async function(id) {
+        const r = await api(`/strike-packages/${id}/complete`, { method:'POST' });
+        if (r.ok) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Complete failed (${r.status})`);
+    };
+    window.spAbort = async function(id) {
+        if (!confirm('Abort this strike package?')) return;
+        const r = await api(`/strike-packages/${id}/abort`, { method:'POST' });
+        if (r.ok) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Abort failed (${r.status})`);
+    };
+    window.spDelete = async function(id, name) {
+        if (!confirm(`Delete strike package "${name}"? This cannot be undone.`)) return;
+        const r = await api(`/strike-packages/${id}`, { method:'DELETE' });
+        if (r.status === 204) renderStrikePackages(document.getElementById('adm-main'));
+        else alert(`Delete failed (${r.status})`);
+    };
+
+    window.closeModal = id => document.getElementById(id).classList.remove('open');
+
+    // Click-outside to close modals
+    document.querySelectorAll('.modal-bg').forEach(bg =>
+        bg.addEventListener('click', e => { if (e.target === bg) bg.classList.remove('open'); }));
+
+    // Boot
+    loadAll().then(() => renderOverview(document.getElementById('adm-main')));
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,2952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Arrow Front COP</title>
+<link  rel="stylesheet" href="lib/leaflet.css">
+<script src="lib/leaflet.js"></script>
+<link  rel="stylesheet" href="lib/leaflet.draw.css">
+<script src="lib/leaflet.draw.js"></script>
+<script src="lib/milsymbol.js"></script>
+<script src="lib/mgrs.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:'Courier New',monospace;}
+/* will-change + translateZ forces #map into its own persistent GPU layer.
+   Qt6/macOS Metal then composites overlays ON TOP of the map layer instead of
+   re-rendering the map, eliminating the black-screen compositor bug. */
+#map{width:100vw;height:100vh;background:#0d1117;
+     will-change:transform;transform:translateZ(0);isolation:isolate;}
+.leaflet-container{cursor:crosshair !important;}
+.mil-icon{background:transparent !important;border:none !important;}
+
+/* Popups */
+.leaflet-popup-content-wrapper{background:#161b22;border:1px solid #30363d;border-radius:2px;color:#c9d1d9;padding:0;box-shadow:0 4px 16px rgba(0,0,0,.7);}
+.leaflet-popup-content{margin:0;}
+.leaflet-popup-tip-container{display:none;}
+.leaflet-popup-close-button{color:#8b949e !important;right:6px !important;top:4px !important;}
+.graphic-label{background:rgba(0,0,0,.78) !important;border:1px solid rgba(255,255,255,.22) !important;color:#e6edf3 !important;font-family:'Courier New',monospace !important;font-size:9px !important;font-weight:bold !important;letter-spacing:1.5px !important;padding:1px 5px !important;white-space:nowrap !important;border-radius:0 !important;box-shadow:none !important;}
+.graphic-label::before{display:none !important;}
+.leaflet-control-scale-line{background:rgba(13,17,23,.88);border:1px solid #30363d;color:#8b949e;font-family:'Courier New',monospace;font-size:9px;}
+.leaflet-control-zoom a{background:#161b22 !important;border:1px solid #30363d !important;color:#c9d1d9 !important;}
+.leaflet-control-zoom a:hover{background:#21262d !important;}
+.leaflet-draw-toolbar a{background-color:#161b22 !important;border-color:#30363d !important;}
+
+/* ================================================================
+   RADIAL MENU (circular, large touch targets)
+   ================================================================ */
+/* backdrop removed — was creating a new GPU compositing layer in Qt6/macOS
+   Metal that caused the map to go black; replaced with document mousedown */
+#radial-menu{
+  display:none;position:absolute;z-index:2000;
+  width:300px;height:300px;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+#radial-menu.active{display:block;}
+/* central hub */
+#radial-hub{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:54px;height:54px;border-radius:50%;
+  background:rgba(10,13,18,.96);border:2px solid #30363d;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:all;cursor:pointer;z-index:5;
+  box-shadow:0 2px 12px rgba(0,0,0,.7);
+}
+#radial-hub:hover{border-color:#f85149;}
+#radial-hub .hub-x{color:#6e7681;font-size:20px;line-height:1;}
+#radial-hub:hover .hub-x{color:#f85149;}
+/* each petal — NO CSS transitions (each transition creates a promoted GPU
+   layer; 8 simultaneous promotions overwhelm the Qt6/macOS Metal compositor
+   and black out the map).  Petals appear instantly at their ring position. */
+.radial-petal{
+  position:absolute;left:50%;top:50%;
+  width:72px;height:72px;
+  margin:-36px 0 0 -36px;
+  border-radius:50%;
+  background:rgba(14,18,26,.97);
+  border:2px solid #30363d;
+  display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;
+  cursor:pointer;pointer-events:all;user-select:none;
+  box-shadow:0 3px 14px rgba(0,0,0,.6);
+}
+#radial-menu.active .radial-petal{display:flex;}
+.radial-petal .rp-icon{font-size:26px;line-height:1;pointer-events:none;}
+.radial-petal .rp-lbl{
+  font-family:'Courier New',monospace;font-size:8px;font-weight:700;
+  letter-spacing:.6px;color:#8b949e;text-transform:uppercase;pointer-events:none;
+}
+#radial-menu.active .radial-petal:hover{background:rgba(31,111,235,.9);border-color:#388bfd;}
+.radial-petal:hover .rp-lbl{color:#fff;}
+#radial-menu.active .radial-petal.red:hover   {background:rgba(248,81,73,.9);border-color:#f85149;}
+#radial-menu.active .radial-petal.green:hover {background:rgba(63,185,80,.9);border-color:#3fb950;}
+#radial-menu.active .radial-petal.amber:hover {background:rgba(210,153,34,.9);border-color:#d29922;}
+#radial-menu.active .radial-petal.purple:hover{background:rgba(210,168,255,.9);border-color:#d2a8ff;}
+
+/* ================================================================
+   TACTICAL OBJECT RADIAL (Delete / Move) — same Qt6/macOS constraints
+   ================================================================ */
+#tobj-radial{
+  display:none;position:absolute;z-index:2001;
+  width:300px;height:300px;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+#tobj-radial.active{display:block;}
+#tobj-hub{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:54px;height:54px;border-radius:50%;
+  background:rgba(10,13,18,.96);border:2px solid #30363d;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:all;cursor:pointer;z-index:5;
+  box-shadow:0 2px 12px rgba(0,0,0,.7);
+}
+#tobj-hub:hover{border-color:#f85149;}
+#tobj-hub .hub-x{color:#6e7681;font-size:20px;line-height:1;}
+#tobj-hub:hover .hub-x{color:#f85149;}
+#tobj-radial.active .radial-petal{display:flex;}
+/* Move-mode instruction banner */
+#tobj-move-banner{
+  display:none;position:absolute;top:8px;left:50%;transform:translateX(-50%);
+  z-index:1600;background:rgba(13,17,23,.95);border:1px solid #388bfd;
+  color:#79c0ff;font-family:'Courier New',monospace;font-size:11px;font-weight:700;
+  padding:6px 14px;border-radius:3px;pointer-events:all;white-space:nowrap;
+}
+#tobj-move-cancel{
+  background:none;border:none;color:#f85149;cursor:pointer;
+  font-family:'Courier New',monospace;font-size:11px;font-weight:700;padding:0 0 0 8px;
+}
+
+/* ================================================================
+   NAVIGATION HUD
+   ================================================================ */
+#nav-hud{
+  display:none;position:absolute;bottom:20px;left:50%;margin-left:-185px;
+  z-index:1800;width:370px;
+  background:rgba(10,13,18,.97);border:1px solid #30363d;border-radius:4px;
+  box-shadow:0 4px 20px rgba(0,0,0,.8);font-family:'Courier New',monospace;
+  overflow:hidden;
+}
+#nav-hud.active{display:block;}
+#nav-dir-row{
+  display:flex;align-items:center;gap:10px;padding:10px 12px 8px;
+  border-bottom:1px solid #21262d;
+}
+#nav-arrow-wrap{
+  width:52px;height:52px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  background:#161b22;border:1px solid #30363d;border-radius:50%;
+}
+#nav-bearing-info{flex:1;}
+#nav-bearing-deg{font-size:22px;font-weight:700;color:#e6edf3;letter-spacing:1px;}
+#nav-turn-hint{font-size:9px;font-weight:700;color:#79c0ff;letter-spacing:1px;margin-top:2px;min-height:13px;}
+#nav-wp-badge{
+  font-size:9px;font-weight:700;color:#0d1117;
+  padding:3px 8px;border-radius:2px;letter-spacing:1px;align-self:flex-start;
+}
+#nav-wp-row{padding:7px 12px;border-bottom:1px solid #21262d;}
+#nav-wp-label{font-size:12px;font-weight:700;color:#e6edf3;letter-spacing:.3px;}
+#nav-wp-stats{font-size:10px;color:#8b949e;margin-top:3px;}
+#nav-progress-row{
+  display:flex;align-items:center;gap:8px;
+  padding:5px 12px;border-bottom:1px solid #21262d;
+}
+#nav-progress-bar{flex:1;height:4px;background:#21262d;border-radius:2px;overflow:hidden;}
+#nav-progress-fill{height:100%;background:#3fb950;width:0%;border-radius:2px;}
+#nav-progress-text{font-size:9px;color:#6e7681;white-space:nowrap;}
+#nav-ctrl-row{display:flex;gap:5px;padding:7px 12px;}
+#nav-ctrl-row button{
+  flex:1;background:#21262d;border:1px solid #30363d;color:#c9d1d9;
+  font-family:'Courier New',monospace;font-size:9px;font-weight:700;
+  padding:5px 4px;border-radius:2px;cursor:pointer;letter-spacing:.3px;
+}
+#nav-ctrl-row button:hover{background:#30363d;color:#e6edf3;}
+#nav-stop-btn{color:#f85149 !important;border-color:#f85149 !important;}
+#nav-stop-btn:hover{background:rgba(248,81,73,.15) !important;}
+#nav-home-btn:hover{background:rgba(63,185,80,.15) !important;color:#3fb950 !important;}
+
+/* ================================================================
+   SYMBOL PICKER OVERLAY
+   ================================================================ */
+#sym-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;align-items:center;justify-content:center;}
+#sym-overlay.active{display:flex;}
+#sym-panel{background:#161b22;border:1px solid #30363d;border-radius:4px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.8);}
+#sym-header{background:#0d1117;padding:14px 18px 10px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:10px;}
+#sym-header h2{color:#e6edf3;font-size:15px;font-weight:700;flex:1;letter-spacing:.5px;}
+#sym-location{color:#6e7681;font-size:10px;font-family:'Courier New',monospace;}
+#sym-close{background:none;border:none;color:#8b949e;font-size:20px;cursor:pointer;padding:0 4px;}
+#sym-close:hover{color:#f85149;}
+#sym-controls{padding:10px 18px;border-bottom:1px solid #21262d;}
+.sym-ctrl-row{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.sym-ctrl-label{color:#8b949e;font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;min-width:90px;}
+.aff-btn,.ech-btn{padding:5px 12px;border:1px solid #30363d;border-radius:2px;background:#21262d;color:#8b949e;font-size:10px;cursor:pointer;font-family:'Courier New',monospace;font-weight:600;letter-spacing:.5px;}
+.aff-btn:hover,.ech-btn:hover{background:#30363d;color:#c9d1d9;}
+.aff-btn.active{background:#1c2d3f;border-color:#1f6feb;color:#79c0ff;}
+.aff-btn.active.hostile{background:#3d1c1c;border-color:#f85149;color:#f85149;}
+.aff-btn.active.neutral{background:#2d2d1c;border-color:#d29922;color:#d29922;}
+.aff-btn.active.unknown{background:#2a2a2a;border-color:#8b949e;color:#c9d1d9;}
+.aff-btn.active.assumed{background:#1c2d3f;border-color:#79c0ff;color:#79c0ff;}
+.ech-btn.active{background:#1c2d3f;border-color:#1f6feb;color:#79c0ff;}
+#sym-body{overflow-y:auto;padding:14px 18px;flex:1;}
+#sym-body::-webkit-scrollbar{width:6px;}#sym-body::-webkit-scrollbar-track{background:#0d1117;}#sym-body::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
+.sym-category{margin-bottom:18px;}
+.sym-cat-title{font-size:10px;font-weight:700;color:#8b949e;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #21262d;}
+.sym-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+.sym-card{border:1px solid #30363d;border-radius:3px;background:#0d1117;padding:6px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:border-color .1s,background .1s;}
+.sym-card:hover{background:#1c2d3f;border-color:#1f6feb;}
+.sym-card.selected{background:#1c2d3f;border-color:#1f6feb;box-shadow:0 0 0 1px #1f6feb;}
+.sym-card svg,.sym-card canvas{width:44px;height:44px;display:block;}
+.sym-name{font-size:9px;color:#8b949e;text-align:center;line-height:1.2;letter-spacing:.3px;}
+.sym-card:hover .sym-name{color:#c9d1d9;}
+.sym-card.selected .sym-name{color:#79c0ff;}
+#sym-footer{padding:12px 18px;border-top:1px solid #30363d;display:flex;align-items:center;gap:10px;}
+#sym-designation{flex:1;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;padding:8px 12px;font-family:'Courier New',monospace;font-size:11px;border-radius:2px;}
+#sym-designation:focus{outline:none;border-color:#388bfd;}
+#sym-designation::placeholder{color:#484f58;}
+#sym-cancel{padding:8px 20px;background:#21262d;border:1px solid #30363d;color:#c9d1d9;cursor:pointer;border-radius:2px;font-family:'Courier New',monospace;}
+#sym-cancel:hover{background:#30363d;}
+#sym-place{padding:8px 22px;background:#1f6feb;border:1px solid #388bfd;color:#fff;cursor:pointer;border-radius:2px;font-family:'Courier New',monospace;font-weight:700;letter-spacing:.5px;}
+#sym-place:hover{background:#388bfd;}
+#sym-place:disabled{opacity:.4;cursor:default;}
+
+/* ================================================================
+   MEASUREMENT TOOLKIT
+   ================================================================ */
+#meas-panel{
+  display:none;position:absolute;top:54px;right:10px;z-index:900;
+  background:rgba(13,17,23,.95);border:1px solid #388bfd;border-radius:3px;
+  min-width:240px;box-shadow:0 4px 16px rgba(0,0,0,.7);
+  font-family:'Courier New',monospace;font-size:10px;color:#c9d1d9;overflow:hidden;
+}
+#meas-panel.active{display:block;}
+#meas-header{background:#161b22;padding:6px 12px;border-bottom:1px solid #21262d;
+  display:flex;align-items:center;gap:8px;}
+#meas-header span{color:#388bfd;font-size:9px;font-weight:700;letter-spacing:1.5px;flex:1;}
+#meas-body{padding:8px 12px;}
+.meas-row{display:grid;grid-template-columns:80px 1fr;gap:4px;padding:2px 0;line-height:1.5;}
+.meas-k{color:#6e7681;font-size:9px;font-weight:700;letter-spacing:1px;align-self:center;}
+.meas-v{color:#e6edf3;font-size:11px;font-weight:700;}
+.meas-v.az{color:#d29922;}
+.meas-v.dist{color:#3fb950;}
+.meas-v.mgrs{color:#8b949e;font-size:9px;}
+#meas-sep{height:1px;background:#21262d;margin:6px 0;}
+#meas-footer{padding:6px 12px;border-top:1px solid #21262d;display:flex;gap:6px;}
+.meas-foot-btn{flex:1;background:#21262d;border:1px solid #30363d;color:#8b949e;
+  font-family:'Courier New',monospace;font-size:9px;cursor:pointer;padding:4px;border-radius:2px;}
+.meas-foot-btn:hover{background:#30363d;color:#c9d1d9;}
+.meas-foot-btn.primary{background:#1c2d3f;border-color:#1f6feb;color:#79c0ff;}
+
+/* Range circle panel */
+#range-panel{
+  display:none;position:absolute;top:54px;right:10px;z-index:900;
+  background:rgba(13,17,23,.95);border:1px solid #3fb950;border-radius:3px;
+  min-width:260px;box-shadow:0 4px 16px rgba(0,0,0,.7);
+  font-family:'Courier New',monospace;font-size:10px;color:#c9d1d9;overflow:hidden;
+}
+#range-panel.active{display:block;}
+#range-header{background:#161b22;padding:6px 12px;border-bottom:1px solid #21262d;
+  display:flex;align-items:center;gap:8px;}
+#range-header span{color:#3fb950;font-size:9px;font-weight:700;letter-spacing:1.5px;flex:1;}
+#range-center-label{color:#6e7681;font-size:9px;padding:6px 12px 4px;}
+#range-presets{display:flex;flex-wrap:wrap;gap:4px;padding:4px 12px 8px;}
+.rng-btn{background:#21262d;border:1px solid #30363d;color:#8b949e;
+  font-family:'Courier New',monospace;font-size:9px;cursor:pointer;padding:4px 8px;border-radius:2px;}
+.rng-btn:hover{background:#1a3020;border-color:#3fb950;color:#3fb950;}
+#range-custom-row{display:flex;gap:6px;padding:0 12px 8px;align-items:center;}
+#range-input{background:#0d1117;border:1px solid #30363d;color:#c9d1d9;
+  font-family:'Courier New',monospace;font-size:10px;padding:4px 8px;border-radius:2px;
+  width:100px;}
+#range-input:focus{outline:none;border-color:#3fb950;}
+.range-unit{color:#6e7681;font-size:9px;}
+#range-footer{padding:6px 12px;border-top:1px solid #21262d;display:flex;gap:6px;}
+
+/* Measure label tooltips on map */
+.meas-label{
+  background:rgba(0,0,0,.8) !important;border:1px solid #388bfd !important;
+  color:#79c0ff !important;font-family:'Courier New',monospace !important;
+  font-size:9px !important;font-weight:700 !important;
+  padding:1px 6px !important;border-radius:2px !important;white-space:nowrap !important;
+  box-shadow:none !important;
+}
+.meas-label::before{display:none !important;}
+.range-label{
+  background:rgba(0,0,0,.8) !important;border:1px solid #3fb950 !important;
+  color:#3fb950 !important;font-family:'Courier New',monospace !important;
+  font-size:9px !important;font-weight:700 !important;
+  padding:1px 6px !important;border-radius:2px !important;box-shadow:none !important;
+}
+.range-label::before{display:none !important;}
+
+/* ================================================================
+   WEATHER PANEL
+   ================================================================ */
+/* Weather panel */
+#weather-panel{
+  display:none;position:absolute;bottom:48px;left:10px;z-index:900;
+  background:rgba(13,17,23,.94);border:1px solid #30363d;
+  border-radius:2px;min-width:220px;overflow:hidden;
+  box-shadow:0 4px 16px rgba(0,0,0,.6);
+  font-family:'Courier New',monospace;
+}
+#weather-panel.active{display:block;}
+#wx-header{
+  background:#161b22;padding:6px 12px 5px;
+  border-bottom:1px solid #30363d;
+  display:flex;align-items:center;justify-content:space-between;
+}
+#wx-header span{color:#8b949e;font-size:9px;font-weight:700;letter-spacing:1.5px;}
+#wx-close{background:none;border:none;color:#484f58;cursor:pointer;font-size:13px;padding:0 2px;}
+#wx-close:hover{color:#f85149;}
+#wx-body{padding:10px 12px;}
+.wx-row{display:flex;align-items:baseline;gap:8px;margin-bottom:4px;color:#c9d1d9;font-size:11px;}
+.wx-icon{font-size:14px;width:20px;text-align:center;}
+.wx-val{font-weight:700;color:#e6edf3;}
+.wx-lbl{color:#6e7681;font-size:9px;}
+#wx-radar-label{color:#3fb950;font-size:9px;margin-top:6px;padding-top:6px;border-top:1px solid #21262d;}
+#wx-location{color:#484f58;font-size:9px;margin-top:2px;}
+
+/* Free-draw text input overlay */
+#fd-text-overlay{
+  display:none;position:absolute;z-index:2100;
+  background:rgba(13,17,23,.97);border:1px solid #388bfd;border-radius:3px;
+  padding:6px 8px;gap:6px;align-items:center;flex-direction:row;
+}
+#fd-text-overlay.active{display:flex;}
+#fd-text-input{
+  background:#0d1117;border:1px solid #30363d;color:#c9d1d9;
+  font-family:'Courier New',monospace;font-size:11px;padding:4px 8px;
+  border-radius:2px;width:160px;outline:none;
+}
+#fd-text-input:focus{border-color:#388bfd;}
+.fd-btn{
+  background:#21262d;border:1px solid #30363d;color:#8b949e;
+  font-family:'Courier New',monospace;font-size:10px;cursor:pointer;
+  padding:4px 10px;border-radius:2px;
+}
+.fd-btn.primary{background:#1f6feb;border-color:#388bfd;color:#fff;}
+.fd-btn:hover{background:#30363d;color:#c9d1d9;}
+.fd-btn.primary:hover{background:#388bfd;}
+
+/* ================================================================
+   NORTH WIDGET + GPS HUD (top-left overlay)
+   ================================================================ */
+#north-widget{
+  position:absolute;top:10px;left:10px;z-index:1000;
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  pointer-events:none;
+}
+#north-rose{width:52px;height:52px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.7));}
+#own-gps-hud{
+  background:rgba(13,17,23,.88);border:1px solid #30363d;border-radius:2px;
+  padding:5px 8px;font-family:'Courier New',monospace;font-size:9px;
+  color:#6e7681;text-align:center;min-width:130px;line-height:1.6;
+}
+#own-gps-hud.has-fix{border-color:#3fb950;}
+#own-gps-label{font-size:8px;font-weight:700;letter-spacing:1.5px;color:#484f58;text-transform:uppercase;}
+#own-gps-acc{color:#3fb950;font-weight:700;}
+#own-gps-mgrs{color:#e6edf3;font-weight:700;letter-spacing:0.5px;font-size:10px;}
+#own-gps-ll{color:#484f58;font-size:8px;}
+
+/* Pulsing GPS dot (own position marker) */
+.my-pos-wrap{position:relative;width:20px;height:20px;}
+.my-pos-ring{
+  position:absolute;top:50%;left:50%;
+  width:20px;height:20px;margin:-10px 0 0 -10px;
+  border-radius:50%;background:rgba(56,139,253,.28);
+  animation:gps-pulse 2s ease-out infinite;
+}
+.my-pos-dot{
+  position:absolute;top:50%;left:50%;
+  width:10px;height:10px;margin:-5px 0 0 -5px;
+  border-radius:50%;background:#388bfd;
+  border:2px solid #fff;box-shadow:0 0 6px rgba(56,139,253,.9);
+}
+@keyframes gps-pulse{
+  0%  {transform:scale(0.5);opacity:1;}
+  100%{transform:scale(2.8);opacity:0;}
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<!-- North arrow + GPS HUD (top-left) -->
+<div id="north-widget">
+  <svg id="north-rose" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="26" cy="26" r="25" fill="rgba(13,17,23,.88)" stroke="#30363d" stroke-width="1.5"/>
+    <text x="26" y="8" text-anchor="middle" dominant-baseline="middle"
+          font-family="Courier New,monospace" font-size="10" font-weight="700"
+          fill="#e6edf3" letter-spacing="0.5">N</text>
+    <!-- North pointer (red) -->
+    <polygon points="26,13 30.5,27 26,24 21.5,27" fill="#f85149"/>
+    <!-- South pointer (dim) -->
+    <polygon points="26,39 30.5,25 26,28 21.5,25" fill="#484f58"/>
+    <!-- Center -->
+    <circle cx="26" cy="26" r="3" fill="#0d1117" stroke="#6e7681" stroke-width="1"/>
+  </svg>
+  <div id="own-gps-hud">
+    <div id="own-gps-label">OWN POS GPS</div>
+    <div id="own-gps-mgrs">—</div>
+    <div id="own-gps-ll">—</div>
+    <div id="own-gps-acc"></div>
+  </div>
+</div>
+
+<!-- Radial menu (circular) — no backdrop div; outside-click handled in JS -->
+<div id="radial-menu">
+  <div id="radial-hub" onclick="closeRadial()"><span class="hub-x">✕</span></div>
+  <!-- petals injected by JS -->
+</div>
+
+<!-- Tactical object radial (right-click on marker → Delete / Move) -->
+<div id="tobj-radial">
+  <div id="tobj-hub" onclick="closeTobjRadial()"><span class="hub-x">✕</span></div>
+  <!-- petals injected by JS -->
+</div>
+
+<!-- Move-mode instruction banner -->
+<div id="tobj-move-banner">
+  TAP MAP TO PLACE MARKER &nbsp;·&nbsp;
+  <button id="tobj-move-cancel" onclick="_cancelTobjMove()">✕ CANCEL</button>
+</div>
+
+<!-- Navigation HUD -->
+<div id="nav-hud">
+  <div id="nav-dir-row">
+    <div id="nav-arrow-wrap">
+      <svg id="nav-arrow-svg" viewBox="0 0 48 48" width="44" height="44">
+        <polygon id="nav-arrow-poly" points="24,5 38,38 24,29 10,38" fill="#3fb950" opacity="0.95"/>
+      </svg>
+    </div>
+    <div id="nav-bearing-info">
+      <div id="nav-bearing-deg">---°</div>
+      <div id="nav-turn-hint"></div>
+    </div>
+    <div id="nav-wp-badge">WP</div>
+  </div>
+  <div id="nav-wp-row">
+    <div id="nav-wp-label">---</div>
+    <div id="nav-wp-stats"></div>
+  </div>
+  <div id="nav-progress-row">
+    <div id="nav-progress-bar"><div id="nav-progress-fill"></div></div>
+    <div id="nav-progress-text">-- / --</div>
+  </div>
+  <div id="nav-ctrl-row">
+    <button id="nav-pause-btn" onclick="_navTogglePause()">⏸ PAUSE</button>
+    <button id="nav-home-btn" onclick="_navGoHome()">🏠 HOME</button>
+    <button id="nav-stop-btn" onclick="stopNavigation()">■ STOP</button>
+  </div>
+</div>
+
+<!-- Symbol picker overlay -->
+<!-- Symbol picker overlay -->
+<div id="sym-overlay">
+  <div id="sym-panel">
+    <div id="sym-header">
+      <span>📍</span>
+      <h2>Place MIL-STD-2525 / APP-6 Symbol</h2>
+      <span id="sym-location"></span>
+      <button id="sym-close" onclick="closeSymbolPicker()">✕</button>
+    </div>
+    <div id="sym-controls">
+      <div class="sym-ctrl-row">
+        <span class="sym-ctrl-label">AFFILIATION</span>
+        <button class="aff-btn active" data-aff="F">Friendly</button>
+        <button class="aff-btn hostile" data-aff="H">Hostile</button>
+        <button class="aff-btn neutral" data-aff="N">Neutral</button>
+        <button class="aff-btn unknown" data-aff="U">Unknown</button>
+        <button class="aff-btn assumed" data-aff="A">Assumed Friend</button>
+      </div>
+      <div class="sym-ctrl-row">
+        <span class="sym-ctrl-label">ECHELON</span>
+        <button class="ech-btn active" data-ech="--" data-echcode="--">—</button>
+        <button class="ech-btn" data-ech="TM"   data-echcode="A-">TM</button>
+        <button class="ech-btn" data-ech="SQD"  data-echcode="C-">SQD</button>
+        <button class="ech-btn" data-ech="SEC"  data-echcode="D-">SEC</button>
+        <button class="ech-btn" data-ech="PLT"  data-echcode="E-">PLT</button>
+        <button class="ech-btn" data-ech="COY"  data-echcode="F-">COY</button>
+        <button class="ech-btn" data-ech="BN"   data-echcode="G-">BN</button>
+        <button class="ech-btn" data-ech="RGT"  data-echcode="H-">RGT</button>
+        <button class="ech-btn" data-ech="BDE"  data-echcode="I-">BDE</button>
+        <button class="ech-btn" data-ech="DIV"  data-echcode="J-">DIV</button>
+        <button class="ech-btn" data-ech="CORPS" data-echcode="K-">CORPS</button>
+      </div>
+    </div>
+    <div id="sym-body"><!-- populated by JS --></div>
+    <div id="sym-footer">
+      <input id="sym-designation" type="text" placeholder="e.g.  2nd Plt · VIPER-2 · 3 MBT" maxlength="40">
+      <button id="sym-cancel" onclick="closeSymbolPicker()">Cancel</button>
+      <button id="sym-place" disabled onclick="placeSelectedSymbol()">Place Symbol</button>
+    </div>
+  </div>
+</div>
+
+<!-- Measurement result panel -->
+<div id="meas-panel">
+  <div id="meas-header"><span>📏 MEASUREMENT</span>
+    <button class="meas-foot-btn" style="flex:none;padding:1px 6px;" onclick="clearMeasure()">✕</button>
+  </div>
+  <div id="meas-body">
+    <div id="m-mode" style="color:#484f58;font-size:9px;padding:0 0 4px;font-family:'Courier New',monospace;">Click points on map</div>
+    <div style="height:1px;background:#21262d;margin:4px 0;"></div>
+    <div class="meas-row"><span class="meas-k">DIST</span><span class="meas-v dist" id="m-dist">—</span></div>
+    <div class="meas-row"><span class="meas-k">AZIMUTH</span><span class="meas-v az" id="m-az">—</span></div>
+    <div class="meas-row"><span class="meas-k">BACK AZ</span><span class="meas-v az" id="m-baz">—</span></div>
+    <div style="height:1px;background:#21262d;margin:4px 0;"></div>
+    <div class="meas-row"><span class="meas-k">FROM</span><span class="meas-v mgrs" id="m-from">—</span></div>
+    <div class="meas-row"><span class="meas-k">TO</span><span class="meas-v mgrs" id="m-to">—</span></div>
+  </div>
+  <div id="meas-footer">
+    <button class="meas-foot-btn primary" onclick="continueMeasure()">+ Continue</button>
+    <button class="meas-foot-btn" onclick="clearMeasure()">Clear</button>
+  </div>
+</div>
+
+<!-- Range circle panel -->
+<div id="range-panel">
+  <div id="range-header"><span>⊙ RANGE CIRCLES</span>
+    <button class="meas-foot-btn" style="flex:none;padding:1px 6px;" onclick="clearRangeCircles();closeRangePanel()">✕</button>
+  </div>
+  <div id="range-center-label">Center: click map to set</div>
+  <div id="range-presets">
+    <button class="rng-btn" onclick="addRangeCircle(100)">100 m</button>
+    <button class="rng-btn" onclick="addRangeCircle(300)">300 m</button>
+    <button class="rng-btn" onclick="addRangeCircle(500)">500 m</button>
+    <button class="rng-btn" onclick="addRangeCircle(1000)">1 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(2000)">2 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(3000)">3 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(5000)">5 km</button>
+    <button class="rng-btn" onclick="addRangeCircle(10000)">10 km</button>
+  </div>
+  <div id="range-custom-row">
+    <input id="range-input" type="number" placeholder="Custom m" min="1" max="100000">
+    <span class="range-unit">m</span>
+    <button class="rng-btn" style="flex:none" onclick="addCustomRange()">Add</button>
+  </div>
+  <div id="range-footer">
+    <button class="meas-foot-btn" onclick="clearRangeCircles()">Clear Circles</button>
+    <button class="meas-foot-btn" onclick="closeRangePanel()">Close</button>
+  </div>
+</div>
+
+<!-- Free-draw text input -->
+<div id="fd-text-overlay">
+  <input id="fd-text-input" type="text" placeholder="Enter text…" maxlength="80">
+  <button class="fd-btn primary" onclick="placeFreeText()">Place</button>
+  <button class="fd-btn" onclick="closeFreeDrawTextInput()">✕</button>
+</div>
+
+<!-- Weather panel -->
+<div id="weather-panel">
+  <div id="wx-header">
+    <span>◈ WEATHER</span>
+    <button id="wx-close" onclick="hideWeatherPanel()">✕</button>
+  </div>
+  <div id="wx-body">
+    <div id="wx-rows"></div>
+    <div id="wx-radar-label" style="display:none">● Rain radar active</div>
+    <div id="wx-location"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ================================================================
+// GUARD
+// ================================================================
+if (typeof L === 'undefined') {
+  document.getElementById('map').innerHTML =
+    '<div style="color:#f85149;font-family:monospace;padding:40px;font-size:14px">⚠ Map libraries missing — run setup_libs</div>';
+  throw new Error('Leaflet not loaded');
+}
+
+// ================================================================
+// STATE
+// ================================================================
+const tracks={}, trails={}, graphics={}, cotTracks={}, fireMissions={}, alertMarkers={}, kmlLayers={}, cbrnZones={};
+const _routeLayers={};   // route_id → {line, markers:[], labels:[]}
+let bridge=null, drawMode='pointer', drawHandler=null, measurePoints=[], measureLine=null;
+let radialLatLng=null, pickerLat=null, pickerLon=null, selectedFunc=null, selectedDim='G';
+let pickerAff='F', pickerEch='--', pickerEchCode='--';
+
+// ================================================================
+// MAP
+// ================================================================
+const map = L.map('map',{center:[50.85,4.35],zoom:11,zoomControl:false,attributionControl:false,
+    preferCanvas:true});  // GPU canvas renderer (safe now — map served via HTTP)
+L.control.zoom({position:'bottomright'}).addTo(map);
+L.control.scale({position:'bottomleft',imperial:false}).addTo(map);
+
+// Base layers
+const TILES={
+  OSM:      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}),
+  DARK:     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:20,subdomains:'abcd'}),
+  SATELLITE:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}),
+  TOPO:     L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}),
+};
+let activeBase='OSM';
+TILES.OSM.addTo(map);
+
+// MBTiles overlay layers — keyed by mbt_id, sit ABOVE base tiles (zIndex 5)
+// but below vector overlays so markers / graphics remain readable.
+const mbtileLayers = {}; // mbt_id → {layer, name, visible}
+
+// Weather overlay layers
+const WEATHER_LAYERS={};
+let weatherOwmKey='';
+
+// Tactical overlay layer groups
+const LAYERS={
+  operators:L.layerGroup().addTo(map), operTrails:L.layerGroup().addTo(map),
+  cotTracks:L.layerGroup().addTo(map), enemies:L.layerGroup().addTo(map),
+  tactObjs:L.layerGroup().addTo(map),  fireMissions:L.layerGroup().addTo(map),
+  alerts:L.layerGroup().addTo(map),    graphics:L.layerGroup().addTo(map),
+  kml:L.layerGroup().addTo(map),       cbrn:L.layerGroup().addTo(map),
+  weather:L.layerGroup().addTo(map),   freedraw:L.layerGroup().addTo(map),
+  routes:L.layerGroup().addTo(map),    vehicles:L.layerGroup().addTo(map),
+};
+const vehicleMarkers={};
+
+// ================================================================
+// 15-CHAR SIDC HELPERS (milsymbol v1.x / APP-6B legacy)
+// ================================================================
+// buildSIDC(ident, dim, func6, echCode2) → 15 chars
+function buildSIDC(ident,dim,func6,echCode){
+  return `S${ident}${dim}P${func6}${echCode}---`;
+}
+
+// Affiliation identity char
+const AFF_CHAR={F:'F',H:'H',N:'N',U:'U',A:'A'};
+
+function sidcFromCotType(cotType){
+  const p=(cotType||'').split('-');
+  const a={f:'F',h:'H',u:'U',n:'N',j:'U',k:'U'}[p[1]]||'U';
+  const d={G:'G',A:'A',S:'S',U:'U',F:'G'}[p[2]]||'G';
+  let func='U-----';
+  const s=p.slice(3);
+  if(s[0]==='U'&&s[1]==='C'){
+    const leaf={I:'UCI---',A:'UCA---',F:'UCF---',R:'UCR---'}[s[2]]||'UC----';
+    func=leaf;
+  }
+  return buildSIDC(a,d,func,'--');
+}
+
+// ================================================================
+// SYMBOL CATEGORIES (for picker)
+// ================================================================
+const SYM_CATEGORIES=[
+  {name:'GROUND — COMBAT',icon:'⚔',dim:'G',items:[
+    {name:'Infantry',      func:'UCI---'},
+    {name:'Airborne',      func:'UCIA--'},
+    {name:'Air Assault',   func:'UCIZ--'},
+    {name:'Light Inf',     func:'UCIL--'},
+    {name:'Armor / Tank',  func:'UCA---'},
+    {name:'Mechanized',    func:'UCIM--'},
+    {name:'Armored Cav',   func:'UCRVA-'},
+    {name:'Anti-Armor',    func:'UCAA--'},
+    {name:'Recon / Scout', func:'UCR---'},
+    {name:'Engineer',      func:'UCE---'},
+    {name:'Sniper',        func:'UCIS--'},
+    {name:'Special Forces',func:'UCFS--'},
+    {name:'Aviation (AH)', func:'UCVF--'},
+  ]},
+  {name:'FIRE SUPPORT',icon:'🔥',dim:'G',items:[
+    {name:'Artillery SP',   func:'UCFHE-'},
+    {name:'Artillery Towed',func:'UCFHA-'},
+    {name:'Mortar',         func:'UCFM--'},
+    {name:'MLRS / Rocket',  func:'UCFR--'},
+    {name:'Air Defense',    func:'UCD---'},
+    {name:'AD (SHORAD)',    func:'UCDMH-'},
+    {name:'AD (Gun)',       func:'UCDG--'},
+  ]},
+  {name:'C2 / SUPPORT',icon:'◉',dim:'G',items:[
+    {name:'HQ / Cmd Post', func:'UH----'},
+    {name:'Medical',       func:'USM---'},
+    {name:'Supply / Log',  func:'USS---'},
+    {name:'Transport',     func:'UST---'},
+    {name:'Maintenance',   func:'USX---'},
+    {name:'Signal',        func:'UUS---'},
+    {name:'Intelligence',  func:'UUMA--'},
+    {name:'CBRN / NBC',    func:'UUAC--'},
+    {name:'MP / Police',   func:'UUL---'},
+    {name:'Vehicle',       func:'UCV---'},
+  ]},
+  {name:'AIR',icon:'✈',dim:'A',items:[
+    {name:'Fighter',       func:'MFF---'},
+    {name:'Bomber',        func:'MFB---'},
+    {name:'Attack Fixed',  func:'MFA---'},
+    {name:'Attack Helo',   func:'MFHA--'},
+    {name:'Utility Helo',  func:'MFHU--'},
+    {name:'UAV / Drone',   func:'MFQ---'},
+    {name:'Transport',     func:'MFT---'},
+  ]},
+];
+
+// ================================================================
+// SYMBOL PICKER
+// ================================================================
+function openSymbolPicker(lat,lon,defaultAff){
+  pickerLat=lat; pickerLon=lon;
+  pickerAff=(defaultAff==='HOSTILE'||defaultAff==='H')?'H':(defaultAff==='NEUTRAL'||defaultAff==='N')?'N':(defaultAff==='UNKNOWN'||defaultAff==='U')?'U':'F';
+  selectedFunc=null; selectedDim='G';
+  document.getElementById('sym-location').textContent=latLonToMGRS(lat,lon);
+  document.getElementById('sym-designation').value='';
+  document.getElementById('sym-place').disabled=true;
+  // Sync affiliation buttons
+  document.querySelectorAll('.aff-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.aff===pickerAff);
+  });
+  document.querySelectorAll('.ech-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.ech==='--');
+    if(b.dataset.ech==='--'){pickerEch='--';pickerEchCode='--';}
+  });
+  buildSymbolGrid();
+  document.getElementById('sym-overlay').classList.add('active');
+}
+
+function closeSymbolPicker(){
+  document.getElementById('sym-overlay').classList.remove('active');
+}
+
+function buildSymbolGrid(){
+  const body=document.getElementById('sym-body');
+  body.innerHTML='';
+  SYM_CATEGORIES.forEach(cat=>{
+    const sec=document.createElement('div');
+    sec.className='sym-category';
+    sec.innerHTML=`<div class="sym-cat-title">${cat.icon} ${cat.name}</div>`;
+    const grid=document.createElement('div');
+    grid.className='sym-grid';
+    cat.items.forEach(item=>{
+      const sidc=buildSIDC(pickerAff,cat.dim,item.func,pickerEchCode||'--');
+      const card=document.createElement('div');
+      card.className='sym-card';
+      card.dataset.func=item.func;
+      card.dataset.dim=cat.dim;
+      card.title=item.name;
+      // render milsymbol SVG
+      let svgHtml='';
+      if(typeof ms!=='undefined'){
+        try{
+          const sym=new ms.Symbol(sidc,{size:32});
+          svgHtml=sym.asSVG();
+        }catch(_){svgHtml='<div style="width:44px;height:44px;border:1px solid #30363d;display:flex;align-items:center;justify-content:center;color:#484f58;font-size:9px">?</div>';}
+      }
+      card.innerHTML=`${svgHtml}<span class="sym-name">${item.name}</span>`;
+      card.addEventListener('click',()=>selectSymbolCard(card,item.func,cat.dim));
+      grid.appendChild(card);
+    });
+    sec.appendChild(grid);
+    body.appendChild(sec);
+  });
+}
+
+function selectSymbolCard(card,func,dim){
+  document.querySelectorAll('.sym-card').forEach(c=>c.classList.remove('selected'));
+  card.classList.add('selected');
+  selectedFunc=func; selectedDim=dim;
+  document.getElementById('sym-place').disabled=false;
+}
+
+function placeSelectedSymbol(){
+  if(!selectedFunc||pickerLat==null) return;
+  const sidc=buildSIDC(pickerAff,selectedDim,selectedFunc,pickerEchCode||'--');
+  const desig=document.getElementById('sym-designation').value.trim();
+  if(bridge) bridge.onSymbolSelected(sidc,desig,pickerLat,pickerLon);
+  closeSymbolPicker();
+}
+
+// Affiliation buttons
+document.querySelectorAll('.aff-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    pickerAff=btn.dataset.aff;
+    document.querySelectorAll('.aff-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedFunc=null;
+    document.getElementById('sym-place').disabled=true;
+    buildSymbolGrid();
+  });
+});
+document.querySelectorAll('.ech-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    pickerEch=btn.dataset.ech; pickerEchCode=btn.dataset.echcode;
+    document.querySelectorAll('.ech-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    buildSymbolGrid();  // re-render with new echelon
+  });
+});
+
+// ================================================================
+// TRACK (OPERATOR)
+// ================================================================
+function updateTrack(t){
+  const layer=t.affiliation==='HOSTILE'?LAYERS.enemies:LAYERS.operators;
+  const icon=buildMilIcon(t.sidc,t.callsign,t.unit,t.heading);
+  const popup=buildTrackPopup(t);
+  if(tracks[t.id]){tracks[t.id].marker.setLatLng([t.lat,t.lon]).setIcon(icon).setPopupContent(popup);}
+  else{const m=L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).bindPopup(popup,{maxWidth:260}).on('click',()=>{if(bridge)bridge.onTrackClicked(String(t.id));}).addTo(layer);tracks[t.id]={marker:m,layer};}
+  addTrailSeg(LAYERS.operTrails,trails,t.id,t.lat,t.lon,t.online===false?'#6e7681':t.affiliation==='HOSTILE'?'#f85149':'#3fb950');
+}
+function removeTrack(id){if(tracks[id]){tracks[id].layer.removeLayer(tracks[id].marker);delete tracks[id];}if(trails[id]){LAYERS.operTrails.removeLayer(trails[id]);delete trails[id];}}
+
+// ================================================================
+// COT TRACKS
+// ================================================================
+function updateCotTrack(t){
+  const sidc=sidcFromCotType(t.cot_type);
+  const icon=buildMilIcon(sidc,t.callsign||t.cot_uid,t.team,t.course);
+  const pop=`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px">
+    <div style="font-weight:bold;color:#79c0ff;border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">CoT: ${esc(t.callsign||t.cot_uid)}</div>
+    <div>TYPE ${esc(t.cot_type||'—')}</div><div>MGRS ${latLonToMGRS(t.latitude,t.longitude)}</div>
+    ${t.speed?`<div>SPD ${Math.round(t.speed)} kt</div>`:''}${t.course?`<div>HDG ${Math.round(t.course)}°</div>`:''}
+  </div>`;
+  if(cotTracks[t.cot_uid]){cotTracks[t.cot_uid].setLatLng([t.latitude,t.longitude]).setIcon(icon).setPopupContent(pop);}
+  else{cotTracks[t.cot_uid]=L.marker([t.latitude,t.longitude],{icon}).bindPopup(pop,{maxWidth:250}).addTo(LAYERS.cotTracks);}
+}
+function removeCotTrack(uid){if(cotTracks[uid]){LAYERS.cotTracks.removeLayer(cotTracks[uid]);delete cotTracks[uid];}}
+
+// ================================================================
+// VEHICLES — position follows the assigned operator (derived server-side)
+// ================================================================
+const OPS_STATUS_COLOR={OPS:'#3fb950',INOPS:'#d29922',KIA:'#f85149',MIA:'#ff9e64'};
+function vehicleSidc(v){
+  if(v.symbol_code&&v.symbol_code.length>=10)return v.symbol_code;
+  const aff={FRIENDLY:'F',ENEMY:'H',UNKNOWN:'U',NEUTRAL:'N'}[v.affiliation]||'F';
+  return `S${aff}GPEVC--------`;   // ground equipment / vehicle
+}
+function updateVehicle(v){
+  // No fix yet (unassigned or assignee offline without position) → drop it.
+  if(v.latitude==null||v.longitude==null){removeVehicle(v.id);return;}
+  const st=(v.ops_status||'OPS').toUpperCase();
+  const icon=buildMilIcon(vehicleSidc(v),`🚙 ${v.callsign||''}`,v.vehicle_type||'',null);
+  const pop=`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px">
+    <div style="font-weight:bold;color:#79c0ff;border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">🚙 ${esc(v.callsign||'')}</div>
+    <div>TYPE ${esc(v.vehicle_type||'vehicle')}</div>
+    <div>STATUS <span style="color:${OPS_STATUS_COLOR[st]||'#c9d1d9'}">${esc(st)}</span></div>
+    <div>MGRS ${latLonToMGRS(v.latitude,v.longitude)}</div>
+    <div>${v.operator_id?('OP #'+v.operator_id):(v.team_id?('TEAM #'+v.team_id):'unassigned')}</div>
+  </div>`;
+  const op=(st==='OPS')?1:0.5;
+  if(vehicleMarkers[v.id]){vehicleMarkers[v.id].setLatLng([v.latitude,v.longitude]).setIcon(icon).setPopupContent(pop).setOpacity(op);}
+  else{vehicleMarkers[v.id]=L.marker([v.latitude,v.longitude],{icon,opacity:op}).bindPopup(pop,{maxWidth:250}).addTo(LAYERS.vehicles);}
+}
+function removeVehicle(id){if(vehicleMarkers[id]){LAYERS.vehicles.removeLayer(vehicleMarkers[id]);delete vehicleMarkers[id];}}
+
+// ================================================================
+// TACTICAL OBJECTS
+// ================================================================
+// Types that use APP-6B unit symbols (milsymbol frames)
+const UNIT_SIDC={
+  ENEMY:'SHGPUCI---D----', HOSTILE:'SHGPUCI---D----',
+  FRIENDLY:'SFGPUCI---D----', UNKNOWN:'SUGPUU----D----',
+  VEHICLE:'SHGPUCA---D----', ARTILLERY:'SHGPUCF---D----',
+  OBJECTIVE:'SFGPUH----F----', ZONE:'SNGPUU----E----', ROUTE:'SFGPUCI---E----',
+};
+// Control/named positions — render as pin icons, NOT unit symbols
+const PIN_TYPES=new Set(['POI','MARKER','WAYPOINT']);
+
+function _pinIcon(notes, aff){
+  const n=(notes||'').toUpperCase();
+  // Colour by content
+  let c='#c9d1d9';
+  if(n.includes('DZ ')||n.includes('DZ FALCON')||n.includes('DZ EAGLE')) c='#3fb950';
+  else if(n.includes('AA ')||n.includes('ASSEMBLY')) c='#79c0ff';
+  else if(n.includes('RP ')||n.includes('RELEASE')) c='#d29922';
+  else if(n.includes('MEDEVAC')||n.includes('CCP')) c='#ff9e64';
+  else if(aff==='HOSTILE'||aff==='ENEMY') c='#f85149';
+  // DZ/LZ → diamond  | waypoint → circle
+  const isDZ=n.includes('DZ ')||n.includes('LZ ');
+  const svg=isDZ
+    ?`<svg width="22" height="22" viewBox="0 0 22 22"><polygon points="11,1 21,11 11,21 1,11" fill="${c}" fill-opacity=".9" stroke="#0d1117" stroke-width="1.5"/></svg>`
+    :`<svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="${c}" fill-opacity=".9" stroke="#0d1117" stroke-width="1.5"/></svg>`;
+  return L.divIcon({html:svg,className:'mil-icon',iconSize:[22,22],iconAnchor:[11,11],popupAnchor:[0,-13]});
+}
+
+function addTacticalObject(obj){
+  const type=obj.type||'UNKNOWN';
+  const aff=obj.affiliation||'UNKNOWN';
+  const layer=aff==='ENEMY'||aff==='HOSTILE'?LAYERS.enemies:LAYERS.tactObjs;
+  let geom=obj.geometry;
+  if(typeof geom==='string'&&geom){try{geom=JSON.parse(geom);}catch(_){geom=null;}}
+  let lyr;
+
+  // Free-draw annotations from web/any client
+  if(type==='FREEDRAW_LINE'||type==='FREEDRAW_TEXT'){
+    try {
+      const notes = typeof obj.notes==='string' ? JSON.parse(obj.notes||'{}') : (obj.notes||{});
+      const color = notes.color||'#ef4444';
+      if(type==='FREEDRAW_LINE' && geom && geom.coords && geom.coords.length>=2){
+        const lyr=L.polyline(geom.coords.map(c=>[c[0],c[1]]),{
+          color,weight:notes.thick||2,opacity:.92,lineCap:'round',lineJoin:'round',interactive:false
+        }).addTo(LAYERS.freedraw);
+        if(graphics[obj.id]) LAYERS.freedraw.removeLayer(graphics[obj.id]);
+        graphics[obj.id]=lyr;
+      } else if(type==='FREEDRAW_TEXT' && geom && geom.coords && geom.coords[0]){
+        const [lat,lon]=geom.coords[0];
+        const sh='1px 1px 3px #000,-1px -1px 3px #000';
+        const lyr=L.marker([lat,lon],{interactive:false,icon:L.divIcon({
+          className:'',
+          html:`<div style="color:${color};font-family:'Courier New',monospace;font-size:13px;font-weight:700;white-space:nowrap;text-shadow:${sh};pointer-events:none">${esc(notes.text||'')}</div>`,
+          iconSize:[0,0],iconAnchor:[0,8]
+        })}).addTo(LAYERS.freedraw);
+        if(graphics[obj.id]) LAYERS.freedraw.removeLayer(graphics[obj.id]);
+        graphics[obj.id]=lyr;
+      }
+    } catch(e){}
+    return;
+  }
+
+  // Tactical graphic types (line or polygon geometry) → proper APP-6 renderer
+  const isLinePoly = geom && (geom.type==='line'||geom.type==='polygon') && geom.coords && geom.coords.length>=2;
+  if(TG[type] && isLinePoly){
+    const pts = geom.coords.map(c=>L.latLng(c[0],c[1]));
+    lyr = buildTacticalGraphic(type, pts, obj.notes||'', aff);
+    lyr.addTo(LAYERS.graphics);
+    if(graphics[obj.id]) LAYERS.graphics.removeLayer(graphics[obj.id]);
+    graphics[obj.id]=lyr;
+    return;
+  }
+
+  if(geom&&geom.type==='line'&&geom.coords){lyr=L.polyline(geom.coords.map(c=>[c[0],c[1]]),{color:aff==='HOSTILE'?'#f85149':'#3fb950',weight:2}).addTo(layer);}
+  else if(geom&&geom.type==='polygon'&&geom.coords){lyr=L.polygon(geom.coords.map(c=>[c[0],c[1]]),{color:'#d29922',fillOpacity:.1}).addTo(layer);}
+  else{
+    const lat=obj.latitude||(geom&&geom.coords?.[0]?.[0]);
+    const lon=obj.longitude||(geom&&geom.coords?.[0]?.[1]);
+    if(!lat||!lon) return;
+    let icon;
+    // If an explicit MIL-STD symbol_code is present (from the symbol picker),
+    // ALWAYS render the APP-6B military frame — even for MARKER/POI types.
+    if(obj.symbol_code && obj.symbol_code.length>=10){
+      icon=buildMilIcon(obj.symbol_code,'','',obj.rotation);
+    } else if(PIN_TYPES.has(type)){
+      // Bare named positions / waypoints with no symbol → clean coloured pin
+      icon=_pinIcon(obj.notes, aff);
+    } else {
+      // Military units / vehicles / objectives → APP-6B milsymbol frame
+      const sidc=UNIT_SIDC[type]||'SUGPUU----D----';
+      icon=buildMilIcon(sidc,'','',obj.rotation);
+    }
+    lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
+    const _capObjId=obj.id;
+    lyr.on('contextmenu',function(e){L.DomEvent.stop(e);openTobjRadial(e.containerPoint,_capObjId);});
+  }
+  if(graphics[obj.id]) layer.removeLayer(graphics[obj.id]);
+  graphics[obj.id]=lyr;
+}
+function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);LAYERS.graphics.removeLayer(graphics[id]);delete graphics[id];}}
+function buildObjPopup(obj){const c=obj.affiliation==='HOSTILE'?'#f85149':'#d29922';return `<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:${c};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">${esc(obj.type)} ${obj.echelon?'['+esc(obj.echelon)+']':''}</div>${obj.notes?`<div>${esc(obj.notes)}</div>`:''}${obj.latitude?`<div>MGRS ${latLonToMGRS(obj.latitude,obj.longitude)}</div>`:''}<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(obj.timestamp||'')}</div></div>`;}
+
+// ================================================================
+// FIRE MISSIONS
+// ================================================================
+function addFireMission(fm){
+  if(!fm.latitude||!fm.longitude) return;
+  const c=fm.status==='COMPLETED'?'#6e7681':fm.status==='FIRED'?'#ff8800':'#f85149';
+  const icon=L.divIcon({html:`<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="none" stroke="${c}" stroke-width="2.5"/><line x1="14" y1="4" x2="14" y2="24" stroke="${c}" stroke-width="2"/><line x1="4" y1="14" x2="24" y2="14" stroke="${c}" stroke-width="2"/></svg>`,className:'mil-icon',iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-16]});
+  const pop=`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:#f85149;border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">FIRE MISSION</div><div>TYPE ${esc(fm.mission_type||'—')}</div><div>AMMO ${esc(fm.ammunition||'—')} × ${fm.quantity||'?'}</div><div>MGRS ${latLonToMGRS(fm.latitude,fm.longitude)}</div><div>STATUS ${esc(fm.status||'PENDING')}</div></div>`;
+  if(fireMissions[fm.id]) LAYERS.fireMissions.removeLayer(fireMissions[fm.id]);
+  fireMissions[fm.id]=L.marker([fm.latitude,fm.longitude],{icon}).bindPopup(pop,{maxWidth:260}).addTo(LAYERS.fireMissions);
+}
+
+// ================================================================
+// ALERTS
+// ================================================================
+const ALERT_COLOR={TIC:'#f85149',MEDICAL:'#ff9e64',EVAC:'#ffa500',LOST_COMMS:'#d29922',DRONE_SPOTTED:'#d2a8ff'};
+function addAlertMarker(alert){
+  if(alert.lat==null||alert.lon==null) return;
+  const c=ALERT_COLOR[alert.type]||'#f85149';
+  const m=L.circleMarker([alert.lat,alert.lon],{radius:20,color:c,weight:3,fillColor:c,fillOpacity:.2}).bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px"><b style="color:${c}">${esc(alert.type)}</b><br>${esc(alert.operator||'')}<br><small style="color:#6e7681">${esc(alert.timestamp||'')}</small></div>`).addTo(LAYERS.alerts);
+  if(alertMarkers[alert.id]) LAYERS.alerts.removeLayer(alertMarkers[alert.id]);
+  alertMarkers[alert.id]=m;
+  let n=0;const iv=setInterval(()=>{m.setStyle({fillOpacity:n%2===0?.05:.35});if(++n>16){clearInterval(iv);m.setStyle({fillOpacity:.2});}},450);
+}
+
+// ================================================================
+// KML
+// ================================================================
+function addKmlLayer(kml){
+  if(kmlLayers[kml.id]){LAYERS.kml.removeLayer(kmlLayers[kml.id]);delete kmlLayers[kml.id];}
+  if(!kml.visible||!kml.features?.length) return;
+  const grp=L.layerGroup();
+  kml.features.forEach(f=>{
+    const g=f.geometry||{},nm=(f.properties||{}).name||'',desc=(f.properties||{}).description||'',c=(f.style||{}).color||'#79c0ff',pop=`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px"><b>${esc(nm)}</b>${desc?`<br>${esc(desc)}`:''}</div>`;
+    if(g.type==='Point') L.circleMarker([g.coordinates[1],g.coordinates[0]],{radius:5,color:c,fillColor:c,fillOpacity:.8}).bindPopup(pop).addTo(grp);
+    else if(g.type==='LineString') L.polyline(g.coordinates.map(c=>[c[1],c[0]]),{color:c,weight:2}).bindPopup(pop).addTo(grp);
+    else if(g.type==='MultiLineString') g.coordinates.forEach(l=>L.polyline(l.map(c=>[c[1],c[0]]),{color:c,weight:2}).bindPopup(pop).addTo(grp));
+    else if(g.type==='Polygon') L.polygon(g.coordinates[0].map(c=>[c[1],c[0]]),{color:c,fillColor:c,fillOpacity:.1,weight:2}).bindPopup(pop).addTo(grp);
+  });
+  grp.addTo(LAYERS.kml); kmlLayers[kml.id]=grp;
+}
+function removeKmlLayer(id){if(kmlLayers[id]){LAYERS.kml.removeLayer(kmlLayers[id]);delete kmlLayers[id];}}
+
+// ================================================================
+// CBRN ZONES
+// ================================================================
+function addCbrnZone(report){
+  const p=report.payload||{};
+  const lat=parseFloat(p.latitude||p.lat||0),lon=parseFloat(p.longitude||p.lon||0);
+  if(!lat||!lon) return;
+  if(cbrnZones[report.id]){LAYERS.cbrn.removeLayer(cbrnZones[report.id]);delete cbrnZones[report.id];}
+  const grp=L.layerGroup();
+  const z1r=parseFloat(p.zone1_radius_km||p.radius_km||1)*1000;
+  L.circle([lat,lon],{radius:z1r,color:'#ff0000',fillColor:'#ff0000',fillOpacity:.15,weight:2,dashArray:'6,4'}).bindTooltip(`CBRN ZONE I — ${p.agent||'?'}`,{className:'graphic-label'}).addTo(grp);
+  const z2d=parseFloat(p.zone2_direction||p.wind_direction||0),z2dist=parseFloat(p.zone2_distance_km||p.downwind_km||5)*1000;
+  if(z2dist>0){L.polygon(buildSector([lat,lon],z2d,45,z2dist),{color:'#ff8800',fillColor:'#ff8800',fillOpacity:.1,weight:1.5,dashArray:'8,4'}).bindTooltip('CBRN ZONE II',{className:'graphic-label'}).addTo(grp);}
+  L.circleMarker([lat,lon],{radius:6,color:'#ff0000',fillColor:'#ff4400',fillOpacity:.9}).bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px"><b style="color:#f85149">☢ CBRN ${esc(report.type)}</b><br>Agent: ${esc(p.agent||'—')}<br>MGRS: ${latLonToMGRS(lat,lon)}</div>`).addTo(grp);
+  grp.addTo(LAYERS.cbrn); cbrnZones[report.id]=grp;
+}
+function buildSector(ctr,brg,half,r){const pts=[ctr];for(let a=brg-half;a<=brg+half;a+=5)pts.push(destPoint(ctr[0],ctr[1],a,r));pts.push(ctr);return pts;}
+function destPoint(lat,lon,b,d){const R=6371000,br=b*Math.PI/180,dr=d/R,φ1=lat*Math.PI/180,λ1=lon*Math.PI/180,φ2=Math.asin(Math.sin(φ1)*Math.cos(dr)+Math.cos(φ1)*Math.sin(dr)*Math.cos(br)),λ2=λ1+Math.atan2(Math.sin(br)*Math.sin(dr)*Math.cos(φ1),Math.cos(dr)-Math.sin(φ1)*Math.sin(φ2));return[φ2*180/Math.PI,λ2*180/Math.PI];}
+
+// ================================================================
+// TACTICAL GRAPHICS (drawn overlays)
+// ================================================================
+const GFX_STYLE={
+  // Friendly (blue)
+  ATK_F:    {color:'#00aaff',weight:3,dashArray:null,fill:false,arrow:true},
+  CTR_F:    {color:'#00aaff',weight:2.5,dashArray:'8,4',fill:false},
+  DEF_F:    {color:'#00aaff',weight:2.5,dashArray:null,fill:false},
+  AMB_F:    {color:'#00aaff',weight:2,dashArray:null,fill:true,fillOpacity:.08},
+  OBJ_F:    {color:'#00aaff',weight:2,fill:true,fillOpacity:.06},
+  BND_F:    {color:'#ffff00',weight:1.5,dashArray:'5,4',fill:false},
+  FLOT:     {color:'#00ff66',weight:2,dashArray:null,fill:false},
+  FLET:     {color:'#f85149',weight:2,dashArray:null,fill:false},
+  PL:       {color:'#00ff66',weight:2.5,dashArray:'12,6',fill:false},
+  PHASE_LINE:{color:'#00ff66',weight:2.5,dashArray:'12,6',fill:false},
+  // Hostile (red)
+  ATK_H:    {color:'#f85149',weight:3,dashArray:null,fill:false},
+  CTR_H:    {color:'#f85149',weight:2.5,dashArray:'8,4',fill:false},
+  DEF_H:    {color:'#f85149',weight:2.5,fill:false},
+  AMB_H:    {color:'#f85149',weight:2,fill:true,fillOpacity:.08},
+  OBJ_H:    {color:'#f85149',weight:2,fill:true,fillOpacity:.06},
+  BND_H:    {color:'#f85149',weight:1.5,dashArray:'5,4',fill:false},
+  // FSCMs
+  FSCL:     {color:'#ff8800',weight:2.5,dashArray:'14,5',fill:false},
+  CFL:      {color:'#ff4400',weight:2,dashArray:'10,8',fill:false},
+  NFL:      {color:'#ff0000',weight:2,dashArray:'5,5',fill:false},
+  NFA:      {color:'#ff0000',weight:1.5,fill:true,fillOpacity:.12},
+  FFA:      {color:'#00cc00',weight:1.5,fill:true,fillOpacity:.10},
+  ENGAGEMENT_AREA:{color:'#ff3300',weight:1.5,fill:true,fillOpacity:.10},
+  NAI:      {color:'#aa44ff',weight:1.5,dashArray:'5,5',fill:true,fillOpacity:.06},
+  TAI:      {color:'#ff44aa',weight:1.5,dashArray:'5,5',fill:true,fillOpacity:.06},
+  AXIS:     {color:'#00aaff',weight:3,fill:false},
+  ROUTE:    {color:'#88ff00',weight:2,dashArray:'8,4',fill:false},
+  OBJECTIVE:{color:'#e6edf3',weight:2,fill:true,fillOpacity:.05},
+  BOUNDARY: {color:'#ffff00',weight:1.5,dashArray:'5,4',fill:false},
+};
+
+// ── Native click-based tactical-graphic drawing ───────────────────────────
+// (Leaflet.draw 1.0.4 is incompatible with Leaflet 1.9 — we draw natively.)
+const POLY_DRAW_TYPES = new Set([
+  'NFA','FFA','OBJECTIVE','OBJ_AREA','ENGAGEMENT_AREA','NAI','TAI',
+  'OBJ_F','OBJ_H','AMB_F','AMB_H','ASSEMBLY_AREA','ZONE'
+]);
+
+let _drawType   = null;     // active graphic type
+let _drawAff    = 'F';
+let _drawIsPoly = false;
+let _drawPts    = [];       // clicked LatLngs
+let _drawTemp   = [];       // temporary marker/preview layers
+let _drawPreview= null;     // live preview line/poly
+
+function setDrawGraphic(type, aff){
+  cancelDraw();                       // clear any prior draw session
+  if(type==='pointer'||type==='none'){drawMode='pointer';return;}
+  if(type==='measure'){startMeasure('distance');return;}
+
+  _drawType   = type;
+  _drawAff    = aff || 'F';
+  _drawIsPoly = POLY_DRAW_TYPES.has(type);
+  _drawPts    = [];
+  drawMode    = 'draw';
+  map.doubleClickZoom.disable();
+  map.getContainer().style.cursor = 'crosshair';
+
+  // Show instruction banner
+  _setDrawBanner((_drawIsPoly?'AREA':'LINE')+' — '+type+
+    ' · click to add points · double-click / right-click to finish · ESC cancels');
+
+  map.on('click',     _drawClick);
+  map.on('mousemove', _drawMove);
+  map.on('dblclick',  _drawFinish);
+  map.on('contextmenu', _drawFinishCtx);
+}
+function setDrawMode(mode){ setDrawGraphic(mode,'F'); }
+
+function _drawStyle(){
+  return GFX_STYLE[_drawType] || {color:_drawAff==='H'?'#f85149':'#00aaff',weight:2,fill:false};
+}
+
+function _drawClick(e){
+  // prevent the pointer-mode map click handler
+  _drawPts.push(e.latlng);
+  const s=_drawStyle();
+  const dot=L.circleMarker(e.latlng,{radius:4,color:s.color,fillColor:s.color,fillOpacity:1,weight:1}).addTo(map);
+  _drawTemp.push(dot);
+  _renderPreview(e.latlng);
+}
+
+function _drawMove(e){
+  if(_drawPts.length===0) return;
+  _renderPreview(e.latlng);
+}
+
+function _renderPreview(cursorLL){
+  const s=_drawStyle();
+  const pts=cursorLL?[..._drawPts,cursorLL]:[..._drawPts];
+  if(_drawPreview){map.removeLayer(_drawPreview);_drawPreview=null;}
+  if(pts.length<2 && !_drawIsPoly) {
+    if(pts.length<1) return;
+  }
+  if(_drawIsPoly && pts.length>=2){
+    _drawPreview=L.polygon(pts,{color:s.color,weight:s.weight,dashArray:s.dashArray,
+      fill:true,fillColor:s.color,fillOpacity:(s.fillOpacity||.08)}).addTo(map);
+  } else if(pts.length>=2){
+    _drawPreview=L.polyline(pts,{color:s.color,weight:s.weight,dashArray:s.dashArray}).addTo(map);
+  }
+}
+
+function _drawFinishCtx(e){
+  if(e&&e.originalEvent){e.originalEvent.preventDefault();e.originalEvent.stopPropagation();}
+  _drawFinish();
+}
+
+function _drawFinish(){
+  const type=_drawType, isPoly=_drawIsPoly, pts=[..._drawPts];
+  const minPts=isPoly?3:2;
+  if(pts.length<minPts){ cancelDraw(); return; }
+
+  // Build the proper APP-6 tactical graphic
+  const _affName=_drawAff==='H'?'HOSTILE':_drawAff==='N'?'NEUTRAL':_drawAff==='U'?'UNKNOWN':'FRIENDLY';
+  const grp=buildTacticalGraphic(type, pts, '', _affName);
+  grp.addTo(LAYERS.graphics);
+  const lid='draw_'+Date.now();
+  graphics['gfx_'+lid]=grp;
+
+  // Backend format: {type:'line'|'polygon', coords:[[lat,lon],...]}
+  const coords = pts.map(p=>[p.lat, p.lng]);
+  const geom = isPoly ? {type:'polygon', coords:coords}
+                      : {type:'line',    coords:coords};
+  const affName = _drawAff==='H' ? 'HOSTILE' : _drawAff==='N' ? 'NEUTRAL' : _drawAff==='U' ? 'UNKNOWN' : 'FRIENDLY';
+  if(bridge) bridge.onGraphicDrawn(type, JSON.stringify(geom), affName);
+
+  cancelDraw();
+}
+
+function cancelDraw(){
+  map.off('click',     _drawClick);
+  map.off('mousemove', _drawMove);
+  map.off('dblclick',  _drawFinish);
+  map.off('contextmenu', _drawFinishCtx);
+  _drawTemp.forEach(l=>map.removeLayer(l)); _drawTemp=[];
+  if(_drawPreview){map.removeLayer(_drawPreview);_drawPreview=null;}
+  _drawPts=[]; _drawType=null; drawMode='pointer';
+  map.doubleClickZoom.enable();
+  map.getContainer().style.cursor='';
+  _setDrawBanner('');
+  // Also stop free draw if active
+  if(_fdTool !== 'none') _fdStopAll();
+}
+
+function _setDrawBanner(txt){
+  let b=document.getElementById('draw-banner');
+  if(!txt){ if(b) b.style.display='none'; return; }
+  if(!b){
+    b=document.createElement('div'); b.id='draw-banner';
+    b.style.cssText='position:absolute;top:8px;left:50%;transform:translateX(-50%);'+
+      'z-index:1500;background:rgba(13,17,23,.95);border:1px solid #388bfd;'+
+      'color:#79c0ff;font-family:Courier New,monospace;font-size:11px;font-weight:700;'+
+      'padding:6px 14px;border-radius:3px;pointer-events:none;white-space:nowrap;';
+    document.getElementById('map').appendChild(b);
+  }
+  b.textContent=txt; b.style.display='block';
+}
+
+// ESC cancels move mode, tactical drawing, and free draw
+document.addEventListener('keydown',function(e){
+  if(e.key !== 'Escape') return;
+  if(typeof _tobjMoveId!=='undefined'&&_tobjMoveId!==null){_cancelTobjMove();return;}
+  if(drawMode==='routedraw')         { cancelRouteDrawing(); return; }
+  if(_drawType)          { cancelDraw(); return; }
+  if(_fdTool !== 'none') { _fdStopAll(); drawMode='pointer'; }
+});
+
+// ================================================================
+// ROUTE PLANNING
+// ================================================================
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const _ROUTE_WP_COLORS = {
+  START:'#3fb950', END:'#f85149', IP:'#ff9e64', RV:'#d2a8ff',
+  CP:'#79c0ff', RP:'#d29922', HOLD:'#8b949e', WP:null,
+};
+
+function _haversineM(a, b) {
+  const R=6371000, dlat=(b.lat-a.lat)*Math.PI/180, dlon=(b.lon-a.lon)*Math.PI/180;
+  const la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180;
+  const x=Math.sin(dlat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dlon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(Math.max(0,x)));
+}
+
+function _fmtRouteDist(m) {
+  if(m>=10000) return (m/1000).toFixed(1)+' km';
+  if(m>=1000)  return (m/1000).toFixed(2)+' km';
+  return Math.round(m)+' m';
+}
+
+function _fmtRouteEta(mins) {
+  if(mins<1)  return '<1m';
+  if(mins<60) return Math.round(mins)+'m';
+  return Math.floor(mins/60)+'h '+Math.round(mins%60).toString().padStart(2,'0')+'m';
+}
+
+function _routeWpIcon(type, idx, routeColor) {
+  const c = _ROUTE_WP_COLORS[type] || routeColor || '#79c0ff';
+  const lbl = {START:'S',END:'E',IP:'IP',RV:'RV',CP:'CP',RP:'RP',HOLD:'H'}[type] || String(idx);
+  const fs = lbl.length > 1 ? 7 : 10;
+  const r = 11;
+  const svg = `<svg width="${r*2}" height="${r*2}" viewBox="0 0 ${r*2} ${r*2}">
+    <circle cx="${r}" cy="${r}" r="${r-1.5}" fill="${c}" fill-opacity=".92" stroke="#0d1117" stroke-width="1.5"/>
+    <text x="${r}" y="${r}" text-anchor="middle" dominant-baseline="middle"
+      font-family="Courier New,monospace" font-size="${fs}" font-weight="700" fill="#fff">${lbl}</text>
+  </svg>`;
+  return L.divIcon({
+    html: svg, className:'mil-icon',
+    iconSize:[r*2,r*2], iconAnchor:[r,r], popupAnchor:[0,-r-2]
+  });
+}
+
+function _routeWpPopup(wp, routeName, idx, cumDist, etaMin) {
+  const c = _ROUTE_WP_COLORS[wp.type||'WP'] || '#79c0ff';
+  const typeLabel = wp.type || 'WP';
+  const labelPart = wp.label ? ` — ${esc(wp.label)}` : '';
+  return `<div style="font-family:'Courier New',monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px">
+    <div style="font-weight:700;color:${c};border-bottom:1px solid #30363d;padding-bottom:4px;margin-bottom:6px">
+      ${typeLabel}${labelPart}
+    </div>
+    ${wp.notes ? `<div style="margin-bottom:4px">${esc(wp.notes)}</div>` : ''}
+    <div style="color:#6e7681;font-size:9px">${latLonToMGRS(wp.lat,wp.lon)}</div>
+    ${cumDist !== undefined ? `<div style="color:#3fb950;font-size:9px;margin-top:3px">📏 ${_fmtRouteDist(cumDist)} from START</div>` : ''}
+    ${etaMin  !== undefined ? `<div style="color:#d29922;font-size:9px">⏱ H+${_fmtRouteEta(etaMin)} @ route speed</div>` : ''}
+    <div style="color:#484f58;font-size:8px;margin-top:2px">Route: ${esc(routeName||'')}</div>
+  </div>`;
+}
+
+// ── Drawing mode ──────────────────────────────────────────────────────────────
+let _routeDrawId    = null;
+let _routeDrawColor = '#3fb950';
+let _routeDrawPts   = [];
+let _routeDrawMks   = [];
+let _routeDrawLine  = null;
+
+function startRouteDrawing(routeId, color) {
+  cancelRouteDrawing();
+  _routeDrawId    = routeId;
+  _routeDrawColor = color || '#3fb950';
+  _routeDrawPts   = [];
+  drawMode = 'routedraw';
+  map.doubleClickZoom.disable();
+  map.getContainer().style.cursor = 'crosshair';
+  _setDrawBanner('ROUTE DRAW  ·  click to add waypoints  ·  right-click / dbl-click to finish  ·  ESC cancels');
+  map.on('click',       _rdClick);
+  map.on('mousemove',   _rdMove);
+  map.on('dblclick',    _rdFinish);
+  map.on('contextmenu', _rdFinishCtx);
+}
+
+function cancelRouteDrawing() {
+  if (!_routeDrawId && drawMode !== 'routedraw') return;
+  map.off('click',       _rdClick);
+  map.off('mousemove',   _rdMove);
+  map.off('dblclick',    _rdFinish);
+  map.off('contextmenu', _rdFinishCtx);
+  _routeDrawMks.forEach(l => map.removeLayer(l));
+  _routeDrawMks = [];
+  if (_routeDrawLine) { map.removeLayer(_routeDrawLine); _routeDrawLine = null; }
+  const id = _routeDrawId;
+  _routeDrawPts  = [];
+  _routeDrawId   = null;
+  drawMode = 'pointer';
+  map.doubleClickZoom.enable();
+  map.getContainer().style.cursor = '';
+  _setDrawBanner('');
+  if (id && bridge) bridge.onRouteDrawCancelled(id);
+}
+
+function _rdClick(e) {
+  const n = _routeDrawPts.length + 1;
+  _routeDrawPts.push({lat:e.latlng.lat, lon:e.latlng.lng});
+  const type = n === 1 ? 'START' : 'WP';
+  const mk = L.marker(e.latlng, {
+    icon: _routeWpIcon(type, n, _routeDrawColor),
+    zIndexOffset: 800, interactive: false
+  }).addTo(map);
+  _routeDrawMks.push(mk);
+  _rdUpdatePreview(e.latlng);
+}
+
+function _rdMove(e) {
+  if (_routeDrawPts.length === 0) return;
+  _rdUpdatePreview(e.latlng);
+}
+
+function _rdUpdatePreview(cursorLL) {
+  const pts = [..._routeDrawPts.map(p=>[p.lat,p.lon]),[cursorLL.lat,cursorLL.lng]];
+  if (_routeDrawLine) { map.removeLayer(_routeDrawLine); _routeDrawLine = null; }
+  if (pts.length >= 2)
+    _routeDrawLine = L.polyline(pts, {
+      color:_routeDrawColor, weight:2.5, dashArray:'8,5', opacity:.8
+    }).addTo(map);
+}
+
+function _rdFinishCtx(e) {
+  e.originalEvent.preventDefault();
+  e.originalEvent.stopPropagation();
+  _rdFinish();
+}
+
+function _rdFinish() {
+  if (_routeDrawPts.length < 2) { cancelRouteDrawing(); return; }
+  const wps = _routeDrawPts.map((p,i) => ({
+    lat:p.lat, lon:p.lon,
+    type: i === 0 ? 'START' : i === _routeDrawPts.length-1 ? 'END' : 'WP',
+    label:'', notes:''
+  }));
+  const id = _routeDrawId;
+  // Clean up draw state (without emitting cancel)
+  map.off('click',       _rdClick);
+  map.off('mousemove',   _rdMove);
+  map.off('dblclick',    _rdFinish);
+  map.off('contextmenu', _rdFinishCtx);
+  _routeDrawMks.forEach(l => map.removeLayer(l));
+  _routeDrawMks = [];
+  if (_routeDrawLine) { map.removeLayer(_routeDrawLine); _routeDrawLine = null; }
+  _routeDrawPts = [];
+  _routeDrawId  = null;
+  drawMode = 'pointer';
+  map.doubleClickZoom.enable();
+  map.getContainer().style.cursor = '';
+  _setDrawBanner('');
+  if (bridge) bridge.onRouteDrawn(id, JSON.stringify(wps));
+}
+
+// ── Route render / remove ─────────────────────────────────────────────────────
+
+function addRoute(route) {
+  removeRoute(route.id);
+  if (route.visible === false) return;
+  const color = route.color || '#3fb950';
+  const wps   = route.waypoints || [];
+  if (wps.length < 1) return;
+
+  const grp = {line:null, markers:[], labels:[]};
+  const speed = route.speed_kmh || 30;
+
+  // Cumulative distances
+  const cumDists = [0];
+  for (let i = 1; i < wps.length; i++)
+    cumDists.push(cumDists[i-1] + _haversineM(wps[i-1], wps[i]));
+
+  // Route line
+  if (wps.length >= 2) {
+    grp.line = L.polyline(wps.map(w=>[w.lat,w.lon]), {
+      color, weight:3, dashArray:'10,6', opacity:.9, lineCap:'round', lineJoin:'round'
+    }).addTo(LAYERS.routes);
+  }
+
+  // Waypoint markers
+  wps.forEach((wp, i) => {
+    const etaMin = cumDists[i] / 1000 / speed * 60;
+    const mk = L.marker([wp.lat, wp.lon], {
+      icon: _routeWpIcon(wp.type||'WP', i+1, color), zIndexOffset: 700
+    })
+    .bindPopup(_routeWpPopup(wp, route.name, i+1, cumDists[i], etaMin), {maxWidth:250})
+    .addTo(LAYERS.routes);
+    grp.markers.push(mk);
+  });
+
+  // Leg labels (mid-point: segment distance + cumulative ETA at end)
+  for (let i = 1; i < wps.length; i++) {
+    const seg    = _haversineM(wps[i-1], wps[i]);
+    const etaEnd = cumDists[i] / 1000 / speed * 60;
+    const midLat = (wps[i-1].lat + wps[i].lat) / 2;
+    const midLon = (wps[i-1].lon + wps[i].lon) / 2;
+    const lbl = L.marker([midLat, midLon], {
+      interactive: false,
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:rgba(0,0,0,.78);border:1px solid ${color};color:${color};font-family:'Courier New',monospace;font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;white-space:nowrap;transform:translate(-50%,-100%)">${_fmtRouteDist(seg)} · H+${_fmtRouteEta(etaEnd)}</div>`,
+        iconSize:[0,0]
+      })
+    }).addTo(LAYERS.routes);
+    grp.labels.push(lbl);
+  }
+
+  // Route name label at first waypoint
+  const nameLbl = L.marker([wps[0].lat, wps[0].lon], {
+    interactive: false,
+    icon: L.divIcon({
+      className: '',
+      html: `<div style="background:rgba(0,0,0,.84);border:1px solid ${color};color:${color};font-family:'Courier New',monospace;font-size:9px;font-weight:700;padding:1px 7px;border-radius:2px;white-space:nowrap;transform:translate(-50%,18px);letter-spacing:.5px">${esc(route.name||'Route')}</div>`,
+      iconSize:[0,0]
+    })
+  }).addTo(LAYERS.routes);
+  grp.labels.push(nameLbl);
+
+  _routeLayers[route.id] = grp;
+}
+
+function removeRoute(id) {
+  const g = _routeLayers[id];
+  if (!g) return;
+  if (g.line) LAYERS.routes.removeLayer(g.line);
+  g.markers.forEach(m => LAYERS.routes.removeLayer(m));
+  g.labels.forEach(l => LAYERS.routes.removeLayer(l));
+  delete _routeLayers[id];
+}
+
+function setRouteVisible(id, visible) {
+  const g = _routeLayers[id];
+  if (!g) return;
+  const op = visible ? 1 : 0;
+  if (g.line) g.line.setStyle({opacity: op * 0.9});
+  g.markers.forEach(m => m.setOpacity(op));
+  g.labels.forEach(l => l.setOpacity(op));
+}
+
+function centerOnRoute(id) {
+  const g = _routeLayers[id];
+  if (!g || !g.line) return;
+  const lls = g.line.getLatLngs();
+  if (lls.length) map.fitBounds(L.latLngBounds(lls).pad(0.15));
+}
+
+// ================================================================
+// NAVIGATION
+// Follows a route with GPS tracking. All state is JS-only; Python is
+// notified of waypoint-reached and route-complete events via bridge.
+// No CSS transitions — see compositor-constraint note at top of file.
+// ================================================================
+
+let _navState    = 'idle';   // 'idle' | 'navigating' | 'paused'
+let _navRoute    = null;     // full route dict currently being navigated
+let _navWpIdx    = 0;        // index of next target waypoint
+let _navWatchId  = null;     // navigator.geolocation watchPosition ID
+let _navLastLat  = null;
+let _navLastLon  = null;
+let _navPosLyr   = null;     // blue GPS dot
+let _navLineLyr  = null;     // solid highlight of route line
+
+const _NAV_ARRIVAL_M = 50;   // metres within which a WP is considered reached
+
+// WP type → badge background colour
+const _NAV_WP_BG = {
+  START:'#3fb950', END:'#f85149', IP:'#ff9e64', RV:'#d2a8ff',
+  CP:'#79c0ff',   RP:'#d29922',  HOLD:'#8b949e', WP:'#e6edf3'
+};
+
+function startNavigation(route) {
+  stopNavigation();
+  if (!route || !route.waypoints || route.waypoints.length < 1) return;
+  _navRoute = route;
+  _navWpIdx = 0;
+  _navState = 'navigating';
+
+  // Solid route highlight (rendered above the dashed route layer)
+  const pts = route.waypoints.map(w => [w.lat, w.lon]);
+  if (pts.length >= 2) {
+    _navLineLyr = L.polyline(pts, {
+      color: route.color || '#79c0ff', weight: 5, opacity: 0.85,
+      lineCap: 'round', lineJoin: 'round'
+    }).addTo(map);
+    map.fitBounds(_navLineLyr.getBounds(), {padding:[60,60]});
+  }
+
+  _navUpdateHud();
+  document.getElementById('nav-hud').classList.add('active');
+  document.getElementById('nav-pause-btn').textContent = '⏸ PAUSE';
+
+  if (navigator.geolocation) {
+    _navWatchId = navigator.geolocation.watchPosition(
+      _navOnGps,
+      function(e){ console.warn('[NAV] GPS error:', e.message); },
+      {enableHighAccuracy:true, maximumAge:2000, timeout:15000}
+    );
+  }
+}
+
+function stopNavigation() {
+  if (_navWatchId !== null) {
+    navigator.geolocation.clearWatch(_navWatchId);
+    _navWatchId = null;
+  }
+  if (_navPosLyr)  { map.removeLayer(_navPosLyr);  _navPosLyr  = null; }
+  if (_navLineLyr) { map.removeLayer(_navLineLyr); _navLineLyr = null; }
+  _navState   = 'idle';
+  _navRoute   = null;
+  _navWpIdx   = 0;
+  _navLastLat = null;
+  _navLastLon = null;
+  document.getElementById('nav-hud').classList.remove('active');
+  if (bridge) bridge.onNavStopped();
+}
+
+function pauseNavigation() {
+  if (_navState !== 'navigating') return;
+  _navState = 'paused';
+  document.getElementById('nav-pause-btn').textContent = '▶ RESUME';
+}
+
+function resumeNavigation() {
+  if (_navState !== 'paused') return;
+  _navState = 'navigating';
+  document.getElementById('nav-pause-btn').textContent = '⏸ PAUSE';
+}
+
+function _navTogglePause() {
+  if (_navState === 'paused')     resumeNavigation();
+  else if (_navState === 'navigating') pauseNavigation();
+}
+
+function _navGoHome() {
+  if (!_navRoute) return;
+  _navWpIdx = 0;
+  _navUpdateHud(_navLastLat, _navLastLon, null, null);
+  // Pan to first waypoint so user can see where home is
+  const wp0 = _navRoute.waypoints[0];
+  if (wp0 && _navLastLat === null) map.panTo([wp0.lat, wp0.lon]);
+}
+
+function _navOnGps(pos) {
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+  const hdg = pos.coords.heading;    // degrees true north; null when stationary
+  const spd = pos.coords.speed;      // m/s; null if unavailable
+  _navLastLat = lat;
+  _navLastLon = lon;
+
+  // Update / create GPS position dot
+  if (!_navPosLyr) {
+    _navPosLyr = L.circleMarker([lat, lon], {
+      radius:9, color:'#fff', weight:2, fillColor:'#388bfd', fillOpacity:1
+    }).addTo(map);
+  } else {
+    _navPosLyr.setLatLng([lat, lon]);
+  }
+
+  if (_navState !== 'navigating' || !_navRoute) return;
+
+  const wps = _navRoute.waypoints;
+  if (_navWpIdx < wps.length) {
+    const wp = wps[_navWpIdx];
+    const d  = _haversineM({lat, lon}, {lat:wp.lat, lon:wp.lon});
+    if (d < _NAV_ARRIVAL_M && _navWpIdx < wps.length - 1) {
+      const arrived = _navWpIdx;
+      _navWpIdx++;
+      if (bridge) bridge.onNavWaypointReached(_navRoute.id, arrived);
+    }
+  }
+  if (_navWpIdx >= wps.length) {
+    _navCompleteRoute();
+    return;
+  }
+
+  map.panTo([lat, lon]);
+  _navUpdateHud(lat, lon, hdg, spd);
+}
+
+function _navBearing(fromLat, fromLon, toLat, toLon) {
+  const dlon = (toLon - fromLon) * Math.PI / 180;
+  const la1  = fromLat * Math.PI / 180;
+  const la2  = toLat   * Math.PI / 180;
+  const y = Math.sin(dlon) * Math.cos(la2);
+  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dlon);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+function _navUpdateHud(lat, lon, hdg, spd) {
+  if (!_navRoute) return;
+  const wps = _navRoute.waypoints;
+  if (_navWpIdx >= wps.length) return;
+  const wp = wps[_navWpIdx];
+
+  // ── Direction arrow + bearing text ─────────────────────────────────
+  let bearing = null;
+  let turnHint = '';
+  if (lat !== null && lat !== undefined) {
+    bearing = _navBearing(lat, lon, wp.lat, wp.lon);
+    if (hdg !== null && hdg !== undefined) {
+      let rel = ((bearing - hdg) + 360) % 360;
+      if (rel > 180) rel -= 360;           // −180..+180 (negative = left)
+      if (Math.abs(rel) < 12) turnHint = '↑ STRAIGHT AHEAD';
+      else if (rel > 0)       turnHint = `↱ TURN RIGHT ${rel.toFixed(0)}°`;
+      else                    turnHint = `↰ TURN LEFT ${Math.abs(rel).toFixed(0)}°`;
+    } else {
+      turnHint = `BRG ${bearing.toFixed(0)}° (T)`;
+    }
+  }
+
+  const svg = document.getElementById('nav-arrow-svg');
+  if (svg) svg.style.transform = bearing !== null ? `rotate(${bearing.toFixed(0)}deg)` : 'rotate(0deg)';
+
+  document.getElementById('nav-bearing-deg').textContent =
+    bearing !== null ? `${bearing.toFixed(0)}°` : '---°';
+  document.getElementById('nav-turn-hint').textContent = turnHint;
+
+  // ── WP badge ────────────────────────────────────────────────────────
+  const wpType = wp.type || 'WP';
+  const badge  = document.getElementById('nav-wp-badge');
+  badge.textContent  = wpType;
+  badge.style.background = _NAV_WP_BG[wpType] || '#e6edf3';
+  badge.style.color  = '#0d1117';
+
+  // ── WP label & stats ────────────────────────────────────────────────
+  document.getElementById('nav-wp-label').textContent =
+    wp.label || wp.type || `Waypoint ${_navWpIdx + 1}`;
+
+  let statsText = '';
+  if (lat !== null && lat !== undefined) {
+    const distToWp = _haversineM({lat, lon}, {lat:wp.lat, lon:wp.lon});
+    let remDist = distToWp;
+    for (let i = _navWpIdx; i < wps.length - 1; i++)
+      remDist += _haversineM({lat:wps[i].lat,lon:wps[i].lon},{lat:wps[i+1].lat,lon:wps[i+1].lon});
+    const spdMs = (spd && spd > 0.5) ? spd : (_navRoute.speed_kmh || 30) / 3.6;
+    const etaTot = remDist / spdMs;
+    statsText = `${_fmtRouteDist(distToWp)} to ${wpType}  ·  ${_fmtRouteDist(remDist)} left  ·  ETA ${_fmtRouteEta(etaTot / 60)}`;
+  } else {
+    let remDist = 0;
+    for (let i = _navWpIdx; i < wps.length - 1; i++)
+      remDist += _haversineM({lat:wps[i].lat,lon:wps[i].lon},{lat:wps[i+1].lat,lon:wps[i+1].lon});
+    statsText = `${_fmtRouteDist(remDist)} remaining  ·  acquiring GPS…`;
+  }
+  document.getElementById('nav-wp-stats').textContent = statsText;
+
+  // ── Progress bar ────────────────────────────────────────────────────
+  let totalDist = 0, coveredDist = 0;
+  for (let i = 0; i < wps.length - 1; i++) {
+    const leg = _haversineM({lat:wps[i].lat,lon:wps[i].lon},{lat:wps[i+1].lat,lon:wps[i+1].lon});
+    totalDist += leg;
+    if (i < _navWpIdx) coveredDist += leg;
+  }
+  const pct = totalDist > 0 ? (coveredDist / totalDist * 100) : 0;
+  document.getElementById('nav-progress-fill').style.width = `${Math.min(100, pct).toFixed(1)}%`;
+  document.getElementById('nav-progress-text').textContent =
+    `WP ${_navWpIdx + 1} / ${wps.length}`;
+}
+
+function _navCompleteRoute() {
+  const id = _navRoute ? _navRoute.id : '';
+  document.getElementById('nav-wp-label').textContent   = '✓ ROUTE COMPLETE';
+  document.getElementById('nav-wp-stats').textContent   = 'Destination reached';
+  document.getElementById('nav-progress-fill').style.width = '100%';
+  document.getElementById('nav-progress-text').textContent = 'DONE';
+  document.getElementById('nav-bearing-deg').textContent  = '---°';
+  document.getElementById('nav-turn-hint').textContent    = '';
+  const badge = document.getElementById('nav-wp-badge');
+  badge.textContent = 'END'; badge.style.background = '#f85149';
+  const svg = document.getElementById('nav-arrow-svg');
+  if (svg) { svg.querySelector('polygon').setAttribute('fill','#3fb950'); svg.style.transform='rotate(0deg)'; }
+  _navState = 'idle';
+  if (bridge) bridge.onNavCompleted(id);
+}
+
+// ================================================================
+// APP-6 / MIL-STD-2525C TACTICAL GRAPHICS RENDERER
+// Renders proper control-measure geometry (arrows, scallops, hatching,
+// FSCM bracket labels, echelon boundaries) — milsymbol does NOT do these.
+// ================================================================
+
+// ── Canonical tactical-graphic type spec ─────────────────────────────────
+// affByAff:true → colour from AFFILIATION (blue/red/yellow);
+// otherwise a fixed standard colour is used (FSCMs, FLOT/FLET).
+const TG = {
+  // Offensive manoeuvre
+  ATK_AXIS:      {kind:'mainattack', w:4,   affByAff:true},  // line + solid filled arrowhead
+  AXIS:          {kind:'arrow',      w:3.5, affByAff:true},  // line + open V arrowhead
+  COUNTERATTACK: {kind:'arrow',      w:3,   dash:'12,5', affByAff:true}, // dashed + open V
+  BYPASS:        {kind:'arrow',      w:3,                affByAff:true},
+  WITHDRAW:      {kind:'arrow',      w:3,   dash:'5,5',  affByAff:true},
+  // Defensive
+  DEF_AREA:      {kind:'defense',    w:3,   affByAff:true},  // line + perpendicular ticks
+  BLOCK:         {kind:'block',      w:3,   affByAff:true},  // line + T-bar at end
+  AMBUSH:        {kind:'ambush',     w:3,   affByAff:true},  // horseshoe arc
+  // Areas / zones
+  OBJ_AREA:      {kind:'area',       w:2,   tag:'OBJ',  affByAff:true},
+  OBJECTIVE:     {kind:'area',       w:2,   tag:'OBJ',  affByAff:true},
+  BOUNDARY:      {kind:'boundary',   w:2,   affByAff:true},
+  PHASE_LINE:    {kind:'linelabel',  w:3,   tag:'PL',   affByAff:true},
+  ROUTE:         {kind:'linelabel',  w:2,   tag:'RTE',  dash:'10,5', affByAff:true},
+  // Forward lines — fixed standard colours
+  FLOT:          {kind:'scallop',   color:'#00cc55', w:2.5, label:'FLOT'},
+  FLET:          {kind:'scallop',   color:'#f85149', w:2.5, label:'FLET'},
+  // Fire-support coordination measures — fixed colours
+  FSCL:          {kind:'fscm',      color:'#ff8800', w:3,   tag:'FSCL'},
+  CFL:           {kind:'fscm',      color:'#ff4400', w:2.5, tag:'CFL'},
+  NFL:           {kind:'fscm',      color:'#ff0000', w:2.5, tag:'NFL'},
+  NFA:           {kind:'hatch',     color:'#ff0000', w:2,   tag:'NFA'},
+  FFA:           {kind:'area',      color:'#00cc00', w:2,   tag:'FFA'},
+  ENGAGEMENT_AREA:{kind:'area',     color:'#ff3300', w:2,   tag:'EA'},
+  ASSEMBLY_AREA: {kind:'area',      color:'#44aaff', w:2,   tag:'AA'},
+  ZONE:          {kind:'area',      color:'#d29922', w:2,   tag:''},
+  // Intel
+  NAI:           {kind:'areadash',  color:'#aa44ff', w:2,   tag:'NAI'},
+  TAI:           {kind:'areadash',  color:'#ff44aa', w:2,   tag:'TAI'},
+};
+
+// affiliation → colour per APP-6 colour standard
+function _affColor(aff){
+  const a=(aff||'FRIENDLY').toUpperCase();
+  return a==='HOSTILE'||a==='ENEMY' ? '#f85149'
+       : a==='NEUTRAL'             ? '#3fb950'
+       : a==='UNKNOWN'             ? '#d29922' : '#00aaff';
+}
+
+// ── geometry helpers ──────────────────────────────────────────────────────
+function _distLL(a,b){
+  const R=6371000,dLat=(b.lat-a.lat)*Math.PI/180,dLon=(b.lng-a.lng)*Math.PI/180;
+  const la1=a.lat*Math.PI/180,la2=b.lat*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function _polyLen(pts){let d=0;for(let i=1;i<pts.length;i++)d+=_distLL(pts[i-1],pts[i]);return d;}
+
+// Point + bearing at distance d along a polyline
+function _ptAtDist(pts,d){
+  let acc=0;
+  for(let i=0;i<pts.length-1;i++){
+    const s=_distLL(pts[i],pts[i+1]);
+    if(acc+s>=d){
+      const t=(d-acc)/s;
+      return {
+        pt:  L.latLng(pts[i].lat+t*(pts[i+1].lat-pts[i].lat),
+                      pts[i].lng+t*(pts[i+1].lng-pts[i].lng)),
+        brg: _bearing(pts[i],pts[i+1])
+      };
+    }
+    acc+=s;
+  }
+  const n=pts.length-1;
+  return {pt:pts[n], brg:_bearing(pts[Math.max(0,n-1)],pts[n])};
+}
+
+// Boxed text label as a divIcon marker
+function _tgLabel(latlng,text,color){
+  return L.marker(latlng,{interactive:false,icon:L.divIcon({
+    className:'',
+    html:`<div style="background:rgba(0,0,0,.82);border:1px solid ${color};color:${color};
+          font-family:'Courier New',monospace;font-size:10px;font-weight:700;letter-spacing:1px;
+          padding:1px 6px;border-radius:2px;white-space:nowrap;transform:translate(-50%,-50%)">${text}</div>`,
+    iconSize:[0,0]
+  })});
+}
+
+// Scalloped line — semicircle bumps toward the RIGHT of travel (toward enemy for FLOT)
+function _scallopPts(pts,radiusM){
+  const out=[];
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1];
+    const segLen=_distLL(a,b);
+    const n=Math.max(1,Math.round(segLen/(radiusM*2)));
+    const brg=_bearing(a,b);
+    for(let k=0;k<n;k++){
+      const t0=k/n,t1=(k+1)/n;
+      const s=[a.lat+(b.lat-a.lat)*t0, a.lng+(b.lng-a.lng)*t0];
+      const e=[a.lat+(b.lat-a.lat)*t1, a.lng+(b.lng-a.lng)*t1];
+      out.push(s);
+      const midLat=(s[0]+e[0])/2, midLng=(s[1]+e[1])/2;
+      // bump to the right (+90° = enemy side)
+      const c=destPoint(midLat,midLng,brg+90,radiusM);
+      for(let a2=0;a2<=180;a2+=20){
+        const ang=brg+90+(180-a2);
+        const p=destPoint(c[0],c[1],ang,radiusM);
+        out.push([p[0],p[1]]);
+      }
+    }
+  }
+  out.push([pts[pts.length-1].lat,pts[pts.length-1].lng]);
+  return out;
+}
+
+// ── Main renderer ─────────────────────────────────────────────────────────
+// Build a tactical graphic from a list of L.LatLng. Returns L.layerGroup.
+function buildTacticalGraphic(type,pts,label,aff){
+  const spec = TG[type] || {kind:'line', color:'#e6edf3', w:2};
+  const grp  = L.layerGroup();
+  const C    = spec.affByAff ? _affColor(aff) : (spec.color||_affColor(aff));
+  const W    = spec.w || 2;
+  const len  = _polyLen(pts);
+  // Arrow head ground-size: 15 % of line length, clamped to [200 m, 3 000 m]
+  const head = Math.min(Math.max(len*0.15, 200), 3000);
+  const isArea = ['area','areadash','hatch'].includes(spec.kind);
+
+  // ── ATK_AXIS: line + large solid filled arrowhead ────────────────────
+  // Shaft stops at the arrowhead base so the line doesn't poke through the tip.
+  if(spec.kind==='mainattack'){
+    if(pts.length<2){L.polyline(pts,{color:C,weight:W}).addTo(grp);return grp;}
+    const tip=pts[pts.length-1], prev=pts[pts.length-2];
+    const brg=_bearing(prev,tip);
+    const ha=28, haR=ha*Math.PI/180;
+    const bL=destPoint(tip.lat,tip.lng,(brg+180+ha+360)%360, head);
+    const bR=destPoint(tip.lat,tip.lng,(brg+180-ha+360)%360, head);
+    const base=destPoint(tip.lat,tip.lng,(brg+180)%360, head*Math.cos(haR));
+    const shaft=[...pts.slice(0,pts.length-1), L.latLng(base[0],base[1])];
+    L.polyline(shaft,{color:C,weight:W,lineCap:'round',lineJoin:'round'}).addTo(grp);
+    L.polygon([[bL[0],bL[1]],[tip.lat,tip.lng],[bR[0],bR[1]]],
+      {color:C,weight:1,fillColor:C,fillOpacity:1}).addTo(grp);
+  }
+
+  // ── Arrow: line + open V arrowhead (AXIS, COUNTERATTACK, BYPASS, WITHDRAW)
+  else if(spec.kind==='arrow'){
+    if(pts.length<2){L.polyline(pts,{color:C,weight:W}).addTo(grp);return grp;}
+    const tip=pts[pts.length-1], prev=pts[pts.length-2];
+    const brg=_bearing(prev,tip);
+    const bL=destPoint(tip.lat,tip.lng,(brg+148+360)%360, head*0.85);
+    const bR=destPoint(tip.lat,tip.lng,(brg-148+360)%360, head*0.85);
+    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash,lineCap:'round',lineJoin:'round'}).addTo(grp);
+    L.polyline([[bL[0],bL[1]],[tip.lat,tip.lng],[bR[0],bR[1]]],
+      {color:C,weight:W,lineJoin:'round'}).addTo(grp);
+  }
+
+  // ── Defense line — line + perpendicular ticks on right (enemy side) ──
+  else if(spec.kind==='defense'){
+    L.polyline(pts,{color:C,weight:W,lineCap:'round'}).addTo(grp);
+    const nTicks = Math.max(4, Math.min(20, Math.round(len/400)));
+    const spacing = len / (nTicks+1);
+    const tLen    = spacing * 0.55;
+    for(let k=1;k<=nTicks;k++){
+      const {pt,brg} = _ptAtDist(pts, k*spacing);
+      const e = destPoint(pt.lat,pt.lng,(brg+90+360)%360, tLen);
+      L.polyline([[pt.lat,pt.lng],[e[0],e[1]]],{color:C,weight:W-1||1}).addTo(grp);
+    }
+  }
+
+  // ── Scallop (FLOT / FLET) ────────────────────────────────────────────
+  else if(spec.kind==='scallop'){
+    L.polyline(_scallopPts(pts,head*0.35),{color:C,weight:W}).addTo(grp);
+    if(spec.label){
+      grp.addLayer(_tgLabel(pts[0],spec.label,C));
+      grp.addLayer(_tgLabel(pts[pts.length-1],spec.label,C));
+    }
+  }
+
+  // ── FSCM / Phase-line type (labelled at both ends) ───────────────────
+  else if(spec.kind==='linelabel'||spec.kind==='fscm'){
+    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
+    const name=(label||'').replace(/_/g,' ');
+    const txt=spec.tag+(name&&name!==type?' '+name:'');
+    grp.addLayer(_tgLabel(pts[0],txt,C));
+    grp.addLayer(_tgLabel(pts[pts.length-1],txt,C));
+  }
+
+  // ── Boundary line ────────────────────────────────────────────────────
+  else if(spec.kind==='boundary'){
+    L.polyline(pts,{color:C,weight:W,dashArray:'6,4'}).addTo(grp);
+    // X marks at start, mid, end
+    [pts[0], pts[Math.floor(pts.length/2)], pts[pts.length-1]].forEach(p=>{
+      grp.addLayer(_tgLabel(p,'✕',C));
+    });
+    if(label) grp.addLayer(_tgLabel(pts[0],label,C));
+  }
+
+  // ── Block (T-bar at end) ─────────────────────────────────────────────
+  else if(spec.kind==='block'){
+    L.polyline(pts,{color:C,weight:W}).addTo(grp);
+    if(pts.length>=2){
+      const b=_bearing(pts[pts.length-2],pts[pts.length-1]);
+      const t=pts[pts.length-1];
+      const a1=destPoint(t.lat,t.lng,(b+90+360)%360,head*0.55);
+      const a2=destPoint(t.lat,t.lng,(b-90+360)%360,head*0.55);
+      L.polyline([[a1[0],a1[1]],[a2[0],a2[1]]],{color:C,weight:W+1}).addTo(grp);
+    }
+  }
+
+  // ── Ambush — horseshoe arc opening toward the kill zone ──────────────
+  // The path endpoint IS the ambush position; the arc opens perpendicular
+  // to the approach so the "jaws" face the direction enemies travel through.
+  else if(spec.kind==='ambush'){
+    L.polyline(pts,{color:C,weight:W}).addTo(grp);
+    if(pts.length>=2){
+      const tip=pts[pts.length-1];
+      const b=_bearing(pts[pts.length-2],tip);
+      // Arc: semicircle perpendicular to shaft, opening to the right
+      const arcPts=[];
+      for(let a=-90;a<=90;a+=15){
+        const p=destPoint(tip.lat,tip.lng,(b+a+360)%360, head*0.8);
+        arcPts.push([p[0],p[1]]);
+      }
+      L.polyline(arcPts,{color:C,weight:W}).addTo(grp);
+    }
+  }
+
+  // ── Area types (polygon, hatched, dashed) ────────────────────────────
+  else if(isArea){
+    const dash    = spec.kind==='areadash' ? '7,5' : null;
+    const fillOp  = spec.kind==='hatch'   ? 0     : 0.07;
+    L.polygon(pts,{color:C,weight:W,dashArray:dash,fill:true,fillColor:C,fillOpacity:fillOp}).addTo(grp);
+    if(spec.kind==='hatch') _addHatch(grp,pts,C);
+    const c=_centroid(pts);
+    const name=(label||'').replace(/_/g,' ');
+    const txt=(spec.tag||'')+(name&&name!==type?' '+name:'');
+    if(txt.trim()) grp.addLayer(_tgLabel(L.latLng(c[0],c[1]),txt,C));
+  }
+
+  // ── Fallback: plain line ─────────────────────────────────────────────
+  else {
+    L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
+    if(label) grp.addLayer(_tgLabel(pts[Math.floor(pts.length/2)],label.replace(/_/g,' '),C));
+  }
+  return grp;
+}
+
+function _centroid(pts){
+  let lat=0,lng=0;pts.forEach(p=>{lat+=p.lat;lng+=p.lng;});
+  return [lat/pts.length, lng/pts.length];
+}
+
+// diagonal hatch fill for NFA
+function _addHatch(grp, pts, color){
+  let minLat=90,maxLat=-90,minLng=180,maxLng=-180;
+  pts.forEach(p=>{minLat=Math.min(minLat,p.lat);maxLat=Math.max(maxLat,p.lat);
+                   minLng=Math.min(minLng,p.lng);maxLng=Math.max(maxLng,p.lng);});
+  const step=(maxLat-minLat)/8 || 0.001;
+  for(let off=-(maxLng-minLng); off<(maxLng-minLng); off+=step*1.4){
+    const l=L.polyline([[minLat,minLng+off],[maxLat,minLng+off+(maxLng-minLng)]],
+      {color:color,weight:1,opacity:.5});
+    // clip visually by bounding (simple — full diagonal lines across bbox)
+    l.addTo(grp);
+  }
+}
+
+function addGraphic(g){
+  if(!g||!g.geojson) return;
+  let geo=typeof g.geojson==='string'?JSON.parse(g.geojson):g.geojson;
+  if(geo.type==='Feature'){addGraphic({...g,geojson:geo.geometry});return;}
+  if(geo.type==='FeatureCollection'){geo.features.forEach(f=>addGraphic({...g,id:g.id+'_'+Math.random(),geojson:f}));return;}
+
+  // Normalise geometry → array of L.latLng + isArea flag
+  let pts=null, isArea=false;
+  if(geo.type==='line'||geo.type==='LineString'){
+    const cc = geo.coords || (geo.coordinates ? geo.coordinates.map(c=>[c[1],c[0]]) : null);
+    if(cc) pts=cc.map(c=>L.latLng(c[0],c[1]));
+  } else if(geo.type==='polygon'||geo.type==='Polygon'){
+    isArea=true;
+    let ring = geo.coords || (geo.coordinates ? geo.coordinates[0].map(c=>[c[1],c[0]]) : null);
+    if(ring) pts=ring.map(c=>L.latLng(c[0],c[1]));
+  } else if(geo.type==='Point'){
+    const c=geo.coordinates; const lyr=L.circleMarker([c[1],c[0]],{radius:7,color:'#e6edf3',fillColor:'#e6edf3',fillOpacity:.7}).addTo(LAYERS.graphics);
+    if(graphics['gfx_'+g.id]) LAYERS.graphics.removeLayer(graphics['gfx_'+g.id]);
+    graphics['gfx_'+g.id]=lyr; return;
+  }
+  if(!pts||pts.length<2) return;
+
+  const grp=buildTacticalGraphic(g.type, pts, g.label, g.affiliation);
+  grp.addTo(LAYERS.graphics);
+  if(graphics['gfx_'+g.id]) LAYERS.graphics.removeLayer(graphics['gfx_'+g.id]);
+  graphics['gfx_'+g.id]=grp;
+}
+function removeGraphic(id){if(graphics['gfx_'+id]){LAYERS.graphics.removeLayer(graphics['gfx_'+id]);delete graphics['gfx_'+id];}}
+
+// ================================================================
+// WEATHER
+// ================================================================
+// ---- RainViewer live radar (no API key needed) -----------------------
+let _radarLayer = null;
+let _radarFrames = [];
+let _radarIdx = 0;
+let _radarTimer = null;
+
+async function loadRainRadar() {
+  try {
+    const resp = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const data = await resp.json();
+    const host  = data.host || 'https://tilecache.rainviewer.com';
+    const past  = data.radar?.past || [];
+    if (!past.length) return;
+
+    // Build frames (past 3 + nowcast 2)
+    const nowcast = data.radar?.nowcast || [];
+    _radarFrames = [...past.slice(-4), ...nowcast.slice(0,2)];
+
+    function showFrame(idx) {
+      if (_radarLayer) { LAYERS.weather.removeLayer(_radarLayer); _radarLayer=null; }
+      const frame = _radarFrames[idx];
+      if (!frame) return;
+      const url = `${host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+      _radarLayer = L.tileLayer(url, {
+        opacity: 0.65,
+        minZoom: 0, maxZoom: 20, maxNativeZoom: 8,
+        attribution: '© RainViewer',
+      });
+      _radarLayer.addTo(LAYERS.weather);
+      WEATHER_LAYERS['rain_radar'] = _radarLayer;
+    }
+
+    _radarIdx = _radarFrames.length - 3; // start near latest
+    showFrame(_radarIdx);
+
+    // Animate through past frames every 600ms, then pause on latest
+    if (_radarTimer) clearInterval(_radarTimer);
+    let animCount = 0;
+    _radarTimer = setInterval(() => {
+      _radarIdx = (_radarIdx + 1) % _radarFrames.length;
+      showFrame(_radarIdx);
+      animCount++;
+      if (animCount >= _radarFrames.length * 2) {
+        clearInterval(_radarTimer);
+        _radarTimer = null;
+        // Settle on latest past frame
+        _radarIdx = _radarFrames.filter(f=>!f.path.includes('nowcast')).length - 1;
+        showFrame(Math.max(0,_radarIdx));
+      }
+    }, 550);
+
+    // Show label
+    document.getElementById('wx-radar-label').style.display = 'block';
+    document.getElementById('weather-panel').classList.add('active');
+
+  } catch(e) {
+    console.warn('[Weather] RainViewer load failed:', e);
+  }
+}
+
+function stopRainRadar() {
+  if (_radarTimer) { clearInterval(_radarTimer); _radarTimer = null; }
+  if (_radarLayer) { LAYERS.weather.removeLayer(_radarLayer); _radarLayer = null; }
+  delete WEATHER_LAYERS['rain_radar'];
+  document.getElementById('wx-radar-label').style.display = 'none';
+}
+
+// ---- OWM tile layers (needs API key) ----------------------------------
+async function setWeatherLayer(name, visible) {
+  if (visible) {
+    if (name === 'rain_radar') {
+      await loadRainRadar();
+      await fetchWeatherAtCenter();
+      return;
+    }
+    if (!weatherOwmKey) {
+      console.warn('[Weather] OWM API key not set');
+      return;
+    }
+    if (WEATHER_LAYERS[name]) { LAYERS.weather.removeLayer(WEATHER_LAYERS[name]); }
+    const url = `https://tile.openweathermap.org/map/${name}/{z}/{x}/{y}.png?appid=${weatherOwmKey}`;
+    WEATHER_LAYERS[name] = L.tileLayer(url, { opacity: 0.6, minZoom: 1, maxZoom: 18, maxNativeZoom: 8 });
+    WEATHER_LAYERS[name].addTo(LAYERS.weather);
+    await fetchWeatherAtCenter();
+  } else {
+    if (name === 'rain_radar') { stopRainRadar(); return; }
+    if (WEATHER_LAYERS[name]) {
+      LAYERS.weather.removeLayer(WEATHER_LAYERS[name]);
+      delete WEATHER_LAYERS[name];
+    }
+  }
+}
+
+function setWeatherApiKey(key) { weatherOwmKey = key; }
+
+// ---- Open-Meteo point weather (free, no key) ---------------------------
+const WX_CODE = {
+  0:'Clear',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+  45:'Fog',48:'Rime fog',
+  51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',
+  80:'Rain showers',81:'Showers',82:'Heavy showers',
+  95:'Thunderstorm',96:'Thunderstorm+hail',99:'Severe thunderstorm',
+};
+
+async function fetchWeatherAtCenter() {
+  const c = map.getCenter();
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast`
+      + `?latitude=${c.lat.toFixed(4)}&longitude=${c.lng.toFixed(4)}`
+      + `&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m`
+      + `,wind_gusts_10m,precipitation,weather_code,cloud_cover,visibility`
+      + `&wind_speed_unit=kmh&timezone=auto`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const cur  = data.current || {};
+
+    const code  = cur.weather_code;
+    const desc  = WX_CODE[code] || `Code ${code}`;
+    const temp  = cur.temperature_2m;
+    const feel  = cur.apparent_temperature;
+    const wind  = cur.wind_speed_10m;
+    const gust  = cur.wind_gusts_10m;
+    const wdir  = cur.wind_direction_10m;
+    const prec  = cur.precipitation;
+    const cloud = cur.cloud_cover;
+    const vis   = cur.visibility;
+    const card  = degToCardinal(wdir);
+
+    document.getElementById('wx-rows').innerHTML = `
+      <div class="wx-row"><span class="wx-icon">☁</span><span class="wx-val">${desc}</span></div>
+      <div class="wx-row"><span class="wx-icon">🌡</span><span class="wx-lbl">TEMP</span><span class="wx-val">${temp??'—'}°C</span><span class="wx-lbl">(feels ${feel??'—'}°C)</span></div>
+      <div class="wx-row"><span class="wx-icon">💨</span><span class="wx-lbl">WIND</span><span class="wx-val">${wind??'—'} km/h ${card}</span><span class="wx-lbl">gusts ${gust??'—'}</span></div>
+      <div class="wx-row"><span class="wx-icon">🌧</span><span class="wx-lbl">PREC</span><span class="wx-val">${prec??'—'} mm/h</span></div>
+      <div class="wx-row"><span class="wx-icon">☁</span><span class="wx-lbl">CLOUD</span><span class="wx-val">${cloud??'—'}%</span></div>
+      ${vis!=null?`<div class="wx-row"><span class="wx-icon">👁</span><span class="wx-lbl">VIS</span><span class="wx-val">${vis>=1000?(vis/1000).toFixed(1)+' km':vis+' m'}</span></div>`:''}
+    `;
+    document.getElementById('wx-location').textContent = latLonToMGRS(c.lat, c.lng);
+    document.getElementById('weather-panel').classList.add('active');
+  } catch(e) {
+    console.warn('[Weather] Open-Meteo failed:', e);
+  }
+}
+
+function hideWeatherPanel() {
+  document.getElementById('weather-panel').classList.remove('active');
+}
+
+function degToCardinal(d){if(d==null)return'—';const dirs=['N','NE','E','SE','S','SW','W','NW'];return dirs[Math.round(d/45)%8];}
+
+// ================================================================
+// LAYER / VIEW CONTROLS
+// ================================================================
+function addMBTilesLayer(id,url,minZ,maxZ,name){
+  if(mbtileLayers[id])map.removeLayer(mbtileLayers[id].layer);
+  const layer=L.tileLayer(url,{minZoom:minZ||0,maxZoom:maxZ||18,tileSize:256,zIndex:5,opacity:1.0});
+  layer.addTo(map);
+  mbtileLayers[id]={layer,name:name||id,visible:true};
+}
+function removeMBTilesLayer(id){
+  if(!mbtileLayers[id])return;
+  map.removeLayer(mbtileLayers[id].layer);
+  delete mbtileLayers[id];
+}
+function toggleMBTilesLayer(id,visible){
+  if(!mbtileLayers[id])return;
+  mbtileLayers[id].visible=visible;
+  visible?mbtileLayers[id].layer.addTo(map):map.removeLayer(mbtileLayers[id].layer);
+}
+function setBaseLayer(name){if(name===activeBase)return;if(TILES[activeBase])map.removeLayer(TILES[activeBase]);if(TILES[name]){TILES[name].addTo(map);activeBase=name;}}
+function toggleLayer(name,visible){if(!LAYERS[name])return;visible?LAYERS[name].addTo(map):map.removeLayer(LAYERS[name]);}
+function fitTracks(){const all=[...Object.values(tracks).map(t=>t.marker),...Object.values(cotTracks)];if(!all.length)return;map.fitBounds(L.featureGroup(all).getBounds().pad(.15));}
+function centerOn(lat,lon,zoom){map.setView([lat,lon],zoom||map.getZoom());}
+
+// ================================================================
+// ICON BUILDERS
+// ================================================================
+function buildMilIcon(sidc,label,unit,heading){
+  if(typeof ms!=='undefined'){
+    try{
+      const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,direction:(typeof heading==='number'&&isFinite(heading))?heading:''});
+      const sz=sym.getSize(),an=sym.getAnchor();
+      return L.divIcon({html:sym.asSVG(),className:'mil-icon',iconSize:[sz.width,sz.height],iconAnchor:[an.x,an.y],popupAnchor:[0,-an.y+6]});
+    }catch(_){}
+  }
+  const c=sidc&&sidc[1]==='H'?'#f85149':sidc&&sidc[1]==='N'?'#3fb950':sidc&&sidc[1]==='U'?'#d29922':'#3fb950';
+  return L.divIcon({html:`<svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="${c}" fill-opacity=".85" stroke="#0d1117" stroke-width="1.5"/></svg>`,className:'mil-icon',iconSize:[18,18],iconAnchor:[9,9],popupAnchor:[0,-11]});
+}
+
+function buildTrackPopup(t){
+  return `<div style="font-family:'Courier New',monospace;font-size:11px;color:#c9d1d9;padding:10px 14px;min-width:200px">
+    <div style="font-weight:bold;font-size:13px;color:${t.affiliation==='HOSTILE'?'#f85149':'#3fb950'};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:7px">${esc(t.callsign)}</div>
+    <div style="line-height:1.75"><span style="color:#8b949e">UNIT </span>${esc(t.unit||'—')}<br><span style="color:#8b949e">MGRS </span>${latLonToMGRS(t.lat,t.lon)}<br>${t.heading!=null?`<span style="color:#8b949e">HDG  </span>${Math.round(t.heading)}°<br>`:''}</div>
+    ${t.last_seen?`<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(t.last_seen)}</div>`:''}
+  </div>`;
+}
+
+function addTrailSeg(layerGroup,store,id,lat,lon,color){
+  if(!store[id]){store[id]=L.polyline([],{color,weight:1.5,opacity:.55,dashArray:'3,6'}).addTo(layerGroup);}
+  const pts=store[id].getLatLngs();pts.push(L.latLng(lat,lon));if(pts.length>30)pts.shift();store[id].setLatLngs(pts);
+}
+
+// ================================================================
+// MEASUREMENT TOOLKIT — Distance, Azimuth, Range Circles
+// ================================================================
+
+let _measActive = false;   // is a measure tool running?
+let _measPts    = [];      // clicked points
+let _measLayers = [];      // all drawn measure layers
+let _rangeCtr   = null;    // range circle center LatLng
+let _rangeLyrs  = [];      // range circle layers
+
+// ── Distance / Azimuth measurement ────────────────────────────────────────
+function _fmtDist(m) {
+  if (m >= 10000) return (m/1000).toFixed(1) + ' km';
+  if (m >= 1000)  return (m/1000).toFixed(2) + ' km';
+  return Math.round(m) + ' m';
+}
+function _bearing(p1, p2) {
+  const r  = Math.PI / 180;
+  const dL = (p2.lng - p1.lng) * r;
+  const y  = Math.sin(dL) * Math.cos(p2.lat * r);
+  const x  = Math.cos(p1.lat * r) * Math.sin(p2.lat * r)
+              - Math.sin(p1.lat * r) * Math.cos(p2.lat * r) * Math.cos(dL);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+}
+
+function startMeasure(mode) {
+  // Clean up previous
+  _stopMeasure();
+  _measActive = true;
+  _measPts    = [];
+  document.getElementById('meas-panel').classList.add('active');
+  document.getElementById('range-panel').classList.remove('active');
+  _clearMeasPanel();
+  document.getElementById('m-mode').textContent =
+    mode === 'azimuth' ? 'AZIMUTH — click 2 points'
+                       : 'DISTANCE — click points, right-click to stop';
+  map.on('click',        _measClick);
+  map.getContainer().style.cursor = 'crosshair';
+}
+
+function _measClick(e) {
+  const pt = e.latlng;
+  _measPts.push(pt);
+
+  // Yellow dot marker
+  const mk = L.circleMarker(pt, {
+    radius:6, color:'#ffff00', fillColor:'#ffff00', fillOpacity:.95, weight:2, zIndexOffset:500
+  }).addTo(map);
+  _measLayers.push(mk);
+
+  if (_measPts.length >= 2) {
+    const p1  = _measPts[_measPts.length - 2];
+    const p2  = _measPts[_measPts.length - 1];
+    const d   = p1.distanceTo(p2);
+    const brg = _bearing(p1, p2);
+    const bk  = (brg + 180) % 360;
+
+    // Draw segment line
+    const seg = L.polyline([p1, p2], {
+      color:'#ffff00', weight:2.5, dashArray:'8,4', opacity:.9
+    }).addTo(map);
+    _measLayers.push(seg);
+
+    // Label at midpoint
+    const mid  = L.latLng((p1.lat+p2.lat)/2, (p1.lng+p2.lng)/2);
+    const lb   = L.marker(mid, {
+      icon: L.divIcon({
+        html: `<div style="background:rgba(0,0,0,.82);border:1px solid #ffff00;
+               color:#ffff00;font-family:'Courier New',monospace;font-size:10px;
+               font-weight:700;padding:2px 8px;border-radius:2px;white-space:nowrap">
+               ${_fmtDist(d)}</div>`,
+        className:'', iconAnchor:[0,-8]
+      })
+    }).addTo(map);
+    _measLayers.push(lb);
+
+    // Update panel
+    document.getElementById('m-dist').textContent = _fmtDist(d);
+    document.getElementById('m-az').textContent   =
+      brg.toFixed(1) + '°   /   ' + Math.round(brg * 17.7778) + ' mil';
+    document.getElementById('m-baz').textContent  =
+      bk.toFixed(1)  + '°   /   ' + Math.round(bk  * 17.7778) + ' mil';
+    document.getElementById('m-from').textContent = latLonToMGRS(p1.lat, p1.lng);
+    document.getElementById('m-to').textContent   = latLonToMGRS(p2.lat, p2.lng);
+
+    if (bridge) bridge.onMeasureComplete(
+      _fmtDist(d),
+      brg.toFixed(1)+'° / '+Math.round(brg*17.7778)+' mil'
+    );
+
+    // Azimuth mode: stop after 2 points
+    if (document.getElementById('m-mode').textContent.startsWith('AZIMUTH')) {
+      _stopMeasure(null);
+    }
+  }
+}
+
+function _measStop(e) {
+  if (e) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
+  _stopMeasure(e);
+  // Reopen context menu after a short delay if it was a right-click
+}
+
+function _stopMeasure(e) {
+  map.off('click', _measClick);
+  map.getContainer().style.cursor = '';
+  _measActive = false;
+}
+
+function clearMeasure() {
+  _stopMeasure(null);
+  _measLayers.forEach(l => map.removeLayer(l));
+  _measLayers = [];
+  _measPts    = [];
+  document.getElementById('meas-panel').classList.remove('active');
+  _clearMeasPanel();
+}
+
+function continueMeasure() {
+  if (!_measActive && _measPts.length > 0) {
+    _measActive = true;
+    map.on('click', _measClick);
+    map.getContainer().style.cursor = 'crosshair';
+  }
+}
+
+function _clearMeasPanel() {
+  ['m-dist','m-az','m-baz','m-from','m-to'].forEach(id=>{
+    document.getElementById(id).textContent = '—';
+  });
+}
+
+// ── Range circles ──────────────────────────────────────────────────────────
+let _rangeMode = false;   // true while range tool is active
+
+function startRangeMode() {
+  _stopMeasure(null);                 // stop any distance measuring
+  _rangeMode = true;
+  document.getElementById('range-panel').classList.add('active');
+  document.getElementById('meas-panel').classList.remove('active');
+  // Always (re)bind a single center-click handler
+  map.off('click', _rangeCenterClick);
+  map.off('click', _rangeRadiusClick);
+  if (!_rangeCtr) {
+    _setRangeStatus('① Click map to set CENTER');
+    map.on('click', _rangeCenterClick);
+  } else {
+    _setRangeStatus('② Pick a radius, or click map for distance');
+    map.on('click', _rangeRadiusClick);
+  }
+  map.getContainer().style.cursor = 'crosshair';
+}
+
+function _setRangeStatus(txt) {
+  document.getElementById('range-center-label').textContent = txt;
+}
+
+function _rangeCenterClick(e) {
+  map.off('click', _rangeCenterClick);
+  _rangeCtr = e.latlng;
+  // Center marker
+  const cm = L.circleMarker(_rangeCtr, {
+    radius:7, color:'#3fb950', fillColor:'#3fb950', fillOpacity:.95, weight:2, zIndexOffset:600
+  }).addTo(map);
+  _rangeLyrs.push(cm);
+  _setRangeStatus('CTR ' + latLonToMGRS(_rangeCtr.lat, _rangeCtr.lng) + '  · pick radius');
+  // Now allow distance-based radius by clicking the map again
+  map.on('click', _rangeRadiusClick);
+}
+
+function _rangeRadiusClick(e) {
+  if (!_rangeCtr) return;
+  const r = Math.round(_rangeCtr.distanceTo(e.latlng));
+  if (r > 0) addRangeCircle(r);
+}
+
+function addRangeCircle(r) {
+  if (!_rangeCtr) {
+    _setRangeStatus('⚠ Set a CENTER first (click map)');
+    return;
+  }
+  const circle = L.circle(_rangeCtr, {
+    radius: r, color:'#3fb950', weight:2, fillColor:'#3fb950',
+    fillOpacity:0.04, dashArray:'8,4'
+  }).addTo(map);
+  // Label placed at the north edge of the ring
+  const edge = L.latLng(_rangeCtr.lat + r/111320, _rangeCtr.lng);
+  const lbl = L.marker(edge, {
+    icon: L.divIcon({
+      html:`<div style="background:rgba(0,0,0,.82);border:1px solid #3fb950;color:#3fb950;
+            font-family:'Courier New',monospace;font-size:10px;font-weight:700;
+            padding:1px 7px;border-radius:2px;white-space:nowrap">${_fmtDist(r)}</div>`,
+      className:'', iconAnchor:[0,8]
+    })
+  }).addTo(map);
+  _rangeLyrs.push(circle, lbl);
+  _setRangeStatus(_rangeLyrs.length > 1 ?
+    'Ring added · ' + _fmtDist(r) : '');
+}
+
+function addCustomRange() {
+  const inp = document.getElementById('range-input');
+  const v = parseFloat(inp.value);
+  if (v > 0) { addRangeCircle(v); inp.value=''; }
+}
+
+function clearRangeCircles() {
+  map.off('click', _rangeCenterClick);
+  map.off('click', _rangeRadiusClick);
+  _rangeLyrs.forEach(l => map.removeLayer(l));
+  _rangeLyrs = [];
+  _rangeCtr  = null;
+  _rangeMode = false;
+  _setRangeStatus('Center: click map to set');
+  map.getContainer().style.cursor = '';
+}
+
+function closeRangePanel() {
+  map.off('click', _rangeCenterClick);
+  map.off('click', _rangeRadiusClick);
+  _rangeMode = false;
+  document.getElementById('range-panel').classList.remove('active');
+  map.getContainer().style.cursor = '';
+}
+
+// ── Legacy compat wrapper ──────────────────────────────────────────────────
+// Overwrite the old setDrawMode 'measure' compat
+function onMeasureClick(e) { _measClick(e); }
+
+// ================================================================
+// RADIAL MENU (circular — 8 petals around a central hub)
+// ================================================================
+let _radialLatLng = null;
+
+// [icon, label, css-class, action-key]
+const RADIAL_PETALS = [
+  ['🔵', 'FRIENDLY', 'green',  'friendly'],
+  ['🔴', 'ENEMY',    'red',    'enemy'],
+  ['📍', 'POI',      '',       'poi'],
+  ['⚡', 'TIC',      'red',    'tic'],
+  ['🚁', 'MEDEVAC',  'amber',  'medevac'],
+  ['⟷', 'DISTANCE', '',       'dist'],
+  ['⊙', 'RANGE',    'green',  'range'],
+  ['🛸', 'DRONE',    'purple', 'drone'],
+];
+const _RADIAL_RADIUS = 104;   // px from hub centre to petal centre
+
+// Build petals once
+(function _buildPetals(){
+  const menu = document.getElementById('radial-menu');
+  const n    = RADIAL_PETALS.length;
+  RADIAL_PETALS.forEach((p, i) => {
+    const [icon, label, cls, key] = p;
+    const el = document.createElement('div');
+    el.className = 'radial-petal' + (cls ? ' ' + cls : '');
+    el.dataset.key = key;
+    el.dataset.index = i;
+    el.innerHTML = `<span class="rp-icon">${icon}</span><span class="rp-lbl">${label}</span>`;
+    el.addEventListener('click', ev => { ev.stopPropagation(); _radialAct(key); });
+    menu.appendChild(el);
+  });
+})();
+
+function openRadial(containerPoint, latlng) {
+  _radialLatLng = latlng;
+  const menu = document.getElementById('radial-menu');
+
+  // Position menu centre at the click, clamped so all petals stay on-screen
+  const mapSize = map.getSize();
+  const pad = _RADIAL_RADIUS + 44;
+  let cx = Math.max(pad, Math.min(containerPoint.x, mapSize.x - pad));
+  let cy = Math.max(pad, Math.min(containerPoint.y, mapSize.y - pad));
+  menu.style.left = cx + 'px';
+  menu.style.top  = cy + 'px';
+  menu.classList.add('active');
+
+  // Position petals instantly (no CSS transitions — they create GPU layers
+  // that black out the Qt6/macOS Metal compositor)
+  const petals = menu.querySelectorAll('.radial-petal');
+  const n = petals.length;
+  petals.forEach((el, i) => {
+    const ang = (-90 + i * (360 / n)) * Math.PI / 180;
+    const tx  = Math.round(Math.cos(ang) * _RADIAL_RADIUS);
+    const ty  = Math.round(Math.sin(ang) * _RADIAL_RADIUS);
+    el.style.transform = `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
+  });
+
+  // Close on any click outside the menu — no backdrop overlay needed
+  setTimeout(() => {
+    document.addEventListener('mousedown', _radialOutsideClick, {once: true});
+  }, 50);
+}
+
+function _radialOutsideClick(e) {
+  const menu = document.getElementById('radial-menu');
+  if (!menu.contains(e.target)) closeRadial();
+  else document.addEventListener('mousedown', _radialOutsideClick, {once: true});
+}
+
+function closeRadial() {
+  document.removeEventListener('mousedown', _radialOutsideClick);
+  document.getElementById('radial-menu').classList.remove('active');
+}
+
+function _radialAct(key) {
+  closeRadial();
+  const ll = _radialLatLng;
+  if (!ll) return;
+  if (key === 'friendly')      openSymbolPicker(ll.lat, ll.lng, 'FRIENDLY');
+  else if (key === 'enemy')    openSymbolPicker(ll.lat, ll.lng, 'HOSTILE');
+  else if (key === 'dist')     startMeasure('distance');
+  else if (key === 'range')    startRangeMode();
+  else if (bridge)             bridge.onRadialAction(key, ll.lat, ll.lng);
+}
+
+// ================================================================
+// TACTICAL OBJECT RADIAL (Delete / Move) — right-click on a marker
+// ================================================================
+let _tobjRadialId = null;
+let _tobjMoveId   = null;
+
+const TOBJ_PETALS = [
+  ['🗑', 'DELETE', 'red', 'tobj_delete'],
+  ['📌', 'MOVE',   '',   'tobj_move'],
+];
+const _TOBJ_RADIUS = 104;
+
+(function _buildTobjPetals(){
+  const menu = document.getElementById('tobj-radial');
+  const n = TOBJ_PETALS.length;
+  TOBJ_PETALS.forEach((p, i) => {
+    const [icon, label, cls, key] = p;
+    const el = document.createElement('div');
+    el.className = 'radial-petal' + (cls ? ' ' + cls : '');
+    el.dataset.key = key;
+    el.innerHTML = `<span class="rp-icon">${icon}</span><span class="rp-lbl">${label}</span>`;
+    el.addEventListener('click', ev => { ev.stopPropagation(); _tobjAct(key); });
+    menu.appendChild(el);
+  });
+})();
+
+function openTobjRadial(containerPoint, objId) {
+  _tobjRadialId = objId;
+  const menu = document.getElementById('tobj-radial');
+  const mapSize = map.getSize();
+  const pad = _TOBJ_RADIUS + 44;
+  let cx = Math.max(pad, Math.min(containerPoint.x, mapSize.x - pad));
+  let cy = Math.max(pad, Math.min(containerPoint.y, mapSize.y - pad));
+  menu.style.left = cx + 'px';
+  menu.style.top  = cy + 'px';
+  menu.classList.add('active');
+
+  // Position petals instantly — NO CSS transitions (Qt6/macOS GPU layer constraint)
+  const petals = menu.querySelectorAll('.radial-petal');
+  const n = petals.length;
+  petals.forEach((el, i) => {
+    const ang = (-90 + i * (360 / n)) * Math.PI / 180;
+    const tx  = Math.round(Math.cos(ang) * _TOBJ_RADIUS);
+    const ty  = Math.round(Math.sin(ang) * _TOBJ_RADIUS);
+    el.style.transform = `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
+  });
+
+  setTimeout(() => {
+    document.addEventListener('mousedown', _tobjOutsideClick, {once: true});
+  }, 50);
+}
+
+function _tobjOutsideClick(e) {
+  const menu = document.getElementById('tobj-radial');
+  if (!menu.contains(e.target)) closeTobjRadial();
+  else document.addEventListener('mousedown', _tobjOutsideClick, {once: true});
+}
+
+function closeTobjRadial() {
+  document.removeEventListener('mousedown', _tobjOutsideClick);
+  document.getElementById('tobj-radial').classList.remove('active');
+}
+
+function _tobjAct(key) {
+  const id = _tobjRadialId;
+  closeTobjRadial();
+  if (id === null || id === undefined) return;
+  if (key === 'tobj_delete') {
+    removeTacticalObject(id);
+    if (bridge) bridge.onTacticalObjectAction('delete', id);
+  } else if (key === 'tobj_move') {
+    _tobjMoveId = id;
+    document.getElementById('tobj-move-banner').style.display = '';
+  }
+}
+
+function _cancelTobjMove() {
+  _tobjMoveId = null;
+  document.getElementById('tobj-move-banner').style.display = 'none';
+}
+
+function _doTobjMove(latlng) {
+  const id = _tobjMoveId;
+  _cancelTobjMove();
+  const lyr = graphics[id];
+  if (lyr && typeof lyr.setLatLng === 'function') lyr.setLatLng(latlng);
+  if (bridge) bridge.onTacticalObjectMove(id, latlng.lat, latlng.lng);
+}
+
+// Right-click opens the radial — UNLESS a measure tool is active
+// (in which case right-click finishes the current measurement instead).
+map.on('contextmenu', function(e) {
+  e.originalEvent.preventDefault();
+  e.originalEvent.stopPropagation();
+  if (_tobjMoveId !== null)                        { _cancelTobjMove(); return; }
+  if (drawMode === 'routedraw')                    { return; }  // _rdFinishCtx registered handler takes it
+  if (_drawType)                                   { _drawFinishCtx(e); return; }
+  if (_fdTool !== 'none')                          { return; }  // free draw: ignore right-click
+  if (_measActive)                                 { _stopMeasure(null); return; }
+  if (_rangeMode)                                  { return; }
+  openRadial(e.containerPoint, e.latlng);
+});
+
+// Long-press (touch / tabletop)
+let _pressTimer = null;
+map.getContainer().addEventListener('touchstart', function(e) {
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  _pressTimer = setTimeout(() => {
+    const cp = map.mouseEventToContainerPoint({clientX:t.clientX, clientY:t.clientY});
+    openRadial(cp, map.containerPointToLatLng(cp));
+  }, 550);
+}, {passive:true});
+map.getContainer().addEventListener('touchend',  ()=>clearTimeout(_pressTimer), {passive:true});
+map.getContainer().addEventListener('touchmove', ()=>clearTimeout(_pressTimer), {passive:true});
+
+// ================================================================
+// MAP EVENTS
+// ================================================================
+map.on('mousemove',function(e){const mg=latLonToMGRS(e.latlng.lat,e.latlng.lng);if(bridge)bridge.onCoordsChanged(e.latlng.lat,e.latlng.lng,mg);});
+map.on('click',function(e){
+  if(_tobjMoveId!==null){_doTobjMove(e.latlng);return;}
+  if(drawMode==='pointer'&&bridge)bridge.onMapClicked(e.latlng.lat,e.latlng.lng);
+});
+
+// ================================================================
+// UTILITY
+// ================================================================
+function latLonToMGRS(lat,lon){try{if(typeof mgrs!=='undefined')return mgrs.forward([lon,lat],5);}catch(_){}return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// ================================================================
+// FREE DRAW
+// Pen: Leaflet mousedown → document mousemove/mouseup for accuracy.
+// Text: Leaflet click → inline overlay input.
+// ================================================================
+let _fdColor     = '#f85149';
+let _fdThick     = 2;
+let _fdTool      = 'none';
+let _fdDown      = false;
+let _fdPts       = [];
+let _fdCurLyr    = null;
+let _fdHistory   = [];
+let _fdPendingLL = null;
+
+function setFreeDraw(tool, color, thickness) {
+  _fdStopAll();
+  _fdColor = color     || '#f85149';
+  _fdThick = thickness || 2;
+  _fdTool  = tool      || 'none';
+
+  if (tool === 'pen') {
+    drawMode = 'freedraw';
+    map.getContainer().style.cursor = 'crosshair';
+    map.dragging.disable();
+    // Leaflet mousedown gives us accurate latlng for the first point
+    map.on('mousedown', _fdLeafletDown);
+    // Document-level for smooth mid-stroke tracking and reliable release
+    document.addEventListener('mousemove', _fdDocMove, false);
+    document.addEventListener('mouseup',   _fdDocUp,   false);
+  } else if (tool === 'text') {
+    drawMode = 'freedrawtext';
+    map.getContainer().style.cursor = 'text';
+    map.on('click', _fdTextClick);
+  } else {
+    drawMode = 'pointer';
+    map.getContainer().style.cursor = '';
+    map.dragging.enable();
+  }
+}
+
+function _fdStopAll() {
+  map.off('mousedown', _fdLeafletDown);
+  map.off('click',     _fdTextClick);
+  document.removeEventListener('mousemove', _fdDocMove, false);
+  document.removeEventListener('mouseup',   _fdDocUp,   false);
+  if (_fdDown) { _fdDown = false; map.dragging.enable(); }
+  if (_fdCurLyr) { LAYERS.freedraw.removeLayer(_fdCurLyr); _fdCurLyr = null; }
+  _fdPts = [];
+  closeFreeDrawTextInput();
+}
+
+// Called by Leaflet's mousedown — gives us precise latlng anchor
+function _fdLeafletDown(e) {
+  _fdDown = true;
+  _fdPts  = [e.latlng];
+}
+
+// Document-level mousemove: convert clientX/Y → map LatLng
+function _fdDocMove(e) {
+  if (!_fdDown) return;
+  const rect = map.getContainer().getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const ll = map.containerPointToLatLng(L.point(x, y));
+  _fdPts.push(ll);
+  // Redraw live preview
+  if (_fdCurLyr) LAYERS.freedraw.removeLayer(_fdCurLyr);
+  if (_fdPts.length >= 2) {
+    _fdCurLyr = L.polyline(_fdPts.slice(), {
+      color: _fdColor, weight: _fdThick, opacity: .92,
+      lineCap: 'round', lineJoin: 'round', interactive: false
+    }).addTo(LAYERS.freedraw);
+  }
+}
+
+// Document-level mouseup: commit stroke and persist to backend
+function _fdDocUp() {
+  if (!_fdDown) return;
+  _fdDown = false;
+  if (_fdCurLyr) { LAYERS.freedraw.removeLayer(_fdCurLyr); _fdCurLyr = null; }
+  if (_fdPts.length >= 2) {
+    const lyr = L.polyline(_fdPts.slice(), {
+      color: _fdColor, weight: _fdThick, opacity: .92,
+      lineCap: 'round', lineJoin: 'round', interactive: false
+    }).addTo(LAYERS.freedraw);
+    _fdHistory.push(lyr);
+    // Persist — broadcasts via WS so web + all other fronts see it
+    const coords = _fdPts.map(ll => [ll.lat, ll.lng]);
+    if (bridge) bridge.onFreeDrawSaved(
+      'FREEDRAW_LINE',
+      JSON.stringify({type:'line', coords}),
+      JSON.stringify({color:_fdColor, thick:_fdThick})
+    );
+  }
+  _fdPts = [];
+}
+
+// Text tool: click → show input overlay near click point
+function _fdTextClick(e) {
+  if (drawMode !== 'freedrawtext') return;
+  _fdPendingLL = e.latlng;
+  const pt = map.latLngToContainerPoint(e.latlng);
+  const ov = document.getElementById('fd-text-overlay');
+  ov.style.left = Math.min(pt.x + 8, window.innerWidth  - 310) + 'px';
+  ov.style.top  = Math.min(pt.y - 18, window.innerHeight - 60) + 'px';
+  ov.classList.add('active');
+  const inp = document.getElementById('fd-text-input');
+  inp.value = '';
+  setTimeout(() => inp.focus(), 40);
+}
+
+function placeFreeText() {
+  const text = (document.getElementById('fd-text-input').value || '').trim();
+  if (text && _fdPendingLL) {
+    const sh = '1px 1px 3px #000,-1px -1px 3px #000,1px -1px 3px #000,-1px 1px 3px #000';
+    const lyr = L.marker(_fdPendingLL, {
+      interactive: false,
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="color:${_fdColor};font-family:'Courier New',monospace;` +
+              `font-size:13px;font-weight:700;white-space:nowrap;` +
+              `text-shadow:${sh};pointer-events:none;">${esc(text)}</div>`,
+        iconSize: [0, 0], iconAnchor: [0, 8]
+      })
+    }).addTo(LAYERS.freedraw);
+    _fdHistory.push(lyr);
+    // Persist — broadcasts via WS so web + all other fronts see it
+    if (bridge) bridge.onFreeDrawSaved(
+      'FREEDRAW_TEXT',
+      JSON.stringify({type:'point', coords:[[_fdPendingLL.lat, _fdPendingLL.lng]]}),
+      JSON.stringify({color:_fdColor, text})
+    );
+  }
+  closeFreeDrawTextInput();
+}
+
+function closeFreeDrawTextInput() {
+  const ov = document.getElementById('fd-text-overlay');
+  if (ov) ov.classList.remove('active');
+  _fdPendingLL = null;
+}
+
+function undoFreeDraw() {
+  if (!_fdHistory.length) return;
+  LAYERS.freedraw.removeLayer(_fdHistory.pop());
+}
+
+function clearFreeDrawLayer() {
+  LAYERS.freedraw.clearLayers();
+  _fdHistory = [];
+  _fdCurLyr  = null;
+}
+
+document.getElementById('fd-text-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter')  { placeFreeText();          e.preventDefault(); }
+  if (e.key === 'Escape') { closeFreeDrawTextInput(); e.preventDefault(); }
+});
+
+// ================================================================
+// OWN GPS POSITION
+// ================================================================
+let _myPosMarker      = null;
+let _myPosAccCircle   = null;
+let _gpsWatchId       = null;
+let _gpsWifiWatchId   = null;   // fallback WiFi watcher
+let _gpsCenterOnFix   = true;
+let _gpsShowAccuracy  = true;
+let _gpsFirstFix      = true;
+let _gpsUsingWifi     = false;  // true when running on WiFi fallback
+let _gpsMaxAgeMs      = 4000;
+let _gpsEnabled       = true;
+let _gpsHighAccuracy  = true;
+
+// Called by Python after map ready (and after settings change)
+function setGPSConfig(enabled, highAccuracy, maxAgeMs, centerOnFix, showAccuracy) {
+  _gpsCenterOnFix  = centerOnFix;
+  _gpsShowAccuracy = showAccuracy;
+  _gpsMaxAgeMs     = maxAgeMs || 4000;
+  _gpsEnabled      = enabled;
+  _gpsHighAccuracy = highAccuracy;
+
+  _gpsStopAll();
+
+  if (!enabled) {
+    if (_myPosMarker)    { map.removeLayer(_myPosMarker);    _myPosMarker    = null; }
+    if (_myPosAccCircle) { map.removeLayer(_myPosAccCircle); _myPosAccCircle = null; }
+    document.getElementById('own-gps-hud').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('own-gps-hud').style.display = '';
+  _gpsFirstFix  = true;
+  _gpsUsingWifi = false;
+  _gpsStartPrimary();
+}
+
+function _gpsStopAll() {
+  if (_gpsWatchId !== null)     { navigator.geolocation.clearWatch(_gpsWatchId);     _gpsWatchId     = null; }
+  if (_gpsWifiWatchId !== null) { navigator.geolocation.clearWatch(_gpsWifiWatchId); _gpsWifiWatchId = null; }
+}
+
+// Try GPS (high-accuracy) first
+function _gpsStartPrimary() {
+  if (!navigator.geolocation) {
+    document.getElementById('own-gps-mgrs').textContent = 'N/A';
+    return;
+  }
+  _gpsSetLabel('SEARCHING…', '#d29922');
+  _gpsWatchId = navigator.geolocation.watchPosition(
+    _onGPSSuccess,
+    _onGPSPrimaryError,
+    { enableHighAccuracy: !!_gpsHighAccuracy, maximumAge: _gpsMaxAgeMs, timeout: 12000 }
+  );
+}
+
+// GPS failed → fall back to WiFi / network positioning
+function _gpsStartWifiFallback() {
+  if (_gpsWifiWatchId !== null) return;   // already running
+  _gpsSetLabel('NO GPS — WIFI…', '#d29922');
+  _gpsWifiWatchId = navigator.geolocation.watchPosition(
+    _onGPSSuccess,
+    _onGPSFinalError,
+    { enableHighAccuracy: false, maximumAge: 15000, timeout: 30000 }
+  );
+}
+
+// Default startup (before Python pushes config)
+function initGPS() {
+  setGPSConfig(true, true, 4000, true, true);
+}
+
+function _onGPSSuccess(pos) {
+  const lat  = pos.coords.latitude;
+  const lon  = pos.coords.longitude;
+  const acc  = Math.round(pos.coords.accuracy);
+  const mgrs = latLonToMGRS(lat, lon);
+
+  // If WiFi fallback fired but GPS watcher is still open, keep both running —
+  // GPS watcher will win once it gets a fix (higher accuracy shows in HUD).
+  const viaWifi = (pos.coords.accuracy > 200);   // rough heuristic
+  _gpsUsingWifi = viaWifi;
+
+  // Center map on first fix
+  if (_gpsCenterOnFix && _gpsFirstFix) {
+    map.setView([lat, lon], Math.max(map.getZoom(), 14));
+    _gpsFirstFix = false;
+  }
+
+  // Source badge
+  const src   = viaWifi ? 'WIFI' : 'GPS';
+  const color = viaWifi ? '#d29922' : '#3fb950';
+
+  // Update HUD
+  document.getElementById('own-gps-hud').classList.add('has-fix');
+  document.getElementById('own-gps-label').textContent = 'OWN POS · ' + src;
+  document.getElementById('own-gps-label').style.color = color;
+  document.getElementById('own-gps-mgrs').textContent  = mgrs;
+  document.getElementById('own-gps-ll').textContent    = lat.toFixed(5) + ', ' + lon.toFixed(5);
+  document.getElementById('own-gps-acc').textContent   = '±' + acc + ' m';
+  document.getElementById('own-gps-acc').style.color   = color;
+
+  // Pulsing dot marker
+  const ll        = [lat, lon];
+  const dotColor  = viaWifi ? '#d29922' : '#388bfd';
+  const ringColor = viaWifi ? 'rgba(210,153,34,.28)' : 'rgba(56,139,253,.28)';
+
+  if (!_myPosMarker) {
+    const icon = L.divIcon({
+      className: '',
+      html: '<div class="my-pos-wrap"><div class="my-pos-ring"></div><div class="my-pos-dot"></div></div>',
+      iconSize: [20, 20], iconAnchor: [10, 10], popupAnchor: [0, -12],
+    });
+    _myPosMarker = L.marker(ll, {icon, zIndexOffset: 2000, interactive: true})
+      .bindPopup('', {maxWidth: 220})
+      .addTo(map);
+    _myPosAccCircle = L.circle(ll, {
+      radius: acc, color: dotColor, weight: 1,
+      opacity: _gpsShowAccuracy ? 0.5 : 0,
+      fillColor: dotColor, fillOpacity: _gpsShowAccuracy ? 0.06 : 0,
+      interactive: false,
+    }).addTo(map);
+  } else {
+    _myPosMarker.setLatLng(ll);
+    _myPosAccCircle.setLatLng(ll).setRadius(acc).setStyle({
+      color: dotColor, fillColor: dotColor,
+      opacity:     _gpsShowAccuracy ? 0.5  : 0,
+      fillOpacity: _gpsShowAccuracy ? 0.06 : 0,
+    });
+  }
+
+  // Recolour pulsing dot via CSS variable trick (inject style)
+  const wrap = _myPosMarker.getElement();
+  if (wrap) {
+    const dot  = wrap.querySelector('.my-pos-dot');
+    const ring = wrap.querySelector('.my-pos-ring');
+    if (dot)  { dot.style.background  = dotColor;  dot.style.boxShadow = `0 0 6px ${dotColor}cc`; }
+    if (ring) { ring.style.background = ringColor; }
+  }
+
+  _myPosMarker.setPopupContent(
+    '<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px">' +
+    '<div style="font-weight:bold;color:' + dotColor + ';border-bottom:1px solid #30363d;' +
+    'padding-bottom:4px;margin-bottom:5px">OWN POSITION · ' + src + '</div>' +
+    '<div>MGRS ' + mgrs + '</div>' +
+    '<div style="color:#6e7681;font-size:9px">' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</div>' +
+    '<div style="color:' + color + ';margin-top:3px">ACC ±' + acc + ' m</div></div>'
+  );
+}
+
+// Primary (GPS) error → start WiFi fallback, keep GPS watcher alive for recovery
+function _onGPSPrimaryError(err) {
+  if (err.code === 1) {
+    // PERMISSION_DENIED — no point retrying
+    _gpsSetLabel('DENIED', '#f85149');
+    document.getElementById('own-gps-acc').textContent = '';
+    return;
+  }
+  // POSITION_UNAVAILABLE (2) or TIMEOUT (3) → try WiFi
+  _gpsStartWifiFallback();
+}
+
+// WiFi fallback also failed
+function _onGPSFinalError(err) {
+  const msgs = {1: 'DENIED', 2: 'NO SIGNAL', 3: 'TIMEOUT'};
+  _gpsSetLabel(msgs[err.code] || 'ERR', '#f85149');
+  document.getElementById('own-gps-acc').textContent = '';
+  document.getElementById('own-gps-hud').classList.remove('has-fix');
+}
+
+function _gpsSetLabel(text, color) {
+  const el = document.getElementById('own-gps-label');
+  el.textContent = text;
+  el.style.color = color || '#484f58';
+}
+
+// ================================================================
+// BRIDGE
+// ================================================================
+function initBridge(){
+  if(typeof QWebChannel==='undefined'){console.warn('[ArrowFront] No bridge');return;}
+  new QWebChannel(qt.webChannelTransport,function(channel){
+    bridge=channel.objects.bridge;bridge.onReady();console.log('[ArrowFront] Bridge ready');
+  });
+}
+document.addEventListener('DOMContentLoaded', function() {
+  initBridge();
+  initGPS();
+});
+</script>
+</body>
+</html>

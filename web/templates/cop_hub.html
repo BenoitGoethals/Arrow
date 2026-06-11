@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}COP Hub — Arrow{% endblock %}
+{% block head %}
+<style>
+.hub-wrap { padding:20px; background:#0d1117; min-height:calc(100vh - 52px); }
+.hub-hdr  { margin-bottom:20px; }
+.hub-hdr h1{ font-size:1.1rem; font-weight:700; color:#e2e8f0; letter-spacing:.06em; margin:0 0 4px; }
+.hub-hdr p { font-size:.78rem; color:#64748b; margin:0; }
+.hub-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; }
+.cop-card { background:#111827; border:1px solid #1e293b; border-radius:10px;
+            overflow:hidden; display:flex; flex-direction:column; transition:border-color .2s; }
+.cop-card:hover { border-color:#334155; }
+.cop-card-hdr { padding:14px 18px 10px; display:flex; align-items:center; gap:12px; }
+.cop-icon  { font-size:1.8rem; line-height:1; }
+.cop-title { flex:1; }
+.cop-title h2 { margin:0; font-size:1rem; font-weight:700; }
+.cop-title p  { margin:2px 0 0; font-size:.72rem; color:#64748b; letter-spacing:.04em; }
+.cop-badge { padding:3px 10px; border-radius:3px; font-size:.7rem; font-weight:700;
+             letter-spacing:.05em; white-space:nowrap; align-self:flex-start; }
+.badge-green { background:#14532d; color:#4ade80; }
+.badge-amber { background:#78350f; color:#fcd34d; }
+.badge-red   { background:#450a0a; color:#f87171; animation:pulse-r 1.5s infinite; }
+.badge-grey  { background:#1e293b; color:#64748b; }
+@keyframes pulse-r { 0%,100%{opacity:1} 50%{opacity:.5} }
+.cop-metrics { padding:10px 18px; display:grid; grid-template-columns:1fr 1fr; gap:6px; flex:1; }
+.cop-metric  { display:flex; flex-direction:column; gap:1px; }
+.cm-label    { font-size:.66rem; color:#475569; letter-spacing:.05em; text-transform:uppercase; }
+.cm-value    { font-size:.92rem; font-weight:700; color:#e2e8f0; font-family:monospace; }
+.cop-footer  { padding:10px 18px 14px; display:flex; gap:8px; border-top:1px solid #1e293b; flex-wrap:wrap; }
+.cop-link    { padding:4px 12px; border-radius:4px; font-size:.76rem; font-weight:600;
+               text-decoration:none; border:1px solid; cursor:pointer;
+               transition:background .15s; display:inline-block; }
+.cop-link.primary { color:#fff; }
+.cop-link.secondary { background:none; }
+.cop-link.secondary:hover { background:#1e293b; }
+.hub-ts { font-size:.7rem; color:#475569; font-family:monospace; margin-bottom:12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hub-wrap">
+  <div class="hub-hdr">
+    <h1>⊞ COMMON OPERATIONAL PICTURE HUB</h1>
+    <p>Real-time status across all operational domains. Click a card to open the full COP.</p>
+  </div>
+  <div class="hub-ts" id="hub-ts"></div>
+
+  <div class="hub-grid" id="hub-grid">
+    <!-- cards injected by JS -->
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+
+const COPS = [
+  { id:'taccop',   icon:'🗺',  title:'TACCOP',   sub:'Tactical Situation',      color:'#34d399', href:'/cops/tactical/' },
+  { id:'logcop',   icon:'📦',  title:'LOGCOP',   sub:'Logistics',               color:'#fb923c', href:'/cops/logistics/' },
+  { id:'medcop',   icon:'🏥',  title:'MEDCOP',   sub:'Medical',                 color:'#f472b6', href:'/cops/medical/' },
+  { id:'intcop',   icon:'🔍',  title:'INTCOP',   sub:'Intelligence',            color:'#818cf8', href:'/cops/intelligence/' },
+  { id:'firescop', icon:'🔥',  title:'FIRESCOP', sub:'Artillery & Air Support', color:'#ef4444', href:'/cops/fires/' },
+  { id:'cbrncop',  icon:'☢',  title:'CBRNCOP',  sub:'CBRN Situation',          color:'#fbbf24', href:'/cops/cbrn/' },
+];
+
+// Per-COP metric/status fetchers
+async function fetchTaccop() {
+  const [hier, alerts, objs] = await Promise.all([
+    arrowFetch('/hierarchy').then(r=>r.ok?r.json():{companies:[]}).catch(()=>({companies:[]})),
+    arrowFetch('/alerts').then(r=>r.ok?r.json():[]).catch(()=>[]),
+    arrowFetch('/tactical-objects').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  ]);
+  let total=0, online=0;
+  (hier.companies||[]).forEach(c=>(c.platoons||[]).forEach(p=>(p.sections||[]).forEach(s=>
+    (s.teams||[]).forEach(t=>(t.operators||[]).forEach(o=>{ total++; if(o.online) online++; })))));
+  const actAlerts = alerts.filter(a=>a.status==='ACTIVE').length;
+  const enemies   = objs.filter(o=>o.affiliation==='ENEMY').length;
+  const badge = actAlerts > 5 ? 'red' : actAlerts > 0 ? 'amber' : 'green';
+  return { badge, metrics:[
+    {label:'Operators online', value: online+'/'+total},
+    {label:'Active alerts',    value: actAlerts},
+    {label:'Enemy objects',    value: enemies},
+    {label:'Friendly objects', value: objs.filter(o=>o.affiliation==='FRIENDLY').length},
+  ]};
+}
+async function fetchLogcop() {
+  const supply = await arrowFetch('/logcop/supply').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const red   = supply.filter(s=>s.current_qty < s.threshold_red && s.threshold_red > 0).length;
+  const amber = supply.filter(s=>s.current_qty >= s.threshold_red &&
+                                  s.current_qty < s.threshold_amber && s.threshold_amber > 0).length;
+  const convoys = await arrowFetch('/logcop/convoys').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const badge = red > 0 ? 'red' : amber > 0 ? 'amber' : supply.length ? 'green' : 'grey';
+  return { badge, metrics:[
+    {label:'Classes critical',  value: red},
+    {label:'Classes amber',     value: amber},
+    {label:'Active convoys',    value: convoys.filter(c=>c.status==='EN_ROUTE').length},
+    {label:'Total supply cls',  value: supply.length},
+  ]};
+}
+async function fetchMedcop() {
+  const reps = await arrowFetch('/reports').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const casevac = reps.filter(r=>r.type==='CASEVAC'&&r.status==='RECEIVED').length;
+  const medevac = reps.filter(r=>r.type==='MEDEVAC'&&r.status==='RECEIVED').length;
+  const badge = casevac + medevac > 3 ? 'red' : casevac + medevac > 0 ? 'amber' : 'green';
+  return { badge, metrics:[
+    {label:'CASEVAC pending',  value: casevac},
+    {label:'MEDEVAC pending',  value: medevac},
+    {label:'Total med reports',value: reps.filter(r=>['CASEVAC','MEDEVAC'].includes(r.type)).length},
+    {label:'Processed',        value: reps.filter(r=>['CASEVAC','MEDEVAC'].includes(r.type)&&r.status==='PROCESSED').length},
+  ]};
+}
+async function fetchIntcop() {
+  const reps = await arrowFetch('/reports').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const objs = await arrowFetch('/tactical-objects').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const contacts = reps.filter(r=>['CONTACT','SALUTE','OBSREP','INTSUM'].includes(r.type));
+  const enemies  = objs.filter(o=>(o.affiliation||'FRIENDLY')!=='FRIENDLY').length;
+  const badge = enemies > 5 ? 'red' : enemies > 0 || contacts.length > 0 ? 'amber' : 'green';
+  return { badge, metrics:[
+    {label:'Enemy objects',    value: enemies},
+    {label:'Contact reports',  value: contacts.length},
+    {label:'SALUTE reports',   value: reps.filter(r=>r.type==='SALUTE').length},
+    {label:'Intel summaries',  value: reps.filter(r=>r.type==='INTSUM').length},
+  ]};
+}
+async function fetchFirescop() {
+  const [fms, assets] = await Promise.all([
+    arrowFetch('/fire-missions').then(r=>r.ok?r.json():[]).catch(()=>[]),
+    arrowFetch('/cas/assets').then(r=>r.ok?r.json():[]).catch(()=>[]),
+  ]);
+  const ACTIVE_ST = ['PENDING','ACKNOWLEDGED','IN_PROGRESS'];
+  const active   = fms.filter(f=>ACTIVE_ST.includes(f.status)).length;
+  const casAvail = assets.filter(a=>a.status==='AVAILABLE').length;
+  const badge = active > 3 ? 'red' : active > 0 ? 'amber' : 'green';
+  return { badge, metrics:[
+    {label:'Active fire mssns', value: active},
+    {label:'Completed',         value: fms.filter(f=>f.status==='COMPLETED').length},
+    {label:'CAS assets avail',  value: casAvail},
+    {label:'CAS total',         value: assets.length},
+  ]};
+}
+async function fetchCbrncop() {
+  const reps = await arrowFetch('/reports').then(r=>r.ok?r.json():[]).catch(()=>[]);
+  const cbrn = reps.filter(r=>r.type&&r.type.startsWith('CBRN'));
+  const recent = cbrn.filter(r=>r.status==='RECEIVED').length;
+  const badge = recent > 0 ? 'red' : cbrn.length > 0 ? 'amber' : 'green';
+  return { badge, metrics:[
+    {label:'Active CBRN reports', value: recent},
+    {label:'Total CBRN reports',  value: cbrn.length},
+    {label:'Acknowledged',        value: cbrn.filter(r=>r.status==='ACKNOWLEDGED').length},
+    {label:'Processed',           value: cbrn.filter(r=>r.status==='PROCESSED').length},
+  ]};
+}
+
+const FETCHERS = { taccop:fetchTaccop, logcop:fetchLogcop, medcop:fetchMedcop,
+                   intcop:fetchIntcop, firescop:fetchFirescop, cbrncop:fetchCbrncop };
+
+function _card(cop, data) {
+  const badge = data?.badge || 'grey';
+  const bLabel = {green:'NOMINAL', amber:'MONITOR', red:'CRITICAL', grey:'NO DATA'}[badge];
+  const metrics = (data?.metrics||[]).map(m=>
+    `<div class="cop-metric">
+       <span class="cm-label">${m.label}</span>
+       <span class="cm-value">${m.value}</span>
+     </div>`).join('');
+  return `
+    <div class="cop-card">
+      <div class="cop-card-hdr">
+        <div class="cop-icon">${cop.icon}</div>
+        <div class="cop-title">
+          <h2 style="color:${cop.color}">${cop.title}</h2>
+          <p>${cop.sub}</p>
+        </div>
+        <div class="cop-badge badge-${badge}">${bLabel}</div>
+      </div>
+      <div class="cop-metrics">${metrics}</div>
+      <div class="cop-footer">
+        <a href="${cop.href}" class="cop-link primary"
+           style="background:${cop.color};border-color:${cop.color};color:#000">
+          Open ${cop.title} →
+        </a>
+      </div>
+    </div>`;
+}
+
+async function loadHub() {
+  const grid = document.getElementById('hub-grid');
+  // Render skeletons
+  grid.innerHTML = COPS.map(c => _card(c, null)).join('');
+
+  const results = await Promise.allSettled(COPS.map(c => FETCHERS[c.id]()));
+  grid.innerHTML = COPS.map((c,i) => _card(c, results[i].value || null)).join('');
+}
+
+function _tick() {
+  const n=new Date(), p=x=>String(x).padStart(2,'0');
+  document.getElementById('hub-ts').textContent =
+    `Last refresh: ${n.getUTCFullYear()}-${p(n.getUTCMonth()+1)}-${p(n.getUTCDate())} ` +
+    `${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())}Z`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  _tick(); setInterval(_tick, 1000);
+  loadHub();
+  setInterval(loadHub, 30000);
+});
+window.addEventListener('arrow-mission-changed', loadHub);
+</script>
+{% endblock %}

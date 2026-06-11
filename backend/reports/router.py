@@ -1,0 +1,468 @@
+"""Tactical reports: contact, spot, 9-liners (CASEVAC, MEDEVAC, CAS) and NATO CBRN 1..6."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from backend.api.schemas import (
+    DroneSpotIn, LogrepRouteFeedbackIn, LogrepRouteIn, LogrepRouteOut,
+    ReportIn, ReportOut, ReportUpdate,
+)
+from backend.audit import log_event
+from backend.auth.jwt_auth import get_current_operator, require_role
+from backend.missions.dependencies import get_active_mission
+from backend.reports.cbrn import CbrnParseError, parse_cbrn
+from backend.reports.logrep_parser import parse_logrep_cot, parse_logrep_text
+from backend.storage.database import get_db
+from backend.storage.models import Alert, LogrepRoute, Mission, Operator, Report
+from backend.websocket.manager import broadcaster
+
+router = APIRouter(prefix="/reports", tags=["reports"])
+
+CBRN_TYPES    = {f"CBRN_{i}" for i in range(1, 7)}
+VALID_TYPES   = {
+    "CONTACT", "SPOT", "SALUTE",
+    "CASEVAC", "MEDEVAC",
+    "CAS", "TGTREP", "BDA",
+    "PATROLREP", "OBSREP", "UAVREP",
+    "SITREP", "INTSUM", "SIGINTREP", "CYBERREP",
+    "DRONE_SPOT", "LOGREP",
+} | CBRN_TYPES
+VALID_STATUSES = {"RECEIVED", "ACKNOWLEDGED", "PROCESSED", "REJECTED"}
+
+
+@router.get("", response_model=list[ReportOut])
+def list_reports(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
+) -> list[Report]:
+    q = db.query(Report).order_by(Report.timestamp.desc())
+    if mission:
+        # Always include global reports (mission_id=NULL) alongside mission reports
+        # so CBRN imports, weather, and persistent intel are always visible.
+        q = q.filter(or_(Report.mission_id == mission.id,
+                         Report.mission_id.is_(None)))
+    return q.limit(200).all()
+
+
+@router.post("", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
+async def submit_report(
+    payload: ReportIn,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
+) -> Report:
+    rtype = payload.type.upper()
+    if rtype not in VALID_TYPES:
+        rtype = "CONTACT"
+    rep = Report(type=rtype, operator_id=current.id,
+                 payload=json.dumps(payload.payload), status="RECEIVED",
+                 mission_id=mission.id if mission else current.mission_id)
+    db.add(rep)
+    db.commit()
+    db.refresh(rep)
+
+    await broadcaster.broadcast({
+        "channel": "report",
+        "event":   "submitted",
+        "mission_id": rep.mission_id,
+        "data": {
+            "id":          rep.id,
+            "type":        rep.type,
+            "status":      rep.status,
+            "operator_id": rep.operator_id,
+            "payload":     payload.payload,
+        },
+    })
+    return rep
+
+
+@router.post("/cbrn/import", response_model=list[ReportOut], status_code=status.HTTP_201_CREATED)
+async def import_cbrn(
+    files: list[UploadFile] = File(..., description="One or more NATO CBRN 1..6 text files"),
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
+) -> list[Report]:
+    """Parse uploaded NATO CBRN message files and store each as a Report.
+
+    Each file is parsed with :func:`backend.reports.cbrn.parse_cbrn`. The
+    resulting structured payload is stored as the report payload and a
+    realtime event is broadcast on the ``report`` channel so map clients
+    can render it (marker + hazard zones).
+    """
+    created: list[Report] = []
+    errors:  list[str]    = []
+
+    for up in files:
+        raw = (await up.read()).decode("utf-8", errors="replace")
+        try:
+            parsed = parse_cbrn(raw)
+        except CbrnParseError as exc:
+            errors.append(f"{up.filename}: {exc}")
+            continue
+
+        rtype = parsed.get("msg_type", "CBRN_1")
+        if rtype not in CBRN_TYPES:
+            rtype = "CBRN_1"
+
+        # Tag the source filename so operators can trace the import.
+        parsed["source_file"] = up.filename or "uploaded.cbrn"
+
+        rep = Report(
+            type=rtype, operator_id=current.id,
+            payload=json.dumps(parsed), status="RECEIVED",
+            mission_id=mission.id if mission else None,
+        )
+        db.add(rep)
+        db.commit()
+        db.refresh(rep)
+
+        await broadcaster.broadcast({
+            "channel": "report",
+            "event":   "submitted",
+            "mission_id": rep.mission_id,
+            "data": {
+                "id":          rep.id,
+                "type":        rep.type,
+                "status":      rep.status,
+                "operator_id": rep.operator_id,
+                "payload":     parsed,
+            },
+        })
+        created.append(rep)
+
+    if not created and errors:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "; ".join(errors))
+    return created
+
+
+@router.post("/drone-spot", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
+async def submit_drone_spot(
+    spot:    DroneSpotIn,
+    db:      Session  = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> Report:
+    """Operator-submitted drone observation.
+
+    Stores a ``DRONE_SPOT`` report (for the log / map / history) **and** raises
+    a ``DRONE_SPOTTED`` alert (so the web alert handler picks it up with sound
+    and a desktop notification). The report payload carries the full structured
+    detail (drone type, altitude, direction, behavior, observer); the alert
+    carries the headline + location so the alerts feed stays scannable.
+    """
+    payload = {
+        "drone_type":        spot.drone_type or "UNKNOWN",
+        "latitude":          spot.latitude,
+        "longitude":         spot.longitude,
+        "altitude_m":        spot.altitude_m,
+        "direction_deg":     spot.direction_deg,
+        "speed_kts":         spot.speed_kts,
+        "behavior":          spot.behavior or "UNKNOWN",
+        "notes":             spot.notes,
+        "observer_id":       current.id,
+        "observer_callsign": current.callsign,
+        "dtg":               datetime.now(timezone.utc).isoformat(),
+    }
+    rep = Report(type="DRONE_SPOT", operator_id=current.id,
+                 payload=json.dumps(payload), status="RECEIVED")
+    db.add(rep); db.commit(); db.refresh(rep)
+
+    # Side-effect: raise an alert so the existing web/desktop alert subsystems
+    # (toast + sound + feed) light up automatically — no per-surface plumbing.
+    alert = Alert(type="DRONE_SPOTTED", operator_id=current.id,
+                  latitude=spot.latitude, longitude=spot.longitude,
+                  status="ACTIVE")
+    db.add(alert); db.commit(); db.refresh(alert)
+
+    # Broadcast both channels.
+    await broadcaster.broadcast({
+        "channel": "report", "event": "submitted",
+        "data": {
+            "id":          rep.id,
+            "type":        rep.type,
+            "status":      rep.status,
+            "operator_id": rep.operator_id,
+            "payload":     payload,
+        },
+    })
+    await broadcaster.broadcast({
+        "channel": "alert", "event": "triggered",
+        "data": {
+            "id":           alert.id,
+            "type":         alert.type,
+            "status":       alert.status,
+            "operator_id":  alert.operator_id,
+            "latitude":     alert.latitude,
+            "longitude":    alert.longitude,
+            "drone_type":   payload["drone_type"],
+            "behavior":     payload["behavior"],
+            "altitude_m":   payload["altitude_m"],
+            "direction_deg": payload["direction_deg"],
+            "observer_callsign": current.callsign,
+            "report_id":    rep.id,
+        },
+    })
+    log_event(db, "DRONE_SPOT_SUBMITTED", operator_id=current.id,
+              resource=f"report:{rep.id}",
+              detail=f"drone_type={payload['drone_type']} behavior={payload['behavior']} alert={alert.id}")
+    return rep
+
+
+@router.post("/logrep/import-text", response_model=list[ReportOut], status_code=status.HTTP_201_CREATED)
+async def import_logrep_text(
+    files: list[UploadFile] = File(..., description="One or more LOGREP text files"),
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
+) -> list[Report]:
+    """Parse uploaded free-form LOGREP text files (best-effort) and store each as a Report."""
+    created: list[Report] = []
+    errors:  list[str]    = []
+
+    for up in files:
+        raw = (await up.read()).decode("utf-8", errors="replace")
+        # Try CoT XML first, fall back to plain-text parser
+        parsed = parse_logrep_cot(raw)
+        if parsed is None:
+            parsed = parse_logrep_text(raw)
+        parsed["source_file"] = up.filename or "uploaded.logrep"
+
+        rep = Report(
+            type="LOGREP", operator_id=current.id,
+            payload=json.dumps(parsed), status="RECEIVED",
+            mission_id=mission.id if mission else current.mission_id,
+        )
+        db.add(rep); db.commit(); db.refresh(rep)
+
+        await broadcaster.broadcast({
+            "channel": "report", "event": "submitted",
+            "mission_id": rep.mission_id,
+            "data": {
+                "id": rep.id, "type": rep.type, "status": rep.status,
+                "operator_id": rep.operator_id, "payload": parsed,
+            },
+        })
+        created.append(rep)
+
+    if not created and errors:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "; ".join(errors))
+    return created
+
+
+@router.post("/logrep/import-cot", response_model=ReportOut, status_code=status.HTTP_201_CREATED)
+async def import_logrep_cot_endpoint(
+    body: ReportIn,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
+) -> Report:
+    """Accept a raw CoT XML string in body.payload['xml'] and extract an embedded LOGREP."""
+    xml = body.payload.get("xml", "")
+    parsed = parse_logrep_cot(xml) if xml else None
+    if parsed is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "No <logrep> element found in CoT XML")
+
+    rep = Report(
+        type="LOGREP", operator_id=current.id,
+        payload=json.dumps(parsed), status="RECEIVED",
+        mission_id=mission.id if mission else current.mission_id,
+    )
+    db.add(rep); db.commit(); db.refresh(rep)
+    await broadcaster.broadcast({
+        "channel": "report", "event": "submitted",
+        "mission_id": rep.mission_id,
+        "data": {
+            "id": rep.id, "type": "LOGREP", "status": "RECEIVED",
+            "operator_id": rep.operator_id, "payload": parsed,
+        },
+    })
+    return rep
+
+
+@router.get("/{report_id}/routing", response_model=list[LogrepRouteOut])
+def get_logrep_routing(
+    report_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[LogrepRoute]:
+    rep = db.get(Report, report_id)
+    if not rep:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    return db.query(LogrepRoute).filter(LogrepRoute.report_id == report_id).all()
+
+
+@router.post("/{report_id}/routing", response_model=list[LogrepRouteOut],
+             status_code=status.HTTP_201_CREATED)
+async def route_logrep(
+    report_id: int,
+    payload:   LogrepRouteIn,
+    db:        Session  = Depends(get_db),
+    current:   Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> list[LogrepRoute]:
+    """Route a LOGREP to one or more staff branches / companies for action."""
+    rep = db.get(Report, report_id)
+    if not rep or rep.type != "LOGREP":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "LOGREP report not found")
+
+    created: list[LogrepRoute] = []
+    for dest in payload.destinations:
+        dest = dest.strip().upper()
+        if not dest:
+            continue
+        existing = db.query(LogrepRoute).filter(
+            LogrepRoute.report_id == report_id,
+            LogrepRoute.destination == dest,
+        ).first()
+        if existing:
+            created.append(existing)
+            continue
+        route = LogrepRoute(
+            report_id=report_id, destination=dest,
+            routed_by=current.id, status="PENDING",
+        )
+        db.add(route)
+        created.append(route)
+
+    db.commit()
+    for r in created:
+        db.refresh(r)
+
+    log_event(db, "LOGREP_ROUTED", operator_id=current.id,
+              resource=f"report:{report_id}",
+              detail=f"destinations:{','.join(payload.destinations)}")
+
+    await broadcaster.broadcast({
+        "channel": "report", "event": "logrep_routed",
+        "data": {
+            "report_id":   report_id,
+            "routed_by":   current.callsign,
+            "destinations": payload.destinations,
+        },
+    })
+    return created
+
+
+@router.post("/{report_id}/routing/{route_id}/feedback",
+             response_model=LogrepRouteOut)
+async def logrep_feedback(
+    report_id: int,
+    route_id:  int,
+    payload:   LogrepRouteFeedbackIn,
+    db:        Session  = Depends(get_db),
+    current:   Operator = Depends(get_current_operator),
+) -> LogrepRoute:
+    """Submit feedback for a routed LOGREP destination."""
+    route = db.get(LogrepRoute, route_id)
+    if not route or route.report_id != report_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    route.feedback_text = payload.feedback_text
+    route.feedback_by   = payload.feedback_by or current.callsign
+    route.feedback_at   = datetime.now(timezone.utc)
+    route.status        = "FEEDBACK"
+    db.commit(); db.refresh(route)
+
+    log_event(db, "LOGREP_FEEDBACK", operator_id=current.id,
+              resource=f"report:{report_id}",
+              detail=f"dest:{route.destination} by:{route.feedback_by}")
+
+    await broadcaster.broadcast({
+        "channel": "report", "event": "logrep_feedback",
+        "data": {
+            "report_id":   report_id,
+            "route_id":    route_id,
+            "destination": route.destination,
+            "feedback_by": route.feedback_by,
+            "status":      route.status,
+        },
+    })
+    return route
+
+
+@router.patch("/{report_id}/routing/{route_id}/acknowledge",
+              response_model=LogrepRouteOut)
+async def acknowledge_logrep_route(
+    report_id: int,
+    route_id:  int,
+    db:        Session  = Depends(get_db),
+    current:   Operator = Depends(get_current_operator),
+) -> LogrepRoute:
+    """Acknowledge receipt of a routed LOGREP."""
+    route = db.get(LogrepRoute, route_id)
+    if not route or route.report_id != report_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if route.status == "PENDING":
+        route.status = "ACKNOWLEDGED"
+        db.commit(); db.refresh(route)
+    return route
+
+
+@router.patch("/{report_id}", response_model=ReportOut)
+async def update_report_status(
+    report_id: int,
+    payload:   ReportUpdate,
+    db:        Session  = Depends(get_db),
+    current:   Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> Report:
+    """Update the status of a report and notify the originating operator via WebSocket."""
+    rep = db.get(Report, report_id)
+    if not rep:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+
+    new_status = payload.status.upper()
+    if new_status not in VALID_STATUSES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}")
+
+    rep.status        = new_status
+    rep.reviewer_note = payload.reviewer_note.strip()
+    db.commit()
+    db.refresh(rep)
+
+    log_event(db, "REPORT_STATUS_UPDATE", operator_id=current.id,
+              resource=f"report:{report_id}",
+              detail=f"status:{new_status} note:{rep.reviewer_note[:60]}")
+
+    # Broadcast to ALL connected clients — the sender's Android app will pick this up
+    # and notify the operator that their report has been reviewed.
+    await broadcaster.broadcast({
+        "channel": "report",
+        "event":   "status_updated",
+        "data": {
+            "id":            rep.id,
+            "type":          rep.type,
+            "status":        rep.status,
+            "reviewer_note": rep.reviewer_note,
+            "operator_id":   rep.operator_id,   # original sender
+            "reviewed_by":   current.callsign,
+        },
+    })
+    return rep
+
+
+@router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> None:
+    rep = db.get(Report, report_id)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    db.delete(rep)
+    db.commit()
+    log_event(db, "REPORT_DELETED", operator_id=current.id, resource=f"report:{report_id}")
+    await broadcaster.broadcast({
+        "channel": "report",
+        "event":   "deleted",
+        "data":    {"id": report_id},
+    })

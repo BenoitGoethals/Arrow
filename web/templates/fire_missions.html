@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+{% block title %}Fire Missions — Arrow FDC{% endblock %}
+{% block head %}
+<style>
+    .fdc-shell  { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 60px); }
+    .fdc-queue  { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.75rem; }
+    .fdc-queue h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #94a3b8; margin: 0.25rem 0 0.5rem; }
+    .fdc-main   { overflow-y: auto; padding: 1.5rem; }
+
+    /* Mission cards */
+    .fm-card { border-radius: 8px; border: 1px solid #2a3142; margin-bottom: 0.5rem; cursor: pointer; transition: border-color 0.15s; }
+    .fm-card:hover { border-color: #ef4444; }
+    .fm-card.active { border-color: #ef4444; background: #1a0a0a; }
+    .fm-card-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 0.8rem; }
+    .fm-card-body   { padding: 0 0.8rem 0.6rem; font-size: 0.78rem; color: #94a3b8; }
+
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; animation: none; }
+    .status-dot.PENDING  { background: #dc2626; box-shadow: 0 0 8px #dc2626; animation: pulse 1s infinite; }
+    .status-dot.ACKNOWLEDGED { background: #d97706; }
+    .status-dot.IN_PROGRESS  { background: #2563eb; }
+    .status-dot.COMPLETED    { background: #16a34a; }
+    .status-dot.CANCELLED    { background: #475569; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .badge-type { font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; background: #dc262622; color: #ef4444; }
+    .badge-ammo { font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; background: #d9770622; color: #f59e0b; margin-left: auto; }
+
+    /* Detail panel */
+    .detail-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
+    .detail-title  { font-size: 1.2rem; font-weight: 700; color: #ef4444; }
+    .detail-sub    { font-size: 0.82rem; color: #64748b; margin-top: 2px; }
+
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .info-card { background: #161b25; border: 1px solid #2a3142; border-radius: 6px; padding: 0.65rem 0.9rem; }
+    .info-card .val { font-size: 1.1rem; font-weight: 700; font-family: monospace; color: #e2e8f0; }
+    .info-card .lbl { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+
+    .desc-box { background: #161b25; border: 1px solid #2a3142; border-radius: 6px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.88rem; line-height: 1.5; }
+
+    /* FDC action panel */
+    .fdc-actions { background: #0d1117; border: 1px solid #2a3142; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+    .fdc-actions h4 { margin: 0 0 0.75rem; font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em; }
+    .status-btns { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+    .s-btn  { padding: 0.35rem 0.85rem; border: 0; border-radius: 5px; font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+    .s-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .fdc-row { display: flex; gap: 0.75rem; align-items: flex-end; }
+    .fdc-row select, .fdc-row textarea { background: #161b25; color: #e2e8f0; border: 1px solid #2a3142; border-radius: 5px; padding: 0.4rem 0.6rem; font: inherit; font-size: 0.85rem; }
+    .fdc-row select { flex: 1; }
+    .fdc-row textarea { flex: 1; resize: none; min-height: 38px; }
+    .fdc-row button { background: #34d399; color: #0d1117; border: 0; border-radius: 5px; padding: 0.4rem 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+
+    .history-entry { font-size: 0.8rem; color: #64748b; border-left: 2px solid #2a3142; padding-left: 0.6rem; margin-bottom: 0.4rem; }
+
+    main { padding: 0; }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60%; color: #475569; gap: 0.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fdc-shell">
+    <!-- ── Mission queue ──────────────────────────────────────────── -->
+    <aside class="fdc-queue">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+            <h3>Fire Missions</h3>
+            <span id="pending-count" style="background:#dc262622;color:#ef4444;font-size:0.68rem;font-weight:700;padding:1px 6px;border-radius:3px"></span>
+        </div>
+        <div id="mission-list"><small style="color:#475569">Loading…</small></div>
+    </aside>
+
+    <!-- ── FDC detail ─────────────────────────────────────────────── -->
+    <section class="fdc-main" id="fdc-main">
+        <div class="empty-state">
+            <span style="font-size:2.5rem">🎯</span>
+            <span>Select a fire mission from the queue</span>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token   = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    const api     = (p, o = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...o, headers: { ...headers, ...(o.headers||{}) } });
+
+    const STATUS_COLORS = {
+        PENDING: '#dc2626', ACKNOWLEDGED: '#d97706',
+        IN_PROGRESS: '#2563eb', COMPLETED: '#16a34a', CANCELLED: '#475569',
+    };
+    const MISSION_LABELS = {
+        ADJUST_FIRE: 'Adjust Fire', FIRE_FOR_EFFECT: 'Fire for Effect',
+        SUPPRESSION: 'Suppression', ILLUMINATION: 'Illumination',
+        IMMEDIATE_SUPPRESSION: 'Immediate Suppression',
+    };
+
+    let missions = [], operators = [], selectedId = null;
+
+    async function loadAll() {
+        [missions, operators] = await Promise.all([
+            api('/fire-missions').then(r => r.ok ? r.json() : []),
+            api('/operators').then(r => r.ok ? r.json() : []),
+        ]);
+        renderQueue();
+        if (selectedId) {
+            const m = missions.find(x => x.id === selectedId);
+            if (m) renderDetail(m);
+        }
+    }
+
+    function renderQueue() {
+        const pending = missions.filter(m => m.status === 'PENDING').length;
+        document.getElementById('pending-count').textContent = pending ? `${pending} PENDING` : '';
+
+        document.getElementById('mission-list').innerHTML = missions.length === 0
+            ? '<small style="color:#475569">No missions</small>'
+            : missions.map(m => {
+                const c   = STATUS_COLORS[m.status] || '#64748b';
+                const lbl = MISSION_LABELS[m.mission_type] || m.mission_type;
+                const ts  = (m.timestamp||'').slice(11,16);
+                return `<div class="fm-card ${m.id === selectedId ? 'active' : ''}" onclick="selectMission(${m.id})">
+                    <div class="fm-card-header">
+                        <span class="status-dot ${m.status}"></span>
+                        <span style="font-size:0.82rem;font-weight:600">${esc(lbl)}</span>
+                        <span class="badge-ammo">${esc(m.ammunition)}</span>
+                    </div>
+                    <div class="fm-card-body">
+                        ${toMgrs(m.latitude, m.longitude)} · ${ts} · ${m.quantity} rnd
+                        ${m.description ? `<br>${esc(m.description.slice(0,55))}` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+    }
+
+    window.selectMission = function(id) {
+        selectedId = id;
+        const m = missions.find(x => x.id === id);
+        if (m) renderDetail(m);
+        renderQueue();
+    };
+
+    function renderMortarNotes(notes) {
+        if (!notes) return '';
+        let plan;
+        try { plan = JSON.parse(notes); } catch (_) {
+            return `<div class="desc-box" style="border-color:#2563eb22"><strong>FDC Notes:</strong> ${esc(notes)}</div>`;
+        }
+        if (!plan.guns) {
+            return `<div class="desc-box" style="border-color:#2563eb22"><strong>FDC Notes:</strong> ${esc(notes)}</div>`;
+        }
+        const gunCards = plan.guns.map(g => {
+            const mgrs = toMgrs(g.latitude, g.longitude);
+            const sol  = g.solutions && g.solutions[0];
+            const solHtml = sol && !sol.error
+                ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.3rem 0.75rem;margin-top:0.45rem">
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">Charge</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.charge}</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">QE</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.qe_mils} mil</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">Defl</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.defl_mils} mil</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">Range</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.range_m.toFixed(0)} m</span></div>
+                    <div><span style="color:#475569;font-size:0.68rem;text-transform:uppercase;letter-spacing:.06em">TOF</span><br><span style="font-family:monospace;color:#e2e8f0">${sol.tof_s}s</span></div>
+                   </div>`
+                : (sol && sol.error
+                    ? `<div style="color:#ef4444;font-size:0.78rem;margin-top:0.35rem">${esc(sol.error)}</div>`
+                    : '');
+            return `<div style="background:#0d1117;border:1px solid #2a3142;border-radius:6px;padding:0.6rem 0.75rem;margin-bottom:0.5rem">
+                <div style="display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.35rem">
+                    <span style="font-weight:700;color:#e2e8f0;font-size:0.9rem">${esc(g.callsign || 'GUN-' + g.gun_idx)}</span>
+                    ${g.altitude ? `<span style="color:#64748b;font-size:0.72rem">${g.altitude.toFixed(0)} m MSL</span>` : ''}
+                </div>
+                <div style="font-family:monospace;font-size:1rem;letter-spacing:0.05em;color:#34d399">${esc(mgrs)}</div>
+                ${solHtml}
+            </div>`;
+        }).join('');
+        return `<div class="desc-box" style="border-color:#34d39922;padding:0.6rem 0.75rem">
+            <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;margin-bottom:0.6rem">
+                Mortar Positions — ${esc(plan.weapon || 'L16 81MM')} · ${esc(plan.pattern)}
+            </div>
+            ${gunCards}
+        </div>`;
+    }
+
+    function isMortarPlan(notes) {
+        if (!notes) return false;
+        try { return !!JSON.parse(notes).guns; } catch (_) { return false; }
+    }
+
+    function renderDetail(m) {
+        const c       = STATUS_COLORS[m.status] || '#64748b';
+        const lbl     = MISSION_LABELS[m.mission_type] || m.mission_type;
+        const opMap   = Object.fromEntries(operators.map(o => [o.id, o]));
+        const caller  = opMap[m.operator_id];
+        const fdcOp   = m.fdc_operator_id ? opMap[m.fdc_operator_id] : null;
+        const mortar  = isMortarPlan(m.notes);
+
+        const fdcOptions = operators
+            .filter(o => o.role === 'ADMIN' || o.role === 'BATTLE_CAPTAIN' || o.role === 'OPERATOR')
+            .map(o => `<option value="${o.id}" ${o.id === m.fdc_operator_id ? 'selected' : ''}>${esc(o.callsign)} (${o.role})</option>`)
+            .join('');
+
+        const statusButtons = [
+            { s:'ACKNOWLEDGED',  label:'Acknowledge',  color:'#d97706' },
+            { s:'IN_PROGRESS',   label:'In Progress',  color:'#2563eb' },
+            { s:'COMPLETED',     label:'Mission Complete', color:'#16a34a' },
+            { s:'CANCELLED',     label:'Cancel',       color:'#475569' },
+        ].map(({ s, label, color }) =>
+            `<button class="s-btn" style="background:${color};color:#fff"
+                     onclick="setStatus(${m.id},'${s}')"
+                     ${m.status === s ? 'disabled' : ''}>${label}</button>`
+        ).join('');
+
+        document.getElementById('fdc-main').innerHTML = `
+        <div class="detail-header">
+            <div>
+                <div class="detail-title">${mortar ? '💣' : '🎯'} ${esc(lbl)}</div>
+                <div class="detail-sub">
+                    Mission #${m.id} · Called by <strong>${caller ? esc(caller.callsign) : '#' + m.operator_id}</strong>
+                    · ${(m.timestamp||'').slice(0,16).replace('T',' ')}
+                    ${fdcOp ? ` · FDC: <strong>${esc(fdcOp.callsign)}</strong>` : ''}
+                </div>
+            </div>
+            <span style="margin-left:auto;background:${c}22;color:${c};font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:5px">${m.status}</span>
+        </div>
+
+        <div class="info-grid">
+            <div class="info-card" style="grid-column:span 2">
+                <div class="val" style="font-size:1.3rem;letter-spacing:0.05em">${toMgrs(m.latitude, m.longitude)}</div>
+                <div class="lbl">MGRS Grid${mortar ? ' (impact centroid)' : ''}</div>
+            </div>
+            <div class="info-card"><div class="val">${m.altitude.toFixed(0)} m</div><div class="lbl">Altitude MSL</div></div>
+            <div class="info-card"><div class="val">${esc(m.ammunition)}</div><div class="lbl">Ammunition</div></div>
+            <div class="info-card"><div class="val">${m.quantity}</div><div class="lbl">Rounds</div></div>
+        </div>
+
+        ${m.description ? `<div class="desc-box"><strong>Target:</strong> ${esc(m.description)}</div>` : ''}
+
+        ${renderMortarNotes(m.notes)}
+
+        ${mortar ? `
+        <div style="background:#0d1117;border:1px solid #2a3142;border-radius:6px;padding:0.6rem 0.9rem;font-size:0.78rem;color:#475569">
+            Status managed by Android FDC operator
+        </div>` : `
+        <div class="fdc-actions">
+            <h4>FDC Actions</h4>
+            <div class="status-btns">${statusButtons}</div>
+            <div class="fdc-row" style="margin-bottom:0.6rem">
+                <select id="fdc-assign" onchange="assignFdc(${m.id})">
+                    <option value="">— Assign FDC operator —</option>
+                    ${fdcOptions}
+                </select>
+            </div>
+            <div class="fdc-row">
+                <textarea id="fdc-notes" rows="2" placeholder="FDC notes / corrections…">${esc(m.notes)}</textarea>
+                <button onclick="saveNotes(${m.id})">Save notes</button>
+            </div>
+        </div>`}`;
+    }
+
+    window.setStatus = async function(id, s) {
+        await api(`/fire-missions/${id}`, { method:'PATCH', body: JSON.stringify({ status: s }) });
+        await loadAll();
+    };
+
+    window.assignFdc = async function(id) {
+        const val = document.getElementById('fdc-assign').value;
+        const fdc = val ? parseInt(val) : null;
+        await api(`/fire-missions/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ fdc_operator_id: fdc, status: 'ACKNOWLEDGED' }),
+        });
+        await loadAll();
+    };
+
+    window.saveNotes = async function(id) {
+        const notes = document.getElementById('fdc-notes').value;
+        await api(`/fire-missions/${id}`, { method:'PATCH', body: JSON.stringify({ notes }) });
+        await loadAll();
+    };
+
+    // Delegate to global MGRS utility in base.html
+    const toMgrs = (lat, lon) => window.mgrsEncode(lat, lon);
+
+    function esc(s) {
+        return String(s||'').replace(/[&<>"']/g, c =>
+            ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // WebSocket — instant update on new mission
+    function connectWS() {
+        const ws = new WebSocket(
+            window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
+        ws.onmessage = ev => {
+            try {
+                const e = JSON.parse(ev.data);
+                if (e.channel === 'fire-mission') loadAll();
+            } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+
+    loadAll().then(() => {
+        const params = new URLSearchParams(location.search);
+        // Pre-fill from map tap coords (?lat=&lon=)
+        const pLat = parseFloat(params.get('lat') || '');
+        const pLon = parseFloat(params.get('lon') || '');
+        if (!isNaN(pLat) && !isNaN(pLon)) {
+            history.replaceState(null, '', location.pathname);
+            // Switch to Call Fire tab and set form coords
+            document.querySelector('[data-type="ADJUST_FIRE"]')?.click?.();
+            // The form will be rendered; inject coords after a tick
+            setTimeout(() => {
+                const mgrsStr = (() => { try { return MGRS.encode(pLat, pLon); } catch(_){return '';} })();
+                const field = document.querySelector('input[name="line_1"]') || document.querySelector('#form-area input');
+                if (mgrsStr) {
+                    const el = document.createElement('p');
+                    el.style.cssText = 'color:#ef4444;font-family:monospace;font-size:0.9rem;margin:.5rem 0';
+                    el.textContent = '📍 Grid: ' + mgrsStr;
+                    document.querySelector('.nineliner')?.prepend(el);
+                    // Pre-fill grid in line 1 or 5 (target location)
+                    const gridField = document.querySelector('[name="line_5"]') || document.querySelector('[name="line_1"]');
+                    if (gridField) gridField.value = mgrsStr;
+                }
+            }, 100);
+        }
+        // Auto-select mission from ?id= query param (deep-link from map sidebar)
+        const id = parseInt(params.get('id') || '0');
+        if (id) {
+            selectedId = id;
+            const m = missions.find(x => x.id === id);
+            if (m) renderDetail(m);
+            renderQueue();
+            history.replaceState(null, '', location.pathname);
+        }
+    });
+    setInterval(loadAll, 15000);
+    connectWS();
+})();
+</script>
+{% endblock %}

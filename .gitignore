@@ -195,3 +195,12 @@ google-services.json
 # Android Profiling
 *.hprof
 
+
+# MBTiles base maps — mounted into the backend container at runtime from
+# ./maps/, too large to track in git. Use Git LFS or external storage if
+# you want to version them.
+maps/*.mbtiles
+
+# Simulator local JWT cache — never commit live tokens.
+.arrow_sim_tokens.json
+Caddyfile.active

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Arrow</string>
+    <string name="tracking_channel">Tactical Tracking</string>
+    <string name="tracking_notification">Sharing position with command</string>
+    <string name="chat_channel">Chat Messages</string>
+</resources>

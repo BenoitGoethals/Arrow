@@ -1,7 +1,77 @@
 [project]
 name = "arrow"
 version = "0.1.0"
+description = "Soldier System Platform — TAK-style situational awareness."
 requires-python = ">=3.14"
 dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "python-jose[cryptography]>=3.3",
+    "bcrypt>=4.2",
+    "python-multipart>=0.0.12",
+    "websockets>=13",
     "flask>=3.1.3",
+    "httpx>=0.27",
+    "lxml>=5.3",
+    # security controls
+    "slowapi>=0.1.9",
+    "redis>=5.0",
+    "pyotp>=2.9",
+    "python-json-logger>=3.2",
+    "cryptography>=43",
+    "reportlab>=4.2",
+    "smbprotocol>=1.16.1",
+    "pyqt6-sip>=13.11.1",
+    "pyqt6>=6.11.0",
+    "pyqt6-webengine>=6.11.0",
+    "keyring>=25.7.0",
+    "mgrs>=1.5.4",
+    "pymumble>=1.6",
+    "numpy>=2.4.6",
+    "sounddevice>=0.5.5",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+]
+# CoT simulator GUI (tools/cot_simulator.py). wxPython only ships a pre-built
+# wheel for Ubuntu 24.04 cp314 linux_x86_64; install on Linux only.
+cot-sim = [
+    "wxpython==4.2.4; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+# Arrow Front — Python tactical desktop COP (Frontline-style). Requires Qt6 +
+# PyQt6-WebEngine. On Linux: apt install libgl1 libglib2.0-0 libegl1
+front = [
+    "pyqt6>=6.7",
+    "pyqt6-webengine>=6.7",
+    "keyring>=25",
+]
+
+[project.scripts]
+arrow = "run:main"
+arrow-backend = "backend.main:run"
+arrow-web = "web.app:run"
+arrow-seed = "backend.storage.seed:main"
+arrow-battlefield = "simulate_battlefield:main"
+arrow-cot-sim = "tools.cot_simulator:main"
+arrow-nuts = "simulate_ranger_bastogne:main"
+arrow-zeebrugge = "simulate_zeebrugge_assault:main"
+arrow-front = "front.main:main"
+tak-bridge = "tak_bridge.run:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend", "web", "tools", "front"]
+include = ["run.py", "simulate_battlefield.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

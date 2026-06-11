@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+    <h1>Arrow — Soldier System Platform</h1>
+    <p>TAK-style situational awareness for SOF operations.</p>
+    <ul>
+        <li><a href="{{ url_for('dashboard.index') }}">Operational Dashboard</a></li>
+        <li><a href="{{ url_for('tactical_map.index') }}">Tactical Map</a></li>
+        <li><a href="{{ url_for('admin.index') }}">Admin Panel</a></li>
+    </ul>
+</section>
+{% endblock %}

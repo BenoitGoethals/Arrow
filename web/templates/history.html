@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}History — Arrow{% endblock %}
+
+{% block head %}
+<style>
+.h-wrap   { padding: 1.25rem 0; }
+.h-title  { color:#e2e8f0; font-size:1.25rem; font-weight:700; letter-spacing:.04em; margin:0 0 .25rem; }
+.h-sub    { color:#64748b; font-size:.8rem; margin-bottom:1rem; }
+
+.h-controls {
+    display:flex; flex-wrap:wrap; gap:.6rem; align-items:flex-end;
+    padding:.85rem 1rem; background:#161b25; border:1px solid #2a3142;
+    border-radius:10px; margin-bottom:1rem;
+}
+.h-field   { display:flex; flex-direction:column; gap:.2rem; }
+.h-field label { font-size:.7rem; color:#64748b; letter-spacing:.06em; text-transform:uppercase; }
+.h-field input, .h-field select {
+    background:#0d1117; border:1px solid #2a3142; color:#e2e8f0;
+    border-radius:6px; padding:.4rem .55rem; font-size:.85rem; min-width:170px;
+}
+.h-cats   { display:flex; flex-wrap:wrap; gap:.35rem .65rem; }
+.h-cats label { font-size:.78rem; color:#cbd5e1; display:flex; gap:.3rem; align-items:center; cursor:pointer; }
+.h-btn {
+    background:#1f2937; border:1px solid #2a3142; color:#e2e8f0;
+    padding:.45rem .8rem; border-radius:6px; cursor:pointer; font-size:.82rem;
+}
+.h-btn:hover { border-color:#6ee7b7; color:#6ee7b7; }
+.h-btn.primary { background:#065f46; border-color:#10b981; color:#fff; }
+.h-btn.primary:hover { background:#047857; }
+.h-quick { display:flex; gap:.35rem; flex-wrap:wrap; }
+.h-quick .h-btn { padding:.3rem .6rem; font-size:.75rem; }
+
+.h-stats { color:#94a3b8; font-size:.82rem; margin: .5rem 0 1rem; font-family:monospace; }
+
+/* ── Timeline ────────────────────────────────────────────────────────────── */
+.h-timeline { position:relative; padding-left:1.4rem; }
+.h-timeline::before {
+    content:''; position:absolute; left:.55rem; top:0; bottom:0;
+    width:2px; background:linear-gradient(to bottom, #2a3142, #2a3142 70%, transparent);
+}
+.h-event {
+    position:relative; margin-bottom:.65rem; padding:.65rem .85rem;
+    background:#161b25; border:1px solid #2a3142; border-left-width:4px;
+    border-radius:6px;
+}
+.h-event::before {
+    content:''; position:absolute; left:-1.05rem; top:1rem; width:10px; height:10px;
+    border-radius:50%; background:var(--dot,#6ee7b7);
+    box-shadow:0 0 0 3px #0d1117;
+}
+.h-event-head {
+    display:flex; align-items:baseline; flex-wrap:wrap; gap:.5rem;
+    font-size:.78rem; color:#94a3b8;
+}
+.h-event-time { font-family:monospace; color:#cbd5e1; }
+.h-event-cat  {
+    font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    font-size:.7rem; padding:.05rem .4rem; border-radius:99px;
+    background:rgba(110,231,183,.1); color:#6ee7b7; border:1px solid currentColor;
+}
+.h-event-actor { color:#a78bfa; font-weight:600; }
+.h-event-summary { color:#e2e8f0; font-size:.88rem; margin-top:.2rem; word-break:break-word; }
+.h-event-detail {
+    margin-top:.35rem; font-family:monospace; font-size:.72rem; color:#64748b;
+    white-space:pre-wrap; word-break:break-all; max-height:8rem; overflow:auto;
+}
+.h-event-toggle {
+    background:none; border:0; color:#475569; cursor:pointer;
+    font-size:.72rem; padding:0; margin-top:.25rem;
+}
+.h-event-toggle:hover { color:#94a3b8; }
+
+/* category color bands */
+.h-event[data-cat="alert"]           { border-left-color:#ef4444; --dot:#ef4444; }
+.h-event[data-cat="report"]          { border-left-color:#f59e0b; --dot:#f59e0b; }
+.h-event[data-cat="message"]         { border-left-color:#3b82f6; --dot:#3b82f6; }
+.h-event[data-cat="fire_mission"]    { border-left-color:#dc2626; --dot:#dc2626; }
+.h-event[data-cat="tactical_object"] { border-left-color:#a78bfa; --dot:#a78bfa; }
+.h-event[data-cat="battle"]          { border-left-color:#10b981; --dot:#10b981; }
+.h-event[data-cat="audit"]           { border-left-color:#64748b; --dot:#64748b; }
+
+.h-empty { text-align:center; padding:2rem; color:#475569; }
+.h-error { color:#ef4444; padding:.75rem; background:rgba(239,68,68,.08); border-radius:6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="h-wrap">
+    <h1 class="h-title">📜 Event History</h1>
+    <p class="h-sub">Unified timeline of alerts, reports, fire missions, messages, tactical objects, battles and audit events.</p>
+
+    <div class="h-controls">
+        <div class="h-field">
+            <label>From</label>
+            <input id="h-start" type="datetime-local"/>
+        </div>
+        <div class="h-field">
+            <label>To</label>
+            <input id="h-end" type="datetime-local"/>
+        </div>
+        <div class="h-field h-quick">
+            <button class="h-btn" data-range="hour">Last hour</button>
+            <button class="h-btn" data-range="today">Today</button>
+            <button class="h-btn" data-range="24h">Last 24 h</button>
+            <button class="h-btn" data-range="7d">Last 7 d</button>
+            <button class="h-btn" data-range="all">All time</button>
+        </div>
+        <div class="h-field" style="flex:1; min-width:300px;">
+            <label>Categories</label>
+            <div class="h-cats" id="h-cats">
+                <label><input type="checkbox" value="alert" checked> Alerts</label>
+                <label><input type="checkbox" value="report" checked> Reports</label>
+                <label><input type="checkbox" value="fire_mission" checked> Fire missions</label>
+                <label><input type="checkbox" value="tactical_object" checked> Tactical objects</label>
+                <label><input type="checkbox" value="message" checked> Messages</label>
+                <label><input type="checkbox" value="battle" checked> Battles</label>
+                <label><input type="checkbox" value="audit"> Audit</label>
+            </div>
+        </div>
+        <div class="h-field">
+            <label>&nbsp;</label>
+            <button id="h-load" class="h-btn primary">Load timeline</button>
+        </div>
+        <div class="h-field">
+            <label>Export</label>
+            <div style="display:flex;gap:.35rem">
+                <button id="h-csv" class="h-btn">CSV</button>
+                <button id="h-pdf" class="h-btn">PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="h-stats" class="h-stats"></div>
+    <div id="h-out"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { document.getElementById('h-out').innerHTML =
+        '<div class="h-error">Please <a href="/login">sign in</a> to view history.</div>'; return; }
+
+    const API = window.ARROW_BACKEND_URL;
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+            ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+    function toLocalInput(d) {
+        return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+             + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+    function toIsoUtc(localStr) {
+        if (!localStr) return null;
+        return new Date(localStr).toISOString();
+    }
+
+    function selectedCategories() {
+        return [...document.querySelectorAll('#h-cats input:checked')].map(i => i.value);
+    }
+
+    function buildQuery(format) {
+        const params = new URLSearchParams();
+        const s = toIsoUtc(document.getElementById('h-start').value);
+        const e = toIsoUtc(document.getElementById('h-end').value);
+        if (s) params.set('start', s);
+        if (e) params.set('end',   e);
+        const cats = selectedCategories();
+        if (cats.length) params.set('categories', cats.join(','));
+        if (format) params.set('format', format);
+        return params.toString();
+    }
+
+    document.querySelectorAll('[data-range]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const now = new Date();
+            const end = document.getElementById('h-end');
+            const start = document.getElementById('h-start');
+            end.value = toLocalInput(now);
+            const r = btn.dataset.range;
+            if (r === 'all') { start.value = ''; end.value = ''; return; }
+            const back = { hour: 3600e3, today: null, '24h': 86400e3, '7d': 7*86400e3 }[r];
+            if (r === 'today') {
+                const t = new Date(now); t.setHours(0,0,0,0);
+                start.value = toLocalInput(t);
+            } else {
+                start.value = toLocalInput(new Date(now.getTime() - back));
+            }
+        });
+    });
+
+    async function load() {
+        const out   = document.getElementById('h-out');
+        const stats = document.getElementById('h-stats');
+        out.innerHTML = '<div class="h-empty">Loading…</div>';
+        stats.textContent = '';
+        try {
+            const r = await fetch(`${API}/history?${buildQuery()}`, {
+                headers: { Authorization: 'Bearer ' + token },
+            });
+            if (!r.ok) {
+                const t = await r.text();
+                out.innerHTML = `<div class="h-error">Error ${r.status}: ${esc(t)}</div>`;
+                return;
+            }
+            const data = await r.json();
+            stats.textContent = `${data.count} event(s)  ·  ${data.start || 'beginning'} → ${data.end || 'now'}`;
+            if (!data.events.length) {
+                out.innerHTML = '<div class="h-empty">No events in selected range.</div>';
+                return;
+            }
+            out.innerHTML = '<div class="h-timeline">' + data.events.map(renderEvent).join('') + '</div>';
+            out.querySelectorAll('.h-event-toggle').forEach(b => {
+                b.addEventListener('click', () => {
+                    const d = b.nextElementSibling;
+                    d.style.display = d.style.display === 'none' ? 'block' : 'none';
+                    b.textContent = d.style.display === 'none' ? 'show details' : 'hide details';
+                });
+            });
+        } catch (e) {
+            out.innerHTML = `<div class="h-error">Network error: ${esc(e.message)}</div>`;
+        }
+    }
+
+    function renderEvent(e) {
+        const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '—';
+        const coords = (e.latitude != null && e.longitude != null)
+            ? `<span style="color:#475569">· ${window.mgrsEncode(e.latitude, e.longitude)}</span>` : '';
+        const detailJson = JSON.stringify(e.detail || {}, null, 2);
+        return `
+        <div class="h-event" data-cat="${esc(e.category)}">
+            <div class="h-event-head">
+                <span class="h-event-time">${esc(ts)}</span>
+                <span class="h-event-cat">${esc(e.category.replace('_',' '))}</span>
+                <span>${esc(e.type)}</span>
+                <span class="h-event-actor">@${esc(e.actor)}</span>
+                ${coords}
+            </div>
+            <div class="h-event-summary">${esc(e.summary)}</div>
+            <button class="h-event-toggle">show details</button>
+            <pre class="h-event-detail" style="display:none">${esc(detailJson)}</pre>
+        </div>`;
+    }
+
+    async function download(format) {
+        const url = `${API}/history?${buildQuery(format)}`;
+        const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+        if (!r.ok) {
+            alert('Export failed: ' + r.status + ' ' + (await r.text()));
+            return;
+        }
+        const blob = await r.blob();
+        const cd = r.headers.get('Content-Disposition') || '';
+        const m  = /filename="([^"]+)"/.exec(cd);
+        const fname = m ? m[1] : `arrow-history.${format}`;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = fname;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    }
+
+    document.getElementById('h-load').addEventListener('click', load);
+    document.getElementById('h-csv').addEventListener('click', () => download('csv'));
+    document.getElementById('h-pdf').addEventListener('click', () => download('pdf'));
+
+    // Default: last 24h
+    document.querySelector('[data-range="24h"]').click();
+    load();
+})();
+</script>
+{% endblock %}
+

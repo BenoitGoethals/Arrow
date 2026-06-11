@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ cop_name }} — Arrow{% endblock %}
+{% block content %}
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+            height:calc(100vh - 60px);background:#0d1117;gap:1rem;text-align:center">
+    <div style="font-size:2.5rem">{{ cop_icon }}</div>
+    <div style="font-size:1.1rem;font-weight:700;color:#e2e8f0">{{ cop_name }}</div>
+    <div style="font-size:.82rem;color:#475569;max-width:360px;line-height:1.6">
+        {{ cop_desc }}
+    </div>
+    <div style="margin-top:.5rem;padding:.32rem .9rem;border:1px solid #2a3142;border-radius:5px;
+                font-size:.72rem;color:#475569;letter-spacing:.07em;text-transform:uppercase">
+        Under construction
+    </div>
+</div>
+{% endblock %}

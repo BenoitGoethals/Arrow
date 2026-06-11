@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Arrow{% endblock %}
+{% block content %}
+<section class="auth">
+    <h1>Sign in</h1>
+
+    <!-- Step 1: credentials -->
+    <form id="login-form">
+        <label>Callsign <input name="callsign" required autofocus></label>
+        <label>Password <input name="password" type="password" required></label>
+        <button type="submit">Sign in</button>
+    </form>
+
+    <!-- Step 2: TOTP (shown only when mfa_required) -->
+    <form id="mfa-form" style="display:none">
+        <p style="color:#6ee7b7;margin-bottom:1rem">
+            🔐 Two-factor authentication required
+        </p>
+        <label>Authenticator code
+            <input name="code" required maxlength="6" minlength="6"
+                   inputmode="numeric" pattern="[0-9]{6}"
+                   placeholder="6-digit code" autofocus>
+        </label>
+        <button type="submit">Verify</button>
+        <button type="button" id="mfa-cancel">Cancel</button>
+    </form>
+
+    <p id="auth-msg" class="auth-msg"></p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+    const msg  = document.getElementById('auth-msg');
+    const next = new URLSearchParams(location.search).get('next') || '/dashboard/';
+    let _mfaSession = null;
+
+    function storeAndRedirect(data) {
+        localStorage.setItem('arrow_token', data.access_token);
+        localStorage.setItem('arrow_role',  data.role);
+        const role = (data.role || '').toUpperCase();
+        const explicitNext = new URLSearchParams(location.search).get('next');
+        if (!explicitNext) {
+            if (role === 'OPERATOR')            { location.href = '/download/'; return; }
+            if (['LOG','CBRN','MED'].includes(role)) { location.href = '/map/'; return; }
+        }
+        location.href = next;
+    }
+
+    function showMfa() {
+        document.getElementById('login-form').style.display = 'none';
+        document.getElementById('mfa-form').style.display   = 'block';
+        document.querySelector('#mfa-form input[name=code]').focus();
+    }
+
+    function hideMfa() {
+        _mfaSession = null;
+        document.getElementById('mfa-form').style.display   = 'none';
+        document.getElementById('login-form').style.display = 'block';
+        msg.textContent = '';
+    }
+
+    document.getElementById('mfa-cancel').addEventListener('click', hideMfa);
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        msg.textContent = 'Signing in…';
+        const fd   = new FormData(e.target);
+        const body = new URLSearchParams({
+            username: fd.get('callsign'),
+            password: fd.get('password'),
+        });
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body,
+            });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                msg.textContent = `Login failed: ${err.detail || r.status}`;
+                return;
+            }
+            const data = await r.json();
+            if (data.mfa_required) {
+                _mfaSession = data.mfa_session;
+                msg.textContent = '';
+                showMfa();
+            } else {
+                storeAndRedirect(data);
+            }
+        } catch (err) {
+            msg.textContent = `Network error: ${err.message}`;
+        }
+    });
+
+    document.getElementById('mfa-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        msg.textContent = 'Verifying…';
+        const code = new FormData(e.target).get('code');
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + '/auth/mfa/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mfa_session: _mfaSession, code }),
+            });
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                msg.textContent = `Invalid code: ${err.detail || r.status}`;
+                return;
+            }
+            storeAndRedirect(await r.json());
+        } catch (err) {
+            msg.textContent = `Network error: ${err.message}`;
+        }
+    });
+
+</script>
+{% endblock %}

@@ -1,0 +1,177 @@
+package com.arrow.tactical.auth.ui
+
+import android.content.pm.ActivityInfo
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.unit.dp
+import com.arrow.tactical.auth.AuthRepository
+import com.arrow.tactical.di.AppContainer
+import com.arrow.tactical.network.RegisterIn
+import com.arrow.tactical.settings.SettingsRepository
+import kotlinx.coroutines.launch
+
+@Composable
+fun LoginScreen(
+    authRepository: AuthRepository,
+    onAuthenticated: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    settingsRepository: SettingsRepository? = null,
+) {
+    val activity = LocalContext.current as? android.app.Activity
+    DisposableEffect(Unit) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
+
+    var callsign by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var registering by remember { mutableStateOf(false) }
+    // Self-registration is always OPERATOR server-side; ADMIN/BATTLE_CAPTAIN
+    // accounts are issued by an existing admin. Admins can still sign in here.
+    val role = "OPERATOR"
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var serverShown by remember { mutableStateOf(false) }
+    // MFA second-step state
+    var mfaSession by remember { mutableStateOf<String?>(null) }
+    var totpCode by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    val server by (settingsRepository?.serverUrl?.collectAsState(initial = SettingsRepository.DEFAULT_SERVER)
+        ?: remember { mutableStateOf(SettingsRepository.DEFAULT_SERVER) })
+    var serverDraft by remember(server) { mutableStateOf(server) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(48.dp))
+        Text("ARROW", style = MaterialTheme.typography.headlineLarge)
+        Text("Tactical Operator Client", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = callsign,
+            onValueChange = { callsign = it },
+            label = { Text("Callsign") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        if (registering) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Self-registration creates an OPERATOR account. ADMIN and " +
+                "BATTLE_CAPTAIN accounts must be issued by an existing admin — " +
+                "those users sign in here normally.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (mfaSession != null) {
+            // ── MFA second step ───────────────────────────────────────────
+            Text("🔐 Two-factor authentication",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = totpCode,
+                onValueChange = { if (it.length <= 6) totpCode = it },
+                label = { Text("6-digit authenticator code") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                enabled = !busy && totpCode.length == 6,
+                onClick = {
+                    error = null; busy = true
+                    scope.launch {
+                        authRepository.verifyMfa(mfaSession!!, totpCode)
+                            .onSuccess { busy = false; onAuthenticated() }
+                            .onFailure { busy = false; error = it.message; totpCode = "" }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(if (busy) "Verifying…" else "Verify") }
+            TextButton(onClick = { mfaSession = null; totpCode = ""; error = null }) {
+                Text("Cancel — back to login")
+            }
+        } else {
+            // ── Normal login / register ───────────────────────────────────
+            Button(
+                enabled = !busy && callsign.isNotBlank() && password.isNotBlank(),
+                onClick = {
+                    error = null; busy = true
+                    scope.launch {
+                        val res = if (registering) {
+                            authRepository.register(RegisterIn(callsign.trim(), password, role = role))
+                        } else {
+                            authRepository.login(callsign.trim(), password)
+                        }
+                        busy = false
+                        res.onSuccess { token ->
+                            if (token.mfaRequired && token.mfaSession != null) {
+                                mfaSession = token.mfaSession
+                            } else {
+                                onAuthenticated()
+                            }
+                        }.onFailure { error = it.message }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (registering) "Register & sign in" else "Sign in")
+            }
+            TextButton(onClick = { registering = !registering }) {
+                Text(if (registering) "Back to sign-in" else "Register a new operator")
+            }
+        }
+
+        TextButton(onClick = { serverShown = !serverShown }) {
+            Text(if (serverShown) "Hide server settings" else "Server: $server")
+        }
+        if (serverShown && settingsRepository != null) {
+            OutlinedTextField(
+                value = serverDraft,
+                onValueChange = { serverDraft = it },
+                label = { Text("Backend URL") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextButton(
+                onClick = { scope.launch { settingsRepository.update(serverUrl = serverDraft) } },
+            ) { Text("Save server URL") }
+        }
+
+        error?.let {
+            Spacer(Modifier.height(8.dp))
+            Text(it, color = MaterialTheme.colorScheme.error)
+        }
+    }
+}

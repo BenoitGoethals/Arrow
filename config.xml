@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config>
+    <server>
+        <host>0.0.0.0</host>
+        <port>6001</port>
+    </server>
+
+    <database>
+        <url>sqlite:///./arrow.db</url>
+    </database>
+
+    <auth>
+        <secret>change-me-in-production</secret>
+        <algorithm>HS256</algorithm>
+        <token_expire_minutes>1440</token_expire_minutes>
+    </auth>
+
+    <operator>
+        <callsign>ALPHA-1</callsign>
+        <team>Alpha</team>
+    </operator>
+
+    <maps>
+        <offline>true</offline>
+    </maps>
+
+    <openweathermap>
+        <!-- Optional. Get a free key at https://openweathermap.org/api -->
+        <!-- Enables clouds, wind, temperature and pressure overlays on the map. -->
+        <!-- Rain-radar (RainViewer) works without a key. -->
+        <api_key>a96ffd287d43aa5923b5369dee774d7b</api_key>
+    </openweathermap>
+
+    <cot>
+        <multicast_group>239.2.3.1</multicast_group>
+        <port>6969</port>
+    </cot>
+
+    <octopus>
+        <!-- Octopus streaming server base URL (no trailing slash) -->
+        <url>http://192.168.0.240:8080</url>
+        <!-- API key — override with env var ARROW_OCTOPUS_API_KEY -->
+        <api_key></api_key>
+    </octopus>
+</config>

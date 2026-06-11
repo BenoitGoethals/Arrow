@@ -1,0 +1,440 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Netherlands — Tactical Overlay</name>
+    <description>Sectors, amphibious landing zones, airborne DZ/LZ, rivers, agglomerations, nuclear sites, airfields. Approximate coordinates for planning use only.</description>
+
+    <!-- ── Style catalogue ─────────────────────────────────────────────── -->
+    <Style id="sectorN">
+      <LineStyle><color>ffffaa00</color><width>3</width></LineStyle>
+      <PolyStyle><color>20ffaa00</color></PolyStyle>
+    </Style>
+    <Style id="sectorC">
+      <LineStyle><color>ff00ffff</color><width>3</width></LineStyle>
+      <PolyStyle><color>2000ffff</color></PolyStyle>
+    </Style>
+    <Style id="sectorS">
+      <LineStyle><color>ffff00aa</color><width>3</width></LineStyle>
+      <PolyStyle><color>20ff00aa</color></PolyStyle>
+    </Style>
+    <Style id="beachLZ">
+      <LineStyle><color>ffff7700</color><width>2</width></LineStyle>
+      <PolyStyle><color>60ff7700</color></PolyStyle>
+    </Style>
+    <Style id="dropZone">
+      <LineStyle><color>ff00ffff</color><width>2</width></LineStyle>
+      <PolyStyle><color>5000ffff</color></PolyStyle>
+    </Style>
+    <Style id="landingZone">
+      <LineStyle><color>ff00ff00</color><width>2</width></LineStyle>
+      <PolyStyle><color>5000ff00</color></PolyStyle>
+    </Style>
+    <Style id="river">
+      <LineStyle><color>ffff8800</color><width>3</width></LineStyle>
+    </Style>
+    <Style id="agglo">
+      <LineStyle><color>ffaaaaaa</color><width>1</width></LineStyle>
+      <PolyStyle><color>80aaaaaa</color></PolyStyle>
+    </Style>
+    <Style id="nuke">
+      <LineStyle><color>ff0000ff</color><width>2</width></LineStyle>
+      <PolyStyle><color>800000ff</color></PolyStyle>
+      <IconStyle><color>ff0000ff</color></IconStyle>
+    </Style>
+    <Style id="airfield">
+      <LineStyle><color>ff00aaff</color><width>2</width></LineStyle>
+      <IconStyle><color>ff00aaff</color></IconStyle>
+    </Style>
+
+    <!-- ── Operational sectors ─────────────────────────────────────────── -->
+    <Placemark>
+      <name>SECTOR NORTH</name>
+      <description>Friesland, Groningen, Drenthe, NW Overijssel. Open polders, low population density, several mil airfields (Leeuwarden).</description>
+      <styleUrl>#sectorN</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.60,52.80 7.20,52.80 7.20,53.55 6.40,53.55 5.20,53.55 4.60,53.10 4.60,52.80
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>SECTOR CENTER (Randstad + Veluwe)</name>
+      <description>Population/economic heart. Densely urbanised in west; forested heath in east. Schiphol, ports of Rotterdam &amp; Amsterdam.</description>
+      <styleUrl>#sectorC</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        3.90,51.85 6.80,51.85 6.80,52.80 4.60,52.80 3.90,52.05 3.90,51.85
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>SECTOR SOUTH</name>
+      <description>Noord-Brabant, Limburg, Zeeland. Maas river barrier, Antwerp approach, multiple AFBs (Volkel, Gilze-Rijen, Woensdrecht).</description>
+      <styleUrl>#sectorS</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        3.30,50.75 6.20,50.75 6.20,51.85 3.90,51.85 3.30,51.45 3.30,50.75
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <!-- ── Amphibious / beach landing candidates ───────────────────────── -->
+    <Placemark>
+      <name>BLZ TEXEL (De Koog)</name>
+      <description>Wide sand beach, low gradient. Wadden-sea side has tidal flats — approach from North Sea side only.</description>
+      <styleUrl>#beachLZ</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.70,53.05 4.80,53.05 4.80,53.18 4.70,53.18 4.70,53.05
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>BLZ BERGEN AAN ZEE</name>
+      <description>~12 km of uninterrupted dune beach. Dune barrier ~30 m inland reduces inland mobility.</description>
+      <styleUrl>#beachLZ</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.62,52.59 4.72,52.59 4.72,52.72 4.62,52.72 4.62,52.59
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>BLZ IJMUIDEN — ZANDVOORT</name>
+      <description>Port of IJmuiden at north end (locks). Beach south of port is broad and firm.</description>
+      <styleUrl>#beachLZ</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.49,52.32 4.59,52.32 4.59,52.47 4.49,52.47 4.49,52.32
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>BLZ SCHEVENINGEN</name>
+      <description>Urbanised waterfront; pier and boulevard. Useful only with port seizure intent.</description>
+      <styleUrl>#beachLZ</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.23,52.08 4.33,52.08 4.33,52.13 4.23,52.13 4.23,52.08
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>BLZ HOEK VAN HOLLAND / MAASVLAKTE</name>
+      <description>Adjacent to Europoort. High-value port objective; expect dense fortification.</description>
+      <styleUrl>#beachLZ</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.00,51.95 4.15,51.95 4.15,52.02 4.00,52.02 4.00,51.95
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>BLZ WALCHEREN (Domburg–Westkapelle)</name>
+      <description>Historic Op INFATUATE (1944) ground. Open beach, dyke immediately inland.</description>
+      <styleUrl>#beachLZ</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        3.42,51.55 3.55,51.55 3.55,51.62 3.42,51.62 3.42,51.55
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <!-- ── Drop Zones (parachute) ──────────────────────────────────────── -->
+    <Placemark>
+      <name>DZ FLEVOLAND (Oostvaardersplassen N)</name>
+      <description>Flat reclaimed polder, minimal obstacles. Soft ground after rain.</description>
+      <styleUrl>#dropZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.30,52.42 5.55,52.42 5.55,52.55 5.30,52.55 5.30,52.42
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>DZ NOORDOOSTPOLDER</name>
+      <description>Large polder, grid road network. Excellent vehicle linkup terrain.</description>
+      <styleUrl>#dropZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.65,52.65 5.95,52.65 5.95,52.80 5.65,52.80 5.65,52.65
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>DZ VELUWE (Harskamp range)</name>
+      <description>Heath / sandy soil. Active Dutch Army training area — historically Op MARKET DZ.</description>
+      <styleUrl>#dropZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.70,52.08 5.90,52.08 5.90,52.20 5.70,52.20 5.70,52.08
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>DZ MARNEWAARD (Lauwersmeer)</name>
+      <description>Active mil training area in Sector NORTH. Coastal access via Lauwersmeer.</description>
+      <styleUrl>#dropZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        6.18,53.36 6.30,53.36 6.30,53.43 6.18,53.43 6.18,53.36
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>DZ GINKELSE HEIDE</name>
+      <description>Op MARKET-GARDEN 1944 site near Ede. Open heath, restricted civilian use.</description>
+      <styleUrl>#dropZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.74,52.04 5.81,52.04 5.81,52.08 5.74,52.08 5.74,52.04
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <!-- ── Helicopter Landing Zones ────────────────────────────────────── -->
+    <Placemark>
+      <name>LZ EINDHOVEN (Welschap)</name>
+      <description>Adjacent to Eindhoven AFB. Multiple hard-stand options.</description>
+      <styleUrl>#landingZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.35,51.44 5.42,51.44 5.42,51.48 5.35,51.48 5.35,51.44
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>LZ DEELEN</name>
+      <description>Inactive AFB; long runways usable as rotary FARP.</description>
+      <styleUrl>#landingZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.86,52.05 5.94,52.05 5.94,52.09 5.86,52.09 5.86,52.05
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>LZ MAASVLAKTE-2 (Port spoils)</name>
+      <description>Open reclamation area west of Europoort — minimal civilian traffic.</description>
+      <styleUrl>#landingZone</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        3.97,51.95 4.07,51.95 4.07,52.00 3.97,52.00 3.97,51.95
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <!-- ── Rivers (major waterway barriers) ────────────────────────────── -->
+    <Placemark>
+      <name>Rhine / Nederrijn / Lek</name>
+      <description>Primary east-west barrier across Sector CENTER. Width 200–400 m.</description>
+      <styleUrl>#river</styleUrl>
+      <LineString><coordinates>
+        6.13,51.87 5.85,51.96 5.55,51.96 5.20,51.96 4.90,51.97 4.70,51.99 4.50,52.00 4.30,52.00
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>Waal</name>
+      <description>Distributary of the Rhine; main navigable channel to Rotterdam.</description>
+      <styleUrl>#river</styleUrl>
+      <LineString><coordinates>
+        6.13,51.86 5.85,51.83 5.50,51.81 5.10,51.81 4.80,51.83 4.50,51.84 4.30,51.85
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>Maas (Meuse)</name>
+      <description>Runs N–S along Limburg then bends W. Defines Sector SOUTH east boundary.</description>
+      <styleUrl>#river</styleUrl>
+      <LineString><coordinates>
+        5.68,50.85 5.79,51.18 5.93,51.40 5.85,51.66 5.55,51.78 5.10,51.80 4.70,51.78 4.30,51.80 4.10,51.84
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>IJssel</name>
+      <description>Distributary running N to IJsselmeer. Sector CENTER/NORTH boundary.</description>
+      <styleUrl>#river</styleUrl>
+      <LineString><coordinates>
+        5.99,51.88 6.07,52.08 6.10,52.25 5.94,52.40 5.88,52.55
+      </coordinates></LineString>
+    </Placemark>
+
+    <Placemark>
+      <name>Schelde (Westerschelde)</name>
+      <description>Sea approach to Antwerp. Heavy commercial traffic.</description>
+      <styleUrl>#river</styleUrl>
+      <LineString><coordinates>
+        3.40,51.42 3.70,51.40 4.00,51.38 4.25,51.36
+      </coordinates></LineString>
+    </Placemark>
+
+    <!-- ── Agglomerations (urban centres) ──────────────────────────────── -->
+    <Placemark>
+      <name>Amsterdam metro</name>
+      <description>Pop ~1.5 M (metro). Sector CENTER. Port + Schiphol gateway.</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.80,52.30 5.00,52.30 5.00,52.43 4.80,52.43 4.80,52.30
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>Rotterdam — Den Haag</name>
+      <description>Combined ~2.4 M. Major port complex + government seat.</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.20,51.85 4.60,51.85 4.60,52.13 4.20,52.13 4.20,51.85
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>Utrecht</name>
+      <description>National rail hub. Pop ~360 K (city), ~750 K (metro).</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.05,52.05 5.18,52.05 5.18,52.13 5.05,52.13 5.05,52.05
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>Eindhoven</name>
+      <description>Pop ~240 K. Tech/defence industry (ASML, DAF).</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.40,51.40 5.55,51.40 5.55,51.48 5.40,51.48 5.40,51.40
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>Groningen</name>
+      <description>Pop ~235 K. Regional capital of Sector NORTH.</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        6.51,53.18 6.63,53.18 6.63,53.25 6.51,53.25 6.51,53.18
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>Maastricht</name>
+      <description>Pop ~120 K. Limburg, NL/BE/DE tri-border.</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.65,50.82 5.75,50.82 5.75,50.88 5.65,50.88 5.65,50.82
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>Tilburg — Breda</name>
+      <description>Combined ~430 K. Brabant industrial belt.</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        4.70,51.53 5.15,51.53 5.15,51.62 4.70,51.62 4.70,51.53
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <Placemark>
+      <name>Nijmegen — Arnhem</name>
+      <description>Twin city. Rhine + Waal crossings; historic MARKET-GARDEN objective.</description>
+      <styleUrl>#agglo</styleUrl>
+      <Polygon><outerBoundaryIs><LinearRing><coordinates>
+        5.80,51.82 5.98,51.82 5.98,52.00 5.80,52.00 5.80,51.82
+      </coordinates></LinearRing></outerBoundaryIs></Polygon>
+    </Placemark>
+
+    <!-- ── Nuclear installations ───────────────────────────────────────── -->
+    <Placemark>
+      <name>Borssele NPP (active)</name>
+      <description>485 MWe PWR. Only operating power reactor in NL. High-value protection.</description>
+      <styleUrl>#nuke</styleUrl>
+      <Point><coordinates>3.7167,51.4317,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Petten HFR (research)</name>
+      <description>High Flux Reactor; medical isotope production. NRG/ECN site.</description>
+      <styleUrl>#nuke</styleUrl>
+      <Point><coordinates>4.6917,52.7783,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Dodewaard (decommissioned)</name>
+      <description>58 MWe BWR; shut down 1997, in decom. Still high-radiation site.</description>
+      <styleUrl>#nuke</styleUrl>
+      <Point><coordinates>5.6889,51.8889,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Almelo URENCO (enrichment)</name>
+      <description>Uranium enrichment facility. Strategic export-control site.</description>
+      <styleUrl>#nuke</styleUrl>
+      <Point><coordinates>6.6500,52.3500,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Delft TU Reactor (HOR)</name>
+      <description>2 MW research reactor at TU Delft. Inside urban area.</description>
+      <styleUrl>#nuke</styleUrl>
+      <Point><coordinates>4.3736,52.0064,0</coordinates></Point>
+    </Placemark>
+
+    <!-- ── Airfields ───────────────────────────────────────────────────── -->
+    <Placemark>
+      <name>Schiphol (EHAM/AMS)</name>
+      <description>National hub. 6 runways, longest 3800 m. Civil — easily militarised.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>4.7639,52.3086,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Rotterdam–The Hague (EHRD/RTM)</name>
+      <description>Civil/regional. Single runway 2200 m.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>4.4375,51.9569,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Eindhoven AB (EHEH/EIN)</name>
+      <description>Joint civ/mil. Home of 336 Sqn (C-130, KDC-10/A330 MRTT). 3000 m runway.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>5.3744,51.4500,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Volkel AB (EHVK)</name>
+      <description>F-35 main operating base. US B61 nuclear weapons storage (per public reports).</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>5.7083,51.6583,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Leeuwarden AB (EHLW)</name>
+      <description>F-35 base in Sector NORTH. 322/323 Sqn.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>5.7606,53.2286,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Gilze-Rijen AB (EHGR)</name>
+      <description>Defensie Helikopter Commando (AH-64E, NH90, CH-47F).</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>4.9319,51.5675,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Woensdrecht AB (EHWO)</name>
+      <description>Logistics &amp; training (PC-7). Reception base for NL/US air movement.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>4.3406,51.4486,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>De Kooy (EHKD)</name>
+      <description>Navy helicopters (NH90). Adjacent to Den Helder naval base.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>4.7806,52.9236,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Deelen (EHDL)</name>
+      <description>Inactive AFB, retained for dispersal &amp; helicopter ops.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>5.8731,52.0606,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Groningen Eelde (EHGG)</name>
+      <description>Civil regional. 2500 m runway. Alternate for Sector NORTH.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>6.5794,53.1197,0</coordinates></Point>
+    </Placemark>
+
+    <Placemark>
+      <name>Maastricht Aachen (EHBK)</name>
+      <description>Cargo-focused. 2750 m runway. Cross-border ramp to DE.</description>
+      <styleUrl>#airfield</styleUrl>
+      <Point><coordinates>5.7775,50.9119,0</coordinates></Point>
+    </Placemark>
+
+  </Document>
+</kml>

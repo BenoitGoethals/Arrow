@@ -1,0 +1,671 @@
+{% extends "base.html" %}
+{% block title %}CBRN — Arrow{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+    /* ── Shell ────────────────────────────────────────────────────── */
+    .cbrn-shell { display:flex; flex-direction:column; height:calc(100vh - 60px);
+                  background:#0d1117; overflow:hidden; }
+
+    /* ── Stats + import bar ───────────────────────────────────────── */
+    .cbrn-topbar { display:flex; align-items:stretch; background:#161b25;
+                   border-bottom:1px solid #2a3142; flex-shrink:0; overflow-x:auto; }
+    .cbrn-stats  { display:flex; flex-shrink:0; }
+    .cst-chip    { padding:.45rem 1rem; border-right:1px solid #1e2736;
+                   display:flex; flex-direction:column; align-items:center; gap:1px;
+                   cursor:pointer; transition:background .12s; white-space:nowrap; }
+    .cst-chip:hover  { background:#1f2937; }
+    .cst-chip.active { background:#1f2937; box-shadow:inset 0 -2px 0 currentColor; }
+    .cst-chip .cv { font-size:1.05rem; font-weight:700; line-height:1; }
+    .cst-chip .cl { font-size:.6rem; text-transform:uppercase; letter-spacing:.07em; color:#64748b; }
+
+    .cbrn-import-bar { display:flex; align-items:center; gap:.5rem; padding:.4rem .8rem;
+                       border-left:1px solid #2a3142; margin-left:auto; flex-shrink:0; }
+    .btn-cbrn-import { display:flex; align-items:center; gap:.4rem; padding:.32rem .75rem;
+                       background:#2d1f0a; border:1px solid #78350f; border-radius:5px;
+                       color:#fbbf24; font:inherit; font-size:.82rem; cursor:pointer;
+                       white-space:nowrap; }
+    .btn-cbrn-import:hover { background:#3d2a0f; border-color:#fbbf24; }
+    #import-status { font-size:.72rem; min-width:140px; }
+
+    /* ── Filter bar ───────────────────────────────────────────────── */
+    .cbrn-filterbar { display:flex; align-items:center; gap:.5rem; padding:.38rem .8rem;
+                      background:#0e1217; border-bottom:1px solid #1e2736; flex-shrink:0;
+                      flex-wrap:wrap; }
+    .cbrn-filterbar input[type=search] { background:#161b25; border:1px solid #2a3142;
+                                         border-radius:5px; color:#e2e8f0; padding:.28rem .55rem;
+                                         font:inherit; font-size:.82rem; width:190px; outline:none; }
+    .cbrn-filterbar input[type=search]:focus { border-color:#fbbf24; }
+    .cbrn-filterbar select { background:#0e1217; border:1px solid #2a3142; border-radius:5px;
+                              color:#e2e8f0; padding:.28rem .55rem; font:inherit; font-size:.82rem; }
+    .fbar-sep { color:#2a3142; font-size:.9rem; }
+    .agent-chip { display:inline-flex; align-items:center; padding:.18rem .5rem;
+                  border-radius:99px; border:1px solid transparent; font-size:.72rem;
+                  font-weight:700; cursor:pointer; transition:opacity .12s; opacity:.45; }
+    .agent-chip.on  { opacity:1; }
+
+    /* ── Main split ───────────────────────────────────────────────── */
+    .cbrn-main { display:flex; flex:1; min-height:0; overflow:hidden; }
+
+    /* Map panel */
+    .cbrn-map-panel { flex:1 1 0; display:flex; flex-direction:column; min-width:0;
+                      position:relative; }
+    #cbrn-map       { flex:1; background:#0a1018; }
+    .cbrn-legend    { position:absolute; bottom:28px; left:10px; z-index:500;
+                      background:rgba(13,17,23,.92); border:1px solid #2a3142;
+                      border-radius:6px; padding:.45rem .65rem; font-size:.72rem;
+                      pointer-events:none; }
+    .leg-row        { display:flex; align-items:center; gap:.4rem; margin:.12rem 0; color:#cbd5e1; }
+    .leg-dot        { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .leg-zone       { width:14px; height:8px; border-radius:2px; flex-shrink:0; }
+    .leg-hdr        { font-size:.63rem; font-weight:700; color:#64748b;
+                      text-transform:uppercase; letter-spacing:.08em; margin-top:.3rem; }
+
+    /* List panel */
+    .cbrn-list-panel { flex:0 0 410px; display:flex; flex-direction:column;
+                       border-left:1px solid #2a3142; overflow:hidden; background:#0d1117; }
+    .cbrn-list-hdr  { padding:.4rem .7rem; background:#161b25; border-bottom:1px solid #2a3142;
+                      font-size:.7rem; color:#64748b; text-transform:uppercase; letter-spacing:.08em;
+                      flex-shrink:0; display:flex; justify-content:space-between; align-items:center; }
+    .cbrn-table-wrap { flex:1; overflow-y:auto; }
+
+    .cbrn-table     { width:100%; border-collapse:collapse; font-size:.82rem; }
+    .cbrn-table th  { padding:.32rem .5rem; background:#0a1018; color:#475569; font-size:.62rem;
+                      text-transform:uppercase; letter-spacing:.1em;
+                      border-bottom:1px solid #2a3142; text-align:left; position:sticky; top:0; }
+    .cbrn-table td  { padding:.38rem .5rem; border-bottom:1px solid #0f1928; vertical-align:top; }
+    .cbrn-table tr.data-row:hover td { background:#131a24; cursor:pointer; }
+    .cbrn-table tr.data-row.selected td { background:#1a2438 !important; }
+
+    .cbrn-type-badge { display:inline-block; font-size:.63rem; font-weight:700;
+                       padding:1px 5px; border-radius:3px; }
+    .agent-badge     { display:inline-block; font-size:.63rem; font-weight:700;
+                       padding:1px 5px; border-radius:3px; margin-left:3px; }
+
+    /* Detail row */
+    .cbrn-det-row { display:none; }
+    .cbrn-det-row.open { display:table-row; }
+    .cbrn-det-cell { background:#0a1018; border-bottom:2px solid #2a3142; padding:.55rem .7rem;
+                     font-size:.76rem; }
+    .cdet-grid   { display:grid; grid-template-columns:1fr 1fr; gap:.25rem 1.5rem; }
+    .cdet-row    { display:flex; gap:.5rem; }
+    .cdet-k      { color:#64748b; min-width:110px; flex-shrink:0; }
+    .cdet-v      { color:#e2e8f0; font-family:monospace; }
+    .lines-grid  { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+                   gap:.2rem .8rem; margin-top:.3rem; }
+
+    /* Status badges */
+    .sb { display:inline-block; font-size:.6rem; font-weight:700; padding:1px 5px; border-radius:3px; }
+    .s-RECEIVED     { background:rgba(100,116,139,.2); color:#94a3b8; border:1px solid #475569; }
+    .s-ACKNOWLEDGED { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid #b45309; }
+    .s-PROCESSED    { background:rgba(34,197,94,.15);  color:#22c55e; border:1px solid #16a34a; }
+    .s-REJECTED     { background:rgba(239,68,68,.15);  color:#ef4444; border:1px solid #dc2626; }
+
+    main { padding:0; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set chip_colors = ['#fbbf24','#f59e0b','#f97316','#22c55e','#06b6d4','#a78bfa'] %}
+{% set chip_labels = ['Obs/Attack','Downwind Est','Downwind Pred','Survey','Rad Mon','Clearance'] %}
+<div class="cbrn-shell">
+
+    <!-- ── Stats strip + import ─────────────────────────────────── -->
+    <div class="cbrn-topbar">
+        <div class="cbrn-stats">
+            <div class="cst-chip active" id="chip-all" onclick="filterType('')"
+                 style="color:#fbbf24">
+                <span class="cv" id="st-total">—</span>
+                <span class="cl">All</span>
+            </div>
+            {% for i in range(1,7) %}
+            <div class="cst-chip" id="chip-{{ i }}"
+                 onclick="filterType('CBRN_{{ i }}')"
+                 style="color:{{ chip_colors[loop.index0] }}"
+                 title="{{ chip_labels[loop.index0] }}">
+                <span class="cv" id="st-{{ i }}">—</span>
+                <span class="cl">CBRN {{ i }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="cbrn-import-bar">
+            <input type="file" id="cbrn-file"
+                   accept=".txt,.cbrn,.msg,text/plain" multiple
+                   style="display:none" onchange="importCbrn(this.files)">
+            <button class="btn-cbrn-import"
+                    onclick="document.getElementById('cbrn-file').click()">
+                ☢ Import CBRN file…
+            </button>
+            <span id="import-status" style="color:#94a3b8"></span>
+        </div>
+    </div>
+
+    <!-- ── Filter bar ────────────────────────────────────────────── -->
+    <div class="cbrn-filterbar">
+        <input type="search" id="cbrn-search"
+               placeholder="🔍 DTG, serial, MGRS, agent…"
+               oninput="applyFilter()">
+        <span class="fbar-sep">|</span>
+        <span style="font-size:.72rem;color:#64748b">Agent:</span>
+        <span class="agent-chip on" id="fchip-C"
+              style="background:#fbbf2422;color:#fbbf24;border-color:#fbbf2488"
+              onclick="toggleAgent('C')">☣ C</span>
+        <span class="agent-chip on" id="fchip-B"
+              style="background:#22c55e22;color:#22c55e;border-color:#22c55e88"
+              onclick="toggleAgent('B')">🦠 B</span>
+        <span class="agent-chip on" id="fchip-R"
+              style="background:#06b6d422;color:#06b6d4;border-color:#06b6d488"
+              onclick="toggleAgent('R')">☢ R</span>
+        <span class="agent-chip on" id="fchip-N"
+              style="background:#f9731622;color:#f97316;border-color:#f9731688"
+              onclick="toggleAgent('N')">💥 N</span>
+        <span class="agent-chip on" id="fchip-U"
+              style="background:#94a3b822;color:#94a3b8;border-color:#94a3b888"
+              onclick="toggleAgent('U')">? Unk</span>
+        <span class="fbar-sep">|</span>
+        <select id="type-filter" onchange="applyFilter()">
+            <option value="">All types</option>
+            {% for i in range(1,7) %}
+            <option value="CBRN_{{ i }}">CBRN {{ i }} — {{ chip_labels[loop.index0] }}</option>
+            {% endfor %}
+        </select>
+        <select id="status-filter" onchange="applyFilter()">
+            <option value="">All statuses</option>
+            <option value="RECEIVED">Received</option>
+            <option value="ACKNOWLEDGED">Acknowledged</option>
+            <option value="PROCESSED">Processed</option>
+            <option value="REJECTED">Rejected</option>
+        </select>
+    </div>
+
+    <!-- ── Main: map (left) + list (right) ───────────────────────── -->
+    <div class="cbrn-main">
+
+        <!-- Leaflet map -->
+        <div class="cbrn-map-panel">
+            <div id="cbrn-map"></div>
+            <div class="cbrn-legend">
+                <div class="leg-hdr" style="margin-top:0">Agent type</div>
+                <div class="leg-row"><span class="leg-dot" style="background:#fbbf24"></span>C — Chemical</div>
+                <div class="leg-row"><span class="leg-dot" style="background:#22c55e"></span>B — Biological</div>
+                <div class="leg-row"><span class="leg-dot" style="background:#06b6d4"></span>R — Radiological</div>
+                <div class="leg-row"><span class="leg-dot" style="background:#f97316"></span>N — Nuclear</div>
+                <div class="leg-row"><span class="leg-dot" style="background:#94a3b8"></span>Unknown</div>
+                <div class="leg-hdr">Hazard zones</div>
+                <div class="leg-row">
+                    <span class="leg-zone" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.5)"></span>
+                    Zone I (inner)
+                </div>
+                <div class="leg-row">
+                    <span class="leg-zone" style="background:rgba(255,255,255,.07);border:1px dashed rgba(255,255,255,.35)"></span>
+                    Zone II (downwind)
+                </div>
+            </div>
+        </div>
+
+        <!-- Report list -->
+        <div class="cbrn-list-panel">
+            <div class="cbrn-list-hdr">
+                <span>CBRN Reports</span>
+                <span id="list-count" style="font-weight:400;color:#94a3b8"></span>
+            </div>
+            <div class="cbrn-table-wrap">
+                <table class="cbrn-table">
+                    <thead>
+                        <tr>
+                            <th>Type / Agent</th>
+                            <th>DTG</th>
+                            <th>Location</th>
+                            <th>Wind</th>
+                            <th>Z1</th>
+                            <th>St</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cbrn-tbody">
+                        <tr><td colspan="6" style="color:#475569;text-align:center;padding:1rem">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: `Bearer ${token}` };
+    const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p,
+        { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
+
+    // ── Constants ──────────────────────────────────────────────────
+    const CBRN_COLORS = {
+        CBRN_1:'#fbbf24', CBRN_2:'#f59e0b', CBRN_3:'#f97316',
+        CBRN_4:'#22c55e', CBRN_5:'#06b6d4', CBRN_6:'#a78bfa',
+    };
+    const AGENT_COLORS = { C:'#fbbf24', B:'#22c55e', R:'#06b6d4', N:'#f97316' };
+    const AGENT_LABELS = { C:'Chemical', B:'Biological', R:'Radiological', N:'Nuclear' };
+
+    function agentColor(a) { return AGENT_COLORS[a] || '#94a3b8'; }
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g,
+            c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    // ── State ──────────────────────────────────────────────────────
+    let allReports    = [];
+    let activeType    = '';
+    let activeAgents  = new Set(['C','B','R','N','U']); // U = unknown/null
+    let selectedId    = null;
+
+    // ── Leaflet map ────────────────────────────────────────────────
+    const map = L.map('cbrn-map', { center: [50, 10], zoom: 5, preferCanvas: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors', maxZoom: 19,
+    }).addTo(map);
+
+    // id → { marker, zoneI, zoneII, center }
+    const mapLayers = new Map();
+
+    function makeIcon(color) {
+        return L.divIcon({
+            html: `<div style="width:13px;height:13px;border-radius:50%;
+                               background:${color};border:2px solid rgba(255,255,255,.8);
+                               box-shadow:0 0 10px ${color}aa,0 0 3px #000"></div>`,
+            className: '',
+            iconSize: [13, 13],
+            iconAnchor: [6, 6],
+        });
+    }
+
+    // Fan/sector polygon: center [lat,lon], radius metres, bearingDeg from N, halfAngle degrees
+    function sectorPoly(center, radius, bearingDeg, halfAngle, color) {
+        const STEPS = 24;
+        const pts = [[center[0], center[1]]];
+        const cosLat = Math.cos(center[0] * Math.PI / 180);
+        for (let i = 0; i <= STEPS; i++) {
+            const deg = bearingDeg - halfAngle + (2 * halfAngle) * i / STEPS;
+            const rad = deg * Math.PI / 180;
+            pts.push([
+                center[0] + (radius / 111320) * Math.cos(rad),
+                center[1] + (radius / (111320 * cosLat)) * Math.sin(rad),
+            ]);
+        }
+        pts.push([center[0], center[1]]);
+        return L.polygon(pts, {
+            color, fillColor: color, fillOpacity: 0.10,
+            weight: 1, dashArray: '5 4', interactive: false,
+        });
+    }
+
+    function buildPopup(rep, p) {
+        const tc   = CBRN_COLORS[rep.type] || '#fbbf24';
+        const ac   = agentColor(p.agent_category);
+        const ag   = p.agent_category
+            ? `<span style="background:${ac}22;color:${ac};border:1px solid ${ac}66;
+                            border-radius:3px;padding:0 5px;font-weight:700;font-size:.72rem;margin-left:4px">
+                   ${esc(p.agent_category)} — ${esc(AGENT_LABELS[p.agent_category] || '?')}
+               </span>` : '';
+        const wind = p.wind_direction != null
+            ? `${p.wind_direction}° / ${p.wind_speed ?? '?'} km/h` : '—';
+        const z1 = p.zone_inner_m    ? `${(p.zone_inner_m   / 1000).toFixed(1)} km` : '—';
+        const z2 = p.zone_downwind_m ? `${(p.zone_downwind_m / 1000).toFixed(1)} km` : '—';
+        const loc = (p.latitude != null && p.longitude != null && window.mgrsEncode)
+            ? window.mgrsEncode(p.latitude, p.longitude)
+            : (p.latitude != null ? `${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}` : '—');
+        return `<div style="font-size:.8rem;min-width:170px;line-height:1.5">
+            <div style="margin-bottom:.3rem">
+                <b style="color:${tc}">${esc(rep.type)}</b>${ag}
+            </div>
+            <table style="width:100%;border-collapse:collapse">
+                <tr><td style="color:#888;padding-right:8px;white-space:nowrap">DTG</td>
+                    <td style="font-family:monospace">${esc(p.dtg || '—')}</td></tr>
+                <tr><td style="color:#888">Serial</td><td>${esc(p.serial || '—')}</td></tr>
+                <tr><td style="color:#888">Location</td><td style="font-family:monospace">${esc(loc)}</td></tr>
+                <tr><td style="color:#888">Wind</td><td>${esc(wind)}</td></tr>
+                <tr><td style="color:#888">Zone I</td><td>${esc(z1)}</td></tr>
+                <tr><td style="color:#888">Zone II</td><td>${esc(z2)}</td></tr>
+                ${p.delivery ? `<tr><td style="color:#888">Delivery</td><td>${esc(p.delivery)}</td></tr>` : ''}
+            </table>
+        </div>`;
+    }
+
+    function buildMapLayers(rep, p) {
+        const prev = mapLayers.get(rep.id);
+        if (prev) { prev.marker?.remove(); prev.zoneI?.remove(); prev.zoneII?.remove(); }
+        if (p.latitude == null || p.longitude == null) { mapLayers.delete(rep.id); return; }
+
+        const center = [p.latitude, p.longitude];
+        const ac     = agentColor(p.agent_category);
+
+        const marker = L.marker(center, { icon: makeIcon(ac) });
+        marker.bindPopup(buildPopup(rep, p), { maxWidth: 240 });
+        marker.on('click', () => selectReport(rep.id));
+        marker.addTo(map);
+
+        let zoneI = null, zoneII = null;
+        if (p.zone_inner_m) {
+            zoneI = L.circle(center, {
+                radius: p.zone_inner_m, color: ac,
+                fillColor: ac, fillOpacity: 0.14, weight: 1.5, interactive: false,
+            }).addTo(map);
+        }
+        if (p.zone_downwind_m && p.wind_direction != null) {
+            // Meteorological: wind_direction is "FROM" → downwind bearing = +180°
+            const downwindBrg = (p.wind_direction + 180) % 360;
+            const halfAngle   = p.zone_downwind_angle_deg ?? 30; // parser stores half-angle
+            zoneII = sectorPoly(center, p.zone_downwind_m, downwindBrg, halfAngle, ac);
+            zoneII.addTo(map);
+        }
+        mapLayers.set(rep.id, { marker, zoneI, zoneII, center });
+    }
+
+    // ── Stats strip ────────────────────────────────────────────────
+    function renderStats(list) {
+        document.getElementById('st-total').textContent = list.length;
+        for (let i = 1; i <= 6; i++) {
+            const el = document.getElementById(`st-${i}`);
+            if (el) el.textContent = list.filter(r => r.type === `CBRN_${i}`).length;
+        }
+    }
+
+    window.filterType = function(type) {
+        activeType = type;
+        document.querySelectorAll('.cst-chip').forEach(c => c.classList.remove('active'));
+        const chip = type
+            ? document.getElementById(`chip-${type.slice(5)}`)
+            : document.getElementById('chip-all');
+        if (chip) chip.classList.add('active');
+        const sel = document.getElementById('type-filter');
+        if (sel) sel.value = type;
+        applyFilter();
+    };
+
+    // ── Agent filter ───────────────────────────────────────────────
+    window.toggleAgent = function(agent) {
+        const el = document.getElementById(`fchip-${agent}`);
+        if (activeAgents.has(agent)) {
+            activeAgents.delete(agent);
+            el?.classList.remove('on');
+        } else {
+            activeAgents.add(agent);
+            el?.classList.add('on');
+        }
+        applyFilter();
+    };
+
+    // ── Combined filter ────────────────────────────────────────────
+    const applyFilter = window.applyFilter = function() {
+        const search = (document.getElementById('cbrn-search')?.value || '').toLowerCase();
+        const typeF  = activeType || (document.getElementById('type-filter')?.value || '');
+        const statF  = document.getElementById('status-filter')?.value || '';
+
+        let filtered = allReports;
+        if (typeF) filtered = filtered.filter(r => r.type === typeF);
+        if (statF) filtered = filtered.filter(r => r.status === statF);
+
+        // Agent category filter
+        filtered = filtered.filter(r => {
+            try {
+                const p = JSON.parse(r.payload);
+                const ag = p.agent_category || 'U';
+                // map null/undefined → 'U'
+                return activeAgents.has(ag) || (ag !== 'C' && ag !== 'B' && ag !== 'R' && ag !== 'N' && activeAgents.has('U'));
+            } catch (_) { return true; }
+        });
+
+        if (search) filtered = filtered.filter(r =>
+            r.type.toLowerCase().includes(search)
+            || (r.payload || '').toLowerCase().includes(search));
+
+        renderTable(filtered);
+        syncMapVisibility(filtered);
+        document.getElementById('list-count').textContent =
+            `${filtered.length} report${filtered.length !== 1 ? 's' : ''}`;
+    };
+
+    // Show/hide map layers based on filtered set
+    function syncMapVisibility(filtered) {
+        const visIds = new Set(filtered.map(r => r.id));
+        mapLayers.forEach((layers, id) => {
+            const show = visIds.has(id);
+            if (show) {
+                layers.marker?.addTo(map);
+                layers.zoneI?.addTo(map);
+                layers.zoneII?.addTo(map);
+            } else {
+                layers.marker?.remove();
+                layers.zoneI?.remove();
+                layers.zoneII?.remove();
+            }
+        });
+    }
+
+    // ── Table render ───────────────────────────────────────────────
+    function renderTable(list) {
+        const tbody = document.getElementById('cbrn-tbody');
+        if (!list.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="color:#475569;text-align:center;padding:1.2rem">No CBRN reports match the current filters</td></tr>';
+            return;
+        }
+        tbody.innerHTML = list.map(rep => {
+            const tc = CBRN_COLORS[rep.type] || '#fbbf24';
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch (_) {}
+            const ac  = agentColor(p.agent_category);
+            const ag  = p.agent_category
+                ? `<span class="agent-badge" style="background:${ac}22;color:${ac};border:1px solid ${ac}55">${esc(p.agent_category)}</span>`
+                : '';
+            const dtg = esc(p.dtg || '—');
+            const loc = (p.latitude != null && p.longitude != null)
+                ? (window.mgrsEncode
+                    ? window.mgrsEncode(p.latitude, p.longitude)
+                    : `${p.latitude.toFixed(3)},${p.longitude.toFixed(3)}`)
+                : '—';
+            const wind = p.wind_direction != null
+                ? `${p.wind_direction}°/${p.wind_speed ?? '?'}`
+                : '—';
+            const z1  = p.zone_inner_m ? `${(p.zone_inner_m / 1000).toFixed(1)}` : '—';
+            const st  = rep.status || 'RECEIVED';
+
+            // Detail section
+            const z2 = p.zone_downwind_m ? `${(p.zone_downwind_m / 1000).toFixed(1)} km` : '—';
+            const agFull = p.agent_category
+                ? `${p.agent_category} — ${AGENT_LABELS[p.agent_category] || '?'}`
+                : (p.agent || '—');
+            const linesHtml = p.lines
+                ? Object.entries(p.lines).map(([k, v]) =>
+                    `<div class="cdet-row"><span class="cdet-k">${esc(k)}</span><span class="cdet-v">${esc(v)}</span></div>`
+                ).join('') : '';
+
+            const ts = (rep.timestamp || '').slice(0, 16).replace('T', ' ');
+
+            return `
+<tr class="data-row${selectedId === rep.id ? ' selected' : ''}" data-id="${rep.id}"
+    onclick="selectReport(${rep.id})">
+    <td>
+        <span class="cbrn-type-badge" style="background:${tc}22;color:${tc}">${esc(rep.type)}</span>${ag}
+    </td>
+    <td style="font-family:monospace;font-size:.74rem;color:#94a3b8">${dtg}</td>
+    <td style="font-family:monospace;font-size:.71rem;color:#e2e8f0">${esc(loc)}</td>
+    <td style="font-size:.74rem;color:#64748b;white-space:nowrap">${esc(wind)}</td>
+    <td style="font-size:.74rem;color:#94a3b8">${esc(z1)}</td>
+    <td><span class="sb s-${esc(st)}">${esc(st.slice(0, 4))}</span></td>
+</tr>
+<tr class="cbrn-det-row${selectedId === rep.id ? ' open' : ''}" id="det-${rep.id}">
+    <td colspan="6" class="cbrn-det-cell">
+        <div style="font-size:.68rem;color:#64748b;margin-bottom:.4rem">${esc(ts)}</div>
+        <div class="cdet-grid">
+            <div class="cdet-row"><span class="cdet-k">Agent</span><span class="cdet-v">${esc(agFull)}</span></div>
+            <div class="cdet-row"><span class="cdet-k">Delivery</span><span class="cdet-v">${esc(p.delivery || '—')}</span></div>
+            <div class="cdet-row"><span class="cdet-k">Zone I</span><span class="cdet-v">${z1 !== '—' ? z1 + ' km' : '—'}</span></div>
+            <div class="cdet-row"><span class="cdet-k">Zone II</span><span class="cdet-v">${z2}</span></div>
+            <div class="cdet-row"><span class="cdet-k">Wind direction</span><span class="cdet-v">${esc(p.wind_direction != null ? p.wind_direction + '°' : '—')}</span></div>
+            <div class="cdet-row"><span class="cdet-k">Wind speed</span><span class="cdet-v">${esc(p.wind_speed != null ? p.wind_speed + ' km/h' : '—')}</span></div>
+            ${p.serial ? `<div class="cdet-row"><span class="cdet-k">Serial</span><span class="cdet-v">${esc(p.serial)}</span></div>` : ''}
+            ${p.latitude != null ? `<div class="cdet-row"><span class="cdet-k">Lat / Lon</span><span class="cdet-v">${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)}</span></div>` : ''}
+        </div>
+        ${linesHtml ? `
+        <div style="margin-top:.5rem;font-size:.67rem;color:#475569;text-transform:uppercase;letter-spacing:.07em;margin-bottom:.25rem">
+            Raw NATO lines
+        </div>
+        <div class="lines-grid">${linesHtml}</div>` : ''}
+        <div style="margin-top:.55rem;display:flex;gap:.4rem;flex-wrap:wrap">
+            <button onclick="event.stopPropagation();updateStatus(${rep.id},'ACKNOWLEDGED')"
+                    style="padding:.22rem .65rem;border:1px solid #b45309;border-radius:4px;
+                           background:rgba(245,158,11,.1);color:#f59e0b;font:inherit;font-size:.72rem;cursor:pointer">
+                ✓ ACK
+            </button>
+            <button onclick="event.stopPropagation();updateStatus(${rep.id},'PROCESSED')"
+                    style="padding:.22rem .65rem;border:1px solid #16a34a;border-radius:4px;
+                           background:rgba(34,197,94,.1);color:#22c55e;font:inherit;font-size:.72rem;cursor:pointer">
+                ✔ Processed
+            </button>
+            <button onclick="event.stopPropagation();updateStatus(${rep.id},'REJECTED')"
+                    style="padding:.22rem .65rem;border:1px solid #dc2626;border-radius:4px;
+                           background:rgba(239,68,68,.1);color:#ef4444;font:inherit;font-size:.72rem;cursor:pointer">
+                ✕ Reject
+            </button>
+            <span id="sr-${rep.id}" style="font-size:.72rem;color:#64748b;align-self:center"></span>
+        </div>
+    </td>
+</tr>`;
+        }).join('');
+    }
+
+    window.selectReport = function(id) {
+        if (selectedId === id) {
+            // Deselect
+            document.querySelectorAll(`tr.data-row[data-id="${id}"]`).forEach(r => r.classList.remove('selected'));
+            const det = document.getElementById(`det-${id}`);
+            if (det) det.classList.remove('open');
+            selectedId = null;
+        } else {
+            // Deselect previous
+            if (selectedId != null) {
+                document.querySelectorAll(`tr.data-row[data-id="${selectedId}"]`).forEach(r => r.classList.remove('selected'));
+                const prev = document.getElementById(`det-${selectedId}`);
+                if (prev) prev.classList.remove('open');
+            }
+            selectedId = id;
+            document.querySelectorAll(`tr.data-row[data-id="${id}"]`).forEach(r => r.classList.add('selected'));
+            const det = document.getElementById(`det-${id}`);
+            if (det) det.classList.add('open');
+
+            // Pan map to this report's marker
+            const layers = mapLayers.get(id);
+            if (layers?.marker) {
+                map.setView(layers.marker.getLatLng(), Math.max(map.getZoom(), 10));
+                layers.marker.openPopup();
+            }
+        }
+    };
+
+    window.updateStatus = async function(id, newStatus) {
+        const res = document.getElementById(`sr-${id}`);
+        if (res) res.textContent = 'Saving…';
+        const r = await api(`/reports/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus }),
+        });
+        if (r.ok) {
+            if (res) res.textContent = `✓ ${newStatus}`;
+            loadCbrn();
+        } else {
+            const err = await r.json().catch(() => ({}));
+            if (res) res.textContent = `✗ ${err.detail || r.status}`;
+        }
+    };
+
+    // ── Load all CBRN reports ──────────────────────────────────────
+    async function loadCbrn() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        const all = await r.json();
+        allReports = all.filter(rep => rep.type.startsWith('CBRN_'));
+
+        renderStats(allReports);
+
+        // Rebuild all map layers
+        mapLayers.forEach(layers => {
+            layers.marker?.remove(); layers.zoneI?.remove(); layers.zoneII?.remove();
+        });
+        mapLayers.clear();
+
+        const bounds = [];
+        allReports.forEach(rep => {
+            let p = {};
+            try { p = JSON.parse(rep.payload); } catch (_) {}
+            buildMapLayers(rep, p);
+            const l = mapLayers.get(rep.id);
+            if (l?.center) bounds.push(l.center);
+        });
+
+        if (bounds.length) {
+            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+        }
+
+        applyFilter();
+    }
+
+    // ── File import ────────────────────────────────────────────────
+    window.importCbrn = async function(fileList) {
+        const statusEl = document.getElementById('import-status');
+        const files    = Array.from(fileList || []);
+        if (!files.length) return;
+        statusEl.style.color = '#94a3b8';
+        statusEl.textContent = `Uploading ${files.length} file(s)…`;
+        const form = new FormData();
+        files.forEach(f => form.append('files', f, f.name));
+        let r;
+        try {
+            r = await fetch(window.ARROW_BACKEND_URL + '/reports/cbrn/import',
+                { method: 'POST', headers, body: form });
+        } catch (e) {
+            statusEl.textContent = '✗ ' + e.message;
+            statusEl.style.color = '#ef4444';
+            return;
+        }
+        if (r.ok) {
+            const list = await r.json();
+            const byType = {};
+            list.forEach(x => { byType[x.type] = (byType[x.type] || 0) + 1; });
+            const summary = Object.entries(byType).map(([t, n]) => `${n}× ${t}`).join(', ');
+            statusEl.textContent = `✓ ${list.length} imported (${summary})`;
+            statusEl.style.color = '#22c55e';
+            setTimeout(() => { statusEl.textContent = ''; }, 6000);
+            loadCbrn();
+        } else {
+            const err = await r.text().catch(() => String(r.status));
+            statusEl.textContent = `✗ (${r.status}): ${err.slice(0, 120)}`;
+            statusEl.style.color = '#ef4444';
+        }
+        document.getElementById('cbrn-file').value = '';
+    };
+
+    // ── WebSocket — live refresh on new CBRN report ────────────────
+    function connectWS() {
+        const ws = new WebSocket(
+            window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token));
+        ws.onmessage = ev => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.channel === 'report' && msg.data?.type?.startsWith('CBRN_')) {
+                    loadCbrn();
+                }
+            } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+    connectWS();
+
+    loadCbrn();
+    setInterval(loadCbrn, 60000);
+})();
+</script>
+{% endblock %}

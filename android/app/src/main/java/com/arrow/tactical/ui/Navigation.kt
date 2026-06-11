@@ -1,0 +1,430 @@
+package com.arrow.tactical.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Adjust
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.EmojiFlags
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PermMedia
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.arrow.tactical.admin.ui.AdminScreen
+import com.arrow.tactical.alerts.ui.AlertsScreen
+import com.arrow.tactical.auth.ui.LoginScreen
+import com.arrow.tactical.di.AppContainer
+import com.arrow.tactical.firemission.ui.FireMissionScreen
+import com.arrow.tactical.firemission.ui.MortarScreen
+import com.arrow.tactical.map.ui.MapScreen
+import com.arrow.tactical.map.ui.MarkEnemyScreen
+import com.arrow.tactical.admin.ui.VisibilitySettingsScreen
+import com.arrow.tactical.kml.ui.KmlLayersScreen
+import com.arrow.tactical.map.ui.OfflineMapsScreen
+import com.arrow.tactical.messaging.ui.MessagingScreen
+import com.arrow.tactical.objectives.ui.ObjectivesScreen
+import com.arrow.tactical.photos.ui.MediaGalleryScreen
+import com.arrow.tactical.opord.ui.OpordDetailScreen
+import com.arrow.tactical.opord.ui.OpordListScreen
+import com.arrow.tactical.mission.ui.MissionSelectionScreen
+import com.arrow.tactical.reports.ui.ReportsScreen
+import com.arrow.tactical.settings.ui.SettingsScreen
+import kotlinx.coroutines.launch
+
+private sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
+    data object Map : Tab("tab/map", "Map", Icons.Filled.Map)
+    data object Mark : Tab("tab/mark", "Mark", Icons.Filled.Place)
+    data object Alerts : Tab("tab/alerts", "Alerts", Icons.Filled.Warning)
+    data object Chat : Tab("tab/chat", "Chat", Icons.Filled.Email)
+    data object Reports : Tab("tab/reports", "Reports", Icons.Filled.Flag)
+    data object Mortar : Tab("tab/mortar", "Mortar FDC", Icons.Filled.Adjust)
+    data object Objectives : Tab("tab/objectives", "Objectives", Icons.Filled.EmojiFlags)
+    data object Opord : Tab("tab/opord", "OPORD", Icons.Filled.Description)
+    data object Media : Tab("tab/media", "Media", Icons.Filled.PermMedia)
+    data object Admin : Tab("tab/admin", "Admin", Icons.Filled.AdminPanelSettings)
+    data object Settings : Tab("tab/settings", "Settings", Icons.Filled.Settings)
+}
+
+private val TABS_BASE  = listOf(Tab.Map, Tab.Mark, Tab.Alerts, Tab.Chat, Tab.Reports, Tab.Opord, Tab.Mortar, Tab.Objectives, Tab.Media, Tab.Settings)
+private val TABS_ADMIN = TABS_BASE + Tab.Admin
+
+object Routes {
+    const val LOGIN   = "login"
+    const val MAIN    = "main"
+    const val MISSION = "mission_select"
+}
+
+@Composable
+fun ArrowNavGraph(container: AppContainer) {
+    // null = DataStore not yet read (loading); Boolean = actual auth state
+    val isAuthenticated: Boolean? by produceState<Boolean?>(initialValue = null) {
+        container.tokenStore.tokenFlow.collect { token ->
+            value = !token.isNullOrBlank()
+        }
+    }
+
+    // Show splash while DataStore initializes (typically < 50 ms)
+    if (isAuthenticated == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    val authenticated = isAuthenticated!!
+    val rootNav = rememberNavController()
+
+    // On startup with a saved token: validate it and reload profile.
+    // If stale the 401 interceptor clears the token → isAuthenticated → false
+    // → LaunchedEffect below redirects to LOGIN.
+    LaunchedEffect(Unit) {
+        if (authenticated) {
+            if (container.authRepository.me().isSuccess) {
+                container.authRepository.refreshProfile()
+            } else {
+                container.tokenStore.clear()
+            }
+        }
+    }
+
+    // Reactive logout: when token disappears, return to login
+    LaunchedEffect(authenticated) {
+        if (!authenticated) {
+            val dest = rootNav.currentDestination?.route
+            if (dest != null && dest != Routes.LOGIN) {
+                rootNav.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+            }
+        }
+    }
+
+    NavHost(
+        navController = rootNav,
+        startDestination = if (authenticated) Routes.MAIN else Routes.LOGIN,
+    ) {
+        composable(Routes.LOGIN) {
+            LoginScreen(
+                authRepository    = container.authRepository,
+                settingsRepository = container.settingsRepository,
+                onAuthenticated   = {
+                    rootNav.navigate(Routes.MISSION) {
+                        popUpTo(Routes.LOGIN) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(Routes.MISSION) {
+            MissionSelectionScreen(
+                container = container,
+                onMissionSelected = {
+                    rootNav.navigate(Routes.MAIN) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
+        }
+        composable(Routes.MAIN) {
+            MainShell(
+                container       = container,
+                isAuthenticated = authenticated,
+                onLogout        = { /* navigation handled reactively via LaunchedEffect above */ },
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainShell(
+    container: AppContainer,
+    isAuthenticated: Boolean,
+    onLogout: () -> Unit,
+) {
+    val tabNav = rememberNavController()
+    val backStackEntry by tabNav.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val scope = rememberCoroutineScope()
+
+    val role     by container.tokenStore.roleFlow.collectAsState(initial = null)
+    val callsign by container.settingsRepository.callsign.collectAsState(initial = "")
+    val isOnline by container.connectivity.isOnline.collectAsState(initial = false)
+    val tabs = if (role == "ADMIN") TABS_ADMIN else TABS_BASE
+
+    val onMapTab = currentRoute?.startsWith(Tab.Map.route) == true
+
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    LaunchedEffect(Unit) {
+        container.navigateToChatFlow.collect {
+            tabNav.navigate(Tab.Chat.route) {
+                popUpTo(tabNav.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+    }
+
+    fun goTab(route: String) {
+        tabNav.navigate(route) {
+            popUpTo(tabNav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    ModalNavigationDrawer(
+        drawerState    = drawerState,
+        gesturesEnabled = drawerState.isOpen,
+        drawerContent  = {
+            ModalDrawerSheet {
+                Text(
+                    "ARROW",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                HorizontalDivider()
+                tabs.forEach { tab ->
+                    NavigationDrawerItem(
+                        icon     = { Icon(tab.icon, contentDescription = tab.label) },
+                        label    = { Text(tab.label) },
+                        selected = currentRoute?.startsWith(tab.route) == true,
+                        onClick  = {
+                            goTab(tab.route)
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                }
+            }
+        },
+    ) {
+        var bottomBarExpanded by remember { mutableStateOf(value = true) }
+        Scaffold(
+            topBar = {
+                if (!onMapTab) {
+                    ArrowStatusBar(
+                        callsign = if (isAuthenticated) callsign else "",
+                        role     = if (isAuthenticated) role else null,
+                        isOnline = isOnline,
+                    )
+                }
+            },
+            bottomBar = {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .clickable { bottomBarExpanded = !bottomBarExpanded }
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment     = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (bottomBarExpanded) Icons.Filled.KeyboardArrowDown
+                            else                   Icons.Filled.KeyboardArrowUp,
+                            contentDescription = if (bottomBarExpanded) "Collapse menu" else "Expand menu",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (bottomBarExpanded) {
+                        NavigationBar {
+                            tabs.forEach { tab ->
+                                val selected = currentRoute?.startsWith(tab.route) == true
+                                NavigationBarItem(
+                                    selected = selected,
+                                    onClick  = { goTab(tab.route) },
+                                    icon     = { Icon(tab.icon, contentDescription = tab.label) },
+                                    label    = { Text(tab.label) },
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+        ) { padding ->
+            NavHost(
+                navController    = tabNav,
+                startDestination = Tab.Map.route,
+                modifier         = Modifier.padding(padding),
+            ) {
+                composable(Tab.Map.route) {
+                    MapScreen(
+                        container  = container,
+                        onCallFire = { lat, lon ->
+                            if (lat.isNaN()) tabNav.navigate("fire-mission")
+                            else tabNav.navigate("fire-mission?lat=$lat&lon=$lon")
+                        },
+                        onReport     = { lat, lon -> tabNav.navigate("${Tab.Reports.route}?lat=$lat&lon=$lon") },
+                        onOpenMortar = { lat, lon -> tabNav.navigate("mortar?lat=$lat&lon=$lon") },
+                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                    )
+                }
+                composable(
+                    "fire-mission?lat={lat}&lon={lon}",
+                    arguments = listOf(
+                        navArgument("lat") { type = NavType.StringType },
+                        navArgument("lon") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    FireMissionScreen(
+                        container  = container,
+                        presetLat  = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                        presetLon  = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                        onBack     = { tabNav.popBackStack() },
+                        onOpenMortar = { lat, lon ->
+                            if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
+                            else tabNav.navigate("mortar?lat=$lat&lon=$lon")
+                        },
+                    )
+                }
+                composable("fire-mission") {
+                    FireMissionScreen(
+                        container = container,
+                        onBack    = { tabNav.popBackStack() },
+                        onOpenMortar = { lat, lon ->
+                            if ((lat == null) || (lon == null)) tabNav.navigate("mortar")
+                            else tabNav.navigate("mortar?lat=$lat&lon=$lon")
+                        },
+                    )
+                }
+                composable(
+                    "mortar?lat={lat}&lon={lon}",
+                    arguments = listOf(
+                        navArgument("lat") { type = NavType.StringType },
+                        navArgument("lon") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    MortarScreen(
+                        container = container,
+                        presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                        presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                        onBack    = { tabNav.popBackStack() },
+                    )
+                }
+                composable("mortar") {
+                    MortarScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
+                composable("${Tab.Mark.route}?lat={lat}&lon={lon}") { entry ->
+                    val lat = entry.arguments?.getString("lat")?.toDoubleOrNull()
+                    val lon = entry.arguments?.getString("lon")?.toDoubleOrNull()
+                    MarkEnemyScreen(
+                        container = container,
+                        presetLat = lat,
+                        presetLon = lon,
+                        onMarked  = { tabNav.popBackStack(Tab.Map.route, inclusive = false) },
+                    )
+                }
+                composable(Tab.Mark.route) {
+                    MarkEnemyScreen(
+                        container = container,
+                        presetLat = null,
+                        presetLon = null,
+                        onMarked  = { tabNav.popBackStack(Tab.Map.route, inclusive = false) },
+                    )
+                }
+                composable(Tab.Alerts.route)  { AlertsScreen(container.alertRepository) }
+                composable(Tab.Mortar.route)  { MortarScreen(container = container, onBack = { tabNav.popBackStack() }) }
+                composable(Tab.Chat.route)    { MessagingScreen(container) }
+                composable(
+                    "${Tab.Reports.route}?lat={lat}&lon={lon}",
+                    arguments = listOf(
+                        navArgument("lat") { type = NavType.StringType },
+                        navArgument("lon") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    ReportsScreen(
+                        repo      = container.reportRepository,
+                        container = container,
+                        presetLat = entry.arguments?.getString("lat")?.toDoubleOrNull(),
+                        presetLon = entry.arguments?.getString("lon")?.toDoubleOrNull(),
+                    )
+                }
+                composable(Tab.Reports.route)     { ReportsScreen(repo = container.reportRepository, container = container) }
+                composable(Tab.Objectives.route)  { ObjectivesScreen(container) }
+                composable(Tab.Media.route)       { MediaGalleryScreen(container) }
+                composable(Tab.Opord.route) {
+                    OpordListScreen(container = container, onOpen = { id -> tabNav.navigate("opord/$id") })
+                }
+                composable(
+                    "opord/{id}",
+                    arguments = listOf(navArgument("id") { type = NavType.IntType }),
+                ) { entry ->
+                    val id = entry.arguments?.getInt("id") ?: 0
+                    OpordDetailScreen(container = container, opordId = id, onBack = { tabNav.popBackStack() })
+                }
+                composable(Tab.Admin.route) { AdminScreen(container.logRepository) }
+                composable(Tab.Settings.route) {
+                    SettingsScreen(
+                        repo             = container.settingsRepository,
+                        profileStore     = container.profileStore,
+                        onLogout         = {
+                            scope.launch { container.authRepository.logout() }
+                            onLogout()
+                        },
+                        onOpenOfflineMaps = { tabNav.navigate("offline-maps") },
+                        onOpenKmlLayers   = { tabNav.navigate("kml-layers") },
+                        onOpenVisibility  = { tabNav.navigate("visibility") },
+                    )
+                }
+                composable("offline-maps") {
+                    OfflineMapsScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
+                composable("kml-layers") {
+                    KmlLayersScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
+                composable("visibility") {
+                    VisibilitySettingsScreen(container = container, onBack = { tabNav.popBackStack() })
+                }
+            }
+        }
+    }
+}

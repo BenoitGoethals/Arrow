@@ -1,0 +1,817 @@
+{% extends "base.html" %}
+{% block title %}TACCOP — Arrow{% endblock %}
+{% block head %}
+<style>
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+:root {
+    --bg:      #070b14;
+    --surface: #0d1424;
+    --card:    #111827;
+    --border:  #1e2d44;
+    --border2: #253347;
+    --text:    #e2e8f0;
+    --muted:   #64748b;
+    --dim:     #94a3b8;
+    --green:   #22c55e;
+    --amber:   #f59e0b;
+    --red:     #ef4444;
+    --blue:    #38bdf8;
+    --purple:  #a78bfa;
+    --pink:    #f472b6;
+    --orange:  #fb923c;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+
+.tc-wrap {
+    display:flex; flex-direction:column;
+    height:calc(100vh - 52px);
+    background:var(--bg); color:var(--text);
+    font-size:.82rem; font-family:'Segoe UI',system-ui,sans-serif;
+    overflow:hidden;
+}
+
+/* ── Top header bar ──────────────────────────────────────────────────────── */
+.tc-header {
+    display:flex; align-items:center; gap:12px;
+    padding:8px 16px;
+    background:var(--surface);
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+}
+.tc-title {
+    font-size:.82rem; font-weight:800; color:var(--blue);
+    letter-spacing:.12em; text-transform:uppercase;
+}
+.tc-subtitle { font-size:.68rem; color:var(--muted); letter-spacing:.08em; }
+.tc-header-links { display:flex; gap:6px; margin-left:auto; }
+.tc-btn {
+    padding:3px 10px; border-radius:4px; font-size:.72rem;
+    text-decoration:none; border:1px solid var(--border2);
+    color:var(--dim); background:var(--card); white-space:nowrap;
+    cursor:pointer;
+}
+.tc-btn:hover { background:#1a2640; color:var(--text); }
+
+/* Overall status badge */
+.tc-overall-status {
+    display:flex; align-items:center; gap:7px;
+    padding:4px 14px; border-radius:4px;
+    font-size:.7rem; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+    border:1px solid;
+}
+.tc-overall-status.green { background:#14532d22; border-color:#22c55e55; color:var(--green); }
+.tc-overall-status.amber { background:#78350f22; border-color:#f59e0b55; color:var(--amber); }
+.tc-overall-status.red   { background:#7f1d1d33; border-color:#ef444455; color:var(--red);
+                            animation:pulse-bg 2s infinite; }
+@keyframes pulse-bg { 0%,100%{background:#7f1d1d33} 50%{background:#7f1d1d55} }
+
+.tc-dot { width:8px; height:8px; border-radius:50%; background:currentColor; flex-shrink:0; }
+.tc-ts  { font-family:monospace; font-size:.7rem; color:var(--muted); margin-left:8px; }
+
+/* ── Main scroll area ─────────────────────────────────────────────────────── */
+.tc-body {
+    flex:1; overflow-y:auto; overflow-x:hidden;
+    display:flex; flex-direction:column; gap:0;
+    padding:12px 12px 0;
+}
+
+/* ── Macro grid rows ──────────────────────────────────────────────────────── */
+.tc-row {
+    display:grid; gap:10px; margin-bottom:10px;
+}
+.tc-row.top   { grid-template-columns:3fr 2fr; }
+.tc-row.mid   { grid-template-columns:1fr 1fr; }
+.tc-row.foot  { grid-template-columns:1fr; }
+
+/* ── Panel cards ──────────────────────────────────────────────────────────── */
+.tc-panel {
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:8px;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+    position:relative;
+}
+.tc-panel::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:2px;
+    background:var(--accent, var(--blue));
+    border-radius:8px 8px 0 0;
+}
+.tc-panel-hdr {
+    display:flex; align-items:center; gap:8px;
+    padding:8px 12px 6px;
+    border-bottom:1px solid var(--border);
+    flex-shrink:0;
+}
+.tc-panel-icon { font-size:1rem; flex-shrink:0; }
+.tc-panel-title {
+    font-size:.68rem; font-weight:800; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--accent, var(--blue));
+}
+.tc-panel-badge {
+    margin-left:auto; padding:1px 8px; border-radius:99px;
+    font-size:.63rem; font-weight:700; letter-spacing:.05em;
+    background:var(--badge-bg, #1e3a5f); color:var(--badge-fg, var(--blue));
+}
+.tc-panel-body { padding:10px 12px; flex:1; display:flex; flex-direction:column; gap:7px; overflow:hidden; }
+
+/* ── Stat rows inside panels ─────────────────────────────────────────────── */
+.tc-stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.tc-stat {
+    background:#0d1a2e; border:1px solid var(--border); border-radius:6px;
+    padding:8px 10px; display:flex; flex-direction:column; gap:2px;
+}
+.tc-stat-val {
+    font-family:monospace; font-size:1.6rem; font-weight:700; line-height:1;
+    color:var(--text);
+}
+.tc-stat-val.green { color:var(--green); }
+.tc-stat-val.amber { color:var(--amber); }
+.tc-stat-val.red   { color:var(--red); }
+.tc-stat-val.blue  { color:var(--blue); }
+.tc-stat-lbl { font-size:.62rem; color:var(--muted); letter-spacing:.07em; text-transform:uppercase; }
+
+/* ── Indicator rows ──────────────────────────────────────────────────────── */
+.tc-indicator {
+    display:flex; align-items:center; gap:8px;
+    padding:4px 0; border-bottom:1px solid #0f172a;
+}
+.tc-indicator:last-child { border-bottom:none; }
+.tc-ind-dot   { width:7px; height:7px; border-radius:50%; flex-shrink:0; background:var(--muted); }
+.tc-ind-dot.green  { background:var(--green); box-shadow:0 0 4px var(--green)88; }
+.tc-ind-dot.amber  { background:var(--amber); box-shadow:0 0 4px var(--amber)88; }
+.tc-ind-dot.red    { background:var(--red);   box-shadow:0 0 4px var(--red)88;
+                     animation:blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.tc-ind-label { flex:1; font-size:.78rem; color:var(--dim); }
+.tc-ind-value { font-family:monospace; font-size:.76rem; color:var(--text); font-weight:600; }
+.tc-ind-badge {
+    padding:0 7px; border-radius:99px; font-size:.63rem; font-weight:700;
+    background:#1e293b; color:var(--dim);
+}
+.tc-ind-badge.red   { background:#450a0a; color:#fca5a5; }
+.tc-ind-badge.amber { background:#451a03; color:#fcd34d; }
+.tc-ind-badge.green { background:#052e16; color:#4ade80; }
+
+/* ── Alert items ──────────────────────────────────────────────────────────── */
+.tc-alert-item {
+    display:flex; align-items:center; gap:8px;
+    padding:5px 0; border-bottom:1px solid #0f172a;
+}
+.tc-alert-item:last-child { border-bottom:none; }
+.tc-alert-type {
+    padding:2px 8px; border-radius:3px; font-size:.64rem; font-weight:800;
+    letter-spacing:.06em; white-space:nowrap; flex-shrink:0;
+}
+.at-TIC          { background:#450a0a; color:#fca5a5; }
+.at-MEDICAL,.at-EVAC { background:#1e3a5f; color:#93c5fd; }
+.at-DRONE_SPOTTED{ background:#3b0764; color:#c4b5fd; }
+.at-LOST_COMMS   { background:#451a03; color:#fcd34d; }
+.at-other        { background:#1e293b; color:#94a3b8; }
+.tc-alert-text { flex:1; font-size:.74rem; color:var(--dim); overflow:hidden;
+                 white-space:nowrap; text-overflow:ellipsis; }
+.tc-alert-time { font-size:.68rem; color:var(--muted); font-family:monospace; white-space:nowrap; }
+
+/* ── Event log ────────────────────────────────────────────────────────────── */
+.tc-log-wrap {
+    background:var(--card); border:1px solid var(--border); border-radius:8px;
+    margin-bottom:12px; overflow:hidden;
+    --accent: #475569;
+}
+.tc-log-hdr {
+    display:flex; align-items:center; gap:8px;
+    padding:7px 12px; border-bottom:1px solid var(--border); flex-shrink:0;
+}
+.tc-log-title { font-size:.68rem; font-weight:800; letter-spacing:.1em;
+                text-transform:uppercase; color:var(--muted); }
+.tc-log-body { height:90px; overflow-y:auto; padding:6px 12px; display:flex; flex-direction:column; gap:2px; }
+.tc-log-entry { display:flex; gap:10px; align-items:baseline; font-size:.74rem; }
+.tc-log-ts  { font-family:monospace; font-size:.68rem; color:var(--muted); flex-shrink:0; }
+.tc-log-ch  { padding:0 6px; border-radius:3px; font-size:.62rem; font-weight:700;
+              background:#1e293b; color:var(--dim); white-space:nowrap; flex-shrink:0; }
+.tc-log-msg { color:var(--dim); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.tc-log-entry.critical .tc-log-msg { color:#fca5a5; }
+.tc-log-entry.warning  .tc-log-msg { color:#fcd34d; }
+.tc-log-entry.info     .tc-log-msg { color:var(--blue); }
+
+/* ── Supply bar ───────────────────────────────────────────────────────────── */
+.tc-supply-row { display:flex; align-items:center; gap:8px; padding:3px 0; }
+.tc-supply-lbl { font-size:.72rem; color:var(--dim); width:80px; flex-shrink:0; }
+.tc-supply-bar-wrap { flex:1; background:#0d1424; border-radius:3px; height:6px; overflow:hidden; }
+.tc-supply-bar { height:6px; border-radius:3px; transition:width .4s; }
+.tc-supply-val { font-family:monospace; font-size:.72rem; font-weight:600; width:38px;
+                 text-align:right; flex-shrink:0; }
+
+/* ── SITREP big numbers ──────────────────────────────────────────────────── */
+.tc-sitrep-grid {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:8px;
+}
+.tc-sitrep-card {
+    background:linear-gradient(135deg, #0d1a2e 60%, #0f2040);
+    border:1px solid var(--border); border-radius:6px;
+    padding:8px 10px; display:flex; flex-direction:column; gap:3px;
+}
+.tc-sitrep-num {
+    font-family:'Courier New',monospace; font-size:2rem; font-weight:900; line-height:1;
+}
+.tc-sitrep-lbl { font-size:.6rem; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+
+/* ── Unit list ────────────────────────────────────────────────────────────── */
+.tc-unit-row {
+    display:flex; align-items:center; gap:8px; padding:4px 0;
+    border-bottom:1px solid #0d1424;
+}
+.tc-unit-row:last-child { border-bottom:none; }
+.tc-unit-name { flex:1; font-size:.76rem; color:var(--dim); font-weight:600; }
+.tc-unit-count { font-family:monospace; font-size:.74rem; color:var(--muted); }
+.tc-unit-bar  { width:48px; height:4px; background:#1e293b; border-radius:2px; overflow:hidden; }
+.tc-unit-fill { height:4px; border-radius:2px; background:var(--green); }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:#1e293b; border-radius:2px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tc-wrap">
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <div class="tc-header">
+    <div>
+      <div class="tc-title">⊞ TACCOP — Tactical Common Operational Picture</div>
+      <div class="tc-subtitle">1st Bn · 75th Ranger Regiment · Real-time Feed</div>
+    </div>
+    <div class="tc-overall-status green" id="tc-overall">
+      <div class="tc-dot"></div>
+      <span id="tc-overall-label">NOMINAL</span>
+    </div>
+    <span class="tc-ts" id="tc-ts"></span>
+    <div class="tc-header-links">
+      <a href="{{ url_for('tactical_map.index') }}" class="tc-btn">🗺 Map</a>
+      <a href="{{ url_for('fire_missions.index') }}" class="tc-btn">🔥 Fire Msns</a>
+      <a href="{{ url_for('objectives.index') }}" class="tc-btn">🚩 Objectives</a>
+      <a href="{{ url_for('cop_hub.index') }}" class="tc-btn">⊞ Hub</a>
+    </div>
+  </div>
+
+  <!-- ── Body ────────────────────────────────────────────────────────────── -->
+  <div class="tc-body">
+
+    <!-- Row 1: SITREP (wide) + ALERTS ──────────────────────────────────── -->
+    <div class="tc-row top">
+
+      <!-- SITREP / Force picture -->
+      <div class="tc-panel" style="--accent:#38bdf8">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">🗺</span>
+          <span class="tc-panel-title">Tactical Situation (SITREP)</span>
+          <span class="tc-panel-badge" id="sitrep-badge">—</span>
+        </div>
+        <div class="tc-panel-body">
+          <!-- Headline numbers -->
+          <div class="tc-sitrep-grid">
+            <div class="tc-sitrep-card">
+              <div class="tc-sitrep-num green" id="s-online">—</div>
+              <div class="tc-sitrep-lbl">Online</div>
+            </div>
+            <div class="tc-sitrep-card">
+              <div class="tc-sitrep-num red"   id="s-enemy">—</div>
+              <div class="tc-sitrep-lbl">Enemy Obj</div>
+            </div>
+            <div class="tc-sitrep-card">
+              <div class="tc-sitrep-num amber" id="s-alerts">—</div>
+              <div class="tc-sitrep-lbl">Active Alerts</div>
+            </div>
+            <div class="tc-sitrep-card">
+              <div class="tc-sitrep-num blue"  id="s-fires">—</div>
+              <div class="tc-sitrep-lbl">Fire Msns</div>
+            </div>
+          </div>
+          <!-- Unit status list -->
+          <div id="tc-units" style="flex:1;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- ALERTS / INCIDENTS -->
+      <div class="tc-panel" style="--accent:#ef4444; --badge-bg:#450a0a; --badge-fg:#fca5a5">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">⚡</span>
+          <span class="tc-panel-title">Alerts &amp; Incidents</span>
+          <span class="tc-panel-badge" id="alert-badge">0</span>
+        </div>
+        <div class="tc-panel-body" id="tc-alerts">
+          <div style="color:var(--muted);font-size:.76rem">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: OPERATIONS + INTELLIGENCE ──────────────────────────────────── -->
+    <div class="tc-row mid">
+
+      <div class="tc-panel" style="--accent:#22c55e">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">🎯</span>
+          <span class="tc-panel-title">Operations</span>
+          <span class="tc-panel-badge" id="ops-badge" style="--badge-bg:#052e16;--badge-fg:#4ade80">—</span>
+        </div>
+        <div class="tc-panel-body">
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="op-mis-dot"></div>
+            <span class="tc-ind-label">Active Missions</span>
+            <span class="tc-ind-value" id="op-missions">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="op-fm-dot"></div>
+            <span class="tc-ind-label">Pending Fire Missions</span>
+            <span class="tc-ind-value" id="op-firemissions">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot green"></div>
+            <span class="tc-ind-label">Strike Packages</span>
+            <span class="tc-ind-value" id="op-strikes">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot green"></div>
+            <span class="tc-ind-label">Tactical Objects</span>
+            <span class="tc-ind-value" id="op-objects">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="op-obj-dot"></div>
+            <span class="tc-ind-label">Objectives</span>
+            <span class="tc-ind-value" id="op-objectives">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tc-panel" style="--accent:#818cf8">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">🔍</span>
+          <span class="tc-panel-title">Intelligence</span>
+          <span class="tc-panel-badge" id="int-badge" style="--badge-bg:#1e1b4b;--badge-fg:#c4b5fd">—</span>
+        </div>
+        <div class="tc-panel-body">
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="int-enem-dot"></div>
+            <span class="tc-ind-label">Enemy Objects</span>
+            <span class="tc-ind-value" id="int-enemy">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot amber"></div>
+            <span class="tc-ind-label">Contact / SPOT Reports</span>
+            <span class="tc-ind-value" id="int-contacts">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot amber"></div>
+            <span class="tc-ind-label">SALUTE Reports</span>
+            <span class="tc-ind-value" id="int-salute">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot purple" style="background:var(--purple)"></div>
+            <span class="tc-ind-label">Drone Spots</span>
+            <span class="tc-ind-value" id="int-drones">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="int-cbrn-dot"></div>
+            <span class="tc-ind-label">CBRN Reports</span>
+            <span class="tc-ind-value" id="int-cbrn">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 3: LOGISTICS + MEDICAL ───────────────────────────────────────── -->
+    <div class="tc-row mid">
+
+      <div class="tc-panel" style="--accent:#fb923c">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">📦</span>
+          <span class="tc-panel-title">Logistics</span>
+          <a href="{{ url_for('logcop.index') }}" class="tc-btn" style="margin-left:auto;font-size:.65rem;padding:2px 7px">→ LOGCOP</a>
+        </div>
+        <div class="tc-panel-body" id="tc-logistics">
+          <div style="color:var(--muted);font-size:.76rem">Loading…</div>
+        </div>
+      </div>
+
+      <div class="tc-panel" style="--accent:#f472b6">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">🏥</span>
+          <span class="tc-panel-title">Medical</span>
+          <a href="{{ url_for('medcop.index') }}" class="tc-btn" style="margin-left:auto;font-size:.65rem;padding:2px 7px">→ MEDCOP</a>
+        </div>
+        <div class="tc-panel-body">
+          <div class="tc-stat-grid">
+            <div class="tc-stat">
+              <div class="tc-stat-val" id="med-casevac">—</div>
+              <div class="tc-stat-lbl">CASEVAC</div>
+            </div>
+            <div class="tc-stat">
+              <div class="tc-stat-val" id="med-medevac">—</div>
+              <div class="tc-stat-lbl">MEDEVAC</div>
+            </div>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="med-cas-dot"></div>
+            <span class="tc-ind-label">Pending casevac</span>
+            <span class="tc-ind-value" id="med-cas-pen">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="med-mev-dot"></div>
+            <span class="tc-ind-label">Pending medevac</span>
+            <span class="tc-ind-value" id="med-mev-pen">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot green"></div>
+            <span class="tc-ind-label">Med reports processed</span>
+            <span class="tc-ind-value" id="med-proc">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 4: COMMS + AIR / FIRES ───────────────────────────────────────── -->
+    <div class="tc-row mid">
+
+      <div class="tc-panel" style="--accent:#34d399">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">📡</span>
+          <span class="tc-panel-title">Communications</span>
+          <span class="tc-panel-badge" style="--badge-bg:#052e16;--badge-fg:#4ade80;margin-left:auto">ACTIVE</span>
+        </div>
+        <div class="tc-panel-body">
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="cm-backend-dot"></div>
+            <span class="tc-ind-label">Arrow Backend</span>
+            <span class="tc-ind-badge" id="cm-backend">Checking…</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="cm-ws-dot"></div>
+            <span class="tc-ind-label">WebSocket Live Feed</span>
+            <span class="tc-ind-badge" id="cm-ws">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="cm-ops-dot"></div>
+            <span class="tc-ind-label">Operators Online</span>
+            <span class="tc-ind-value" id="cm-ops">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot green"></div>
+            <span class="tc-ind-label">Mission</span>
+            <span class="tc-ind-value" id="cm-mission">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tc-panel" style="--accent:#ef4444">
+        <div class="tc-panel-hdr">
+          <span class="tc-panel-icon">🔥</span>
+          <span class="tc-panel-title">Air &amp; Fire Support</span>
+          <a href="{{ url_for('firescop.index') }}" class="tc-btn" style="margin-left:auto;font-size:.65rem;padding:2px 7px">→ FIRESCOP</a>
+        </div>
+        <div class="tc-panel-body">
+          <div class="tc-stat-grid">
+            <div class="tc-stat">
+              <div class="tc-stat-val" id="air-fms">—</div>
+              <div class="tc-stat-lbl">Fire Missions</div>
+            </div>
+            <div class="tc-stat">
+              <div class="tc-stat-val" id="air-cas">—</div>
+              <div class="tc-stat-lbl">CAS Assets</div>
+            </div>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="air-fm-dot"></div>
+            <span class="tc-ind-label">Pending missions</span>
+            <span class="tc-ind-value" id="air-pending">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot" id="air-cas-dot"></div>
+            <span class="tc-ind-label">CAS assets available</span>
+            <span class="tc-ind-value" id="air-avail">—</span>
+          </div>
+          <div class="tc-indicator">
+            <div class="tc-ind-dot amber"></div>
+            <span class="tc-ind-label">CAS 9-liners submitted</span>
+            <span class="tc-ind-value" id="air-nine">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Log ────────────────────────────────────────────────────────── -->
+    <div class="tc-log-wrap">
+      <div class="tc-log-hdr">
+        <span style="font-size:.9rem">📋</span>
+        <span class="tc-log-title">Event Log / Live Feed</span>
+        <span id="log-badge" style="margin-left:8px;font-size:.62rem;font-family:monospace;color:var(--muted)">WS: connecting…</span>
+        <button class="tc-btn" style="margin-left:auto" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="tc-log-body" id="tc-log">
+        <div class="tc-log-entry info">
+          <span class="tc-log-ts">--:--:--Z</span>
+          <span class="tc-log-ch">SYSTEM</span>
+          <span class="tc-log-msg">TACCOP initialising…</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tc-body -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+
+/* ── Helpers ─────────────────────────────────────────────────────────────── */
+function _ago(ts) {
+    const s = Math.floor((Date.now() - new Date(ts)) / 1000);
+    return s < 60 ? s + 's' : s < 3600 ? Math.floor(s/60) + 'm' : Math.floor(s/3600) + 'h';
+}
+function _dot(id, cls) {
+    const el = document.getElementById(id);
+    if (el) { el.className = 'tc-ind-dot ' + cls; }
+}
+function _val(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+}
+function _colVal(id, v, cls) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = v; el.className = 'tc-sitrep-num ' + cls; }
+}
+
+/* ── Clock ───────────────────────────────────────────────────────────────── */
+setInterval(() => {
+    const n = new Date(), p = x => String(x).padStart(2,'0');
+    _val('tc-ts',
+        `${n.getUTCFullYear()}-${p(n.getUTCMonth()+1)}-${p(n.getUTCDate())} ` +
+        `${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())}Z`);
+}, 1000);
+
+/* ── Overall status ──────────────────────────────────────────────────────── */
+function setOverallStatus(level) {
+    const el = document.getElementById('tc-overall');
+    const lb = document.getElementById('tc-overall-label');
+    el.className = 'tc-overall-status ' + level;
+    lb.textContent = level === 'red' ? 'CRITICAL' : level === 'amber' ? 'MONITOR' : 'NOMINAL';
+}
+
+/* ── Log ─────────────────────────────────────────────────────────────────── */
+const MAX_LOG = 80;
+function pushLog(channel, msg, level='') {
+    const el = document.getElementById('tc-log');
+    const n = new Date(), p = x => String(x).padStart(2,'0');
+    const ts = `${p(n.getUTCHours())}:${p(n.getUTCMinutes())}:${p(n.getUTCSeconds())}Z`;
+    const div = document.createElement('div');
+    div.className = `tc-log-entry ${level}`;
+    div.innerHTML = `<span class="tc-log-ts">${ts}</span>
+                     <span class="tc-log-ch">${channel}</span>
+                     <span class="tc-log-msg">${msg}</span>`;
+    el.prepend(div);
+    while (el.children.length > MAX_LOG) el.lastChild.remove();
+}
+function clearLog() {
+    document.getElementById('tc-log').innerHTML = '';
+}
+
+/* ── Load all data ───────────────────────────────────────────────────────── */
+async function load() {
+    try {
+        const [hier, ops, alerts, objs, fms, reps, assets, missions, supply] = await Promise.all([
+            arrowFetch('/hierarchy').then(r=>r.ok?r.json():{companies:[]}).catch(()=>({companies:[]})),
+            arrowFetch('/operators').then(r=>r.ok?r.json():[]).catch(()=>[]),
+            arrowFetch('/alerts').then(r=>r.ok?r.json():[]).catch(()=>[]),
+            arrowFetch('/tactical-objects').then(r=>r.ok?r.json():[]).catch(()=>[]),
+            arrowFetch('/fire-missions').then(r=>r.ok?r.json():[]).catch(()=>[]),
+            arrowFetch('/reports').then(r=>r.ok?r.json():[]).catch(()=>[]),
+            arrowFetch('/cas/assets').then(r=>r.ok?r.json():[]).catch(()=>[]),
+            arrowFetch('/missions').then(r=>r.ok?r.json():[]).catch(()=>[]),
+            arrowFetch('/logcop/supply').then(r=>r.ok?r.json():[]).catch(()=>[]),
+        ]);
+
+        /* ── SITREP ──────────────────────────────────────────────────────── */
+        const online  = ops.filter(o => o.online).length;
+        const enemy   = objs.filter(o => o.affiliation === 'ENEMY').length;
+        const actAlerts = alerts.filter(a => a.status === 'ACTIVE').length;
+        const ACTIVE_FM = ['PENDING','ACKNOWLEDGED','IN_PROGRESS'];
+        const activeFMs = fms.filter(f => ACTIVE_FM.includes(f.status)).length;
+
+        _colVal('s-online', online, online > 0 ? 'green' : 'red');
+        _colVal('s-enemy',  enemy,  enemy > 5 ? 'red' : enemy > 0 ? 'amber' : 'green');
+        _colVal('s-alerts', actAlerts, actAlerts > 5 ? 'red' : actAlerts > 0 ? 'amber' : 'green');
+        _colVal('s-fires',  activeFMs, activeFMs > 0 ? 'amber' : 'blue');
+
+        _val('sitrep-badge', `${ops.length} operators · ${objs.length} objects`);
+
+        // Overall status
+        const overallLevel =
+            actAlerts > 3 || activeFMs > 5 || enemy > 20 ? 'red' :
+            actAlerts > 0 || activeFMs > 0 || enemy > 0  ? 'amber' : 'green';
+        setOverallStatus(overallLevel);
+
+        /* ── Unit tree ───────────────────────────────────────────────────── */
+        const unitEl = document.getElementById('tc-units');
+        const companies = (hier.companies || []);
+        if (companies.length) {
+            unitEl.innerHTML = companies.map(c => {
+                let total = 0, conline = 0;
+                (c.platoons || []).forEach(p =>
+                    (p.sections || []).forEach(s =>
+                        (s.teams || []).forEach(t =>
+                            (t.operators || []).forEach(o => {
+                                total++; if (o.online) conline++;
+                            })
+                        )
+                    )
+                );
+                const pct = total ? Math.round(conline/total*100) : 0;
+                return `<div class="tc-unit-row">
+                  <div class="tc-unit-name">${c.name}</div>
+                  <div class="tc-unit-bar">
+                    <div class="tc-unit-fill" style="width:${pct}%;background:${pct>60?'var(--green)':pct>30?'var(--amber)':'var(--red)'}"></div>
+                  </div>
+                  <div class="tc-unit-count" style="color:${pct>60?'var(--green)':pct>30?'var(--amber)':'var(--red)'}">
+                    ${conline}/${total}
+                  </div>
+                </div>`;
+            }).join('');
+        } else {
+            unitEl.innerHTML = '<div style="color:var(--muted);font-size:.76rem">No mission selected — no hierarchy data</div>';
+        }
+
+        /* ── Alerts ──────────────────────────────────────────────────────── */
+        const actAlertList = alerts.filter(a => a.status === 'ACTIVE');
+        _val('alert-badge', actAlertList.length);
+        document.getElementById('tc-alerts').innerHTML = actAlertList.length
+            ? actAlertList.map(a => {
+                const cls = 'at-' + (a.type || 'other');
+                return `<div class="tc-alert-item">
+                  <span class="tc-alert-type ${cls}">${a.type}</span>
+                  <span class="tc-alert-text">Op #${a.operator_id}</span>
+                  <span class="tc-alert-time">${_ago(a.timestamp)}</span>
+                </div>`;
+              }).join('')
+            : '<div style="color:var(--green);font-size:.76rem">✓ No active alerts</div>';
+
+        /* ── Operations ──────────────────────────────────────────────────── */
+        const activeMissions = missions.filter(m => m.status === 'ACTIVE');
+        const friendly = objs.filter(o => o.affiliation === 'FRIENDLY').length;
+        _val('op-missions',    activeMissions.length);
+        _val('op-firemissions', fms.length);
+        _val('op-strikes',     '—');
+        _val('op-objects',     `${friendly} F · ${enemy} E`);
+        _val('op-objectives',  objs.filter(o => o.type === 'OBJECTIVE').length);
+        _val('ops-badge',      activeMissions.length + ' active');
+        _dot('op-mis-dot',     activeMissions.length > 0 ? 'green' : 'amber');
+        _dot('op-fm-dot',      activeFMs > 0 ? 'amber' : 'green');
+        _dot('op-obj-dot',     'green');
+
+        /* ── Intelligence ────────────────────────────────────────────────── */
+        const contacts = reps.filter(r => ['CONTACT','SALUTE','OBSREP'].includes(r.type));
+        const cbrn     = reps.filter(r => r.type && r.type.startsWith('CBRN'));
+        const drones   = reps.filter(r => r.type === 'DRONE_SPOT');
+        _val('int-enemy',    enemy);
+        _val('int-contacts', contacts.length);
+        _val('int-salute',   reps.filter(r=>r.type==='SALUTE').length);
+        _val('int-drones',   drones.length);
+        _val('int-cbrn',     cbrn.length);
+        _val('int-badge',    `${enemy} enemy · ${contacts.length} reps`);
+        _dot('int-enem-dot', enemy > 10 ? 'red' : enemy > 0 ? 'amber' : 'green');
+        _dot('int-cbrn-dot', cbrn.length > 0 ? 'red' : 'green');
+
+        /* ── Logistics ───────────────────────────────────────────────────── */
+        const logEl = document.getElementById('tc-logistics');
+        if (supply.length) {
+            const visible = supply.filter(s => s.threshold_amber > 0).slice(0, 6);
+            logEl.innerHTML = visible.map(s => {
+                const max  = Math.max(s.threshold_amber * 1.5, s.current_qty, 0.1);
+                const pct  = Math.min(100, s.current_qty / max * 100);
+                const col  = s.current_qty < s.threshold_red   ? 'var(--red)'   :
+                             s.current_qty < s.threshold_amber  ? 'var(--amber)' : 'var(--green)';
+                return `<div class="tc-supply-row">
+                  <div class="tc-supply-lbl">Cl ${s.class_code}</div>
+                  <div class="tc-supply-bar-wrap">
+                    <div class="tc-supply-bar" style="width:${pct}%;background:${col}"></div>
+                  </div>
+                  <div class="tc-supply-val" style="color:${col}">${s.current_qty.toFixed(1)}</div>
+                </div>`;
+            }).join('');
+        } else {
+            logEl.innerHTML = '<div style="color:var(--muted);font-size:.76rem">No logistics data — open LOGCOP to initialise</div>';
+        }
+
+        /* ── Medical ─────────────────────────────────────────────────────── */
+        const casevac = reps.filter(r => r.type === 'CASEVAC');
+        const medevac = reps.filter(r => r.type === 'MEDEVAC');
+        const casPen  = casevac.filter(r => r.status === 'RECEIVED').length;
+        const mevPen  = medevac.filter(r => r.status === 'RECEIVED').length;
+        _val('med-casevac', casevac.length);
+        _val('med-medevac', medevac.length);
+        _val('med-cas-pen', casPen);
+        _val('med-mev-pen', mevPen);
+        _val('med-proc',    (casevac.concat(medevac)).filter(r=>r.status==='PROCESSED').length);
+        _dot('med-cas-dot', casPen > 0 ? 'red' : 'green');
+        _dot('med-mev-dot', mevPen > 0 ? 'amber' : 'green');
+        document.getElementById('med-casevac').className =
+            'tc-stat-val ' + (casPen > 0 ? 'red' : casPen === 0 && casevac.length > 0 ? 'green' : '');
+        document.getElementById('med-medevac').className =
+            'tc-stat-val ' + (mevPen > 0 ? 'amber' : '');
+
+        /* ── Communications ──────────────────────────────────────────────── */
+        _dot('cm-backend-dot', 'green');
+        document.getElementById('cm-backend').textContent = 'ONLINE';
+        document.getElementById('cm-backend').className   = 'tc-ind-badge green';
+        _val('cm-ops',     `${online} / ${ops.length}`);
+        _dot('cm-ops-dot', online > 0 ? 'green' : 'amber');
+        const curMis = activeMissions[0];
+        _val('cm-mission', curMis ? curMis.name : 'None selected');
+
+        /* ── Air & Fires ─────────────────────────────────────────────────── */
+        const casAvail = assets.filter(a => a.status === 'AVAILABLE').length;
+        _val('air-fms',     fms.length);
+        _val('air-cas',     assets.length);
+        _val('air-pending', activeFMs);
+        _val('air-avail',   casAvail);
+        _val('air-nine',    reps.filter(r => r.type === 'CAS').length);
+        _dot('air-fm-dot',  activeFMs > 0 ? 'amber' : 'green');
+        _dot('air-cas-dot', casAvail > 0 ? 'green' : 'red');
+        document.getElementById('air-fms').className =
+            'tc-stat-val ' + (activeFMs > 0 ? 'amber' : 'blue');
+        document.getElementById('air-cas').className =
+            'tc-stat-val ' + (casAvail > 0 ? 'green' : 'red');
+
+    } catch(e) {
+        pushLog('ERROR', e.message, 'critical');
+        _dot('cm-backend-dot', 'red');
+        document.getElementById('cm-backend').textContent = 'OFFLINE';
+        document.getElementById('cm-backend').className   = 'tc-ind-badge red';
+        setOverallStatus('red');
+    }
+}
+
+/* ── WebSocket live feed ─────────────────────────────────────────────────── */
+const CHANNEL_LABELS = {
+    tracking:'TRACKING', 'tactical-object':'TACT OBJ', alert:'ALERT',
+    report:'REPORT', 'fire-mission':'FIRE MSN', chat:'CHAT',
+    logcop:'LOGCOP', 'kml-layer':'KML', mission:'MISSION',
+};
+function wsConnect() {
+    const wsUrl = window.ARROW_WS_URL;
+    if (!wsUrl) return;
+    const tok = localStorage.getItem('arrow_token') || '';
+    const mid = arrowGetMissionId();
+    const ws  = new WebSocket(wsUrl + '?token=' + encodeURIComponent(tok) +
+                              (mid ? '&mission_id=' + mid : ''));
+
+    ws.onopen = () => {
+        _val('log-badge', 'WS: connected');
+        _dot('cm-ws-dot', 'green');
+        document.getElementById('cm-ws').textContent  = 'CONNECTED';
+        document.getElementById('cm-ws').className    = 'tc-ind-badge green';
+        pushLog('SYSTEM', 'WebSocket connected', 'info');
+    };
+    ws.onmessage = e => {
+        try {
+            const d = JSON.parse(e.data);
+            const ch  = d.channel || '?';
+            const ev  = d.event   || '';
+            const lbl = CHANNEL_LABELS[ch] || ch.toUpperCase();
+
+            // Determine severity
+            let level = '';
+            if (ch === 'alert') level = 'critical';
+            else if (ch === 'report' && ['CASEVAC','MEDEVAC','CBRN_1','CBRN_2'].includes(d.data?.type)) level = 'warning';
+            else if (ch === 'fire-mission') level = 'warning';
+
+            const msg = d.data?.type
+                ? `[${ev}] ${d.data.type}${d.data?.callsign ? ' · ' + d.data.callsign : ''}`
+                : `[${ev}]`;
+            pushLog(lbl, msg, level);
+
+            // Throttled reload
+            clearTimeout(wsReloadTimer);
+            wsReloadTimer = setTimeout(load, 800);
+        } catch(_) {}
+    };
+    ws.onclose = () => {
+        _val('log-badge', 'WS: reconnecting…');
+        _dot('cm-ws-dot', 'amber');
+        document.getElementById('cm-ws').textContent = 'RECONNECTING';
+        document.getElementById('cm-ws').className   = 'tc-ind-badge amber';
+        setTimeout(wsConnect, 3000);
+    };
+}
+let wsReloadTimer;
+
+/* ── Boot ────────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+    load();
+    wsConnect();
+    setInterval(load, 20000);
+});
+window.addEventListener('arrow-mission-changed', load);
+</script>
+{% endblock %}

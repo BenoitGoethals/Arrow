@@ -1,0 +1,40 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: arrow-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: name
+            values: [arrow-backend, arrow-web, arrow-redis, arrow-proxy]
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        target_label: container
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+    pipeline_stages:
+      # Parse JSON log lines emitted by python-json-logger
+      - json:
+          expressions:
+            level:   level
+            logger:  logger
+            ts:      ts
+            message: message
+      - labels:
+          level:
+          logger:
+      # Promote security events to a separate label for easy filtering
+      - match:
+          selector: '{logger="arrow.security"}'
+          stages:
+            - labels:
+                security_event: "true"

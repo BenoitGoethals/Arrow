@@ -1,0 +1,1275 @@
+{% extends "base.html" %}
+{% block title %}Reports — Arrow{% endblock %}
+{% block head %}
+<style>
+    .rep-shell { display: flex; flex-direction: column; height: calc(100vh - 60px); background: #0d1117; }
+
+    /* ── Tab bar ─────────────────────────────────────────────────────── */
+    .rep-tabbar { display: flex; align-items: center; gap: 0; background: #161b25;
+                  border-bottom: 1px solid #2a3142; padding: 0 1rem; flex-shrink: 0; }
+    .rep-tab { padding: 0.65rem 1.2rem; background: none; border: 0; border-bottom: 2px solid transparent;
+               color: #64748b; font: inherit; font-size: 0.88rem; cursor: pointer;
+               transition: color .15s, border-color .15s; margin-bottom: -1px; }
+    .rep-tab:hover { color: #94a3b8; }
+    .rep-tab.active { color: #e2e8f0; border-bottom-color: #3b82f6; font-weight: 600; }
+    .rep-tabbar .tb-spacer { flex: 1; }
+    #unreviewed-badge { display: none; background: #dc2626; color: #fff; font-size: .65rem;
+                        font-weight: 700; padding: 2px 8px; border-radius: 99px; margin-right: .5rem; }
+
+    /* ── Tab panes ───────────────────────────────────────────────────── */
+    .rep-tabpane { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ── Dashboard tab ───────────────────────────────────────────────── */
+    .stats-strip { display: flex; gap: 0; background: #0e1217; border-bottom: 1px solid #1e2736;
+                   flex-shrink: 0; }
+    .stat-chip { padding: .5rem 1.25rem; border-right: 1px solid #1e2736; font-size: .78rem;
+                 color: #64748b; display: flex; flex-direction: column; align-items: center; gap: 1px;
+                 cursor: pointer; transition: background .12s; }
+    .stat-chip:hover { background: #161b25; }
+    .stat-chip.active { background: #161b25; color: #e2e8f0; }
+    .stat-chip .sv { font-size: 1.1rem; font-weight: 700; line-height: 1; }
+    .stat-chip .sl { font-size: .65rem; text-transform: uppercase; letter-spacing: .08em; }
+    .filter-bar { display: flex; align-items: center; gap: .5rem; padding: .5rem 1rem;
+                  background: #161b25; border-bottom: 1px solid #1e2736; flex-shrink: 0;
+                  flex-wrap: wrap; }
+    .filter-bar input[type=search] { background: #0e1217; border: 1px solid #2a3142; border-radius: 5px;
+                                     color: #e2e8f0; padding: .3rem .6rem; font: inherit; font-size: .82rem;
+                                     width: 200px; outline: none; }
+    .filter-bar input[type=search]:focus { border-color: #3b82f6; }
+    .filter-bar select { background: #0e1217; border: 1px solid #2a3142; border-radius: 5px;
+                         color: #e2e8f0; padding: .3rem .6rem; font: inherit; font-size: .82rem;
+                         cursor: pointer; }
+    .type-fchip { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .55rem;
+                  border-radius: 99px; border: 1px solid transparent; font-size: .73rem;
+                  font-weight: 600; cursor: pointer; transition: opacity .12s; opacity: .55; }
+    .type-fchip.on { opacity: 1; }
+    .dash-table-wrap { flex: 1; overflow-y: auto; }
+
+    /* ── Submit tab ──────────────────────────────────────────────────── */
+    .submit-shell { display: grid; grid-template-columns: 240px 1fr; height: 100%; overflow: hidden; }
+    .submit-sidebar { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto;
+                      padding: .75rem; display: flex; flex-direction: column; gap: .25rem; }
+    .submit-sidebar h3 { font-size: .7rem; text-transform: uppercase; letter-spacing: .15em;
+                         color: #64748b; margin: .4rem 0 .2rem; }
+    .submit-sidebar .divider { height: 1px; background: #2a3142; margin: .4rem 0; }
+    .submit-main { overflow-y: auto; padding: 1.5rem 2rem; }
+    .type-btn { display: flex; align-items: center; gap: .5rem; padding: .45rem .7rem;
+                border-radius: 6px; cursor: pointer; border: 0; background: none;
+                color: #94a3b8; width: 100%; text-align: left; font: inherit; font-size: .85rem; }
+    .type-btn:hover { background: #1f2937; }
+    .type-btn.active { background: #1e2736; color: #e2e8f0; font-weight: 600; }
+    .type-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Main form area ──────────────────────────────────────────────── */
+    .rep-main h2 { margin: 0 0 0.2rem; font-size: 1.1rem; }
+    .rep-main .subtitle { color: #64748b; font-size: 0.82rem; margin-bottom: 1.25rem; }
+
+    .nineliner { border: 1px solid #2a3142; border-radius: 8px; padding: 0; overflow: hidden; margin-bottom: 1.5rem; }
+    .nineliner legend { display: none; }
+
+    .nl-line { display: grid; grid-template-columns: 36px 1fr; gap: 0; border-bottom: 1px solid #1e2736; }
+    .nl-line:last-child { border-bottom: 0; }
+    .nl-num { display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; background: #0e1217; color: #475569; border-right: 1px solid #1e2736; }
+    .nl-body { padding: 0.55rem 0.75rem; }
+    .nl-label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .nl-body input, .nl-body select, .nl-body textarea {
+        width: 100%; background: transparent; color: #e2e8f0; border: 0;
+        border-bottom: 1px solid #2a3142; padding: 0.2rem 0; font: inherit;
+        font-size: 0.88rem; outline: none; font-family: 'Courier New', monospace;
+    }
+    .nl-body input:focus, .nl-body select:focus, .nl-body textarea:focus { border-color: #34d399; }
+    .nl-body select { cursor: pointer; }
+    .nl-body select option { background: #161b25; }
+    .nl-body textarea { resize: vertical; min-height: 38px; }
+
+    .submit-row { display: flex; gap: 0.75rem; align-items: center; }
+    .btn-submit { padding: 0.5rem 1.4rem; border: 0; border-radius: 6px; font: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+    .btn-clear  { padding: 0.5rem 1rem; border: 1px solid #2a3142; border-radius: 6px; font: inherit; font-size: 0.85rem; background: none; color: #64748b; cursor: pointer; }
+    .btn-clear:hover { border-color: #475569; color: #94a3b8; }
+    .submit-status { font-size: 0.82rem; }
+    .submit-status.ok  { color: #34d399; }
+    .submit-status.err { color: #ef4444; }
+
+    /* ── Recent reports list (main area) ─────────────────────────────── */
+    .reports-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
+    .reports-table th { text-align: left; color: #64748b; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a3142; }
+    .reports-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #1e2736; vertical-align: top; }
+    .reports-table tr:hover td { background: #1a1f29; }
+    .type-badge { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+    .rep-detail { display: none; background: #0e1217; border-left: 3px solid #2a3142; padding: 0.6rem 0.75rem; margin-top: 0.3rem; border-radius: 0 4px 4px 0; font-size: 0.8rem; }
+    .dl-grid { display: grid; grid-template-columns: 28px 140px 1fr; gap: 0.2rem 0.5rem; }
+    .dl-num  { font-weight: 700; color: inherit; }
+    .dl-lbl  { color: #94a3b8; }
+    .dl-val  { color: #e2e8f0; font-family: monospace; }
+
+    /* ── Status management panel ─────────────────────────────────────── */
+    .status-panel {
+        margin-top: 0.75rem; padding: 0.75rem; border-radius: 6px;
+        background: #0e1217; border: 1px solid #2a3142;
+    }
+    .status-panel h4 { margin: 0 0 0.5rem; font-size: 0.75rem;
+                       color: #64748b; text-transform: uppercase; letter-spacing: .08em; }
+    .status-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+    .status-note { width: 100%; margin-bottom: 0.5rem;
+                   background: #161b25; color: #e2e8f0;
+                   border: 1px solid #2a3142; border-radius: 4px;
+                   padding: 0.35rem 0.5rem; font: inherit; font-size: 0.82rem;
+                   resize: vertical; min-height: 36px; }
+    .status-note:focus { outline: none; border-color: #34d399; }
+    .btn-status {
+        padding: 0.3rem 0.75rem; border: 1px solid; border-radius: 5px;
+        font: inherit; font-size: 0.78rem; font-weight: 600;
+        cursor: pointer; background: transparent; transition: background .15s;
+    }
+    .btn-status:hover { filter: brightness(1.2); }
+    .btn-ack    { color: #f59e0b; border-color: #f59e0b; }
+    .btn-ack:hover { background: rgba(245,158,11,.12); }
+    .btn-proc   { color: #22c55e; border-color: #22c55e; }
+    .btn-proc:hover { background: rgba(34,197,94,.12); }
+    .btn-rej    { color: #ef4444; border-color: #ef4444; }
+    .btn-rej:hover { background: rgba(239,68,68,.12); }
+    .status-result { font-size: 0.75rem; color: #64748b; }
+
+    /* ── Status badge ────────────────────────────────────────────────── */
+    .s-badge { display:inline-block; font-size:.62rem; font-weight:700;
+               padding:1px 6px; border-radius:3px; letter-spacing:.04em; }
+    .s-RECEIVED     { background:rgba(100,116,139,.2); color:#94a3b8;  border:1px solid #475569; }
+    .s-ACKNOWLEDGED { background:rgba(245,158,11,.15); color:#f59e0b;  border:1px solid #b45309; }
+    .s-PROCESSED    { background:rgba(34,197,94,.15);  color:#22c55e;  border:1px solid #16a34a; }
+    .s-REJECTED     { background:rgba(239,68,68,.15);  color:#ef4444;  border:1px solid #dc2626; }
+
+    /* ── CAS-specific form extras ────────────────────────────────────── */
+    .cas-line5-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.4rem 0.75rem; }
+    .cas-line5-mgrs { font-family:monospace; font-size:0.88rem; color:#fbbf24;
+                      background:#0e1217; border:1px solid #2a3142; border-radius:4px;
+                      padding:0.25rem 0.5rem; margin-top:0.25rem; }
+    .cas-meta-row   { display:flex; gap:1rem; align-items:center; flex-wrap:wrap;
+                      margin-bottom:1rem; padding:0.65rem 0.9rem;
+                      background:#0e1217; border:1px solid #2a3142; border-radius:6px; }
+    .cas-tic-toggle { display:flex; align-items:center; gap:0.5rem; }
+    .cas-tic-toggle input[type=checkbox] { width:16px; height:16px; cursor:pointer; accent-color:#ef4444; }
+    .cas-tic-label  { font-size:0.85rem; font-weight:700; color:#ef4444; }
+    .cas-fo-wrap    { display:flex; align-items:center; gap:0.5rem; flex:1; min-width:180px; }
+    .cas-fo-label   { font-size:0.78rem; color:#94a3b8; white-space:nowrap; }
+    .cas-fo-select  { flex:1; background:#161b25; color:#e2e8f0; border:1px solid #2a3142;
+                      border-radius:4px; padding:0.2rem 0.4rem; font:inherit; font-size:0.82rem; }
+    .cas-asset-wrap { display:flex; align-items:center; gap:0.5rem; flex:1; min-width:180px; }
+    .cas-asset-label{ font-size:0.78rem; color:#94a3b8; white-space:nowrap; }
+    .cas-asset-select{ flex:1; background:#161b25; color:#e2e8f0; border:1px solid #2a3142;
+                       border-radius:4px; padding:0.2rem 0.4rem; font:inherit; font-size:0.82rem; }
+
+    /* ── CAS capacity panel ──────────────────────────────────────────── */
+    .cas-capacity   { margin-top:2rem; }
+    .cas-capacity h3{ margin:0 0 0.75rem; font-size:0.85rem; display:flex; align-items:center; gap:0.6rem; }
+    .cas-assets-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr));
+                      gap:0.6rem; margin-bottom:1rem; }
+    .cas-asset-card { background:#0e1217; border:1px solid #2a3142; border-radius:6px;
+                      padding:0.65rem 0.8rem; }
+    .cas-asset-card .ca-header { display:flex; justify-content:space-between; align-items:center;
+                                  margin-bottom:0.35rem; }
+    .cas-asset-card .ca-callsign { font-weight:700; font-size:0.9rem; color:#e2e8f0; }
+    .cas-asset-card .ca-type     { font-size:0.75rem; color:#64748b; }
+    .cas-asset-card .ca-row      { font-size:0.78rem; color:#94a3b8; margin-bottom:0.15rem; }
+    .cas-asset-card .ca-row span { color:#e2e8f0; font-family:monospace; }
+    .cas-asset-card .ca-slot     { font-size:0.75rem; color:#64748b; margin-top:0.3rem; }
+    .cas-asset-card .ca-actions  { display:flex; gap:0.4rem; margin-top:0.5rem; flex-wrap:wrap; }
+    .ca-status-badge { font-size:0.62rem; font-weight:700; padding:1px 6px; border-radius:3px; }
+    .ca-AVAILABLE    { background:rgba(34,197,94,.18);  color:#22c55e;  border:1px solid #16a34a; }
+    .ca-ON_STATION   { background:rgba(59,130,246,.18); color:#60a5fa;  border:1px solid #2563eb; }
+    .ca-TASKED       { background:rgba(239,68,68,.18);  color:#f87171;  border:1px solid #dc2626; }
+    .ca-RTB          { background:rgba(251,146,60,.18); color:#fb923c;  border:1px solid #ea580c; }
+    .ca-UNAVAILABLE  { background:rgba(100,116,139,.18);color:#94a3b8;  border:1px solid #475569; }
+    .btn-ca-status   { padding:0.18rem 0.55rem; border:1px solid #2a3142; border-radius:4px;
+                       background:none; color:#94a3b8; font:inherit; font-size:0.72rem;
+                       cursor:pointer; }
+    .btn-ca-status:hover { background:#1f2937; color:#e2e8f0; }
+    .btn-ca-del      { padding:0.18rem 0.55rem; border:1px solid #3f1515; border-radius:4px;
+                       background:none; color:#ef4444; font:inherit; font-size:0.72rem; cursor:pointer; }
+    .btn-ca-del:hover { background:#3f1515; }
+    .cas-add-form    { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end;
+                       background:#0e1217; border:1px solid #2a3142; border-radius:6px;
+                       padding:0.65rem 0.8rem; }
+    .cas-add-form input, .cas-add-form select { background:#161b25; color:#e2e8f0;
+                          border:1px solid #2a3142; border-radius:4px;
+                          padding:0.25rem 0.45rem; font:inherit; font-size:0.8rem; }
+    .cas-add-form label { font-size:0.72rem; color:#64748b; display:block; margin-bottom:2px; }
+    .cas-add-form .field { display:flex; flex-direction:column; }
+    .btn-cas-add     { padding:0.3rem 0.9rem; background:#1e3a5f; color:#60a5fa;
+                       border:1px solid #2563eb; border-radius:5px; font:inherit;
+                       font-size:0.82rem; cursor:pointer; white-space:nowrap; }
+    .btn-cas-add:hover { background:#1d4ed8; color:#fff; }
+
+    main { padding: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rep-shell">
+
+    <!-- ── Tab bar ──────────────────────────────────────────────────── -->
+    <div class="rep-tabbar">
+        <button id="tab-btn-dashboard" class="rep-tab active" onclick="showTab('dashboard')">
+            📊 Dashboard
+        </button>
+        <button id="tab-btn-submit" class="rep-tab" onclick="showTab('submit')">
+            ✍ New Report
+        </button>
+        <span class="tb-spacer"></span>
+        <span id="unreviewed-badge"></span>
+    </div>
+
+    <!-- ── DASHBOARD TAB ─────────────────────────────────────────────── -->
+    <div id="tab-dashboard" class="rep-tabpane">
+        <!-- Stats strip -->
+        <div class="stats-strip" id="stats-strip">
+            <div class="stat-chip" onclick="filterByStatus('')" id="stat-all">
+                <span class="sv" id="stat-total">—</span><span class="sl">Total</span>
+            </div>
+            <div class="stat-chip" onclick="filterByStatus('RECEIVED')" id="stat-recv">
+                <span class="sv" id="stat-received" style="color:#94a3b8">—</span><span class="sl">New</span>
+            </div>
+            <div class="stat-chip" onclick="filterByStatus('ACKNOWLEDGED')" id="stat-ack">
+                <span class="sv" id="stat-acked" style="color:#f59e0b">—</span><span class="sl">Acked</span>
+            </div>
+            <div class="stat-chip" onclick="filterByStatus('PROCESSED')" id="stat-proc">
+                <span class="sv" id="stat-processed" style="color:#22c55e">—</span><span class="sl">Done</span>
+            </div>
+            <div class="stat-chip" onclick="filterByStatus('REJECTED')" id="stat-rej">
+                <span class="sv" id="stat-rejected" style="color:#ef4444">—</span><span class="sl">Rejected</span>
+            </div>
+        </div>
+        <!-- Filter bar -->
+        <div class="filter-bar">
+            <input type="search" id="rep-search" placeholder="🔍 Search…" oninput="applyFilter()">
+            <div id="type-filter-chips" style="display:flex;gap:.3rem;flex-wrap:wrap"></div>
+            <select id="status-filter" onchange="applyFilter()">
+                <option value="">All statuses</option>
+                <option value="RECEIVED">Received</option>
+                <option value="ACKNOWLEDGED">Acknowledged</option>
+                <option value="PROCESSED">Processed</option>
+                <option value="REJECTED">Rejected</option>
+            </select>
+        </div>
+        <!-- Reports table (full-width, scrollable) -->
+        <div class="dash-table-wrap">
+            <table class="reports-table" id="reports-table">
+                <thead>
+                    <tr><th>Type</th><th>TIC</th><th>Status</th><th>Time</th><th>FO</th><th>Summary</th><th></th></tr>
+                </thead>
+                <tbody id="reports-body">
+                    <tr><td colspan="7" style="color:#475569">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── SUBMIT TAB ─────────────────────────────────────────────────── -->
+    <div id="tab-submit" class="rep-tabpane" style="display:none">
+        <div class="submit-shell">
+            <!-- Left: type selector + imports + CAS -->
+            <aside class="submit-sidebar">
+                <h3>Report Type</h3>
+                {% set types = [
+                    ('MEDEVAC', '#16a34a'),
+                    ('CASEVAC', '#2563eb'),
+                    ('CAS',     '#dc2626'),
+                    ('CONTACT', '#d97706'),
+                    ('SPOT',    '#7c3aed'),
+                ] %}
+                {% for key, color in types %}
+                <button class="type-btn{% if loop.first %} active{% endif %}"
+                        data-type="{{ key }}" data-color="{{ color }}"
+                        onclick="selectType('{{ key }}', '{{ color }}', this)">
+                    <span class="type-dot" style="background:{{ color }}"></span>
+                    {{ key }}
+                </button>
+                {% endfor %}
+
+                <div class="divider"></div>
+                <a href="/logrep/" style="display:flex;align-items:center;gap:.5rem;
+                   padding:.45rem .7rem;border-radius:6px;background:#1a2233;
+                   color:#0ea5e9;font-size:.85rem;text-decoration:none;margin-bottom:.15rem">
+                    <span class="type-dot" style="background:#0ea5e9"></span>
+                    📦 LOGREP →
+                </a>
+                <div class="divider"></div>
+                <h3 style="display:flex;align-items:center;justify-content:space-between">
+                    ✈ CAS Assets
+                    <span id="cas-sb-count" style="font-weight:400;color:#64748b"></span>
+                </h3>
+                <div id="cas-sidebar-list"><small style="color:#475569">Loading…</small></div>
+                <a href="/cas/" style="font-size:.72rem;color:#f97316;padding:.35rem .5rem .1rem;display:block;text-align:right;text-decoration:none">
+                    Manage ↗
+                </a>
+            </aside>
+
+            <!-- Right: form area -->
+            <div class="submit-main">
+                <div id="form-area"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    const token = localStorage.getItem('arrow_token');
+    if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+    const headers = { Authorization: `Bearer ${token}` };
+    const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...opts, headers: { ...headers, ...(opts.headers||{}) } });
+
+    // ── 9-liner definitions ─────────────────────────────────────────
+    const LINES = {
+        MEDEVAC: [
+            { n:1, label:'Location',              hint:'Grid coordinates of pickup site' },
+            { n:2, label:'Radio / Call sign',     hint:'Freq and call sign, e.g. 46.35 DUSTOFF' },
+            { n:3, label:'Patients by precedence',hint:'e.g. 1U-2P  (U=Urgent P=Priority R=Routine C=Convenience)' },
+            { n:4, label:'Special equipment',     opts:['None','Hoist','Extraction equipment','Ventilator'] },
+            { n:5, label:'Patients by type',      hint:'e.g. 1L-2A  (L=Litter  A=Ambulatory)' },
+            { n:6, label:'Security at PZ',        opts:['N – No enemy troops','P – Possible enemy','E – Enemy in area','X – Enemy, armed escort needed'] },
+            { n:7, label:'Marking method',        opts:['Panels','Pyrotechnics','Smoke signal','None','Other'] },
+            { n:8, label:'Nationality / Status',  hint:'A=US Mil  B=Allied  C=Non-mil  D=EPW' },
+            { n:9, label:'NBC contamination',     opts:['N – None','C – Chemical','B – Biological','R – Radiological'] },
+        ],
+        CONTACT: [
+            { n:1, label:'Size',                 hint:'Number of personnel / vehicles' },
+            { n:2, label:'Activity',             hint:'What the enemy is doing' },
+            { n:3, label:'Location',             hint:'Grid coordinates of contact' },
+            { n:4, label:'Unit / Identification',hint:'Uniform, markings, nationality' },
+            { n:5, label:'Time',                 hint:'Time of observation (local / Zulu)' },
+            { n:6, label:'Equipment',            hint:'Weapons, vehicles, equipment observed' },
+            { n:7, label:'Direction of movement',hint:'Direction contact is moving' },
+            { n:8, label:'Additional info',      hint:'Anything else notable', textarea:true },
+            { n:9, label:'Reported by',          hint:'Callsign / position of observer' },
+        ],
+    };
+    LINES.CASEVAC = LINES.MEDEVAC;
+    LINES.SPOT    = LINES.CONTACT;
+
+    // CAS lines — line 5 is rendered specially (see renderCasForm)
+    const CAS_LINES = [
+        { n:1, label:'IP (Initial Point)',   hint:'Name or grid of Initial Point' },
+        { n:2, label:'Heading / Distance',   hint:'Heading & distance from IP to target, e.g. 270° / 5 km' },
+        { n:3, label:'Target elevation',     hint:'Elevation in metres MSL (e.g. 312)' },
+        { n:4, label:'Target description',   hint:'Brief description — e.g. T-72 tank, 4-man group, bunker' },
+        // n:5 rendered separately
+        { n:6, label:'Type of mark',         opts:['Laser','Smoke','IR pointer','Mark-63','WP','None'] },
+        { n:7, label:'Friendly location',    hint:'Friendly forces location relative to target (e.g. N 600m)' },
+        { n:8, label:'Egress direction',     hint:'Desired egress after attack (e.g. 270° West)' },
+        { n:9, label:'Remarks / Threats',    hint:'Restrictions, threats, TOT, authentication code', textarea:true },
+    ];
+
+    let currentType  = 'MEDEVAC';
+    let currentColor = '#16a34a';
+    // CAS metadata (populated asynchronously)
+    let operatorsList = [];
+    let casAssetsList = [];
+    // Dashboard state
+    let allReports        = [];
+    let activeStatusFilter = '';
+    let activeTypeFilters  = new Set();
+
+    function selectType(type, color, btn) {
+        currentType  = type;
+        currentColor = color;
+        document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (type === 'CAS') renderCasForm();
+        else renderForm();
+    }
+    window.selectType = selectType;
+
+    // ── Generic 9-liner form ────────────────────────────────────────
+    function renderForm() {
+        const lines = LINES[currentType] || [];
+        const color = currentColor;
+
+        const lineRows = lines.map(f => {
+            let input;
+            if (f.opts) {
+                input = `<select name="line_${f.n}">
+                    <option value="">— select —</option>
+                    ${f.opts.map(o => `<option>${escHtml(o)}</option>`).join('')}
+                </select>`;
+            } else if (f.textarea) {
+                input = `<textarea name="line_${f.n}" placeholder="${escAttr(f.hint||'')}"></textarea>`;
+            } else {
+                input = `<input type="text" name="line_${f.n}" placeholder="${escAttr(f.hint||'')}">`;
+            }
+            return `<div class="nl-line">
+                <div class="nl-num" style="color:${color}">${f.n}</div>
+                <div class="nl-body">
+                    <div class="nl-label" style="color:${color}aa">${escHtml(f.label)}</div>
+                    ${input}
+                </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('form-area').innerHTML = `
+            <h2 style="color:${color}">${currentType} — 9-Liner</h2>
+            <p class="subtitle">${typeSubtitle(currentType)}</p>
+            <form id="report-form" onsubmit="submitReport(event)">
+                <fieldset class="nineliner"><legend>${currentType}</legend>${lineRows}</fieldset>
+                <div class="submit-row">
+                    <button class="btn-submit" type="submit"
+                            style="background:${color};color:#fff">
+                        Submit ${currentType}
+                    </button>
+                    <button class="btn-clear" type="button" onclick="renderForm()">Clear</button>
+                    <span id="submit-status" class="submit-status"></span>
+                </div>
+            </form>`;
+    }
+
+    // ── CAS 9-liner form (specialised) ──────────────────────────────
+    function renderCasForm() {
+        const color = '#dc2626';
+        const foOpts = operatorsList.map(op =>
+            `<option value="${op.id}">${escHtml(op.callsign)} (${escHtml(op.rank)})</option>`
+        ).join('');
+        const assetOpts = casAssetsList
+            .filter(a => a.status === 'AVAILABLE' || a.status === 'ON_STATION')
+            .map(a => `<option value="${a.id}">${escHtml(a.callsign)} [${escHtml(a.aircraft_type||'?')}] ${escHtml(a.status)}</option>`)
+            .join('');
+
+        const lineRows = CAS_LINES.map(f => {
+            let input;
+            if (f.opts) {
+                input = `<select name="line_${f.n}">
+                    <option value="">— select —</option>
+                    ${f.opts.map(o => `<option>${escHtml(o)}</option>`).join('')}
+                </select>`;
+            } else if (f.textarea) {
+                input = `<textarea name="line_${f.n}" placeholder="${escAttr(f.hint||'')}"></textarea>`;
+            } else {
+                input = `<input type="text" name="line_${f.n}" placeholder="${escAttr(f.hint||'')}">`;
+            }
+            return `<div class="nl-line">
+                <div class="nl-num" style="color:${color}">${f.n}</div>
+                <div class="nl-body">
+                    <div class="nl-label" style="color:${color}aa">${escHtml(f.label)}</div>
+                    ${input}
+                </div>
+            </div>`;
+        });
+
+        // Insert Line 5 between line 4 and line 6 in its special form
+        const line5Html = `
+            <div class="nl-line">
+                <div class="nl-num" style="color:${color}">5</div>
+                <div class="nl-body">
+                    <div class="nl-label" style="color:${color}aa">Target Location</div>
+                    <div class="cas-line5-grid">
+                        <input type="number" name="line_5_lat" placeholder="Lat (e.g. 50.8503)"
+                               step="any" oninput="updateCasMgrs()">
+                        <input type="number" name="line_5_lon" placeholder="Lon (e.g. 4.3517)"
+                               step="any" oninput="updateCasMgrs()">
+                    </div>
+                    <div class="cas-line5-mgrs" id="cas-mgrs-display">
+                        MGRS — enter lat/lon above
+                    </div>
+                </div>
+            </div>`;
+
+        // Splice line 5 after index 3 (after line 4)
+        lineRows.splice(3, 0, line5Html);
+
+        document.getElementById('form-area').innerHTML = `
+            <h2 style="color:${color}">✈ CAS — 9-Liner</h2>
+            <p class="subtitle">Close Air Support Request — submit to JTAC / Battle Captain</p>
+            <form id="report-form" onsubmit="submitCasRequest(event)">
+                <!-- Meta row: TIC, FO, Asset -->
+                <div class="cas-meta-row">
+                    <label class="cas-tic-toggle">
+                        <input type="checkbox" id="cas-tic" name="tic">
+                        <span class="cas-tic-label">⚡ TIC — TROOPS IN CONTACT</span>
+                    </label>
+                    <div class="cas-fo-wrap">
+                        <span class="cas-fo-label">FO:</span>
+                        <select class="cas-fo-select" id="cas-fo" name="fo_operator_id">
+                            <option value="">— assign Forward Observer —</option>
+                            ${foOpts}
+                        </select>
+                    </div>
+                    <div class="cas-asset-wrap">
+                        <span class="cas-asset-label">Asset:</span>
+                        <select class="cas-asset-select" id="cas-asset" name="asset_id">
+                            <option value="">— nominate CAS asset —</option>
+                            ${assetOpts || '<option disabled>No assets available</option>'}
+                        </select>
+                    </div>
+                </div>
+                <fieldset class="nineliner"><legend>CAS</legend>${lineRows.join('')}</fieldset>
+                <div class="submit-row">
+                    <button class="btn-submit" id="cas-submit-btn" type="submit"
+                            style="background:${color};color:#fff">
+                        ✈ Submit CAS Request
+                    </button>
+                    <button class="btn-clear" type="button" onclick="renderCasForm()">Clear</button>
+                    <span id="submit-status" class="submit-status"></span>
+                </div>
+            </form>`;
+    }
+    window.renderCasForm = renderCasForm;
+
+    // Live MGRS display as lat/lon is typed
+    window.updateCasMgrs = function() {
+        const latEl = document.querySelector('[name="line_5_lat"]');
+        const lonEl = document.querySelector('[name="line_5_lon"]');
+        const disp  = document.getElementById('cas-mgrs-display');
+        if (!disp) return;
+        const lat = parseFloat(latEl?.value);
+        const lon = parseFloat(lonEl?.value);
+        if (isNaN(lat) || isNaN(lon)) {
+            disp.textContent = 'MGRS — enter lat/lon above';
+            return;
+        }
+        if (lat < -80 || lat > 84) { disp.textContent = 'Lat out of MGRS range (−80 to 84)'; return; }
+        try {
+            disp.textContent = latLonToMgrs(lat, lon);
+        } catch(e) {
+            disp.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        }
+    };
+
+    // ── Submit CAS 9-liner via /cas/requests ────────────────────────
+    window.submitCasRequest = async function(e) {
+        e.preventDefault();
+        const form = e.target;
+        const get  = name => form.elements[name]?.value ?? '';
+
+        // Gather 9-liner lines
+        const lineData = {};
+        CAS_LINES.forEach(f => {
+            lineData[`line_${f.n}`] = get(`line_${f.n}`);
+        });
+
+        const lat = parseFloat(get('line_5_lat')) || null;
+        const lon = parseFloat(get('line_5_lon')) || null;
+        const mgrs = document.getElementById('cas-mgrs-display')?.textContent || '';
+
+        const body = {
+            ...lineData,
+            line_5_lat:  lat,
+            line_5_lon:  lon,
+            line_5_mgrs: (mgrs.startsWith('MGRS') || mgrs.startsWith('Lat')) ? '' : mgrs,
+            tic:          form.elements['tic']?.checked ?? false,
+            fo_operator_id: parseInt(get('fo_operator_id')) || null,
+            asset_id:     parseInt(get('asset_id')) || null,
+        };
+
+        const st = document.getElementById('submit-status');
+        st.textContent = 'Submitting…';
+        st.className   = 'submit-status';
+        document.getElementById('cas-submit-btn').disabled = true;
+
+        const res = await api('/cas/requests', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(body),
+        });
+
+        document.getElementById('cas-submit-btn').disabled = false;
+        if (res.ok) {
+            st.textContent = '✓ CAS request submitted';
+            st.className   = 'submit-status ok';
+            renderCasForm();
+            loadReports();
+            loadCasAssets();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            st.textContent = `✗ Failed (${res.status}): ${err.detail || ''}`;
+            st.className   = 'submit-status err';
+        }
+    };
+
+    // ── Generic report submit (non-CAS) ────────────────────────────
+    window.submitReport = async function(e) {
+        e.preventDefault();
+        const form   = e.target;
+        const lines  = LINES[currentType] || [];
+        const payload = {};
+        lines.forEach(f => {
+            const el = form.elements[`line_${f.n}`];
+            payload[`line_${f.n}`]  = el ? el.value : '';
+            payload[`label_${f.n}`] = f.label;
+        });
+        const status = document.getElementById('submit-status');
+        status.textContent = 'Submitting…';
+        status.className = 'submit-status';
+
+        const res = await api('/reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: currentType, payload }),
+        });
+        if (res.ok) {
+            status.textContent = '✓ Report submitted';
+            status.className = 'submit-status ok';
+            renderForm();
+            loadReports();
+        } else {
+            status.textContent = `✗ Failed (${res.status})`;
+            status.className = 'submit-status err';
+        }
+    };
+
+    function typeSubtitle(t) {
+        return { MEDEVAC:'Medical Evacuation Request', CASEVAC:'Casualty Evacuation',
+                 CAS:'Close Air Support Request', CONTACT:'SALUTE Contact Report',
+                 SPOT:'Spot Report (SALUTE format)',
+                 LOGREP:'NATO Logistics Report' }[t] || '';
+    }
+
+    // ── LOGREP renderer ─────────────────────────────────────────────
+    function renderLogrep(p, c) {
+        const h  = (s) => escHtml(String(s ?? ''));
+        const lrSection = (letter, title, bodyHtml) => `
+            <div style="margin-bottom:.6rem;border:1px solid #1e2d3d;border-radius:6px;overflow:hidden">
+                <div style="background:#162030;padding:.3rem .6rem;display:flex;align-items:center;gap:.5rem">
+                    <span style="background:${c};color:#fff;font-size:.65rem;font-weight:700;
+                                 padding:1px 6px;border-radius:3px">${letter}</span>
+                    <span style="font-size:.78rem;font-weight:600;color:#cbd5e1">${title}</span>
+                </div>
+                <div style="padding:.45rem .65rem;font-size:.78rem">${bodyHtml}</div>
+            </div>`;
+        const row = (lbl, val) => val != null && val !== ''
+            ? `<div style="display:flex;gap:.5rem;margin:.15rem 0">
+                   <span style="color:#64748b;min-width:130px">${lbl}</span>
+                   <span style="color:#e2e8f0">${h(val)}</span>
+               </div>` : '';
+        const tbl = (headers, rows) => {
+            if (!rows || rows.length === 0) return '<em style="color:#475569">—</em>';
+            return `<table style="width:100%;border-collapse:collapse;font-size:.76rem;margin-top:.2rem">
+                <thead><tr>${headers.map(hd => `<th style="border-bottom:1px solid #1e2d3d;padding:2px 6px;text-align:left;color:#64748b">${hd}</th>`).join('')}</tr></thead>
+                <tbody>${rows.map(cells => `<tr>${cells.map(v => `<td style="padding:2px 6px;border-bottom:1px solid #0f1928;color:#cbd5e1">${h(v)}</td>`).join('')}</tr>`).join('')}</tbody>
+            </table>`;
+        };
+
+        let out = '';
+
+        // Header meta
+        out += `<div style="display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;margin-bottom:.55rem;font-size:.78rem">
+            ${row('DTG', p.dtg)}${row('Period', p.period_from && p.period_to ? `${p.period_from} → ${p.period_to}` : (p.period_from||''))}
+            ${row('Serial', p.serial)}${row('Higher HQ', p.higher_hq)}
+        </div>`;
+
+        // A – PERSTAT
+        const a = p.section_a || {};
+        out += lrSection('A', 'PERSTAT', [
+            row('Authorised', a.authorised), row('Present', a.present),
+            row('KIA', a.kia), row('WIA (evacuated)', a.wia_evacuated),
+            row('WIA (duty)', a.wia_duty), row('Missing', a.missing), row('Sick', a.sick),
+        ].join(''));
+
+        // B – Supply
+        const b = p.section_b || {};
+        const b1 = b.class_i || {};
+        const b3 = b.class_iii || {};
+        const b5rows = (b.class_v || []).map(r => [r.type, r.on_hand, r.consumption]);
+        const b8 = b.class_viii || {};
+        let bHtml = `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.25rem 0 .1rem">Class I — Rations</div>`;
+        bHtml += [row('DOS', b1.dos), row('Ration type', b1.ration_type), row('Water (L)', b1.water_litres)].join('');
+        bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class III — POL</div>`;
+        bHtml += [row('Diesel (L)', b3.diesel_litres), row('Petrol (L)', b3.petrol_litres), row('Avgas (L)', b3.avgas_litres)].join('');
+        bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class V — Ammunition</div>`;
+        bHtml += tbl(['Type', 'On Hand', 'Consumption'], b5rows);
+        bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class VIII — Medical</div>`;
+        bHtml += [row('Morphine auto-injectors', b8.morphine), row('Tourniquets', b8.tourniquets), row('IV bags', b8.iv_bags), row('Shortfalls', b8.shortfalls)].join('');
+        if (b.class_ix_shortfalls) bHtml += `<div style="font-size:.72rem;font-weight:600;color:#94a3b8;margin:.35rem 0 .1rem">Class IX — Spare Parts</div>${row('Shortfalls', b.class_ix_shortfalls)}`;
+        out += lrSection('B', 'Supply', bHtml);
+
+        // C – EQPSTAT
+        const erows = (p.section_c || []).map(r => [r.type, r.auth, r.on_hand, r.fmc, r.pmc, r.nmc]);
+        out += lrSection('C', 'EQPSTAT', tbl(['Type','AUTH','OH','FMC','PMC','NMC'], erows));
+
+        // D – Maintenance
+        const d = p.section_d || {};
+        out += lrSection('D', 'Maintenance', [
+            row('Open work orders', d.open_work_orders), row('Deadline equipment', d.deadline_equipment),
+            row('Parts awaiting', d.parts_awaiting),
+        ].join(''));
+
+        // E – Medical
+        const e = p.section_e || {};
+        out += lrSection('E', 'Medical', [
+            row('Evacuations (24h)', e.evacuations_24h),
+            row('Medic operational', e.medic_operational != null ? (e.medic_operational ? 'Yes' : 'No') : null),
+            row('Supplies critical', e.supplies_critical != null ? (e.supplies_critical ? 'Yes' : 'No') : null),
+            row('Note', e.note),
+        ].join(''));
+
+        // F – LOGREQ
+        const freqs = (p.section_f || []).map(r => [r.priority, r.item, r.quantity, r.eta]);
+        out += lrSection('F', 'LOGREQ', tbl(['Priority','Item','Quantity','ETA'], freqs));
+
+        // G – Assessment
+        const g = p.section_g || {};
+        const assessColors = { GREEN:'#22c55e', AMBER:'#f59e0b', RED:'#ef4444' };
+        const ac = assessColors[g.assessment] || c;
+        let gHtml = g.assessment
+            ? `<span style="background:${ac}22;color:${ac};border:1px solid ${ac};border-radius:4px;padding:2px 10px;font-weight:700;font-size:.82rem">${g.assessment}</span>`
+            : '';
+        if (g.remarks) gHtml += `<div style="margin-top:.35rem;color:#94a3b8">${h(g.remarks)}</div>`;
+        out += lrSection('G', 'Assessment', gHtml || '<em style="color:#475569">—</em>');
+
+        return out;
+    }
+
+    // ── Reports list ────────────────────────────────────────────────
+    const TYPE_COLORS = {
+        MEDEVAC:'#16a34a', CASEVAC:'#2563eb', CAS:'#dc2626',
+        CONTACT:'#d97706', SPOT:'#7c3aed', LOGREP:'#0ea5e9',
+        CBRN_1:'#fbbf24', CBRN_2:'#fbbf24', CBRN_3:'#f97316',
+        CBRN_4:'#fbbf24', CBRN_5:'#ef4444', CBRN_6:'#fbbf24',
+    };
+
+    // ── Tab switching ───────────────────────────────────────────────
+    window.showTab = function(name) {
+        document.querySelectorAll('.rep-tabpane').forEach(p => p.style.display = 'none');
+        document.querySelectorAll('.rep-tab').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + name).style.display = 'flex';
+        document.getElementById('tab-btn-' + name).classList.add('active');
+    };
+
+    // ── Stats strip ─────────────────────────────────────────────────
+    function renderStats(list) {
+        const counts = { RECEIVED: 0, ACKNOWLEDGED: 0, PROCESSED: 0, REJECTED: 0 };
+        list.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+        document.getElementById('stat-total').textContent     = list.length;
+        document.getElementById('stat-received').textContent  = counts.RECEIVED;
+        document.getElementById('stat-acked').textContent     = counts.ACKNOWLEDGED;
+        document.getElementById('stat-processed').textContent = counts.PROCESSED;
+        document.getElementById('stat-rejected').textContent  = counts.REJECTED;
+    }
+
+    // ── Type filter chips ────────────────────────────────────────────
+    function renderTypeFilterChips(list) {
+        const types = [...new Set(list.map(r => r.type))].sort();
+        const wrap = document.getElementById('type-filter-chips');
+        if (!wrap) return;
+        wrap.innerHTML = types.map(t => {
+            const col = TYPE_COLORS[t] || '#64748b';
+            const on  = activeTypeFilters.has(t) ? ' on' : '';
+            return `<span class="type-fchip${on}"
+                         style="background:${col}22;color:${col};border-color:${col}88"
+                         onclick="toggleTypeFilter('${t}')">${escHtml(t)}</span>`;
+        }).join('');
+    }
+
+    window.toggleTypeFilter = function(type) {
+        if (activeTypeFilters.has(type)) activeTypeFilters.delete(type);
+        else activeTypeFilters.add(type);
+        renderTypeFilterChips(allReports);
+        applyFilter();
+    };
+
+    // ── Status filter (stat chips) ───────────────────────────────────
+    window.filterByStatus = function(status) {
+        activeStatusFilter = status;
+        document.querySelectorAll('.stat-chip').forEach(c => c.classList.remove('active'));
+        const chipMap = { '':'stat-all', RECEIVED:'stat-recv', ACKNOWLEDGED:'stat-ack',
+                          PROCESSED:'stat-proc', REJECTED:'stat-rej' };
+        const el = document.getElementById(chipMap[status] || 'stat-all');
+        if (el) el.classList.add('active');
+        const sel = document.getElementById('status-filter');
+        if (sel) sel.value = status;
+        applyFilter();
+    };
+
+    // ── Combined search + type + status filter ───────────────────────
+    const applyFilter = window.applyFilter = function() {
+        const search = (document.getElementById('rep-search')?.value || '').toLowerCase();
+        const status = activeStatusFilter || (document.getElementById('status-filter')?.value || '');
+        let filtered = allReports;
+        if (status)                    filtered = filtered.filter(r => r.status === status);
+        if (activeTypeFilters.size > 0) filtered = filtered.filter(r => activeTypeFilters.has(r.type));
+        if (search) filtered = filtered.filter(r =>
+            r.type.toLowerCase().includes(search)
+            || (r.payload || '').toLowerCase().includes(search)
+            || (r.timestamp || '').includes(search));
+        renderTable(filtered);
+    };
+
+    // ── 9-liner renderer for MEDEVAC / CASEVAC ───────────────────────
+    // Handles BOTH the web-form format (line_1 … line_9 + label_N)
+    // and the Front desktop format (line1_location, line2_frequency …)
+    function renderMedevac9liner(p, c) {
+        const h = s => escHtml(String(s ?? ''));
+        const dlRow = (num, lbl, val) => val
+            ? `<div class="dl-grid">
+                   <span class="dl-num" style="color:${c}">${num}</span>
+                   <span class="dl-lbl">${h(lbl)}</span>
+                   <span class="dl-val">${h(val)}</span>
+               </div>` : '';
+
+        // Detect Front desktop payload (keys like line1_location)
+        if ('line1_location' in p || 'line2_frequency' in p) {
+            const l2 = [p.line2_frequency, p.line2_callsign, p.line2_suffix].filter(Boolean).join(' / ');
+            const l3 = [p.line3_precedence, p.line3_count ? p.line3_count + ' pat' : ''].filter(Boolean).join(' · ');
+            const l5 = [p.line5_litter   && p.line5_litter   + ' litter',
+                        p.line5_ambulatory && p.line5_ambulatory + ' ambulatory'].filter(Boolean).join(', ');
+            const l7 = [p.line7_marking, p.line7_color].filter(Boolean).join(' — ');
+            let html = [
+                dlRow(1, 'Location (PZ MGRS)',    p.line1_location),
+                dlRow(2, 'Radio / Call sign',      l2),
+                dlRow(3, 'Precedence / Count',     l3),
+                dlRow(4, 'Special equipment',      p.line4_equipment),
+                dlRow(5, 'Patients by type',       l5),
+                dlRow(6, 'Security at PZ',         p.line6_security),
+                dlRow(7, 'Marking / Colour',       l7),
+                dlRow(8, 'Nationality / Status',   p.line8_nationality),
+                dlRow(9, 'NBC contamination',      p.line9_nbc),
+            ].join('');
+            if (p.notes) html += `<div style="margin-top:.4rem;border-top:1px solid #1e2736;
+                padding-top:.35rem;color:#94a3b8;font-size:.78rem">
+                <strong style="color:#64748b">Notes:</strong> ${h(p.notes)}</div>`;
+            return html;
+        }
+
+        // Web-form format: line_1 … line_9
+        const MEDEVAC_LABELS = ['', 'Location (PZ)', 'Radio / Call sign', 'Patients by precedence',
+            'Special equipment', 'Patients by type', 'Security at PZ',
+            'Marking method', 'Nationality / Status', 'NBC contamination'];
+        return [1,2,3,4,5,6,7,8,9]
+            .filter(n => p[`line_${n}`])
+            .map(n => dlRow(n, p[`label_${n}`] || MEDEVAC_LABELS[n] || `Line ${n}`, p[`line_${n}`]))
+            .join('');
+    }
+
+    // ── Generic full-payload renderer ─────────────────────────────────
+    function renderGenericPayload(p, c) {
+        const h = s => escHtml(String(s ?? ''));
+        const rows = [];
+        // Numbered lines first (line_1 … or line1_xxx)
+        for (let n = 1; n <= 9; n++) {
+            const webKey   = `line_${n}`;
+            const webVal   = p[webKey];
+            if (webVal) {
+                rows.push(`<div class="dl-grid">
+                    <span class="dl-num" style="color:${c}">${n}</span>
+                    <span class="dl-lbl">${h(p[`label_${n}`] || `Line ${n}`)}</span>
+                    <span class="dl-val">${h(webVal)}</span>
+                </div>`);
+            }
+        }
+        // Any remaining non-internal keys
+        const skip = new Set(['label_1','label_2','label_3','label_4','label_5',
+                              'label_6','label_7','label_8','label_9',
+                              'line_5_lat','line_5_lon','latitude','longitude']);
+        Object.keys(p).filter(k =>
+            !k.startsWith('line_') && !skip.has(k) && p[k] !== '' && p[k] != null
+        ).forEach(k => {
+            const lbl = k.replace(/_/g,' ').replace(/\b\w/g, l => l.toUpperCase());
+            rows.push(`<div style="display:flex;gap:.5rem;font-size:.78rem;padding:.1rem 0">
+                <span style="color:#64748b;min-width:140px">${h(lbl)}</span>
+                <span style="color:#e2e8f0;font-family:monospace">${h(String(p[k]))}</span>
+            </div>`);
+        });
+        return rows.join('') || '<em style="color:#475569">No detail available</em>';
+    }
+
+    // ── Map zoom link ─────────────────────────────────────────────────
+    function mapZoomBtn(lat, lon, label) {
+        if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return '';
+        const url = `/map/?lat=${lat}&lon=${lon}&zoom=16`;
+        return `<a href="${url}" target="_blank"
+            style="display:inline-flex;align-items:center;gap:4px;margin-top:.4rem;
+                   padding:3px 10px;background:#1c2d3f;border:1px solid #1f6feb;
+                   color:#79c0ff;font-size:.72rem;border-radius:4px;text-decoration:none">
+            📍 View on Map${label ? ' · ' + escHtml(label) : ''}
+        </a>`;
+    }
+
+    // ── Build one report table row ───────────────────────────────────
+    function buildReportRow(rep) {
+        const c  = TYPE_COLORS[rep.type] || '#64748b';
+        const st = rep.status || 'RECEIVED';
+        const isCas     = rep.type === 'CAS';
+        const isMedEvac = rep.type === 'MEDEVAC' || rep.type === 'CASEVAC';
+        let line1 = '—', detail = '', foLabel = '—', mapBtn = '';
+        try {
+            const p = JSON.parse(rep.payload);
+
+            // ── Summary line (table cell) ──────────────────────────────
+            if (rep.type === 'LOGREP') {
+                const g = p.section_g || {}, a = p.section_a || {};
+                line1 = [g.assessment, a.present ? `Str: ${a.present}` : ''].filter(Boolean).join(' · ') || '—';
+            } else if (isCas) {
+                line1 = p.line_5_mgrs || p.line_5 || p.line_4 || '—';
+            } else if (isMedEvac) {
+                line1 = p.line1_location || p.line_1 || '—';
+            } else {
+                line1 = p.line_1 || p.line_3 || '—';
+            }
+            if (isCas && p.fo_callsign) foLabel = p.fo_callsign;
+
+            // ── Full detail ────────────────────────────────────────────
+            if (rep.type === 'LOGREP') {
+                detail = renderLogrep(p, c);
+            } else if (isMedEvac) {
+                detail = renderMedevac9liner(p, c);
+            } else if (isCas) {
+                detail = renderGenericPayload(p, c);
+                if (p.line_5_mgrs) detail += `<div style="margin-top:.35rem;font-size:.78rem;color:#fbbf24">
+                    📍 MGRS: <span style="font-family:monospace">${escHtml(p.line_5_mgrs)}</span></div>`;
+                if (p.fo_callsign) detail += `<div style="font-size:.78rem;color:#94a3b8;margin-top:.2rem">
+                    FO: <strong>${escHtml(p.fo_callsign)}</strong></div>`;
+            } else {
+                detail = renderGenericPayload(p, c);
+            }
+
+            // ── Map-zoom button ────────────────────────────────────────
+            const lat = parseFloat(p.latitude  || p.line_5_lat);
+            const lon = parseFloat(p.longitude || p.line_5_lon);
+            const mgrsHint = p.line1_location || p.line_5_mgrs || '';
+            mapBtn = mapZoomBtn(lat, lon, mgrsHint);
+            // Also try CAS target coordinates
+            if (!mapBtn && isCas && p.line_5_lat && p.line_5_lon)
+                mapBtn = mapZoomBtn(p.line_5_lat, p.line_5_lon, p.line_5_mgrs || '');
+
+        } catch(_){}
+
+        const ticBadge = (rep.tic || false)
+            ? `<span style="background:rgba(239,68,68,.2);color:#ef4444;font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:3px;border:1px solid #dc2626">TIC</span>`
+            : '<span style="color:#2a3142;font-size:.7rem">—</span>';
+
+        const note = rep.reviewer_note
+            ? `<div style="margin-top:.5rem;padding:.4rem .6rem;background:#1a2030;
+                           border-left:2px solid #34d399;border-radius:0 4px 4px 0;
+                           font-size:.78rem;color:#94a3b8">
+                   <strong style="color:#34d399">Review note:</strong> ${escHtml(rep.reviewer_note)}
+               </div>` : '';
+
+        const actionPanel = `
+            <div class="status-panel">
+                <h4>Update status</h4>
+                <textarea class="status-note" id="note-${rep.id}"
+                          placeholder="Optional note sent back to the operator…">${escHtml(rep.reviewer_note||'')}</textarea>
+                <div class="status-actions">
+                    <button class="btn-status btn-ack"
+                            onclick="updateStatus(${rep.id},'ACKNOWLEDGED')">✓ Acknowledge</button>
+                    <button class="btn-status btn-proc"
+                            onclick="updateStatus(${rep.id},'PROCESSED')">✔ Processed</button>
+                    <button class="btn-status btn-rej"
+                            onclick="updateStatus(${rep.id},'REJECTED')">✕ Reject</button>
+                    <span class="status-result" id="sr-${rep.id}"></span>
+                </div>
+            </div>`;
+
+        const routingPanel = rep.type === 'LOGREP' ? `
+            <div class="status-panel" style="border-color:#0ea5e9">
+                <h4 style="color:#0ea5e9">📦 Route LOGREP</h4>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px" id="route-dests-${rep.id}">
+                    ${['S1','S2','S3','S4','COY_A','COY_B','COY_C','COY_D'].map(d =>
+                        `<label style="display:flex;align-items:center;gap:3px;font-size:.75rem;cursor:pointer">
+                            <input type="checkbox" name="rdest" value="${d}" style="accent-color:#0ea5e9"> ${d}
+                        </label>`
+                    ).join('')}
+                </div>
+                <button class="btn-status" style="background:#0ea5e922;color:#0ea5e9;border-color:#0ea5e9"
+                        onclick="routeLogrep(${rep.id})">→ Route</button>
+                <span class="status-result" id="route-res-${rep.id}"></span>
+                <div id="route-status-${rep.id}" style="margin-top:6px"></div>
+            </div>` : '';
+
+        const feedbackPanel = rep.type === 'LOGREP' ? `
+            <div class="status-panel" style="border-color:#22c55e;margin-top:6px">
+                <h4 style="color:#22c55e">↩ Feedback / Action taken</h4>
+                <input id="feedback-dest-${rep.id}" placeholder="Destination (e.g. S4)"
+                       style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                              border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+                <input id="feedback-by-${rep.id}" placeholder="Your callsign"
+                       style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                              border-radius:4px;padding:4px 8px;font-size:.78rem;width:100%;margin-bottom:4px">
+                <textarea id="feedback-text-${rep.id}" rows="2"
+                          placeholder="Action taken / feedback…"
+                          style="background:#0d1117;border:1px solid #1e2d3d;color:#e2e8f0;
+                                 border-radius:4px;padding:4px 8px;font-size:.78rem;
+                                 width:100%;margin-bottom:4px;resize:vertical"></textarea>
+                <button class="btn-status" style="background:#22c55e22;color:#22c55e;border-color:#22c55e"
+                        onclick="submitLogrepFeedback(${rep.id})">Submit Feedback</button>
+                <span class="status-result" id="feedback-res-${rep.id}"></span>
+            </div>` : '';
+
+        return `<tr id="rep-row-${rep.id}">
+            <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
+            <td>${ticBadge}</td>
+            <td><span class="s-badge s-${st}">${st}</span></td>
+            <td style="color:#64748b;white-space:nowrap">${(rep.timestamp||'').slice(0,16).replace('T',' ')}</td>
+            <td style="color:#94a3b8;font-size:.78rem">${escHtml(foLabel)}</td>
+            <td style="font-family:monospace;font-size:0.82rem">${escHtml(line1)}</td>
+            <td>
+                <button onclick="toggleDetail(this)"
+                        style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
+                <div class="rep-detail" data-id="${rep.id}">
+                    ${detail}${mapBtn}${note}${actionPanel}${routingPanel}${feedbackPanel}
+                </div>
+            </td>
+        </tr>`;
+    }
+
+    // ── Render filtered rows into table body ─────────────────────────
+    function renderTable(list) {
+        const tbody = document.getElementById('reports-body');
+        tbody.innerHTML = list.map(buildReportRow).join('')
+            || '<tr><td colspan="7" style="color:#475569">No reports</td></tr>';
+    }
+
+    // ── Reports loader (fetch + refresh stats + filter) ──────────────
+    async function loadReports() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        allReports = await r.json();
+
+        const unreviewed = allReports.filter(rep => rep.status === 'RECEIVED').length;
+        const badge = document.getElementById('unreviewed-badge');
+        badge.style.display = unreviewed ? 'inline' : 'none';
+        badge.textContent   = unreviewed + ' new';
+
+        renderStats(allReports);
+        renderTypeFilterChips(allReports);
+        applyFilter();
+    }
+
+    window.updateStatus = async function(id, newStatus) {
+        const note   = document.getElementById(`note-${id}`)?.value || '';
+        const result = document.getElementById(`sr-${id}`);
+        if (result) result.textContent = 'Saving…';
+        const r = await api(`/reports/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus, reviewer_note: note }),
+        });
+        if (r.ok) {
+            if (result) result.textContent = `✓ Status set to ${newStatus}`;
+            loadReports();
+        } else {
+            const err = await r.json().catch(() => ({}));
+            if (result) result.textContent = `✗ ${err.detail || r.status}`;
+        }
+    };
+
+    window.toggleDetail = function(btn) {
+        const detail = btn.nextElementSibling;
+        const open   = detail.style.display === 'block';
+        detail.style.display = open ? 'none' : 'block';
+        btn.textContent = open ? '▼' : '▲';
+        if (!open) {
+            const id = parseInt(detail.dataset.id);
+            if (!isNaN(id)) loadLogrepRouting(id);
+        }
+    };
+
+    window.showReportDetail = function(id) {
+        document.querySelectorAll('.rep-detail').forEach(d => {
+            if (parseInt(d.dataset.id) === id) {
+                d.style.display = 'block';
+                d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+    };
+
+    window.routeLogrep = async function(repId) {
+        const wrap   = document.getElementById(`route-dests-${repId}`);
+        const result = document.getElementById(`route-res-${repId}`);
+        const dests  = Array.from(wrap.querySelectorAll('input[name="rdest"]:checked')).map(el => el.value);
+        if (!dests.length) { result.textContent = 'Select at least one destination'; return; }
+        result.textContent = 'Routing…'; result.style.color = '#94a3b8';
+        const r = await api(`/reports/${repId}/routing`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ destinations: dests }),
+        });
+        if (r.ok) {
+            result.textContent = `✓ Routed to ${dests.join(', ')}`;
+            result.style.color = '#0ea5e9';
+            loadLogrepRouting(repId);
+        } else {
+            result.textContent = `✗ Failed (${r.status})`;
+            result.style.color = '#ef4444';
+        }
+    };
+
+    window.submitLogrepFeedback = async function(repId) {
+        const dest    = document.getElementById(`feedback-dest-${repId}`)?.value?.trim().toUpperCase();
+        const by      = document.getElementById(`feedback-by-${repId}`)?.value?.trim();
+        const text    = document.getElementById(`feedback-text-${repId}`)?.value?.trim();
+        const result  = document.getElementById(`feedback-res-${repId}`);
+        if (!dest || !text) { result.textContent = 'Destination and feedback text are required'; return; }
+
+        // Find the route_id for this destination
+        const routesR = await api(`/reports/${repId}/routing`);
+        if (!routesR.ok) { result.textContent = '✗ Cannot load routing'; return; }
+        const routes = await routesR.json();
+        const route  = routes.find(ro => ro.destination === dest);
+        if (!route) { result.textContent = `✗ Destination ${dest} not in routing list — route it first`; return; }
+
+        result.textContent = 'Submitting…'; result.style.color = '#94a3b8';
+        const r = await api(`/reports/${repId}/routing/${route.id}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ feedback_text: text, feedback_by: by }),
+        });
+        if (r.ok) {
+            result.textContent = '✓ Feedback submitted';
+            result.style.color = '#22c55e';
+            loadLogrepRouting(repId);
+        } else {
+            result.textContent = `✗ Failed (${r.status})`;
+            result.style.color = '#ef4444';
+        }
+    };
+
+    async function loadLogrepRouting(repId) {
+        const wrap = document.getElementById(`route-status-${repId}`);
+        if (!wrap) return;
+        const r = await api(`/reports/${repId}/routing`);
+        if (!r.ok) return;
+        const routes = await r.json();
+        const statusColors = { PENDING:'#64748b', ACKNOWLEDGED:'#f59e0b', FEEDBACK:'#22c55e' };
+        wrap.innerHTML = routes.map(ro => {
+            const c = statusColors[ro.status] || '#64748b';
+            const fb = ro.feedback_text
+                ? `<div style="margin-top:2px;font-size:.72rem;color:#94a3b8">
+                       ↩ <strong style="color:${c}">${escHtml(ro.feedback_by||'?')}</strong>: ${escHtml(ro.feedback_text.slice(0,120))}
+                   </div>` : '';
+            return `<div style="border-left:2px solid ${c};padding:.2rem .5rem;margin:.2rem 0;font-size:.75rem">
+                <span style="color:${c};font-weight:700">${escHtml(ro.destination)}</span>
+                <span style="color:#475569;margin-left:6px">${ro.status}</span>
+                <span style="color:#334155;margin-left:6px">${(ro.routed_at||'').slice(11,16)}</span>
+                ${fb}
+            </div>`;
+        }).join('') || '<span style="color:#475569;font-size:.73rem">Not yet routed</span>';
+    }
+
+    // ── CAS capacity — sidebar compact view ────────────────────────
+    async function loadCasAssets() {
+        const r = await api('/cas/assets');
+        if (!r.ok) return;
+        casAssetsList = await r.json();
+        renderCasSidebar();
+    }
+    window.loadCasAssets = loadCasAssets;
+
+    const STATUS_COLORS = {
+        AVAILABLE:  '#22c55e', ON_STATION: '#60a5fa',
+        TASKED:     '#f87171', RTB:        '#fb923c',
+        UNAVAILABLE:'#64748b',
+    };
+
+    function renderCasSidebar() {
+        const list  = document.getElementById('cas-sidebar-list');
+        const count = document.getElementById('cas-sb-count');
+        if (!list) return;
+        const avail = casAssetsList.filter(a => a.status === 'AVAILABLE' || a.status === 'ON_STATION').length;
+        if (count) count.textContent = `${avail} avail`;
+
+        if (!casAssetsList.length) {
+            list.innerHTML = '<small style="color:#475569">No assets</small>';
+            return;
+        }
+        // Sort: available/on-station first
+        const sorted = [...casAssetsList].sort((a, b) => {
+            const rank = s => s === 'AVAILABLE' ? 0 : s === 'ON_STATION' ? 1 : 2;
+            return rank(a.status) - rank(b.status);
+        });
+        list.innerHTML = sorted.map(a => {
+            const col   = STATUS_COLORS[a.status] || '#64748b';
+            const dim   = (a.status === 'UNAVAILABLE' || a.status === 'TASKED') ? 'opacity:.5;' : '';
+            const fromStr = a.available_from ? new Date(a.available_from).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : null;
+            const toStr   = a.available_to   ? new Date(a.available_to).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})   : null;
+            const slot = (fromStr && toStr) ? `<div style="font-size:.67rem;color:#475569;margin-top:2px">🕐 ${escHtml(fromStr)}–${escHtml(toStr)}</div>` : '';
+            return `<div style="padding:.35rem .5rem;border-left:3px solid ${col};margin-bottom:3px;
+                                border-radius:0 4px 4px 0;background:#0e1217;${dim}">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <span style="font-weight:700;font-size:.8rem;color:#e2e8f0">${escHtml(a.callsign)}</span>
+                    <span style="font-size:.62rem;font-weight:700;color:${col}">${a.status.replace('_',' ')}</span>
+                </div>
+                ${a.aircraft_type ? `<div style="font-size:.72rem;color:#64748b">${escHtml(a.aircraft_type)}</div>` : ''}
+                ${slot}
+            </div>`;
+        }).join('');
+    }
+
+    // ── Operators list — for FO dropdown ───────────────────────────
+    async function loadOperators() {
+        const r = await api('/operators');
+        if (!r.ok) return;
+        operatorsList = await r.json();
+    }
+
+    // ── MGRS conversion (browser-side) ─────────────────────────────
+    // Simplified MGRS encode for display purposes only (mirrors MgrsConverter.kt).
+    function latLonToMgrs(lat, lon) {
+        const LAT_BANDS = 'CDEFGHJKLMNPQRSTUVWX';
+        const SET_COLS  = ['ABCDEFGH', 'JKLMNPQR', 'STUVWXYZ'];
+        const ROW_ODD   = 'ABCDEFGHJKLMNPQRSTUV';
+        const ROW_EVEN  = 'FGHJKLMNPQRSTUVABCDE';
+        const A = 6378137.0, F = 1/298.257223563, E2 = 2*F - F*F, K0 = 0.9996;
+        const E4 = E2*E2, E6 = E4*E2, EP2 = E2/(1-E2);
+        let zone = Math.floor((lon + 180) / 6) + 1;
+        // Norway/Svalbard corrections
+        if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) zone = 32;
+        if (lat >= 72 && lat < 84) {
+            if (lon < 9) zone = 31; else if (lon < 21) zone = 33;
+            else if (lon < 33) zone = 35; else if (lon < 42) zone = 37;
+        }
+        const band = LAT_BANDS[Math.min(19, Math.max(0, Math.floor((lat + 80) / 8)))];
+        const latR = lat * Math.PI/180, lonR = lon * Math.PI/180;
+        const lon0R = ((zone-1)*6 - 180 + 3) * Math.PI/180;
+        const sinLat = Math.sin(latR), cosLat = Math.cos(latR), tanLat = Math.tan(latR);
+        const n = A / Math.sqrt(1 - E2*sinLat**2);
+        const t = tanLat**2, c = EP2*cosLat**2, a = cosLat*(lonR - lon0R);
+        const m = A*((1-E2/4-3*E4/64-5*E6/256)*latR
+            - (3*E2/8+3*E4/32+45*E6/1024)*Math.sin(2*latR)
+            + (15*E4/256+45*E6/1024)*Math.sin(4*latR)
+            - (35*E6/3072)*Math.sin(6*latR));
+        let easting = K0*n*(a+(1-t+c)*a**3/6+(5-18*t+t*t+72*c-58*EP2)*a**5/120) + 500000;
+        let northing = K0*(m+n*tanLat*(a**2/2+(5-t+9*c+4*c*c)*a**4/24+(61-58*t+t*t+600*c-330*EP2)*a**6/720));
+        if (lat < 0) northing += 10000000;
+        const set = (zone-1) % 3;
+        const col = SET_COLS[set][Math.min(7, Math.max(0, Math.floor(easting/100000)-1))];
+        const row = (zone%2===1 ? ROW_ODD : ROW_EVEN)[Math.floor(northing/100000) % 20];
+        const eStr = String(Math.floor(easting  % 100000)).padStart(5,'0');
+        const nStr = String(Math.floor(northing % 100000)).padStart(5,'0');
+        return `${zone}${band}${col}${row} ${eStr}${nStr}`;
+    }
+
+    // ── WebSocket — live refresh when any report status changes ──────
+    function connectWS() {
+        const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
+        const ws    = new WebSocket(wsUrl);
+        ws.onmessage = ev => {
+            try {
+                const msg = JSON.parse(ev.data);
+                if (msg.channel === 'report') loadReports();
+                if (msg.channel === 'cas') {
+                    loadReports();
+                    loadCasAssets();
+                    if (currentType === 'CAS') renderCasForm();
+                }
+            } catch (_) {}
+        };
+        ws.onclose = () => setTimeout(connectWS, 3000);
+    }
+    connectWS();
+
+    function escHtml(s) {
+        return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escAttr(s) { return escHtml(s); }
+
+    // Load operators + assets before rendering so CAS dropdowns are populated
+    Promise.all([loadOperators(), loadCasAssets()]).then(() => {
+        renderForm();
+    });
+    loadReports();
+    setInterval(loadReports, 30000);
+    setInterval(loadCasAssets, 60000);
+})();
+</script>
+{% endblock %}

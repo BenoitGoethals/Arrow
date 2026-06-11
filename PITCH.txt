@@ -1,0 +1,289 @@
+================================================================================
+                                  A R R O W
+              Open situational awareness for the warfighter.
+                  Faster OODA. Fewer screens. No black boxes.
+================================================================================
+
+
+ONE LINE
+--------
+A TAK-class soldier system — operator GPS, MIL-STD-2525, full NATO five-
+paragraph OPORDs, tactical messaging, fires, alerts, drone spot reports,
+CBRN_1..6, and a CoT bridge — across Android, web AND a cross-platform
+.NET 10 desktop client. On a stack you can read, run and own.
+
+
+THE PROBLEM
+-----------
+Commercial situational-awareness suites — SitaWare, ATAK, KILSWITCH,
+Nett Warrior — solved the problem on paper a decade ago. In practice,
+units in the field still face four hard frictions:
+
+  Fragmentation.
+    The map app doesn't talk to the chat app doesn't talk to the fires
+    app doesn't talk to the operations order. Every cross-domain hand-
+    off is a screenshot or a verbal repeat over the net.
+
+  Closed ecosystems.
+    Vendor lock-in. Opaque protocols. Hardware you can't audit. License
+    counts that don't survive a battalion-sized rotation.
+
+  Slow OODA.
+    An OPORD lives in a PDF, a 9-Line in a radio call, a contact report
+    in a notebook. The "common operating picture" is rarely common and
+    rarely current.
+
+  Hard to interoperate.
+    ATAK speaks Cursor-on-Target. NATO speaks APP-11. Coalition partners
+    speak whatever they were issued. Bridging them is a project, not a
+    feature.
+
+
+WHAT ARROW IS
+-------------
+ARROW is a TAK-class situational-awareness platform, open and inspectable
+end-to-end, built on a clean three-tier architecture:
+
+  Backend  — FastAPI · JWT auth · SQLAlchemy/SQLite (Postgres-ready) ·
+             WebSocket pub/sub · REST.
+  Web      — Flask operational dashboard: Battle Captain / S-3 UI with
+             live tactical map, OPORD authoring, fire-mission FDC, photo
+             library, recordings, admin.
+  Android  — Jetpack Compose tactical client: OSMdroid map, MIL-STD-2525
+             symbology, foreground GPS tracking, encrypted media,
+             offline tiles, Cursor-on-Target bridge for ATAK interop.
+             Scales phone <-> tablet, landscape and portrait.
+  Desktop  — .NET 10 + Avalonia cross-platform client (macOS, Windows,
+             Linux). AOT-publishable. Mapsui tactical map, MIL-STD-2525
+             affiliation frames, same WebSocket realtime bus as Android.
+             MFA-aware login. Path-prefix-aware backend URL — works
+             behind reverse proxies out of the box.
+
+Every domain is a SOLID, pluggable module — auth, tracking, alerts,
+messaging, reports, fires, OPORDs, battle management, CoT, photos,
+streams.
+
+
+WHAT ARROW DOES TODAY
+---------------------
+A single, unified picture across operator -> squad -> section -> platoon
+-> company.
+
+  LIVE TRACKING
+    Every operator's GPS, online/offline, role-aware, 90-second heart-
+    beat, hierarchy-clustered.
+
+  MIL-STD-2525 SYMBOLOGY
+    Friendly blue, enemy red, neutral green, unknown yellow. Every
+    tactical control graphic (ATK_AXIS, COUNTERATTACK, DEF_AREA, AMBUSH,
+    BLOCK, BYPASS, WITHDRAW, FLOT/FLET, PHASE_LINE, OBJ_AREA, BOUNDARY)
+    drawable as either side, with NATO echelon designators.
+
+  OPORDs
+    Full five-paragraph NATO/US Operation Orders authored in the web
+    editor: Situation (OAKOC, CDS, DRAW-D, EMLCOA/EMDCOA, ASCOPE),
+    Mission, Execution (intent, CONOPS, tasks, CCIR, ROE, FSCM),
+    Sustainment (supply classes, EPW handling, CASEVAC/MEDEVAC),
+    Command & Signal (PACE plan, succession, challenge/password).
+
+    Map snapshots stitched server-side from OSM tiles with all tactical
+    overlays embedded. Exportable as PDF, sendable to specific
+    operators, readable on Android.
+
+  TACTICAL MESSAGING
+    Direct / group / broadcast chat with photo attachments. Persistent
+    left-side notification toast on web; auto-dismiss on system events.
+
+  REPORTS
+    Contact, spot, CASEVAC, MEDEVAC, CAS 9-Liners with reviewer
+    workflow. NATO CBRN 1–6 messages parseable from raw text.
+
+  FIRE MISSIONS
+    Call-for-fire with FDC dashboard. L16 81 mm mortar firing solutions
+    (charge, QE, deflection, TOF) computed live.
+
+  ALERTS
+    TIC / MEDICAL / EVAC / LOST_COMMS one-tap broadcast with audio +
+    visual escalation across every connected client.
+
+  DRONE SPOT REPORT
+    Structured drone observation in one tap: type (QUADCOPTER / FPV /
+    LOITERING_MUNITION / SHAHED-136 / MAVIC / ...), altitude, heading,
+    speed, behavior (HOVERING / ATTACK_RUN / RECONNAISSANCE / ...),
+    notes. Submits a DRONE_SPOT report AND raises a DRONE_SPOTTED
+    alert with distinctive drone-buzz tone and purple toast carrying
+    all detail. Available on Android via the radial menu and a
+    dedicated top-bar FAB (drops at current map centre, no tap needed).
+
+  CBRN
+    Full NATO STANAG 2103 / ATP-45 CBRN_1..6 message support. Parse
+    raw text uploads or submit structured payloads. Map renders
+    Zone I (immediate hazard radius) and Zone II (downwind sector)
+    overlays per incident.
+
+  MEASURE TOOL
+    Two-tap distance + initial-bearing (azimuth in degrees AND NATO
+    mils) between any two map points. Spherical-earth math, no extra
+    deps.
+
+  STREAMS
+    Operator camera -> company TOC: live MJPEG over WebSocket, optional
+    persisted recording, replayable.
+
+  COT BRIDGE
+    Cursor-on-Target XML in/out for ATAK interoperability.
+
+  SECURITY
+    JWT with auto-generated 256-bit secret. Account lockout. Optional
+    TOTP MFA. AES-256-GCM photo encryption at rest. Structured JSON
+    audit log aligned to NIST CSF 2.0 (DE.CM / GV.OV). Rate limiting.
+    CSP / X-Frame-Options. Redis-backed token revocation.
+
+
+WHAT MAKES IT DIFFERENT
+-----------------------
+
+  Single source of truth.
+    One in-process broadcaster fans every event — tracking update,
+    tactical object, alert, chat, report, OPORD, presence — to every
+    client. Swap for Redis/NATS without touching callers.
+
+  Open and auditable.
+    Pure Python + Kotlin + standard web stack. No black boxes.
+    124 backend tests passing. Read the code, run the tests, deploy
+    it.
+
+  Doctrinally honest.
+    OPORDs are real OPORDs. Symbols are real MIL-STD-2525. PACE plans
+    are real PACE. The platform speaks the operator's language, not a
+    vendor's.
+
+  Edge-tolerant.
+    OSM tile cache on disk. Offline-zone manifests. Foreground tracking
+    service that survives doze. WebSocket auto-reconnect with backoff.
+    In-memory token blacklist when Redis is down.
+
+  Cross-domain by design.
+    A contact report drops a marker, fires an alert, broadcasts on
+    chat, lands in history, can be cited in the next OPORD — without
+    any glue code.
+
+  Built for ROE.
+    Every action is gated: ADMIN, BATTLE_CAPTAIN, OPERATOR. Every event
+    is signed by a JWT subject. Every change is in the audit log.
+
+
+WHY IT MATTERS
+--------------
+A platoon leader with ARROW has ONE SCREEN to:
+
+  - see where her people are
+  - see what the enemy is doing
+  - read the OPORD that brought her here
+  - send the contact report
+  - call fires on the position
+  - mark the casualty
+  - stream the room she just cleared
+  - coordinate with the adjacent unit on chat
+
+— from the same phone, on the same battery, on the same JWT, with the
+same audit trail. No vendor in the loop. No license to expire. No data
+leaving her infrastructure.
+
+
+PROOF — OPERATION IRON ARDENNES
+-------------------------------
+The simulator drops a full battalion-minus laydown into the Belgian
+Ardennes — four company-level attack plans against four real villages,
+with live OPFOR shuffling under each objective:
+
+  A CO  ->  OBJ HAWK    at Bastogne              (attack E -> W)
+  B CO  ->  OBJ EAGLE   at Houffalize            (attack NE -> SW)
+  C CO  ->  OBJ FALCON  at La Roche-en-Ardenne   (attack W -> E)
+  D CO  ->  OBJ KITE    at Vielsalm              (attack N -> S)
+
+Each plan exercises every graphic in the palette — OBJ_AREA, ATK_AXIS
+(main + supporting), DEF_AREA, COUNTERATTACK, AMBUSH, BLOCK, BYPASS,
+WITHDRAW, FLOT, FLET, BOUNDARY, three phase lines — plus hostile MIL-STD-
+2525C units (T-72, ATGM, mortar, sniper, MANPADS, technical) and
+friendly POIs (CCP, BAS, LZ, AMMO, POL, HQ). OPFOR jitters every 25 s in
+real time so the picture moves.
+
+  116  tactical objects per scenario
+    4  Ardennes COY plans
+  124  backend tests passing
+   24  live OPFOR units
+
+
+PROOF — OPERATION REGNUM IGNIS
+------------------------------
+A second simulator drops a global NATO / Russia / China CBRN exchange
+across the past 12 hours — seven phases of escalation from initial
+chemical strikes through strategic warhead launches:
+
+  Phase I    RU chem on NATO Europe        (Brussels, Paris, Berlin...)
+  Phase II   CN chem/bio on NATO Pacific   (Yokosuka, Guam, Taipei...)
+  Phase III  NATO retaliates on RU C2      (Moscow, Sevastopol...)
+  Phase IV   NATO strikes CN ports         (Beijing, Shanghai...)
+  Phase V    RU radiological/N on NATO US  (Washington, Norfolk, PH)
+  Phase VI   Sino-Russian border           (Vladivostok, Urumqi)
+  Phase VII  Strategic N exchange          (capitals)
+
+Every strike emits a CBRN_4 STANAG 2103 report with structured payload
+(agent, serial, DTG, delivery, wind dir/speed, lat/lon, yield_kT) and
+broadcasts to every connected client. Map renders Zone I + Zone II
+hazard polygons; alerts feed lights up; web plays distinctive tones.
+
+   31  CBRN_4 strikes per run
+    3  factions
+    7  escalation phases
+    4  agent categories (C / B / R / N)
+   ~6  reproducible seeds (--seed for deterministic playthroughs)
+
+
+WHERE IT GOES NEXT
+------------------
+
+  Multi-domain interop
+    Full CoT 2.0, OGC GeoPackage, NATO ADatP-3, OpenC2.
+
+  Battlefield AI
+    Map snapshot -> automatic symbol recognition. Chat -> automatic
+    SITREP draft. Sensor fusion across operator feeds.
+
+  Federation
+    Mesh of company TOCs that gossip state without a central server —
+    disconnected ops, autonomous reconnect.
+
+  Coalition profile
+    Per-partner data partitions, ROE-aware sharing, automatic
+    redaction.
+
+  Hardware
+    Reference deployments on EUD, Samsung S25 Tactical Edition, Boxer-
+    class command vehicles.
+
+
+THE ASK
+-------
+
+  >  A pilot battalion.
+       Six weeks. One rotation. Real feedback.
+
+  >  A partner SI.
+       To harden the deployment story — Caddy, Kubernetes, FedRAMP.
+
+  >  A coalition exercise.
+       To prove CoT and APP-11 interop in the wild.
+
+Give us that, and we'll give you a situational-awareness platform your
+operators actually want to use — built in the open, owned by you, and
+ready for the next fight.
+
+
+--------------------------------------------------------------------------------
+  ARROW — situational awareness, by warfighters, for warfighters.
+  Faster OODA. Fewer screens. No black boxes.
+
+  https://github.com/BenoitGoethals/Arrow      benoit.goethals@gmail.com
+--------------------------------------------------------------------------------
