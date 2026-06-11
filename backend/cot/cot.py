@@ -324,7 +324,10 @@ def parse_medevac(xml: bytes | str) -> dict | None:
         "latitude": lat, "longitude": lon,
         "source":   "ATAK",
         "callsign": callsign,
-        "type":     "CASEVAC" if is_casevac else "MEDEVAC",
+        # Arrow records every ATAK 9-liner — CASEVAC or MEDEVAC — as a MEDEVAC
+        # report. The original ATAK form is preserved in `atak_form`.
+        "type":      "MEDEVAC",
+        "atak_form": "CASEVAC" if is_casevac else "MEDEVAC",
         "line_1": f"{lat:.5f}, {lon:.5f}",                 "label_1": "Location (PZ)",
         "line_2": " / ".join(x for x in (freq, callsign) if x), "label_2": "Radio / Call sign",
         "line_3": ", ".join(prec),                         "label_3": "Precedence",

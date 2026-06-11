@@ -23,5 +23,10 @@ loadMapReports/loadMapAlerts (sidebars), and MEDCOP `medcop.html` reads `/report
 rendering the 9-liner via `_nineliner` (supports `line_N`/`label_N` shape we emit).
 
 Report payload is broadcast as a JSON *string* so the web's `JSON.parse(msg.data.payload)` auto-zoom works.
-Shares the 9-liner vocabulary with [[project_cas_feature]]. Front/Android get the report+alert WS events
-through their generic handlers but have no MEDEVAC-specific visual yet.
+Shares the 9-liner vocabulary with [[project_cas_feature]].
+
+🚁 medevac-arrow marker on ALL three clients (driven by the `alert` event, type MEDEVAC/EVAC/MEDICAL):
+- web `map.html::handleAlertTriggered` — 🚁 divIcon on the pulsing alert group
+- front `map.html::addAlertMarker` — added MEDEVAC colour + 🚁 divIcon in a layerGroup (circle stays for pulse)
+- android `alerts/AlertMarker.kt` — added MEDEVAC colour + 🚁 glyph drawn on the disc (`circleIcon(..., medevac=true)`)
+Front/Android still have no MEDCOP-style 9-liner panel (web-only).

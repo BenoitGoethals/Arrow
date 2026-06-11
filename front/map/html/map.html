@@ -954,14 +954,21 @@ function addFireMission(fm){
 // ================================================================
 // ALERTS
 // ================================================================
-const ALERT_COLOR={TIC:'#f85149',MEDICAL:'#ff9e64',EVAC:'#ffa500',LOST_COMMS:'#d29922',DRONE_SPOTTED:'#d2a8ff'};
+const ALERT_COLOR={TIC:'#f85149',MEDICAL:'#ff9e64',MEDEVAC:'#22c55e',EVAC:'#ffa500',LOST_COMMS:'#d29922',DRONE_SPOTTED:'#d2a8ff'};
 function addAlertMarker(alert){
   if(alert.lat==null||alert.lon==null) return;
   const c=ALERT_COLOR[alert.type]||'#f85149';
-  const m=L.circleMarker([alert.lat,alert.lon],{radius:20,color:c,weight:3,fillColor:c,fillOpacity:.2}).bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px"><b style="color:${c}">${esc(alert.type)}</b><br>${esc(alert.operator||'')}<br><small style="color:#6e7681">${esc(alert.timestamp||'')}</small></div>`).addTo(LAYERS.alerts);
+  const circle=L.circleMarker([alert.lat,alert.lon],{radius:20,color:c,weight:3,fillColor:c,fillOpacity:.2}).bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px"><b style="color:${c}">${esc(alert.type)}</b><br>${esc(alert.operator||'')}<br><small style="color:#6e7681">${esc(alert.timestamp||'')}</small></div>`);
+  // MEDEVAC / EVAC → 🚁 medevac arrow at the casualty grid
+  let layer=circle;
+  if(['MEDEVAC','EVAC','MEDICAL'].includes(alert.type)){
+    const heli=L.marker([alert.lat,alert.lon],{interactive:false,icon:L.divIcon({className:'',html:`<div style="font-size:22px;line-height:1;filter:drop-shadow(0 0 3px ${c})">🚁</div>`,iconSize:[22,22],iconAnchor:[11,-4]})});
+    layer=L.layerGroup([circle,heli]);
+  }
+  layer.addTo(LAYERS.alerts);
   if(alertMarkers[alert.id]) LAYERS.alerts.removeLayer(alertMarkers[alert.id]);
-  alertMarkers[alert.id]=m;
-  let n=0;const iv=setInterval(()=>{m.setStyle({fillOpacity:n%2===0?.05:.35});if(++n>16){clearInterval(iv);m.setStyle({fillOpacity:.2});}},450);
+  alertMarkers[alert.id]=layer;
+  let n=0;const iv=setInterval(()=>{circle.setStyle({fillOpacity:n%2===0?.05:.35});if(++n>16){clearInterval(iv);circle.setStyle({fillOpacity:.2});}},450);
 }
 
 // ================================================================
