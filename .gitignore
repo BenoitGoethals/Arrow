@@ -205,3 +205,15 @@ maps/*.mbtiles
 .arrow_sim_tokens.json
 Caddyfile.active
 /grafenwoehr.mbtiles
+
+# Large data sources and map-generation tools — too big for git
+data/sources/
+data/tile_weights.tsv.gz
+planetiler.jar
+
+# Runtime-generated binary data
+data/photos/
+data/streams/
+
+# macOS
+.DS_Store
