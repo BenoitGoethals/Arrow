@@ -11,6 +11,8 @@ services:
     # The backend is reachable within Docker as backend:6001.
     expose:
       - "6001"
+    ports:
+      - "8087:8087"   # CoT TCP — ATAK devices connect here directly
     environment:
       # ARROW_JWT_SECRET: ""    # set a 64-char hex secret here or in .env for production
       #                         # if unset, a random secret is auto-generated on first boot
@@ -103,6 +105,33 @@ services:
       driver: json-file
       options:
         max-size: "10m"
+        max-file: "3"
+
+  # ── TAK Bridge (CoT/ATAK ↔ Arrow sync) ──────────────────────────────────────
+  tak-bridge:
+    build:
+      context: .
+      dockerfile: backend.dockerfile    # reuses same Python image
+    image: arrow-backend
+    container_name: arrow-tak-bridge
+    command: ["uv", "run", "tak-bridge"]
+    ports:
+      - "8087:8087"   # CoT TCP server — ATAK devices connect here
+      - "8099:8099"   # TAK bridge REST API
+    environment:
+      ARROW_DATABASE_URL: sqlite:////app/data/arrow.db
+      ARROW_JSON_LOGS: "1"
+    volumes:
+      - arrow-data:/app/data
+      - ./config.xml:/app/config.xml:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
         max-file: "3"
 
   # ── Automated backup ─────────────────────────────────────────────────────────

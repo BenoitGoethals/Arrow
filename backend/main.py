@@ -167,9 +167,14 @@ async def lifespan(app: FastAPI):
     from backend.mumble.monitor import monitor as _mumble_monitor
     _mumble_monitor.load_config()
 
+    # Native CoT TCP server — ATAK devices connect directly on port 8087
+    from backend.cot import tcp_server as _cot_tcp
+    await _cot_tcp.start()
+
     yield
 
-    # Graceful Mumble shutdown
+    # Graceful shutdown
+    await _cot_tcp.stop()
     _mumble_monitor.stop()
 
 
