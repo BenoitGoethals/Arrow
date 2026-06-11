@@ -204,3 +204,4 @@ maps/*.mbtiles
 # Simulator local JWT cache — never commit live tokens.
 .arrow_sim_tokens.json
 Caddyfile.active
+/grafenwoehr.mbtiles

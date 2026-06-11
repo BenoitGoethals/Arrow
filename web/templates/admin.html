@@ -153,6 +153,9 @@ main { padding: 0; }
     <h4>Operations</h4>
     <button class="nav-btn" onclick="show('strike-packages',this)"><span class="ico">⚡</span> Strike Packages</button>
 
+    <h4>Interoperability</h4>
+    <button class="nav-btn" onclick="show('tak',this)"><span class="ico">📡</span> TAK / ATAK</button>
+
     <h4>System</h4>
     <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
     <button class="nav-btn" onclick="show('octopus',this)"><span class="ico">⏺</span> Octopus</button>
@@ -401,6 +404,7 @@ main { padding: 0; }
             case 'maps':      main.innerHTML = ''; renderMaps(main); break;
             case 'octopus':         main.innerHTML = ''; renderOctopus(main); break;
             case 'strike-packages': main.innerHTML = ''; renderStrikePackages(main); break;
+            case 'tak':             main.innerHTML = ''; renderTak(main); break;
         }
     }
 
@@ -2118,6 +2122,241 @@ main { padding: 0; }
 
     // Boot
     loadAll().then(() => renderOverview(document.getElementById('adm-main')));
+
+  // ── TAK / ATAK admin ───────────────────────────────────────────────────────
+  let _takRefreshTimer = null;
+
+  async function renderTak(el) {
+    const [status, cfg] = await Promise.all([
+      api('/cot/tcp/status').then(r => r.ok ? r.json() : null),
+      api('/cot/tcp/config').then(r => r.ok ? r.json() : {}),
+    ]);
+    if (!status) { el.innerHTML = '<p style="color:#ef4444">Could not reach CoT TCP status endpoint.</p>'; return; }
+
+    const run   = status.running;
+    const dotEl = run ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>';
+    const runBadge = run
+      ? '<span class="badge badge-ok" style="font-size:.75rem">RUNNING</span>'
+      : '<span class="badge badge-err" style="font-size:.75rem">STOPPED</span>';
+
+    el.innerHTML = `
+    <div class="sec-header">
+      <h2>📡 TAK / ATAK Integration</h2>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-ghost" onclick="refreshTak()">↻ Refresh</button>
+        <button class="btn btn-${run ? 'ghost' : 'primary'}" onclick="takRestart()">
+          ↺ ${run ? 'Restart server' : 'Start server'}
+        </button>
+      </div>
+    </div>
+
+    <div class="stat-grid" style="margin-bottom:1.5rem">
+      <div class="stat-card">
+        <div class="val" style="font-size:1.3rem">${dotEl} ${runBadge}</div>
+        <div class="lbl">TCP server</div>
+      </div>
+      <div class="stat-card">
+        <div class="val">${status.port}</div>
+        <div class="lbl">Listening port</div>
+      </div>
+      <div class="stat-card ${status.connected > 0 ? '' : 'warn'}">
+        <div class="val">${status.connected}</div>
+        <div class="lbl">ATAK clients live</div>
+      </div>
+      <div class="stat-card">
+        <div class="val">${status.total_connections || 0}</div>
+        <div class="lbl">Total connections</div>
+      </div>
+      <div class="stat-card">
+        <div class="val">${status.total_rx || 0}</div>
+        <div class="lbl">CoT msgs received</div>
+      </div>
+      <div class="stat-card">
+        <div class="val">${status.total_tx || 0}</div>
+        <div class="lbl">CoT msgs sent</div>
+      </div>
+    </div>
+
+    <!-- ATAK connection instructions -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>How to connect ATAK</h3>
+      <div style="padding:1rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;font-size:.85rem">
+        <div>
+          <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem">Server address</div>
+          <div style="font-family:monospace;font-size:1rem;color:#34d399;letter-spacing:.05em">${location.hostname}</div>
+        </div>
+        <div>
+          <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem">Port</div>
+          <div style="font-family:monospace;font-size:1rem;color:#34d399">${status.port}</div>
+        </div>
+        <div>
+          <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem">Protocol</div>
+          <div style="font-family:monospace">TCP (plain)</div>
+        </div>
+        <div>
+          <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem">In ATAK</div>
+          <div style="color:#94a3b8;font-size:.78rem;line-height:1.4">Settings → Network<br>→ TAK Servers → + Add</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Connected ATAK devices -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>Connected ATAK Devices <span style="color:#475569;font-weight:400">(${(status.clients||[]).length})</span></h3>
+      ${!(status.clients||[]).length
+        ? `<p style="padding:.75rem 1rem;color:#475569;font-size:.85rem;margin:0">No ATAK devices currently connected.</p>`
+        : `<table class="adm-table">
+            <thead><tr>
+              <th></th><th>Callsign</th><th>IP</th><th>CoT type</th>
+              <th>Position</th><th>Platform</th><th>Rx</th><th>Tx</th><th>Age</th>
+            </tr></thead>
+            <tbody>${(status.clients||[]).map(c => `
+              <tr>
+                <td><span class="dot-online"></span></td>
+                <td><b>${_e(c.callsign||'—')}</b></td>
+                <td style="font-family:monospace;font-size:.78rem">${_e(c.ip)}:${c.port}</td>
+                <td><code style="font-size:.75rem;color:#94a3b8">${_e(c.cot_type||'—')}</code></td>
+                <td style="font-size:.78rem;color:#94a3b8">
+                  ${c.last_lat ? c.last_lat.toFixed(4)+'N&nbsp;'+c.last_lon.toFixed(4)+'E' : '—'}
+                </td>
+                <td style="font-size:.78rem;color:#64748b">${_e(c.platform||'ATAK')}</td>
+                <td>${c.rx_count}</td>
+                <td>${c.tx_count}</td>
+                <td style="font-size:.78rem;color:#64748b">${c.connected_ago_s}s</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>`}
+    </div>
+
+    <!-- Foreign CoT tracks on map -->
+    <div id="tak-tracks"></div>
+
+    <!-- CoT TCP server config -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>CoT TCP Server</h3>
+      <div style="padding:.75rem 1rem 1rem;display:grid;grid-template-columns:1fr 1fr;gap:.9rem">
+        <div class="field" style="margin:0">
+          <label>Listen host</label>
+          <input id="tak-cfg-host" class="adm-input" value="${_e(cfg.host||'0.0.0.0')}" placeholder="0.0.0.0"/>
+        </div>
+        <div class="field" style="margin:0">
+          <label>Listen port</label>
+          <input id="tak-cfg-port" type="number" class="adm-input" value="${cfg.port||8087}" min="1024" max="65535"/>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;grid-column:1/-1">
+          <input type="checkbox" id="tak-cfg-enabled" ${cfg.enabled!==false ? 'checked' : ''} style="width:15px;height:15px"/>
+          <label for="tak-cfg-enabled" style="font-size:.85rem;color:#e2e8f0;cursor:pointer">Server enabled on startup</label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upstream TAK server -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>Upstream TAK Server <span style="color:#475569;font-size:.75rem;font-weight:400">— optional relay to FreeTAKServer / TAKServer</span></h3>
+      <div style="padding:.75rem 1rem 1rem;display:grid;grid-template-columns:2fr 1fr auto;gap:.9rem;align-items:end">
+        <div class="field" style="margin:0">
+          <label>Host</label>
+          <input id="tak-up-host" class="adm-input" value="${_e(cfg.tak_host||'')}" placeholder="192.168.1.100 or fts.example.com"/>
+        </div>
+        <div class="field" style="margin:0">
+          <label>Port</label>
+          <input id="tak-up-port" type="number" class="adm-input" value="${cfg.tak_port||8087}" min="1" max="65535"/>
+        </div>
+        <div style="display:flex;align-items:center;gap:.4rem;padding-bottom:.1rem">
+          <input type="checkbox" id="tak-up-ssl" ${cfg.tak_ssl ? 'checked' : ''} style="width:15px;height:15px"/>
+          <label for="tak-up-ssl" style="font-size:.85rem;color:#e2e8f0;cursor:pointer;white-space:nowrap">SSL / TLS</label>
+        </div>
+      </div>
+    </div>
+
+    <div id="tak-save-msg" style="min-height:1.4rem;font-size:.85rem;color:#34d399;margin-bottom:.6rem"></div>
+    <div style="display:flex;gap:.75rem">
+      <button class="btn btn-primary" onclick="saveTakCfg()">💾 Save</button>
+      <button class="btn btn-ghost"   onclick="takRestart()">↺ Apply &amp; restart</button>
+    </div>`;
+
+    loadTakTracks();
+    clearInterval(_takRefreshTimer);
+    _takRefreshTimer = setInterval(() => {
+      if (document.getElementById('tak-tracks')) refreshTak();
+      else clearInterval(_takRefreshTimer);
+    }, 5000);
+  }
+
+  async function refreshTak() {
+    const el = document.getElementById('adm-main');
+    if (el) renderTak(el);
+  }
+
+  async function loadTakTracks() {
+    const el = document.getElementById('tak-tracks');
+    if (!el) return;
+    const tracks = await api('/cot/tracks').then(r => r.ok ? r.json() : []);
+    if (!tracks.length) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>Foreign CoT Tracks on Map <span style="color:#475569;font-weight:400">(${tracks.length})</span></h3>
+      <table class="adm-table">
+        <thead><tr>
+          <th>UID</th><th>Callsign</th><th>Type</th>
+          <th>Position</th><th>Speed</th><th>Last seen</th><th></th>
+        </tr></thead>
+        <tbody>${tracks.map(t => `
+          <tr>
+            <td style="font-family:monospace;font-size:.72rem;color:#475569">${_e(t.cot_uid)}</td>
+            <td><b>${_e(t.callsign)}</b></td>
+            <td><code style="font-size:.72rem;color:#94a3b8">${_e(t.cot_type)}</code></td>
+            <td style="font-size:.78rem;color:#94a3b8">
+              ${t.latitude ? t.latitude.toFixed(4)+'N '+t.longitude.toFixed(4)+'E' : '—'}
+            </td>
+            <td style="font-size:.78rem">${t.speed ? t.speed.toFixed(1)+' m/s' : '—'}</td>
+            <td style="font-size:.78rem;color:#64748b">${t.last_seen ? t.last_seen.split('T')[1].slice(0,8)+'Z' : '—'}</td>
+            <td>
+              <button class="btn btn-danger btn-sm" onclick="delTrack(${t.id})">✕</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  window.delTrack = async function(id) {
+    if (!confirm('Remove this CoT track from the map?')) return;
+    await api(`/cot/tracks/${id}`, { method: 'DELETE' });
+    loadTakTracks();
+  };
+
+  window.saveTakCfg = async function() {
+    const msg = document.getElementById('tak-save-msg');
+    msg.textContent = 'Saving…'; msg.style.color = '#94a3b8';
+    const r = await api('/cot/tcp/config', { method:'PUT', body: JSON.stringify({
+      host:     document.getElementById('tak-cfg-host').value.trim(),
+      port:     parseInt(document.getElementById('tak-cfg-port').value),
+      enabled:  document.getElementById('tak-cfg-enabled').checked,
+      tak_host: document.getElementById('tak-up-host').value.trim(),
+      tak_port: parseInt(document.getElementById('tak-up-port').value),
+      tak_ssl:  document.getElementById('tak-up-ssl').checked,
+    }) });
+    msg.style.color = r.ok ? '#34d399' : '#ef4444';
+    msg.textContent = r.ok ? '✓ Saved — click Apply & restart to activate' : `Save failed (${r.status})`;
+  };
+
+  window.takRestart = async function() {
+    const msg = document.getElementById('tak-save-msg');
+    if (msg) { msg.style.color='#94a3b8'; msg.textContent='Restarting…'; }
+    const r = await api('/cot/tcp/restart', { method:'POST' });
+    if (r.ok) {
+      const s = await r.json();
+      if (msg) { msg.style.color='#34d399'; msg.textContent=`✓ Server ${s.running?'started on port '+s.port:'stopped'}`; }
+      setTimeout(refreshTak, 800);
+    }
+  };
+
+  function _e(s) {
+    if (typeof s !== 'string') return String(s ?? '');
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
 })();
 </script>
 {% endblock %}

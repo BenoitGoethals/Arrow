@@ -65,6 +65,11 @@ async def update_position(
             },
         }
     )
+
+    # Push live position to all connected ATAK devices over TCP CoT
+    from backend.cot.tcp_server import broadcast_operator_cot
+    await broadcast_operator_cot(current)
+
     return current
 
 
