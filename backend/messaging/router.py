@@ -75,4 +75,9 @@ async def send_message(
         "mission_id": msg.mission_id,
         "data": MessageOut.model_validate(msg).model_dump(mode="json"),
     })
+
+    # Bridge to ATAK GeoChat so ATAK operators see Arrow chat (two-way bridge).
+    from backend.cot.tcp_server import broadcast_chat_to_atak
+    await broadcast_chat_to_atak(msg, current)
+
     return msg

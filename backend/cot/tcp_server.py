@@ -17,9 +17,12 @@ from pathlib import Path
 
 from lxml import etree
 
-from backend.cot.cot import CotEvent, cot_type_to_sidc, parse_cot, parse_medevac, role_to_cot_type
+from backend.cot.cot import (
+    ALL_CHAT_ROOMS, CotEvent, build_geochat, cot_type_to_sidc, is_arrow_geochat,
+    parse_cot, parse_geochat, parse_medevac, role_to_cot_type,
+)
 from backend.storage.database import SessionLocal
-from backend.storage.models import Alert, CotTrack, Operator, Report
+from backend.storage.models import Alert, CotTrack, Message, Operator, Report
 from backend.websocket.manager import broadcaster
 
 log = logging.getLogger("backend.cot.tcp")
@@ -209,6 +212,14 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
         await _Pool.broadcast(raw, exclude=sender_uid)
         return
 
+    # ATAK GeoChat → Arrow chat message. Relay to other ATAK clients too.
+    chat = parse_geochat(raw)
+    if chat is not None:
+        if not is_arrow_geochat(chat):   # ignore our own outbound echoed back
+            await _handle_geochat(chat)
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
     with SessionLocal() as db:
         op: Operator | None = None
         if evt.callsign:
@@ -334,6 +345,72 @@ async def _handle_medevac(med: dict) -> None:
     })
     log.info("ATAK %s from %s at %s,%s → report#%s alert#%s",
              rtype, callsign, lat, lon, rep_id, al_id)
+
+
+# ── Chat bridge (ATAK GeoChat ↔ Arrow messaging) ──────────────────────────────
+
+async def _handle_geochat(chat: dict) -> None:
+    """Persist an inbound ATAK GeoChat as an Arrow Message + broadcast on `chat`."""
+    from backend.api.schemas import MessageOut
+
+    room = chat.get("chatroom") or ALL_CHAT_ROOMS
+    is_broadcast = room.strip().lower() == ALL_CHAT_ROOMS.lower()
+
+    with SessionLocal() as db:
+        sender_id = _resolve_operator_id(db, chat.get("sender_callsign"))
+        if sender_id is None:
+            log.warning("GeoChat dropped: no operators exist to attribute it to")
+            return
+        msg = Message(
+            sender_id=sender_id,
+            content=chat["text"],
+            message_type="BROADCAST" if is_broadcast else "GROUP",
+            group_id=None if is_broadcast else room,
+        )
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+        data = MessageOut.model_validate(msg).model_dump(mode="json")
+        mid  = msg.mission_id
+
+    # Surface the original ATAK callsign + source so clients can label it even
+    # when the sender isn't a registered operator (sender_id is a fallback then).
+    data["sender_callsign"] = chat.get("sender_callsign")
+    data["source"] = "ATAK"
+    await broadcaster.broadcast({
+        "channel": "chat", "event": "message", "mission_id": mid, "data": data,
+    })
+    log.info("ATAK GeoChat from %s in '%s': %.40s",
+             chat.get("sender_callsign"), room, chat["text"])
+
+
+async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
+    """Forward an Arrow chat message to connected ATAK clients as GeoChat.
+
+    BROADCAST / group chat goes to the shared "All Chat Rooms"; a DIRECT message
+    is routed privately to the recipient's callsign room. Called by the messaging
+    router after it persists + broadcasts on the `chat` channel.
+    """
+    if _Pool.count() == 0:
+        return
+
+    room = ALL_CHAT_ROOMS
+    recipient_uid: str | None = None
+    if msg.message_type == "DIRECT":
+        if not msg.receiver_id:
+            return  # private message with no addressable recipient
+        with SessionLocal() as db:
+            rcv = db.get(Operator, msg.receiver_id)
+        if rcv is None:
+            return
+        room = rcv.callsign
+        recipient_uid = f"ARROW.{rcv.callsign}"
+
+    cot = build_geochat(
+        sender_callsign=sender.callsign, text=msg.content,
+        room=room, recipient_uid=recipient_uid,
+    )
+    await _Pool.broadcast(cot)
 
 
 # ── Per-client handler ────────────────────────────────────────────────────────

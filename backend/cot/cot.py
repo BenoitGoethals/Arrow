@@ -23,6 +23,7 @@ MIL-STD-2525C SIDC ↔ CoT type mapping is symmetrical (see tables below).
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
@@ -340,3 +341,98 @@ def parse_medevac(xml: bytes | str) -> dict | None:
         "notes":  title,
         "raw":    attrs,
     }
+
+
+# ── ATAK GeoChat ──────────────────────────────────────────────────────────────
+# ATAK chat rides on a CoT event of type "b-t-f" carrying a <detail><__chat>
+# element + a <remarks> element holding the message text. The shared broadcast
+# room is "All Chat Rooms"; direct messages use the recipient's callsign as room.
+
+ALL_CHAT_ROOMS = "All Chat Rooms"
+# Arrow-originated GeoChat is tagged so we never re-ingest our own echo.
+_GEOCHAT_SOURCE = "Arrow"
+_GEOCHAT_UID_PREFIX = "GeoChat.ARROW."
+
+
+def parse_geochat(xml: bytes | str) -> dict | None:
+    """Parse an ATAK GeoChat CoT into ``{sender_callsign, text, chatroom, ...}``.
+
+    Returns ``None`` if the frame is not a GeoChat message or carries no text.
+    """
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+
+    chat     = root.find("detail/__chat")
+    cot_type = root.get("type", "")
+    if chat is None and not cot_type.startswith("b-t-f"):
+        return None
+
+    remarks = root.find("detail/remarks")
+    text = (remarks.text or "").strip() if remarks is not None else ""
+    if not text:
+        return None
+
+    chatgrp    = root.find("detail/__chat/chatgrp")
+    sender_uid = (chatgrp.get("uid0", "") if chatgrp is not None else "") or root.get("uid", "")
+    sender_cs  = (chat.get("senderCallsign", "") if chat is not None else "") or sender_uid or "ATAK"
+    chatroom   = (chat.get("chatroom", "") if chat is not None else "") or ALL_CHAT_ROOMS
+    source     = remarks.get("source", "") if remarks is not None else ""
+
+    return {
+        "sender_callsign": sender_cs,
+        "sender_uid":      sender_uid,
+        "text":            text,
+        "chatroom":        chatroom,
+        "source":          source,
+        "uid":             root.get("uid", ""),
+    }
+
+
+def is_arrow_geochat(chat: dict) -> bool:
+    """True if a parsed GeoChat originated from Arrow (our own echo)."""
+    return str(chat.get("source", "")).startswith(_GEOCHAT_SOURCE) \
+        or str(chat.get("uid", "")).startswith(_GEOCHAT_UID_PREFIX)
+
+
+def build_geochat(
+    *,
+    sender_callsign: str,
+    text: str,
+    room: str = ALL_CHAT_ROOMS,
+    recipient_uid: str | None = None,
+    time: datetime | None = None,
+) -> bytes:
+    """Build an ATAK GeoChat CoT for an Arrow chat message."""
+    now   = time or datetime.now(timezone.utc)
+    stale = now + timedelta(seconds=STALE_SECONDS["neutral"])
+    ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    ss    = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
+    msg_id     = str(uuid.uuid4())
+    sender_uid = f"ARROW.{sender_callsign}"
+    room_id    = room
+    uid        = f"{_GEOCHAT_UID_PREFIX}{sender_callsign}.{room_id}.{msg_id}"
+
+    event = etree.Element(
+        "event", version="2.0", uid=uid, type="b-t-f",
+        how="h-g-i-g-o", time=ts, start=ts, stale=ss,
+    )
+    etree.SubElement(event, "point", lat="0.0", lon="0.0", hae="0.0",
+                     ce="9999999.0", le="9999999.0")
+    detail = etree.SubElement(event, "detail")
+    chat = etree.SubElement(
+        detail, "__chat", parent="RootContactGroup", groupOwner="false",
+        messageId=msg_id, chatroom=room, id=room_id, senderCallsign=sender_callsign,
+    )
+    etree.SubElement(chat, "chatgrp", uid0=sender_uid,
+                     uid1=(recipient_uid or room_id), id=room_id)
+    etree.SubElement(detail, "link", uid=sender_uid, type="a-f-G-U-C", relation="p-p")
+    rem = etree.SubElement(detail, "remarks",
+                           source=f"{_GEOCHAT_SOURCE}.{sender_callsign}", to=room_id, time=ts)
+    rem.text = text
+    etree.SubElement(detail, "__serverdestination", destinations="")
+    return etree.tostring(event, xml_declaration=True, encoding="UTF-8")
