@@ -35,6 +35,7 @@ def _operator_dict(op: Operator, online: bool) -> dict:
         "online": online,
         "latitude": op.latitude,
         "longitude": op.longitude,
+        "position_source": op.position_source,
     }
 
 

@@ -1034,9 +1034,16 @@
         // Other operators — NATO mil-symbol (cached)
         const sidc = op.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
         const s = msSvg(sidc, 28);
+        // Tag operators whose last fix came from an ATAK device.
+        const atakBadge = op.position_source === 'ATAK'
+            ? `<div style="position:absolute;top:-4px;right:-6px;background:#7c3aed;color:#fff;
+                          font-size:8px;font-weight:700;line-height:1;padding:1px 3px;border-radius:3px;
+                          border:1px solid #0d1117;letter-spacing:.04em;font-family:monospace"
+                     title="Position from ATAK device">ATAK</div>`
+            : '';
         return L.divIcon({
             className: 'op-icon' + (op.online ? '' : ' offline'),
-            html: `<div style="opacity:${op.online ? 1 : 0.45}">${s.svg}</div>`,
+            html: `<div style="position:relative;opacity:${op.online ? 1 : 0.45}">${s.svg}${atakBadge}</div>`,
             iconSize: [s.w, s.h], iconAnchor: [s.ax, s.ay],
         });
     }
@@ -1163,7 +1170,9 @@
                ${op.rank} · ${op.role}<br/>
                ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`
             : `<b>${op.callsign}</b><br/>${op.rank} · ${op.role}<br/>
-               ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`;
+               ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`
+               + (op.position_source === 'ATAK'
+                    ? `<br/><span style="color:#a78bfa">📡 ATAK device</span>` : '');
         if (existing) {
             existing.setLatLng([op.latitude, op.longitude]);
             existing.setIcon(icon);
@@ -4610,6 +4619,18 @@
         const ring = L.circleMarker([d.latitude, d.longitude], {
             color: colour, fill: false, radius: 16, weight: 3, opacity: 1,
         }).addTo(grp);
+        // MEDEVAC / EVAC → drop a 🚁 medevac marker at the casualty grid so it
+        // reads as a medevac request, not just a generic alert dot.
+        if (['MEDEVAC', 'EVAC', 'MEDICAL'].includes(d.type)) {
+            L.marker([d.latitude, d.longitude], {
+                interactive: false, zIndexOffset: 1500,
+                icon: L.divIcon({
+                    className: '',
+                    html: `<div style="font-size:24px;line-height:1;filter:drop-shadow(0 0 3px ${colour})">🚁</div>`,
+                    iconSize: [24, 24], iconAnchor: [12, -6],
+                }),
+            }).addTo(grp);
+        }
         let frame = 0;
         const timer = setInterval(() => {
             frame++;
@@ -4669,6 +4690,7 @@
                 if (_mid && d.mission_id && d.mission_id !== _mid) return;
                 const op = state.operators.get(d.operator_id) || { id: d.operator_id, callsign: d.callsign, rank: '', role: 'OPERATOR' };
                 op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
+                if (d.position_source) op.position_source = d.position_source;
                 state.operators.set(op.id, op);
                 placeOperator(op);
                 // Vehicles assigned to this operator inherit its position.

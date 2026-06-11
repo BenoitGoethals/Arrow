@@ -69,6 +69,7 @@ class OperatorOut(ORMModel):
     latitude: float | None
     longitude: float | None
     altitude: float | None
+    position_source: str | None = None
     last_seen: datetime
 
     @computed_field  # type: ignore[misc]

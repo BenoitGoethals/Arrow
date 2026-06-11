@@ -101,6 +101,8 @@ class Operator(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Source of the last position fix: "ATAK" (device via CoT TCP), "APP" (mobile/web GPS), or None.
+    position_source: Mapped[str | None] = mapped_column(String(10), nullable=True)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     # Account lockout (A04)

@@ -50,6 +50,8 @@ data class OperatorDto(
     val longitude: Double? = null,
     val altitude: Double? = null,
     val online: Boolean = false,   // computed by backend: status=ONLINE + last_seen ≤ 90s
+    // Source of the last position fix: "ATAK" (device via CoT TCP), "APP", or null.
+    @SerialName("position_source") val positionSource: String? = null,
 )
 
 @Serializable

@@ -784,7 +784,7 @@ document.querySelectorAll('.ech-btn').forEach(btn=>{
 // ================================================================
 function updateTrack(t){
   const layer=t.affiliation==='HOSTILE'?LAYERS.enemies:LAYERS.operators;
-  const icon=buildMilIcon(t.sidc,t.callsign,t.unit,t.heading);
+  const icon=buildMilIcon(t.sidc,t.callsign,t.unit,t.heading,t.position_source==='ATAK'?'ATAK':'');
   const popup=buildTrackPopup(t);
   if(tracks[t.id]){tracks[t.id].marker.setLatLng([t.lat,t.lon]).setIcon(icon).setPopupContent(popup);}
   else{const m=L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).bindPopup(popup,{maxWidth:260}).on('click',()=>{if(bridge)bridge.onTrackClicked(String(t.id));}).addTo(layer);tracks[t.id]={marker:m,layer};}
@@ -2129,12 +2129,15 @@ function centerOn(lat,lon,zoom){map.setView([lat,lon],zoom||map.getZoom());}
 // ================================================================
 // ICON BUILDERS
 // ================================================================
-function buildMilIcon(sidc,label,unit,heading){
+function buildMilIcon(sidc,label,unit,heading,badge){
   if(typeof ms!=='undefined'){
     try{
       const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,direction:(typeof heading==='number'&&isFinite(heading))?heading:''});
       const sz=sym.getSize(),an=sym.getAnchor();
-      return L.divIcon({html:sym.asSVG(),className:'mil-icon',iconSize:[sz.width,sz.height],iconAnchor:[an.x,an.y],popupAnchor:[0,-an.y+6]});
+      const html=badge
+        ? `<div style="position:relative">${sym.asSVG()}<div style="position:absolute;top:-3px;right:-8px;background:#8957e5;color:#fff;font:700 8px monospace;line-height:1;padding:1px 3px;border-radius:3px;border:1px solid #0d1117;letter-spacing:.04em" title="Position from ATAK device">${badge}</div></div>`
+        : sym.asSVG();
+      return L.divIcon({html,className:'mil-icon',iconSize:[sz.width,sz.height],iconAnchor:[an.x,an.y],popupAnchor:[0,-an.y+6]});
     }catch(_){}
   }
   const c=sidc&&sidc[1]==='H'?'#f85149':sidc&&sidc[1]==='N'?'#3fb950':sidc&&sidc[1]==='U'?'#d29922':'#3fb950';
@@ -2145,6 +2148,7 @@ function buildTrackPopup(t){
   return `<div style="font-family:'Courier New',monospace;font-size:11px;color:#c9d1d9;padding:10px 14px;min-width:200px">
     <div style="font-weight:bold;font-size:13px;color:${t.affiliation==='HOSTILE'?'#f85149':'#3fb950'};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:7px">${esc(t.callsign)}</div>
     <div style="line-height:1.75"><span style="color:#8b949e">UNIT </span>${esc(t.unit||'—')}<br><span style="color:#8b949e">MGRS </span>${latLonToMGRS(t.lat,t.lon)}<br>${t.heading!=null?`<span style="color:#8b949e">HDG  </span>${Math.round(t.heading)}°<br>`:''}</div>
+    ${t.position_source==='ATAK'?`<div style="color:#a371f7;font-size:10px;margin-top:4px">📡 ATAK device</div>`:''}
     ${t.last_seen?`<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(t.last_seen)}</div>`:''}
   </div>`;
 }

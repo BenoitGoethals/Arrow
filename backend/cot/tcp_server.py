@@ -17,9 +17,9 @@ from pathlib import Path
 
 from lxml import etree
 
-from backend.cot.cot import CotEvent, cot_type_to_sidc, parse_cot, role_to_cot_type
+from backend.cot.cot import CotEvent, cot_type_to_sidc, parse_cot, parse_medevac, role_to_cot_type
 from backend.storage.database import SessionLocal
-from backend.storage.models import CotTrack, Operator
+from backend.storage.models import Alert, CotTrack, Operator, Report
 from backend.websocket.manager import broadcaster
 
 log = logging.getLogger("backend.cot.tcp")
@@ -200,6 +200,15 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
 
     _Pool.update(sender_uid, evt)
 
+    # ATAK 9-line MEDEVAC / CASEVAC request → persist a Report + raise an Alert,
+    # then relay the raw frame on to other ATAK clients. It is not a position fix,
+    # so skip the operator/track persistence below.
+    med = parse_medevac(raw)
+    if med is not None:
+        await _handle_medevac(med)
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
     with SessionLocal() as db:
         op: Operator | None = None
         if evt.callsign:
@@ -214,6 +223,7 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
             op.altitude  = evt.hae
             op.last_seen = datetime.now(timezone.utc)
             op.status    = "ONLINE"
+            op.position_source = "ATAK"   # fix arrived from an ATAK device over CoT TCP
             db.commit()
             db.refresh(op)
             cot_type = role_to_cot_type(op.role)
@@ -229,7 +239,7 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
                     "operator_id": op.id, "callsign": op.callsign,
                     "latitude": op.latitude, "longitude": op.longitude,
                     "altitude": op.altitude, "team_id": op.team_id,
-                    "cot_type": cot_type,
+                    "cot_type": cot_type, "position_source": "ATAK",
                 },
             })
         else:
@@ -264,6 +274,66 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
 
     # Relay to other ATAK clients
     await _Pool.broadcast(raw, exclude=sender_uid)
+
+
+# ── MEDEVAC handling ──────────────────────────────────────────────────────────
+
+def _resolve_operator_id(db, callsign: str | None) -> int | None:
+    """Map an ATAK callsign to an Operator row (Report/Alert need a valid FK).
+
+    Falls back to the lowest-id operator so an inbound MEDEVAC is never dropped
+    just because the requesting device isn't a registered operator.
+    """
+    op = None
+    if callsign:
+        op = db.query(Operator).filter(Operator.callsign.ilike(callsign)).first()
+    if op is None:
+        op = db.query(Operator).order_by(Operator.id.asc()).first()
+    return op.id if op else None
+
+
+async def _handle_medevac(med: dict) -> None:
+    """Persist an ATAK MEDEVAC/CASEVAC as a Report + Alert and broadcast both."""
+    rtype = med.get("type", "MEDEVAC")
+    lat   = med.get("latitude")
+    lon   = med.get("longitude")
+
+    with SessionLocal() as db:
+        op_id = _resolve_operator_id(db, med.get("callsign"))
+        if op_id is None:
+            log.warning("MEDEVAC dropped: no operators exist to attribute it to")
+            return
+        rep = Report(type=rtype, operator_id=op_id,
+                     payload=json.dumps(med), status="RECEIVED")
+        db.add(rep)
+        alert = Alert(type="MEDEVAC", operator_id=op_id,
+                      latitude=lat, longitude=lon, status="ACTIVE")
+        db.add(alert)
+        db.commit()
+        db.refresh(rep)
+        db.refresh(alert)
+        callsign  = med.get("callsign") or "ATAK"
+        rep_id, rep_mid, rep_status = rep.id, rep.mission_id, rep.status
+        al_id, al_mid, al_ts = alert.id, alert.mission_id, alert.timestamp
+
+    await broadcaster.broadcast({
+        "channel": "report", "event": "submitted", "mission_id": rep_mid,
+        "data": {
+            "id": rep_id, "type": rtype, "status": rep_status,
+            "operator_id": op_id, "callsign": callsign, "sender": callsign,
+            "source": "ATAK", "payload": json.dumps(med),
+        },
+    })
+    await broadcaster.broadcast({
+        "channel": "alert", "event": "triggered", "mission_id": al_mid,
+        "data": {
+            "id": al_id, "type": "MEDEVAC", "operator_id": op_id,
+            "callsign": callsign, "latitude": lat, "longitude": lon,
+            "status": "ACTIVE", "timestamp": al_ts.isoformat() if al_ts else None,
+        },
+    })
+    log.info("ATAK %s from %s at %s,%s → report#%s alert#%s",
+             rtype, callsign, lat, lon, rep_id, al_id)
 
 
 # ── Per-client handler ────────────────────────────────────────────────────────

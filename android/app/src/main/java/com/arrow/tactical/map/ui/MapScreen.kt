@@ -846,7 +846,8 @@ fun MapScreen(
                 val marker = Marker(map).apply {
                     position = GeoPoint(lat, lon)
                     title    = if (isMe) "📍 You — ${first.callsign}" else "${first.callsign}  ·  ${first.rank}"
-                    snippet  = "${first.role}${if (first.online) " · online" else " · offline"}"
+                    snippet  = "${first.role}${if (first.online) " · online" else " · offline"}" +
+                               if (first.positionSource == "ATAK") "  ·  📡 ATAK device" else ""
                     icon     = MilSymbolRenderer.friendly(res, first, isMe)
                     if (isMe) setAnchor(Marker.ANCHOR_CENTER, 0.39f)
                     else      setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)

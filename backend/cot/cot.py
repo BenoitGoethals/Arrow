@@ -220,3 +220,120 @@ def parse_cot(xml: bytes | str) -> CotEvent:
         role     = group.get("role",  "") if group is not None else "",
         platform = takv.get("platform", "ARROW") if takv is not None else "ARROW",
     )
+
+
+# ── ATAK 9-line MEDEVAC / CASEVAC ──────────────────────────────────────────────
+# ATAK's MEDEVAC plugin emits a CoT event of type "b-r-f-h-c" carrying a
+# <detail><_medevac_ .../></detail> element whose attributes hold the 9-line.
+# We normalise it into the same line_1..line_9 payload shape the MEDCOP view and
+# the report list already render.
+
+_MEDEVAC_SECURITY = {
+    "0": "No enemy troops in area",
+    "1": "Possible enemy troops in area (caution)",
+    "2": "Enemy troops in area (approach with caution)",
+    "3": "Enemy troops in area (armed escort required)",
+}
+_MEDEVAC_MARK = {
+    "0": "None", "1": "Panels", "2": "Pyrotechnic signal",
+    "3": "Smoke signal", "4": "None/other", "5": "Other",
+}
+
+
+def _med_truthy(v: object) -> bool:
+    return str(v).strip().lower() in {"true", "1", "yes"} if v is not None else False
+
+
+def _med_count(v: object) -> int:
+    try:
+        return int(float(str(v)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def parse_medevac(xml: bytes | str) -> dict | None:
+    """Parse an ATAK 9-line MEDEVAC/CASEVAC CoT.
+
+    Returns a normalised payload dict (``line_1..line_9`` + ``latitude`` /
+    ``longitude`` + ``callsign`` + ``type``) ready to persist as a Report, or
+    ``None`` if the frame is not a MEDEVAC request.
+    """
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+
+    med      = root.find("detail/_medevac_")
+    cot_type = root.get("type", "")
+    if med is None and not cot_type.startswith("b-r-f-h-c"):
+        return None
+    attrs = dict(med.attrib) if med is not None else {}
+
+    point = root.find("point")
+    def _f(s: str | None) -> float:
+        return float((s or "0").replace(",", "."))
+    lat = _f(point.get("lat")) if point is not None else 0.0
+    lon = _f(point.get("lon")) if point is not None else 0.0
+
+    contact  = root.find("detail/contact")
+    callsign = (contact.get("callsign") if contact is not None else None) \
+               or attrs.get("title") or root.get("uid", "ATAK")
+
+    is_casevac = _med_truthy(attrs.get("casevac"))
+
+    # Line 3 — precedence (patient counts)
+    prec = [f"{lbl}: {_med_count(attrs.get(k))}"
+            for k, lbl in (("urgent", "Urgent"), ("urgent_surgical", "Urgent-Surgical"),
+                           ("priority", "Priority"), ("routine", "Routine"),
+                           ("convenience", "Convenience"))
+            if _med_count(attrs.get(k)) > 0]
+    # Line 4 — special equipment
+    equip = [lbl for k, lbl in (("equipment_none", "None"), ("equipment_hoist", "Hoist"),
+             ("equipment_extraction", "Extraction equipment"),
+             ("equipment_ventilator", "Ventilator")) if _med_truthy(attrs.get(k))]
+    for extra in ("equipment_other", "equipment_detail"):
+        if attrs.get(extra):
+            equip.append(str(attrs[extra]))
+    # Line 5 — patients by type
+    l5 = []
+    if _med_count(attrs.get("litter")):     l5.append(f"{_med_count(attrs['litter'])} litter")
+    if _med_count(attrs.get("ambulatory")): l5.append(f"{_med_count(attrs['ambulatory'])} ambulatory")
+    # Line 6 — security at PZ
+    sec = _MEDEVAC_SECURITY.get(str(attrs.get("security", "")).strip(), attrs.get("security", ""))
+    # Line 7 — marking method
+    mark = attrs.get("hlz_marking") or attrs.get("marked_by") or attrs.get("markedby") or ""
+    mark = _MEDEVAC_MARK.get(str(mark).strip(), mark)
+    # Line 8 — patient nationality / status
+    nat = [lbl for k, lbl in (("us_military", "US Military"), ("us_civilian", "US Civilian"),
+           ("nonus_military", "Non-US Military"), ("nonus_civilian", "Non-US Civilian"),
+           ("epw", "EPW"), ("child", "Child"))
+           if str(attrs.get(k, "")).strip() not in ("", "0", "false", "False")]
+    # Line 9 — terrain / NBC / obstacles
+    terr = [lbl for k, lbl in (("terrain_slope", "Slope"), ("terrain_loose", "Loose debris"),
+            ("terrain_rough", "Rough terrain")) if _med_truthy(attrs.get(k))]
+    for extra in ("terrain_other_detail", "obstacles"):
+        if attrs.get(extra):
+            terr.append(str(attrs[extra]))
+
+    freq  = attrs.get("freq") or attrs.get("frequency") or ""
+    title = attrs.get("title") or ""
+
+    return {
+        "latitude": lat, "longitude": lon,
+        "source":   "ATAK",
+        "callsign": callsign,
+        "type":     "CASEVAC" if is_casevac else "MEDEVAC",
+        "line_1": f"{lat:.5f}, {lon:.5f}",                 "label_1": "Location (PZ)",
+        "line_2": " / ".join(x for x in (freq, callsign) if x), "label_2": "Radio / Call sign",
+        "line_3": ", ".join(prec),                         "label_3": "Precedence",
+        "line_4": ", ".join(equip),                        "label_4": "Special equipment",
+        "line_5": ", ".join(l5),                           "label_5": "Patients",
+        "line_6": sec,                                     "label_6": "Security at PZ",
+        "line_7": mark,                                    "label_7": "Marking method",
+        "line_8": ", ".join(nat),                          "label_8": "Patient nationality",
+        "line_9": ", ".join(terr),                         "label_9": "Terrain / NBC",
+        "notes":  title,
+        "raw":    attrs,
+    }

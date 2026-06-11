@@ -203,6 +203,8 @@ def _migrate(conn: object) -> None:
         # Vehicles map-visibility toggle + strike-package vehicle links
         "ALTER TABLE map_visibility ADD COLUMN vehicles BOOLEAN DEFAULT 1",
         "ALTER TABLE strike_packages ADD COLUMN vehicle_ids TEXT DEFAULT '[]'",
+        # Track where an operator's last position fix came from (ATAK device vs app GPS)
+        "ALTER TABLE operators ADD COLUMN position_source VARCHAR(10)",
     ]
     for sql in migrations:
         try:

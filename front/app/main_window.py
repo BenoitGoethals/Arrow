@@ -562,6 +562,7 @@ class MainWindow(QMainWindow):
                         "unit":      op.get("team", ""),
                         "online":    True,
                         "last_seen": op.get("recorded_at", ""),
+                        "position_source": op.get("position_source"),
                     })
         except Exception:
             pass
@@ -1473,6 +1474,7 @@ class MainWindow(QMainWindow):
             "online":    data.get("online", True),
             "last_seen": data.get("last_seen") or data.get("recorded_at", ""),
             "affiliation": "FRIENDLY",
+            "position_source": data.get("position_source"),
         })
 
     # ================================================================
