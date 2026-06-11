@@ -11,6 +11,11 @@ services:
     # The backend is reachable within Docker as backend:6001.
     expose:
       - "6001"
+    # Port 8087 is the native CoT TCP server — ATAK devices connect here directly
+    # (raw TCP, NOT HTTP, so it cannot go through the nginx proxy). Published to the
+    # host so a router port-forward of <public-ip>:8087 reaches the container.
+    ports:
+      - "8087:8087"
     environment:
       # ARROW_JWT_SECRET: ""    # set a 64-char hex secret here or in .env for production
       #                         # if unset, a random secret is auto-generated on first boot
