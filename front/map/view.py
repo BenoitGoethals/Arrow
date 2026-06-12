@@ -68,8 +68,10 @@ class MapView(QWebEngineView):
         # Log load result + start repaint guard
         self._page.loadFinished.connect(self._on_load_finished)
 
-        # Periodic repaint — guards against Qt6/macOS compositor dropping the
-        # WebEngine framebuffer after DOM changes (tile layer switch, overlays)
+        # Periodic safety-net: keep the Qt compositor from showing a stale
+        # WebEngine frame.  self.update() is deliberately the only call here —
+        # no JS — so it never interferes with tile loading.  Reactive JS repaints
+        # (map.invalidateSize) are fired once by notify_menu_closed / contextMenuEvent.
         self._repaint_guard = QTimer(self)
         self._repaint_guard.setInterval(250)
         self._repaint_guard.timeout.connect(self.update)
@@ -88,14 +90,42 @@ class MapView(QWebEngineView):
         print(f"[MapView] Loading: {url}", file=sys.stderr)
         self.load(QUrl(url))
 
+    def _force_repaint(self):
+        """Force the Chromium GPU process to submit a new compositor frame.
+
+        map.invalidateSize() is a no-op when the container size hasn't changed,
+        so it can't recover a black screen caused by a native Qt overlay.
+        Toggling document.body opacity by an imperceptible amount (1 → 0.9999 →
+        back) forces Chromium to generate two fresh frames and push them to the
+        macOS Metal compositor, which clears the black state.
+        """
+        self.update()
+        # setTimeout (not requestAnimationFrame) so this runs even when the
+        # WebEngine rendering loop is paused by the native QMenu taking focus.
+        self._page.runJavaScript(
+            "var b=document.body;"
+            "if(b){"
+            "b.style.opacity='0.9999';"
+            "setTimeout(function(){b.style.opacity='';},50);"
+            "}"
+        )
+
+    def notify_menu_closed(self):
+        """Call when any native QMenu that appeared over this view has closed.
+
+        Uses a longer delay than contextMenuEvent because macOS NSMenu has a
+        fade-out animation (~50ms) that keeps the native surface alive; firing
+        before it fully closes would repaint into the wrong compositor state.
+        """
+        QTimer.singleShot(80,  self._force_repaint)
+        QTimer.singleShot(300, self._force_repaint)
+
     def contextMenuEvent(self, event):
-        # Accept (swallow) the event — no native context menu.
-        # Two deferred repaints fix the Qt6 WebEngine black-compositor bug on
-        # macOS: one short (catches the overlay appearing) and one longer
-        # (catches the overlay being removed after the user picks an action).
+        # Swallow the Qt context-menu event so no native menu appears over the
+        # WebEngine view (a native overlay would drop the Metal framebuffer).
         event.accept()
-        QTimer.singleShot(40,  self.update)
-        QTimer.singleShot(200, self.update)
+        QTimer.singleShot(40,  self._force_repaint)
+        QTimer.singleShot(200, self._force_repaint)
 
     def _on_permission_requested(self, permission):
         try:

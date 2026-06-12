@@ -17,6 +17,13 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
    re-rendering the map, eliminating the black-screen compositor bug. */
 #map{width:100vw;height:100vh;background:#0d1117;
      will-change:transform;transform:translateZ(0);isolation:isolate;}
+/* Keepalive: a zero-size child with a continuous transform animation forces
+   the Chromium GPU process to submit fresh frames to the macOS Metal
+   compositor every tick.  Without this, Metal marks the WebEngine IOSurface
+   as stale after a native Qt overlay (QMenu) disappears and shows black. */
+@keyframes _mk{from{transform:translateX(0)}to{transform:translateX(.001px)}}
+#_mk{position:absolute;width:0;height:0;top:0;left:0;pointer-events:none;
+     z-index:-1;animation:_mk 1s linear infinite;}
 .leaflet-container{cursor:crosshair !important;}
 .mil-icon{background:transparent !important;border:none !important;}
 
@@ -169,7 +176,10 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 /* ================================================================
    SYMBOL PICKER OVERLAY
    ================================================================ */
-#sym-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:3000;align-items:center;justify-content:center;}
+/* backdrop background removed — same Qt6/macOS Metal compositor bug as the
+   radial menu backdrop; a position:fixed full-screen element with any non-transparent
+   background creates a new GPU compositing layer that blacks out the map canvas */
+#sym-overlay{display:none;position:fixed;inset:0;z-index:3000;align-items:center;justify-content:center;}
 #sym-overlay.active{display:flex;}
 #sym-panel{background:#161b22;border:1px solid #30363d;border-radius:4px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.8);}
 #sym-header{background:#0d1117;padding:14px 18px 10px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:10px;}
@@ -193,7 +203,7 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 .sym-category{margin-bottom:18px;}
 .sym-cat-title{font-size:10px;font-weight:700;color:#8b949e;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #21262d;}
 .sym-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
-.sym-card{border:1px solid #30363d;border-radius:3px;background:#0d1117;padding:6px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:border-color .1s,background .1s;}
+.sym-card{border:1px solid #30363d;border-radius:3px;background:#0d1117;padding:6px 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;}
 .sym-card:hover{background:#1c2d3f;border-color:#1f6feb;}
 .sym-card.selected{background:#1c2d3f;border-color:#1f6feb;box-shadow:0 0 0 1px #1f6feb;}
 .sym-card svg,.sym-card canvas{width:44px;height:44px;display:block;}
@@ -369,7 +379,7 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 </style>
 </head>
 <body>
-<div id="map"></div>
+<div id="map"><div id="_mk"></div></div>
 
 <!-- North arrow + GPS HUD (top-left) -->
 <div id="north-widget">
@@ -710,6 +720,11 @@ function openSymbolPicker(lat,lon,defaultAff){
 function closeSymbolPicker(){
   document.getElementById('sym-overlay').classList.remove('active');
 }
+
+// Close on click outside the panel (no backdrop — same pattern as radial menu)
+document.getElementById('sym-overlay').addEventListener('mousedown', function(e){
+  if (!document.getElementById('sym-panel').contains(e.target)) closeSymbolPicker();
+});
 
 function buildSymbolGrid(){
   const body=document.getElementById('sym-body');

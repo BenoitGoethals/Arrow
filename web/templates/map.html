@@ -37,7 +37,7 @@
     .badge { font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: #2a3142; color: #cbd5e1; }
     .badge.adm { background: #7c2d12; color: #fed7aa; }
     .badge.bc { background: #1e40af; color: #bfdbfe; }
-    #map { height: 100%; }
+    #map { height: 100%; will-change:transform; transform:translateZ(0); isolation:isolate; }
     main { padding: 0; }
     .filter-bar { display: flex; gap: 8px; align-items: center; padding: 0.5rem 0.75rem; background: #161b25; border-bottom: 1px solid #2a3142; font-size: 0.85rem; }
     .filter-bar label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
@@ -65,21 +65,18 @@
     /* ── Marker right-click radial menu ──────────────────────────────── */
     #mr-overlay { position:fixed; inset:0; z-index:900; pointer-events:none; }
     #mr-overlay:not([hidden]) { pointer-events:all; }
-    #mr-scrim { position:absolute; inset:0; background:transparent;
-                transition:background .18s ease; cursor:default; }
+    #mr-scrim { position:absolute; inset:0; background:transparent; cursor:default; }
     #mr-overlay.open #mr-scrim { background:rgba(0,0,0,.46); }
     #mr-svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible;
-              opacity:0; transition:opacity .16s ease; pointer-events:none; }
+              opacity:0; pointer-events:none; }
     #mr-overlay.open #mr-svg { opacity:1; }
     #mr-items { position:absolute; inset:0; pointer-events:none; }
     .mr-item { position:fixed; display:flex; flex-direction:column; align-items:center;
-               transform:translate(-50%,-50%) scale(0); opacity:0; pointer-events:all;
-               transition: transform .26s cubic-bezier(.34,1.56,.64,1),
-                           opacity .16s ease; }
+               transform:translate(-50%,-50%) scale(0); opacity:0; pointer-events:all; }
     #mr-overlay.open .mr-item { transform:translate(-50%,-50%) scale(1); opacity:1; }
     .mr-btn { width:58px; height:58px; border-radius:50%; border:1.5px solid rgba(255,255,255,.28);
               cursor:pointer; display:flex; align-items:center; justify-content:center;
-              font-size:24px; line-height:1; transition:transform .12s ease, filter .12s ease;
+              font-size:24px; line-height:1;
               box-shadow:0 2px 12px rgba(0,0,0,.5); }
     .mr-btn:hover { transform:scale(1.14); filter:brightness(1.22); }
     .mr-lbl { margin-top:5px; font-size:11px; font-weight:700; color:#fff; letter-spacing:.03em;
@@ -93,8 +90,6 @@
         opacity:0;
         pointer-events:none;
         overflow:visible;
-        transition: transform .35s cubic-bezier(.34,1.56,.64,1),
-                    opacity   .20s ease;
     }
     #radial-menu.open #r-rings {
         transform:translate(-50%,-50%) scale(1);
@@ -1719,7 +1714,7 @@
 
             const col = document.createElement('div');
             col.className = 'mr-item';
-            col.style.cssText = `left:${bx}px;top:${by}px;transition-delay:${i * 35}ms`;
+            col.style.cssText = `left:${bx}px;top:${by}px`;
 
             const btn = document.createElement('button');
             btn.className = 'mr-btn';

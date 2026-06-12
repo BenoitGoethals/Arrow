@@ -198,6 +198,10 @@ class MainWindow(QMainWindow):
     # ================================================================
     def _connect_signals(self):
         tb = self._toolbar
+        # Each toolbar QMenu is a native popup that appears over the WebEngine
+        # view and drops the Metal compositor framebuffer when it closes.
+        for menu in tb.popup_menus:
+            menu.aboutToHide.connect(self._map.notify_menu_closed)
         tb.mode_changed.connect(self._on_mode_from_toolbar)
         tb.layer_toggled.connect(self._map.toggle_layer)
         tb.base_changed.connect(self._map.set_base_layer)

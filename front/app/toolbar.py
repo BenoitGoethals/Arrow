@@ -37,6 +37,7 @@ class MainToolbar(QToolBar):
         self.setMovable(False)
         self.setObjectName("mainToolbar")
         self._mode_btns: dict[str, QToolButton] = {}
+        self.popup_menus: list[QMenu] = []  # all InstantPopup menus — wire aboutToHide for repaint
         self._build()
 
     def _build(self):
@@ -60,6 +61,7 @@ class MainToolbar(QToolBar):
             act.setToolTip(tip)
             act.triggered.connect(lambda checked, m=mode: self.mode_changed.emit(m))
         meas_btn.setMenu(meas_menu)
+        self.popup_menus.append(meas_menu)
         self.addWidget(meas_btn)
         self.addSeparator()
 
@@ -100,6 +102,7 @@ class MainToolbar(QToolBar):
             act.triggered.connect(lambda checked, g=gtype: self._set_mode(g))
 
         draw_btn.setMenu(draw_menu)
+        self.popup_menus.append(draw_menu)
         self.addWidget(draw_btn)
         self.addSeparator()
 
@@ -124,6 +127,7 @@ class MainToolbar(QToolBar):
         vis_act.triggered.connect(self._layers_dialog.raise_)
 
         layers_btn.setMenu(layers_menu)
+        self.popup_menus.append(layers_menu)
         self.addWidget(layers_btn)
 
         # ---- MBTiles manager button -----------------------------------
@@ -164,6 +168,7 @@ class MainToolbar(QToolBar):
         wx_fetch = wx_menu.addAction("⟳  Fetch current weather")
         wx_fetch.triggered.connect(self.weather_fetch.emit)
         wx_btn.setMenu(wx_menu)
+        self.popup_menus.append(wx_menu)
         self.addWidget(wx_btn)
 
         # ---- Config button --------------------------------------------
@@ -204,6 +209,7 @@ class MainToolbar(QToolBar):
             act = alert_menu.addAction(atype)
             act.triggered.connect(lambda checked, a=atype: self.alert_requested.emit(a))
         alert_btn.setMenu(alert_menu)
+        self.popup_menus.append(alert_menu)
         self.addWidget(alert_btn)
 
         # ---- Exit button -----------------------------------------------
