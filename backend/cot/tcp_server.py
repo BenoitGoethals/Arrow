@@ -394,6 +394,12 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
     if _Pool.count() == 0:
         return
 
+    import os
+    image_url: str | None = None
+    if msg.photo_id:
+        base = os.environ.get("ARROW_BACKEND_URL", "http://127.0.0.1:6001")
+        image_url = f"{base}/photos/{msg.photo_id}"
+
     room = ALL_CHAT_ROOMS
     recipient_uid: str | None = None
     if msg.message_type == "DIRECT":
@@ -409,6 +415,7 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
     cot = build_geochat(
         sender_callsign=sender.callsign, text=msg.content,
         room=room, recipient_uid=recipient_uid,
+        image_url=image_url,
     )
     await _Pool.broadcast(cot)
 
@@ -437,6 +444,10 @@ async def _client_handler(
 
     # Push current operator snapshot
     asyncio.create_task(_push_snapshot(writer))
+    asyncio.create_task(broadcaster.broadcast({
+        "channel": "cot-presence", "event": "connected",
+        "data": info.to_dict(),
+    }))
 
     buf = _FrameBuf()
     try:
@@ -456,6 +467,10 @@ async def _client_handler(
         log.debug("client %s error: %s", uid, exc)
     finally:
         _Pool.remove(uid)
+        asyncio.create_task(broadcaster.broadcast({
+            "channel": "cot-presence", "event": "disconnected",
+            "data": {"uid": uid},
+        }))
         try:
             writer.close()
             await writer.wait_closed()
@@ -466,15 +481,12 @@ async def _client_handler(
 async def _push_snapshot(writer: asyncio.StreamWriter) -> None:
     try:
         with SessionLocal() as db:
-            ops = db.query(Operator).filter(
-                Operator.latitude.isnot(None),
-                Operator.longitude.isnot(None),
-            ).all()
+            ops = db.query(Operator).all()
             for op in ops:
                 writer.write(CotEvent(
                     uid=f"ARROW.{op.callsign}",
                     cot_type=role_to_cot_type(op.role),
-                    lat=op.latitude, lon=op.longitude,
+                    lat=op.latitude or 0.0, lon=op.longitude or 0.0,
                     hae=op.altitude or 0.0,
                     callsign=op.callsign, role=op.role, platform="Arrow",
                 ).to_xml())

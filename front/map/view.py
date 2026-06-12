@@ -120,10 +120,17 @@ class MapView(QWebEngineView):
         QTimer.singleShot(80,  self._force_repaint)
         QTimer.singleShot(300, self._force_repaint)
 
+    def focusInEvent(self, event):
+        """Repaint when focus returns — covers the QMenu-close focus transition."""
+        super().focusInEvent(event)
+        QTimer.singleShot(50,  self._force_repaint)
+        QTimer.singleShot(200, self._force_repaint)
+
     def contextMenuEvent(self, event):
         # Swallow the Qt context-menu event so no native menu appears over the
         # WebEngine view (a native overlay would drop the Metal framebuffer).
         event.accept()
+        self._force_repaint()
         QTimer.singleShot(40,  self._force_repaint)
         QTimer.singleShot(200, self._force_repaint)
 

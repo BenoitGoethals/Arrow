@@ -405,6 +405,7 @@ def build_geochat(
     room: str = ALL_CHAT_ROOMS,
     recipient_uid: str | None = None,
     time: datetime | None = None,
+    image_url: str | None = None,
 ) -> bytes:
     """Build an ATAK GeoChat CoT for an Arrow chat message."""
     now   = time or datetime.now(timezone.utc)
@@ -433,6 +434,9 @@ def build_geochat(
     etree.SubElement(detail, "link", uid=sender_uid, type="a-f-G-U-C", relation="p-p")
     rem = etree.SubElement(detail, "remarks",
                            source=f"{_GEOCHAT_SOURCE}.{sender_callsign}", to=room_id, time=ts)
-    rem.text = text
+    if image_url:
+        rem.text = f"{text}\n[photo: {image_url}]"
+    else:
+        rem.text = text
     etree.SubElement(detail, "__serverdestination", destinations="")
     return etree.tostring(event, xml_declaration=True, encoding="UTF-8")

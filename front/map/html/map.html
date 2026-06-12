@@ -17,12 +17,13 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
    re-rendering the map, eliminating the black-screen compositor bug. */
 #map{width:100vw;height:100vh;background:#0d1117;
      will-change:transform;transform:translateZ(0);isolation:isolate;}
-/* Keepalive: a zero-size child with a continuous transform animation forces
-   the Chromium GPU process to submit fresh frames to the macOS Metal
-   compositor every tick.  Without this, Metal marks the WebEngine IOSurface
-   as stale after a native Qt overlay (QMenu) disappears and shows black. */
-@keyframes _mk{from{transform:translateX(0)}to{transform:translateX(.001px)}}
-#_mk{position:absolute;width:0;height:0;top:0;left:0;pointer-events:none;
+/* Keepalive: background-color is a main-thread paint property (unlike
+   transform/opacity which are compositor-only).  Animating it on a 1×1
+   child of #map forces Chromium to resubmit #map's IOSurface pixel data
+   to the macOS Metal compositor every frame, so Metal never marks the
+   surface as stale after a native Qt overlay (QMenu) appears/disappears. */
+@keyframes _mk{0%,100%{background:transparent}50%{background:rgba(0,0,0,.005)}}
+#_mk{position:absolute;width:1px;height:1px;top:0;left:0;pointer-events:none;
      z-index:-1;animation:_mk 1s linear infinite;}
 .leaflet-container{cursor:crosshair !important;}
 .mil-icon{background:transparent !important;border:none !important;}

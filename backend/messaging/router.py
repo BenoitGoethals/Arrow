@@ -47,9 +47,16 @@ def list_messages(
         for p in db.query(Photo.id, Photo.mime_type).filter(Photo.id.in_(photo_ids)).all():
             mime_map[p.id] = p.mime_type
 
+    sender_ids = {m.sender_id for m in msgs}
+    callsign_map: dict[int, str] = {}
+    if sender_ids:
+        for op in db.query(Operator.id, Operator.callsign).filter(Operator.id.in_(sender_ids)).all():
+            callsign_map[op.id] = op.callsign
+
     return [
         {**MessageOut.model_validate(m).model_dump(mode="json"),
-         "photo_mime_type": mime_map.get(m.photo_id) if m.photo_id else None}
+         "photo_mime_type": mime_map.get(m.photo_id) if m.photo_id else None,
+         "sender_callsign": callsign_map.get(m.sender_id, f"op#{m.sender_id}")}
         for m in msgs
     ]
 

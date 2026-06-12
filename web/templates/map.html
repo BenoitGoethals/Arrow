@@ -144,10 +144,27 @@
     .map-alert-type { font-size: 0.65rem; font-weight: 700; }
     .map-alert-meta { font-size: 0.65rem; color: #475569; }
     .map-alert-grid { font-size: 0.7rem; color: #fca5a5; font-family: monospace; }
-    .map-msg { padding: 0.35rem 0.45rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid #2563eb; cursor: pointer; }
+    .map-msg { padding: 0.35rem 0.45rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid #2563eb; }
     .map-msg:hover { background: #1f2937; }
+    .map-msg.atak-msg { border-left-color: #a78bfa; background: #130d1f; }
     .map-msg-header { font-size: 0.65rem; color: #475569; }
-    .map-msg-body { font-size: 0.72rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .map-msg-body { font-size: 0.72rem; color: #cbd5e1; }
+    .map-chat-form { margin-top: 0.5rem; }
+    .map-chat-input { width: 100%; background: #0e1217; color: #e6e6e6;
+                      border: 1px solid #2a3142; border-radius: 3px; padding: 4px 6px;
+                      font-size: 0.72rem; resize: none; font-family: inherit; box-sizing: border-box; }
+    .map-chat-input:focus { outline: none; border-color: #2563eb; }
+    .map-chat-actions { display: flex; gap: 4px; margin-top: 4px; align-items: center; }
+    .map-chat-send { background: #1d4ed8; color: #fff; border: none; border-radius: 3px;
+                     padding: 3px 10px; font-size: 0.72rem; cursor: pointer; margin-left: auto; }
+    .map-chat-send:hover { background: #2563eb; }
+    .map-chat-attach { background: #1f2937; color: #94a3b8; border: 1px solid #2a3142;
+                       border-radius: 3px; padding: 3px 8px; font-size: 0.68rem; cursor: pointer; }
+    .map-msg-photo { max-width: 100%; border-radius: 3px; margin-top: 4px; display: block; }
+    .atak-client { padding: 0.3rem 0.45rem; border-radius: 4px; margin-bottom: 3px;
+                   border-left: 3px solid #a78bfa; background: #130d1f; }
+    .atak-client-cs { font-size: 0.72rem; font-weight: 700; color: #c4b5fd; }
+    .atak-client-meta { font-size: 0.62rem; color: #6b7280; }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
     .sb-section > summary { list-style: none; cursor: pointer; user-select: none;
                             display: flex; align-items: center; gap: 6px; }
@@ -286,11 +303,28 @@
             <div id="map-alerts"><small style="color:#475569">Loading…</small></div>
         </details>
 
-        <details class="sb-section" style="margin-top:1rem">
+        <details class="sb-section" style="margin-top:1rem" open>
             <summary><h3 style="display:inline">Messages</h3>
                 <span id="msgs-count" class="sb-count">0</span>
             </summary>
-            <div id="map-messages"><small style="color:#475569">Loading…</small></div>
+            <div id="map-messages" style="max-height:220px;overflow-y:auto"><small style="color:#475569">Loading…</small></div>
+            <div class="map-chat-form">
+                <textarea id="map-chat-input" class="map-chat-input" rows="2" placeholder="Broadcast message…"></textarea>
+                <div class="map-chat-actions">
+                    <label class="map-chat-attach" title="Attach photo">
+                        📎<input type="file" id="map-chat-photo" accept="image/*" style="display:none" onchange="handleChatPhotoChange(this)">
+                    </label>
+                    <span id="map-chat-photo-name" style="font-size:0.65rem;color:#22c55e;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:80px"></span>
+                    <button class="map-chat-send" onclick="sendMapChat()">Send</button>
+                </div>
+            </div>
+        </details>
+
+        <details class="sb-section" style="margin-top:1rem" open>
+            <summary><h3 style="display:inline">ATAK Devices</h3>
+                <span id="atak-count" class="sb-count">0</span>
+            </summary>
+            <div id="atak-clients"><small style="color:#475569">Checking…</small></div>
         </details>
 
         <details class="sb-section" style="margin-top:1rem">
@@ -3686,16 +3720,95 @@
             const list = await r.json();
             if (cnt) cnt.textContent = list.length;
             if (!list.length) { el.innerHTML = '<small style="color:#475569">No messages</small>'; return; }
-            el.innerHTML = list.slice(0, 20).map(m => {
+            el.innerHTML = list.slice(-40).reverse().map(m => {
                 const time = (m.timestamp || '').slice(11, 16);
-                const dest = m.group_id ? `grp:${m.group_id}` : (m.receiver_id ? `op#${m.receiver_id}` : 'ALL');
-                return `<div class="map-msg" onclick="window.location='/messaging/'">
-                    <div class="map-msg-header">op#${m.sender_id} → ${dest} · ${time}</div>
-                    <div class="map-msg-body">${escHtml(m.content.slice(0, 80))}</div>
+                const cs   = m.sender_callsign || `op#${m.sender_id}`;
+                const src  = m.source === 'ATAK' ? ' <span style="color:#a78bfa;font-size:0.6rem">ATAK</span>' : '';
+                const dest = m.group_id ? `→ grp:${m.group_id}` : (m.receiver_id ? `→ op#${m.receiver_id}` : '→ ALL');
+                const photoHtml = m.photo_id
+                    ? `<img data-photo-id="${m.photo_id}" class="map-msg-photo" alt="photo" style="max-height:80px">`
+                    : '';
+                return `<div class="map-msg${m.source==='ATAK'?' atak-msg':''}">
+                    <div class="map-msg-header">${escHtml(cs)}${src} ${dest} · ${time}</div>
+                    <div class="map-msg-body">${escHtml(m.content)}</div>
+                    ${photoHtml}
+                </div>`;
+            }).join('');
+            if (typeof window.arrowApplyPhotos === 'function') window.arrowApplyPhotos(el);
+        } catch (e) {
+            el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
+    async function loadAtakClients() {
+        const el  = document.getElementById('atak-clients');
+        const cnt = document.getElementById('atak-count');
+        if (!el) return;
+        try {
+            const r = await api('/cot/clients');
+            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; return; }
+            const list = await r.json();
+            if (cnt) cnt.textContent = list.length;
+            if (!list.length) { el.innerHTML = '<small style="color:#475569">No ATAK devices connected</small>'; return; }
+            el.innerHTML = list.map(c => {
+                const ago = c.last_seen_ago_s < 60
+                    ? `${c.last_seen_ago_s}s ago`
+                    : `${Math.round(c.last_seen_ago_s/60)}m ago`;
+                return `<div class="atak-client">
+                    <div class="atak-client-cs">📡 ${escHtml(c.callsign || c.uid)}</div>
+                    <div class="atak-client-meta">${escHtml(c.ip)}  ·  ${escHtml(c.cot_type || '?')}  ·  ${ago}  ·  rx:${c.rx_count}</div>
                 </div>`;
             }).join('');
         } catch (e) {
             el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
+    let _chatPhotoId = null;
+    function handleChatPhotoChange(input) {
+        _chatPhotoId = null;
+        const nameEl = document.getElementById('map-chat-photo-name');
+        if (!input.files.length) { if (nameEl) nameEl.textContent = ''; return; }
+        if (nameEl) nameEl.textContent = input.files[0].name;
+    }
+
+    async function sendMapChat() {
+        const input = document.getElementById('map-chat-input');
+        const text  = (input ? input.value : '').trim();
+        if (!text && !document.getElementById('map-chat-photo')?.files.length) return;
+
+        _chatPhotoId = null;
+        const fileInput = document.getElementById('map-chat-photo');
+        if (fileInput && fileInput.files.length) {
+            const file = fileInput.files[0];
+            const pr = await fetch(window.ARROW_BACKEND_URL + '/photos', {
+                method: 'POST',
+                headers: missionHeaders({'Content-Type': file.type}),
+                body: file,
+            });
+            if (pr.ok) {
+                const pd = await pr.json();
+                _chatPhotoId = pd.id;
+            }
+        }
+
+        const payload = {
+            content: text || '',
+            message_type: 'BROADCAST',
+            photo_id: _chatPhotoId,
+        };
+        const r = await fetch(window.ARROW_BACKEND_URL + '/messages', {
+            method: 'POST',
+            headers: missionHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify(payload),
+        });
+        if (r.ok) {
+            if (input) input.value = '';
+            if (fileInput) { fileInput.value = ''; }
+            const nameEl = document.getElementById('map-chat-photo-name');
+            if (nameEl) nameEl.textContent = '';
+            _chatPhotoId = null;
+            loadMapMessages();
         }
     }
 
@@ -4719,6 +4832,8 @@
                 if (msg.event === 'triggered') handleAlertTriggered(msg.data);
                 else if (msg.event === 'ack')  removeAlertLayer(msg.data.id);
                 loadMapAlerts();
+            } else if (msg.channel === 'cot-presence') {
+                loadAtakClients();
             } else if (msg.channel === 'presence') {
                 loadHierarchy();
                 if (msg.event === 'ops_status') loadVehicles();  // vehicle status may follow operator
@@ -4788,7 +4903,7 @@
     function reloadAllMapData() {
         loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles();
         loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
-        loadMapAlerts(); loadMapMessages();
+        loadMapAlerts(); loadMapMessages(); loadAtakClients();
     }
     window.addEventListener('arrow-mission-changed', () => {
         flyToActiveMission();
@@ -4796,7 +4911,7 @@
     });
     flyToActiveMission();
 
-    loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages();
+    loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages(); loadAtakClients();
     setInterval(loadVehicles, 20000);
     setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);

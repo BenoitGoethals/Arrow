@@ -152,6 +152,15 @@ async def receive_cot(
     return Response(content=ack.to_xml(), media_type="application/xml")
 
 
+@router.get("/clients")
+def list_cot_clients(
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    """Return list of currently connected ATAK TCP clients."""
+    from backend.cot.tcp_server import _Pool
+    return _Pool.client_list()
+
+
 @router.get("/tracks", response_model=list[CotTrackOut])
 def list_cot_tracks(
     db: Session = Depends(get_db),
