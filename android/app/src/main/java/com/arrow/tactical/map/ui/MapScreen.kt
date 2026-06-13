@@ -915,6 +915,13 @@ fun MapScreen(
                         setOnMarkerClickListener { m, _ ->
                             // During move-mode let the tap fall through to singleTapConfirmedHelper
                             if (movingTacticalObjState.value != null) return@setOnMarkerClickListener false
+                            // A geo-pinned photo (e.g. from ATAK) → open the detail dialog
+                            // which renders the image; plain markers keep the action radial.
+                            if (first.photoId != null) {
+                                selectedObjective = first
+                                m.showInfoWindow()
+                                return@setOnMarkerClickListener true
+                            }
                             val screenPt = android.graphics.Point()
                             map.projection?.toPixels(m.position, screenPt)
                             selectedTacticalObj = first
@@ -2256,7 +2263,9 @@ private fun ObjectiveDetailDialog(
 ) {
     val notes  = obj.notes
     val nl     = notes.indexOf('\n')
-    val title  = (if (nl >= 0) notes.substring(0, nl) else notes).ifBlank { "Objective" }
+    val isObjective = obj.type == "OBJECTIVE"
+    val title  = (if (nl >= 0) notes.substring(0, nl) else notes)
+                     .ifBlank { if (isObjective) "Objective" else "Photo" }
     val rest   = if (nl >= 0) notes.substring(nl + 1) else ""
     val mgrs   = rest.lineSequence().firstOrNull { it.startsWith("MGRS:") }
                      ?.removePrefix("MGRS:")?.trim() ?: ""
@@ -2268,7 +2277,7 @@ private fun ObjectiveDetailDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
         },
-        title = { Text("🚩 $title", fontWeight = FontWeight.Bold) },
+        title = { Text("${if (isObjective) "🚩" else "📍"} $title", fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),

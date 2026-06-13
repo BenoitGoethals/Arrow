@@ -945,6 +945,7 @@ function addTacticalObject(obj){
       const sidc=UNIT_SIDC[type]||'SUGPUU----D----';
       icon=buildMilIcon(sidc,'','',obj.rotation);
     }
+    tobjData[obj.id]=obj;
     lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
     const _capObjId=obj.id;
     lyr.on('contextmenu',function(e){L.DomEvent.stop(e);openTobjRadial(e.containerPoint,_capObjId);});
@@ -953,7 +954,11 @@ function addTacticalObject(obj){
   graphics[obj.id]=lyr;
 }
 function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);LAYERS.graphics.removeLayer(graphics[id]);delete graphics[id];}}
-function buildObjPopup(obj){const c=obj.affiliation==='HOSTILE'?'#f85149':'#d29922';return `<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:${c};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">${esc(obj.type)} ${obj.echelon?'['+esc(obj.echelon)+']':''}</div>${obj.notes?`<div>${esc(obj.notes)}</div>`:''}${obj.latitude?`<div>MGRS ${latLonToMGRS(obj.latitude,obj.longitude)}</div>`:''}<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(obj.timestamp||'')}</div></div>`;}
+// Geo-pinned photos: data-URIs injected from Python (setObjPhoto) keyed by object id.
+const objPhotos={}, tobjData={};
+function buildObjPopup(obj){const c=obj.affiliation==='HOSTILE'?'#f85149':'#d29922';const photo=objPhotos[obj.id]?`<img src="${objPhotos[obj.id]}" alt="photo" style="display:block;max-width:230px;border-radius:4px;margin-top:6px"/>`:(obj.photo_id?`<div style="color:#6e7681;font-size:9px;margin-top:5px">📷 loading photo…</div>`:'');return `<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:${c};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">${esc(obj.type)} ${obj.echelon?'['+esc(obj.echelon)+']':''}</div>${obj.notes?`<div>${esc(obj.notes)}</div>`:''}${obj.latitude?`<div>MGRS ${latLonToMGRS(obj.latitude,obj.longitude)}</div>`:''}${photo}<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(obj.timestamp||'')}</div></div>`;}
+// Inject a fetched photo data-URI and refresh the marker's popup if already drawn.
+function setObjPhoto(id, uri){objPhotos[id]=uri;const m=graphics[id],o=tobjData[id];if(o&&m&&m.setPopupContent){try{m.setPopupContent(buildObjPopup(o));}catch(e){}}}
 
 // ================================================================
 // FIRE MISSIONS

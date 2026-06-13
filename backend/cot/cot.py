@@ -23,6 +23,7 @@ MIL-STD-2525C SIDC ↔ CoT type mapping is symmetrical (see tables below).
 
 from __future__ import annotations
 
+import base64
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -380,13 +381,24 @@ def parse_geochat(xml: bytes | str) -> dict | None:
     sender_uid = (chatgrp.get("uid0", "") if chatgrp is not None else "") or root.get("uid", "")
     sender_cs  = (chat.get("senderCallsign", "") if chat is not None else "") or sender_uid or "ATAK"
     chatroom   = (chat.get("chatroom", "") if chat is not None else "") or ALL_CHAT_ROOMS
+    room_id    = (chat.get("id", "") if chat is not None else "") or chatroom
     source     = remarks.get("source", "") if remarks is not None else ""
+
+    # chatgrp lists participants as uid0, uid1, … — collect them all.
+    members: list[str] = []
+    if chatgrp is not None:
+        for k in sorted(k for k in chatgrp.keys() if k.startswith("uid")):
+            v = chatgrp.get(k)
+            if v:
+                members.append(v)
 
     return {
         "sender_callsign": sender_cs,
         "sender_uid":      sender_uid,
         "text":            text,
         "chatroom":        chatroom,
+        "room_id":         room_id,
+        "members":         members,
         "source":          source,
         "uid":             root.get("uid", ""),
     }
@@ -404,10 +416,16 @@ def build_geochat(
     text: str,
     room: str = ALL_CHAT_ROOMS,
     recipient_uid: str | None = None,
+    member_uids: list[str] | None = None,
     time: datetime | None = None,
     image_url: str | None = None,
 ) -> bytes:
-    """Build an ATAK GeoChat CoT for an Arrow chat message."""
+    """Build an ATAK GeoChat CoT for an Arrow chat message.
+
+    For a multi-member room, pass ``member_uids`` (e.g. ``ARROW.<callsign>`` per
+    member) — they are listed in ``<chatgrp>`` as uid1, uid2, … alongside the
+    sender (uid0). For a 1:1 message pass ``recipient_uid`` instead.
+    """
     now   = time or datetime.now(timezone.utc)
     stale = now + timedelta(seconds=STALE_SECONDS["neutral"])
     ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
@@ -429,8 +447,13 @@ def build_geochat(
         detail, "__chat", parent="RootContactGroup", groupOwner="false",
         messageId=msg_id, chatroom=room, id=room_id, senderCallsign=sender_callsign,
     )
-    etree.SubElement(chat, "chatgrp", uid0=sender_uid,
-                     uid1=(recipient_uid or room_id), id=room_id)
+    chatgrp = etree.SubElement(chat, "chatgrp", uid0=sender_uid, id=room_id)
+    others = [u for u in (member_uids or []) if u and u != sender_uid]
+    if others:
+        for i, uid_v in enumerate(others, start=1):
+            chatgrp.set(f"uid{i}", uid_v)
+    else:
+        chatgrp.set("uid1", recipient_uid or room_id)
     etree.SubElement(detail, "link", uid=sender_uid, type="a-f-G-U-C", relation="p-p")
     rem = etree.SubElement(detail, "remarks",
                            source=f"{_GEOCHAT_SOURCE}.{sender_callsign}", to=room_id, time=ts)
@@ -439,4 +462,93 @@ def build_geochat(
     else:
         rem.text = text
     etree.SubElement(detail, "__serverdestination", destinations="")
+    return etree.tostring(event, xml_declaration=True, encoding="UTF-8")
+
+
+# ── Photo attachments (geo-pinned images) ─────────────────────────────────────
+# A photo pinned to a location travels as a point CoT carrying a base64
+# <detail><image> element. ATAK renders the image on the marker; Arrow stores it
+# as a Photo + a POI tactical object at the same grid.
+
+_PHOTO_UID_PREFIX = "ARROW.PHOTO."
+# Cap the embedded image so a single CoT frame stays parseable by ATAK.
+PHOTO_COT_MAX_BYTES = 512 * 1024
+
+
+def parse_cot_image(xml: bytes | str) -> dict | None:
+    """Parse a point CoT with an embedded base64 ``<image>`` attachment.
+
+    Returns ``{lat, lon, callsign, mime, image_bytes, caption, uid}`` or ``None``.
+    """
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+
+    image = root.find("detail/image")
+    b64   = (image.text or "").strip() if image is not None else ""
+    if not b64:
+        return None
+    try:
+        data = base64.b64decode(b64)
+    except Exception:
+        return None
+    if not data:
+        return None
+
+    point   = root.find("point")
+    contact = root.find("detail/contact")
+    remarks = root.find("detail/remarks")
+    def _f(s: str | None) -> float:
+        return float((s or "0").replace(",", "."))
+
+    callsign = (contact.get("callsign") if contact is not None else None) or root.get("uid", "ATAK")
+    return {
+        "lat":         _f(point.get("lat")) if point is not None else 0.0,
+        "lon":         _f(point.get("lon")) if point is not None else 0.0,
+        "callsign":    callsign,
+        "mime":        image.get("mime") or image.get("type") or "image/jpeg",
+        "image_bytes": data,
+        "caption":     (remarks.text or "").strip() if remarks is not None else "",
+        "uid":         root.get("uid", ""),
+    }
+
+
+def is_arrow_photo(img: dict) -> bool:
+    """True if a parsed image CoT originated from Arrow (our own echo)."""
+    return str(img.get("uid", "")).startswith(_PHOTO_UID_PREFIX)
+
+
+def build_image_cot(
+    *,
+    lat: float,
+    lon: float,
+    callsign: str,
+    image_bytes: bytes,
+    mime: str = "image/jpeg",
+    caption: str = "",
+    cot_type: str = "b-m-p-s-p-i",   # sensor point of interest (image marker)
+    time: datetime | None = None,
+) -> bytes:
+    """Build a point CoT with an embedded base64 ``<image>`` for ATAK."""
+    now   = time or datetime.now(timezone.utc)
+    stale = now + timedelta(seconds=STALE_SECONDS["neutral"])
+    ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    ss    = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    uid   = f"{_PHOTO_UID_PREFIX}{callsign}.{uuid.uuid4().hex[:8]}"
+
+    event = etree.Element(
+        "event", version="2.0", uid=uid, type=cot_type,
+        how="h-e", time=ts, start=ts, stale=ss,
+    )
+    etree.SubElement(event, "point", lat=f"{lat:.7f}", lon=f"{lon:.7f}",
+                     hae="0.0", ce="9999999.0", le="9999999.0")
+    detail = etree.SubElement(event, "detail")
+    etree.SubElement(detail, "contact", callsign=callsign)
+    img = etree.SubElement(detail, "image", type=mime, mime=mime)
+    img.text = base64.b64encode(image_bytes).decode("ascii")
+    if caption:
+        etree.SubElement(detail, "remarks").text = caption
     return etree.tostring(event, xml_declaration=True, encoding="UTF-8")

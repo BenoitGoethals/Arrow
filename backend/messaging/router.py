@@ -1,24 +1,18 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import MessageIn, MessageOut
 from backend.auth.jwt_auth import get_current_operator
+from backend.chatrooms.router import is_member
 from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import Message, Mission, Operator, Photo
+from backend.storage.models import ChatRoom, ChatRoomMember, Message, Mission, Operator, Photo
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/messages", tags=["messaging"])
 
-_ROLE_GROUPS: dict[str, list[str]] = {
-    "ADMIN": ["BATTLE_CAPTAINS"],
-    "BATTLE_CAPTAIN": ["BATTLE_CAPTAINS"],
-}
-
-
-def _groups_for(op: Operator) -> list[str]:
-    return _ROLE_GROUPS.get(op.role, [])
+_MGR_ROLES = {"ADMIN", "BATTLE_CAPTAIN"}
 
 
 @router.get("")
@@ -27,14 +21,17 @@ def list_messages(
     current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[dict]:
+    # A message is visible if I sent it, it's addressed to me, it's a broadcast,
+    # or it belongs to a chat room I'm a member of.
+    my_rooms = [m.chatroom_id for m in
+                db.query(ChatRoomMember).filter(ChatRoomMember.operator_id == current.id).all()]
     clauses = [
         Message.sender_id == current.id,
         Message.receiver_id == current.id,
         Message.message_type == "BROADCAST",
     ]
-    groups = _groups_for(current)
-    if groups:
-        clauses.append(Message.group_id.in_(groups))
+    if my_rooms:
+        clauses.append(Message.chatroom_id.in_(my_rooms))
 
     q = db.query(Message).filter(or_(*clauses))
     if mission:
@@ -68,19 +65,54 @@ async def send_message(
     current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> Message:
+    mtype   = (payload.message_type or "DIRECT").upper()
+    content = payload.content or ""
+    if not content.strip() and not payload.photo_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Empty message")
+
+    # A chatroom_id implies a ROOM message regardless of the declared type.
+    if payload.chatroom_id:
+        mtype = "ROOM"
+
+    receiver_id = None
+    chatroom_id = None
+    if mtype == "ROOM":
+        if not payload.chatroom_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "chatroom_id required")
+        room = db.get(ChatRoom, payload.chatroom_id)
+        if not room:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Chat room not found")
+        if current.role not in _MGR_ROLES and not is_member(db, room.id, current.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
+        chatroom_id = room.id
+    elif mtype == "DIRECT":
+        if not payload.receiver_id:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "receiver_id required")
+        receiver_id = payload.receiver_id
+    elif mtype != "BROADCAST":
+        mtype = "DIRECT"
+        receiver_id = payload.receiver_id
+
     msg = Message(
         sender_id=current.id,
+        receiver_id=receiver_id,
+        chatroom_id=chatroom_id,
+        content=content,
+        message_type=mtype,
+        photo_id=payload.photo_id,
         mission_id=mission.id if mission else current.mission_id,
-        **payload.model_dump(),
     )
     db.add(msg)
     db.commit()
     db.refresh(msg)
+
+    data = MessageOut.model_validate(msg).model_dump(mode="json")
+    data["sender_callsign"] = current.callsign
     await broadcaster.broadcast({
         "channel": "chat",
         "event": "message",
         "mission_id": msg.mission_id,
-        "data": MessageOut.model_validate(msg).model_dump(mode="json"),
+        "data": data,
     })
 
     # Bridge to ATAK GeoChat so ATAK operators see Arrow chat (two-way bridge).

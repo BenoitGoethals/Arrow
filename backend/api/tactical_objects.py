@@ -49,6 +49,12 @@ async def create_object(
         "mission_id": mission.id if mission else None,
         "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
     })
+
+    # Bridge geo-pinned photos to connected ATAK devices as an image CoT.
+    if obj.photo_id:
+        from backend.cot.tcp_server import broadcast_photo_to_atak
+        await broadcast_photo_to_atak(obj, current)
+
     return obj
 
 

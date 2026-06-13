@@ -306,6 +306,39 @@ class Message(Base):
     message_type: Mapped[str]         = mapped_column(String(30), default="DIRECT")
     photo_id:     Mapped[int | None]  = mapped_column(Integer, ForeignKey("photos.id"), nullable=True)
     mission_id:   Mapped[int | None]  = mapped_column(ForeignKey("missions.id"), nullable=True)
+    # ROOM messages target a ChatRoom; DIRECT uses receiver_id; BROADCAST targets all.
+    chatroom_id:  Mapped[int | None]  = mapped_column(ForeignKey("chatrooms.id"), nullable=True)
+
+
+class ChatRoom(Base):
+    """A named multi-operator chat room with an explicit membership list.
+
+    Maps 1:1 to an ATAK GeoChat named chatroom (room name == ChatRoom.name).
+    Messages with message_type=ROOM are delivered to the room's members.
+    """
+    __tablename__ = "chatrooms"
+
+    id:         Mapped[int]            = mapped_column(primary_key=True)
+    name:       Mapped[str]            = mapped_column(String(120), index=True)
+    created_by: Mapped[int]            = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime]       = mapped_column(DateTime(timezone=True), default=_utcnow)
+    mission_id: Mapped[int | None]     = mapped_column(ForeignKey("missions.id"), nullable=True)
+    # Origin tag so an ATAK-created room is distinguishable from a native one.
+    origin:     Mapped[str]            = mapped_column(String(10), default="ARROW")  # ARROW | ATAK
+
+    members: Mapped[list["ChatRoomMember"]] = relationship(
+        back_populates="chatroom", cascade="all, delete-orphan", passive_deletes=True,
+    )
+
+
+class ChatRoomMember(Base):
+    __tablename__ = "chatroom_members"
+
+    id:          Mapped[int] = mapped_column(primary_key=True)
+    chatroom_id: Mapped[int] = mapped_column(ForeignKey("chatrooms.id", ondelete="CASCADE"), index=True)
+    operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"), index=True)
+
+    chatroom: Mapped["ChatRoom"] = relationship(back_populates="members")
 
 
 class Battle(Base):

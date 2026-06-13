@@ -1,5 +1,6 @@
 """MapView — QWebEngineView hosting the Leaflet tactical COP."""
 from __future__ import annotations
+import base64
 import json
 import sys
 from pathlib import Path
@@ -82,6 +83,12 @@ class MapView(QWebEngineView):
         # bug that only manifests on the file:// compositor code-path.
         # map_url is set by MapView.set_map_server_port() once the server starts.
         self._map_server_port: int = 0
+
+        # Auth + photo cache for geo-pinned tactical-object images.
+        self._server_url: str = ""
+        self._token: str = ""
+        self._photo_cache: dict[str, str] = {}
+        self._img_threads: list = []
 
     def set_map_server_port(self, port: int):
         """Call once the MBTilesServer is running before showing the window."""
@@ -252,8 +259,47 @@ class MapView(QWebEngineView):
     def update_cot_track(self, track: dict):
         self._js(f"updateCotTrack({json.dumps(track)})")
 
+    def set_auth(self, server_url: str, token: str):
+        """Provide backend URL + JWT so the map can fetch auth-gated photos."""
+        self._server_url = (server_url or "").rstrip("/")
+        self._token = token or ""
+
     def add_tactical_object(self, obj: dict):
         self._js(f"addTacticalObject({json.dumps(obj)})")
+        # Geo-pinned photo: fetch with Bearer auth, then inject the data-URI.
+        pid = obj.get("photo_id")
+        if pid and self._server_url and self._token:
+            self._fetch_obj_photo(obj.get("id"), pid)
+
+    def _fetch_obj_photo(self, obj_id, photo_id):
+        from front.panels.messages.panel import _ImageFetchThread
+        url = f"{self._server_url}/photos/{photo_id}"
+        cached = self._photo_cache.get(url)
+        if cached:
+            self._js(f"setObjPhoto({json.dumps(obj_id)}, {json.dumps(cached)})")
+            return
+        if url in self._photo_cache:   # in-flight (marked with "")
+            return
+        self._photo_cache[url] = ""
+        t = _ImageFetchThread(url, self._token)
+        t.loaded.connect(lambda u, data, oid=obj_id: self._on_obj_photo(oid, u, data))
+        t.start()
+        self._img_threads.append(t)
+
+    def _on_obj_photo(self, obj_id, url: str, data: bytes):
+        if not data:
+            return
+        if data[:4] == b"\x89PNG":
+            mime = "image/png"
+        elif data[:3] == b"GIF":
+            mime = "image/gif"
+        elif b"WEBP" in data[:12]:
+            mime = "image/webp"
+        else:
+            mime = "image/jpeg"
+        uri = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+        self._photo_cache[url] = uri
+        self._js(f"setObjPhoto({json.dumps(obj_id)}, {json.dumps(uri)})")
 
     def remove_tactical_object(self, obj_id: str):
         self._js(f"removeTacticalObject({json.dumps(obj_id)})")

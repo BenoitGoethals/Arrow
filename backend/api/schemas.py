@@ -183,9 +183,35 @@ class AlertOut(ORMModel):
 class MessageIn(BaseModel):
     receiver_id: int | None = None
     group_id: str | None = None
-    content: str
-    message_type: str = "DIRECT"
+    chatroom_id: int | None = None
+    content: str = ""
+    message_type: str = "DIRECT"   # DIRECT | BROADCAST | ROOM
     photo_id: int | None = None
+
+
+class ChatRoomMemberOut(ORMModel):
+    operator_id: int
+    callsign: str | None = None
+
+
+class ChatRoomIn(BaseModel):
+    name: str
+    member_ids: list[int] = []
+
+
+class ChatRoomOut(BaseModel):
+    id: int
+    name: str
+    created_by: int
+    created_at: datetime
+    mission_id: int | None = None
+    origin: str = "ARROW"
+    member_ids: list[int] = []
+    members: list[ChatRoomMemberOut] = []
+
+
+class ChatRoomMemberIn(BaseModel):
+    operator_id: int
 
 
 class MessageOut(ORMModel):
@@ -193,6 +219,7 @@ class MessageOut(ORMModel):
     sender_id: int
     receiver_id: int | None
     group_id: str | None
+    chatroom_id: int | None = None
     content: str
     timestamp: datetime
     message_type: str

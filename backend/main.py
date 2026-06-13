@@ -35,6 +35,7 @@ from backend.kml.router import router as kml_router
 from backend.map.router import router as map_router
 from backend.overlays.router import router as overlays_router
 from backend.messaging.router import router as messaging_router
+from backend.chatrooms.router import router as chatrooms_router
 from backend.missions.router import router as missions_router
 from backend.opord.router import router as opord_router
 from backend.reports.router import router as reports_router
@@ -215,6 +216,7 @@ def create_app() -> FastAPI:
     app.include_router(tactical_objects_router)
     app.include_router(alerts_router)
     app.include_router(messaging_router)
+    app.include_router(chatrooms_router)
     app.include_router(tracking_router)
     app.include_router(battles_router)
     app.include_router(strike_packages_router)

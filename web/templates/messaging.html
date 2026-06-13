@@ -52,9 +52,12 @@
         <div id="ch-broadcast" class="item active" data-recipient="broadcast">
             <span>📢 Broadcast (everyone)</span>
         </div>
-        <div id="ch-bc" class="item" data-recipient="group:BATTLE_CAPTAINS" style="display:none">
-            <span>⭐ Battle Captains</span>
-        </div>
+        <h3 style="display:flex;align-items:center">Chat Rooms
+            <button id="new-room-btn" title="New chat room"
+                    style="margin-left:auto;background:#1f2937;color:#34d399;border:1px solid #2a3142;
+                           border-radius:5px;cursor:pointer;font-size:0.85rem;line-height:1;padding:2px 7px">＋</button>
+        </h3>
+        <div id="rooms-list"><small style="color:#94a3b8">none</small></div>
         <h3>Direct</h3>
         <div id="operators-list">Loading…</div>
     </aside>
@@ -83,26 +86,24 @@
     const headers = { Authorization: `Bearer ${token}` };
     const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
 
-    // BC channel only visible to ADMIN/BATTLE_CAPTAIN.
-    if (role === 'ADMIN' || role === 'BATTLE_CAPTAIN') {
-        document.getElementById('ch-bc').style.display = '';
-    }
+    const canManage = (role === 'ADMIN' || role === 'BATTLE_CAPTAIN');
 
     const state = {
         me: null,
         operators: [],
+        rooms: [],
         messages: [],
-        recipient: { kind: 'broadcast' }, // {kind:'broadcast'} | {kind:'group',group:'BATTLE_CAPTAINS'} | {kind:'direct',op:{...}}
+        recipient: { kind: 'broadcast' }, // {kind:'broadcast'} | {kind:'room',room:{...}} | {kind:'direct',op:{...}}
     };
 
     function recipientKey(r) {
         if (r.kind === 'broadcast') return 'broadcast';
-        if (r.kind === 'group') return 'group:' + r.group;
+        if (r.kind === 'room') return 'room:' + r.room.id;
         return 'direct:' + r.op.id;
     }
     function recipientTitle(r) {
         if (r.kind === 'broadcast') return '📢 Broadcast (everyone)';
-        if (r.kind === 'group') return '⭐ ' + r.group.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        if (r.kind === 'room') return '# ' + r.room.name + '  (' + (r.room.member_ids?.length || 0) + ' members)';
         return '→ ' + r.op.callsign + '  (' + r.op.rank + ' · ' + r.op.role + ')';
     }
 
@@ -112,33 +113,58 @@
         return '';
     }
 
+    function setRecipientFromTag(tag) {
+        if (tag === 'broadcast') state.recipient = { kind: 'broadcast' };
+        else if (tag.startsWith('room:')) {
+            const id = parseInt(tag.slice(5), 10);
+            const room = state.rooms.find(r => r.id === id);
+            if (room) state.recipient = { kind: 'room', room };
+        } else if (tag.startsWith('direct:')) {
+            const id = parseInt(tag.slice(7), 10);
+            const op = state.operators.find(o => o.id === id);
+            if (op) state.recipient = { kind: 'direct', op };
+        }
+    }
+
     function renderRecipients() {
+        // Chat rooms
+        const rl = document.getElementById('rooms-list');
+        rl.innerHTML = state.rooms.length ? state.rooms.map(r => `
+            <div class="item" data-recipient="room:${r.id}">
+                <span># ${escapeHtml(r.name)}</span>
+                <span class="meta">${r.member_ids?.length || 0}
+                    <button class="room-cog" data-room="${r.id}" title="Manage members"
+                        style="background:none;border:0;color:#94a3b8;cursor:pointer;font-size:0.9rem;padding:0 2px">⚙</button>
+                </span>
+            </div>`).join('') : '<small style="color:#94a3b8">none</small>';
+
+        // Direct operators
         const list = document.getElementById('operators-list');
-        if (!state.operators.length) { list.innerHTML = '<small style="color:#94a3b8">no operators</small>'; return; }
-        list.innerHTML = state.operators
+        list.innerHTML = state.operators.length ? state.operators
             .filter(o => state.me ? o.id !== state.me.id : true)
             .map(o => `<div class="item" data-recipient="direct:${o.id}">
                 <span class="dot ${o.status === 'ONLINE' ? 'online' : 'offline'}"></span>
-                <span>${o.callsign}</span>
+                <span>${escapeHtml(o.callsign)}</span>
                 <span class="meta">${o.rank} ${badgesFor(o)}</span>
-            </div>`).join('');
-        // Highlight active
+            </div>`).join('') : '<small style="color:#94a3b8">no operators</small>';
+
+        // Highlight + wire clicks
         document.querySelectorAll('.recipients .item').forEach(el => {
             el.classList.toggle('active', el.dataset.recipient === recipientKey(state.recipient));
-            el.addEventListener('click', () => {
-                const tag = el.dataset.recipient;
-                if (tag === 'broadcast') state.recipient = { kind: 'broadcast' };
-                else if (tag.startsWith('group:')) state.recipient = { kind: 'group', group: tag.slice(6) };
-                else if (tag.startsWith('direct:')) {
-                    const id = parseInt(tag.slice(7), 10);
-                    const op = state.operators.find(o => o.id === id);
-                    if (op) state.recipient = { kind: 'direct', op };
-                }
+            el.addEventListener('click', (ev) => {
+                if (ev.target.classList.contains('room-cog')) return;  // handled below
+                setRecipientFromTag(el.dataset.recipient);
                 document.querySelectorAll('.recipients .item').forEach(e =>
                     e.classList.toggle('active', e.dataset.recipient === recipientKey(state.recipient)));
                 document.getElementById('chat-title').textContent = recipientTitle(state.recipient);
                 renderMessages();
-            }, { once: false });
+            });
+        });
+        document.querySelectorAll('.room-cog').forEach(btn => {
+            btn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                openRoomManager(parseInt(btn.dataset.room, 10));
+            });
         });
     }
 
@@ -146,7 +172,7 @@
         const r = state.recipient;
         const meId = state.me?.id;
         if (r.kind === 'broadcast') return m.message_type === 'BROADCAST';
-        if (r.kind === 'group') return m.message_type === 'GROUP' && m.group_id === r.group;
+        if (r.kind === 'room') return m.message_type === 'ROOM' && m.chatroom_id === r.room.id;
         // direct: between me and the chosen operator
         return m.message_type === 'DIRECT'
             && ((m.sender_id === meId && m.receiver_id === r.op.id)
@@ -164,7 +190,9 @@
         log.innerHTML = filtered.map(m => {
             const mine = m.sender_id === meId;
             const cls = m.message_type === 'BROADCAST' ? 'broadcast'
-                : m.message_type === 'GROUP' ? 'group' : 'direct';
+                : m.message_type === 'ROOM' ? 'group' : 'direct';
+            const roomName = m.chatroom_id ? (state.rooms.find(r => r.id === m.chatroom_id)?.name || '') : '';
+            const sender = m.sender_callsign || nameFor(m.sender_id);
             let mediaHtml = '';
             if (m.photo_id) {
                 const src = `${window.ARROW_BACKEND_URL}/photos/${m.photo_id}`;
@@ -177,7 +205,7 @@
             const photoHtml = mediaHtml;
             return `<div class="row ${mine ? 'mine' : 'other'}">
                 <div class="bubble ${cls}">
-                    <div class="from">${nameFor(m.sender_id)} · ${m.message_type}${m.group_id ? ' / ' + m.group_id : ''}
+                    <div class="from">${escapeHtml(sender)} · ${m.message_type}${roomName ? ' / # ' + escapeHtml(roomName) : ''}
                         <button class="msg-fwd" onclick="msgForward(${m.id})"
                                 title="Forward this message"
                                 style="background:none;border:0;color:#94a3b8;cursor:pointer;
@@ -196,15 +224,96 @@
     }
 
     async function refresh() {
-        const [meR, opsR, msgsR] = await Promise.all([
-            api('/auth/me'), api('/operators'), api('/messages'),
+        const [meR, opsR, msgsR, roomsR] = await Promise.all([
+            api('/auth/me'), api('/operators'), api('/messages'), api('/chatrooms'),
         ]);
         if (meR.ok) state.me = await meR.json();
         if (opsR.ok) state.operators = await opsR.json();
         if (msgsR.ok) state.messages = await msgsR.json();
+        if (roomsR.ok) state.rooms = await roomsR.json();
+        // Keep the selected room object fresh (membership may have changed).
+        if (state.recipient.kind === 'room') {
+            const updated = state.rooms.find(r => r.id === state.recipient.room.id);
+            if (updated) state.recipient.room = updated;
+            else state.recipient = { kind: 'broadcast' };
+        }
         renderRecipients();
         renderMessages();
     }
+
+    // ── Chat room create + member management ───────────────────────────────────
+    async function createRoom() {
+        const name = prompt('New chat room name:');
+        if (!name || !name.trim()) return;
+        const res = await api('/chatrooms', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name.trim(), member_ids: [] }),
+        });
+        if (!res.ok) { alert('Create failed: ' + res.status); return; }
+        const room = await res.json();
+        await refresh();
+        setRecipientFromTag('room:' + room.id);
+        document.getElementById('chat-title').textContent = recipientTitle(state.recipient);
+        renderRecipients(); renderMessages();
+    }
+
+    window.openRoomManager = async function(roomId) {
+        const room = state.rooms.find(r => r.id === roomId);
+        if (!room) return;
+        const memberSet = new Set(room.member_ids || []);
+        document.getElementById('room-mgr-modal')?.remove();
+        const rows = state.operators.map(o => `
+            <label style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.4rem;border-radius:5px;cursor:pointer">
+                <input type="checkbox" data-op="${o.id}" ${memberSet.has(o.id) ? 'checked' : ''}>
+                <span>${escapeHtml(o.callsign)}</span>
+                <span style="color:#64748b;font-size:0.75rem;margin-left:auto">${escapeHtml(o.role)}</span>
+            </label>`).join('');
+        const modal = document.createElement('div');
+        modal.id = 'room-mgr-modal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9000;display:flex;align-items:center;justify-content:center';
+        modal.innerHTML = `
+          <div style="background:#161b25;border:1px solid #2a3142;border-radius:10px;width:420px;max-width:95vw;padding:1.2rem">
+            <div style="font-weight:700;color:#34d399;margin-bottom:0.2rem"># ${escapeHtml(room.name)}</div>
+            <div style="color:#64748b;font-size:0.74rem;margin-bottom:0.7rem">Tick operators to add, untick to remove.</div>
+            <div style="max-height:46vh;overflow-y:auto;border:1px solid #2a3142;border-radius:6px;padding:0.3rem">${rows}</div>
+            <div style="display:flex;gap:0.5rem;justify-content:space-between;margin-top:0.9rem">
+              <button id="room-del" style="background:#3a1212;color:#fca5a5;border:1px solid #7f1d1d;border-radius:6px;padding:0.4rem 0.9rem;cursor:pointer">Delete room</button>
+              <div style="display:flex;gap:0.5rem">
+                <button onclick="document.getElementById('room-mgr-modal').remove()" style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:6px;padding:0.4rem 1rem;cursor:pointer">Close</button>
+                <button id="room-save" style="background:#34d399;color:#0d1117;border:0;border-radius:6px;padding:0.4rem 1.2rem;font-weight:600;cursor:pointer">Save</button>
+              </div>
+            </div>
+            <div id="room-mgr-err" style="color:#ef4444;font-size:0.8rem;margin-top:0.4rem"></div>
+          </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+        document.getElementById('room-save').addEventListener('click', async () => {
+            const boxes = [...modal.querySelectorAll('input[data-op]')];
+            const err = document.getElementById('room-mgr-err');
+            for (const b of boxes) {
+                const opId = parseInt(b.dataset.op, 10);
+                const was = memberSet.has(opId);
+                if (b.checked && !was) {
+                    const r = await api(`/chatrooms/${roomId}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operator_id: opId }) });
+                    if (!r.ok) { err.textContent = 'Add failed (' + r.status + ')'; return; }
+                } else if (!b.checked && was) {
+                    const r = await api(`/chatrooms/${roomId}/members/${opId}`, { method: 'DELETE' });
+                    if (!r.ok) { err.textContent = 'Remove failed (' + r.status + ')'; return; }
+                }
+            }
+            modal.remove();
+            await refresh();
+        });
+        document.getElementById('room-del').addEventListener('click', async () => {
+            if (!confirm('Delete room "' + room.name + '"?')) return;
+            const r = await api(`/chatrooms/${roomId}`, { method: 'DELETE' });
+            if (r.ok || r.status === 204) { modal.remove(); if (state.recipient.kind === 'room' && state.recipient.room.id === roomId) state.recipient = { kind: 'broadcast' }; await refresh(); }
+            else document.getElementById('room-mgr-err').textContent = 'Delete failed (' + r.status + ')';
+        });
+    };
+
+    document.getElementById('new-room-btn').addEventListener('click', createRoom);
 
     // ── Photo attachment ──────────────────────────────────────────────────────
     let pendingPhotoId = null;
@@ -254,7 +363,7 @@
 
         const r = state.recipient;
         const body = (r.kind === 'broadcast') ? { content, message_type: 'BROADCAST' }
-            : (r.kind === 'group') ? { content, message_type: 'GROUP', group_id: r.group }
+            : (r.kind === 'room') ? { content, message_type: 'ROOM', chatroom_id: r.room.id }
             : { content, message_type: 'DIRECT', receiver_id: r.op.id };
         if (pendingPhotoId) body.photo_id = pendingPhotoId;
 
@@ -284,15 +393,7 @@
     function applyOpenParam() {
         const open = new URLSearchParams(location.search).get('open');
         if (!open) return;
-        if (open === 'broadcast') {
-            state.recipient = { kind: 'broadcast' };
-        } else if (open.startsWith('group:')) {
-            state.recipient = { kind: 'group', group: open.slice(6) };
-        } else if (open.startsWith('direct:')) {
-            const id = parseInt(open.slice(7), 10);
-            const op = state.operators.find(o => o.id === id);
-            if (op) state.recipient = { kind: 'direct', op };
-        }
+        setRecipientFromTag(open);
         document.getElementById('chat-title').textContent = recipientTitle(state.recipient);
         renderRecipients();
         renderMessages();
@@ -332,7 +433,7 @@
                                        margin-bottom:0.6rem">
                 <option value="">— select recipient —</option>
                 <option value="broadcast">📢 Broadcast (everyone)</option>
-                <option value="group:BATTLE_CAPTAINS">⭐ BATTLE_CAPTAINS</option>
+                ${state.rooms.map(r => `<option value="room:${r.id}"># ${escapeHtml(r.name)}</option>`).join('')}
                 <option disabled>──────────</option>
                 ${opts}
             </select>
@@ -376,9 +477,9 @@
         const payload = { content: body, photo_id: m.photo_id ?? null };
         if (to === 'broadcast') {
             payload.message_type = 'BROADCAST';
-        } else if (to.startsWith('group:')) {
-            payload.message_type = 'GROUP';
-            payload.group_id     = to.slice(6);
+        } else if (to.startsWith('room:')) {
+            payload.message_type = 'ROOM';
+            payload.chatroom_id  = parseInt(to.slice(5), 10);
         } else if (to.startsWith('direct:')) {
             payload.message_type = 'DIRECT';
             payload.receiver_id  = parseInt(to.slice(7), 10);

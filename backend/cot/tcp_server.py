@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,11 +19,15 @@ from pathlib import Path
 from lxml import etree
 
 from backend.cot.cot import (
-    ALL_CHAT_ROOMS, CotEvent, build_geochat, cot_type_to_sidc, is_arrow_geochat,
-    parse_cot, parse_geochat, parse_medevac, role_to_cot_type,
+    ALL_CHAT_ROOMS, PHOTO_COT_MAX_BYTES, CotEvent, build_geochat, build_image_cot,
+    cot_type_to_sidc, is_arrow_geochat, is_arrow_photo, parse_cot, parse_cot_image,
+    parse_geochat, parse_medevac, role_to_cot_type,
 )
 from backend.storage.database import SessionLocal
-from backend.storage.models import Alert, CotTrack, Message, Operator, Report
+from backend.storage.models import (
+    Alert, ChatRoom, ChatRoomMember, CotTrack, Message, Operator, Photo, Report,
+    TacticalObject,
+)
 from backend.websocket.manager import broadcaster
 
 log = logging.getLogger("backend.cot.tcp")
@@ -220,6 +225,14 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
         await _Pool.broadcast(raw, exclude=sender_uid)
         return
 
+    # ATAK photo (point CoT with embedded image) → Arrow Photo + pinned POI.
+    img = parse_cot_image(raw)
+    if img is not None:
+        if not is_arrow_photo(img):      # ignore our own outbound echoed back
+            await _handle_cot_image(img)
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
     with SessionLocal() as db:
         op: Operator | None = None
         if evt.callsign:
@@ -350,23 +363,41 @@ async def _handle_medevac(med: dict) -> None:
 # ── Chat bridge (ATAK GeoChat ↔ Arrow messaging) ──────────────────────────────
 
 async def _handle_geochat(chat: dict) -> None:
-    """Persist an inbound ATAK GeoChat as an Arrow Message + broadcast on `chat`."""
-    from backend.api.schemas import MessageOut
+    """Persist an inbound ATAK GeoChat as an Arrow Message + broadcast on `chat`.
 
-    room = chat.get("chatroom") or ALL_CHAT_ROOMS
-    is_broadcast = room.strip().lower() == ALL_CHAT_ROOMS.lower()
+    Routing by chatroom name:
+      • "All Chat Rooms"            → BROADCAST
+      • name matching an operator   → DIRECT to that operator
+      • any other named room        → ROOM (get-or-create a ChatRoom, ATAK origin)
+    """
+    from backend.api.schemas import MessageOut
+    from backend.chatrooms.router import add_member, get_or_create_room, room_out
+
+    room_name = (chat.get("chatroom") or ALL_CHAT_ROOMS).strip()
+    text = chat["text"]
+    created_room: int | None = None
 
     with SessionLocal() as db:
         sender_id = _resolve_operator_id(db, chat.get("sender_callsign"))
         if sender_id is None:
             log.warning("GeoChat dropped: no operators exist to attribute it to")
             return
-        msg = Message(
-            sender_id=sender_id,
-            content=chat["text"],
-            message_type="BROADCAST" if is_broadcast else "GROUP",
-            group_id=None if is_broadcast else room,
-        )
+
+        mtype, receiver_id, chatroom_id = "BROADCAST", None, None
+        if room_name.lower() != ALL_CHAT_ROOMS.lower():
+            target = db.query(Operator).filter(Operator.callsign.ilike(room_name)).first()
+            if target is not None:
+                mtype, receiver_id = "DIRECT", target.id
+            else:
+                existing = db.query(ChatRoom).filter(ChatRoom.name.ilike(room_name)).first()
+                room = existing or get_or_create_room(db, room_name, sender_id, origin="ATAK")
+                add_member(db, room.id, sender_id)
+                mtype, chatroom_id = "ROOM", room.id
+                if existing is None:
+                    created_room = room.id
+
+        msg = Message(sender_id=sender_id, content=text, message_type=mtype,
+                      receiver_id=receiver_id, chatroom_id=chatroom_id)
         db.add(msg)
         db.commit()
         db.refresh(msg)
@@ -380,8 +411,16 @@ async def _handle_geochat(chat: dict) -> None:
     await broadcaster.broadcast({
         "channel": "chat", "event": "message", "mission_id": mid, "data": data,
     })
+    if created_room is not None:   # new ATAK room → tell clients to refresh
+        with SessionLocal() as db:
+            r = db.get(ChatRoom, created_room)
+            if r is not None:
+                await broadcaster.broadcast({
+                    "channel": "chat", "event": "room_created",
+                    "mission_id": r.mission_id, "data": room_out(db, r),
+                })
     log.info("ATAK GeoChat from %s in '%s': %.40s",
-             chat.get("sender_callsign"), room, chat["text"])
+             chat.get("sender_callsign"), room_name, text)
 
 
 async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
@@ -402,6 +441,7 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
 
     room = ALL_CHAT_ROOMS
     recipient_uid: str | None = None
+    member_uids: list[str] | None = None
     if msg.message_type == "DIRECT":
         if not msg.receiver_id:
             return  # private message with no addressable recipient
@@ -411,11 +451,108 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
             return
         room = rcv.callsign
         recipient_uid = f"ARROW.{rcv.callsign}"
+    elif msg.message_type == "ROOM":
+        if not msg.chatroom_id:
+            return
+        with SessionLocal() as db:
+            r = db.get(ChatRoom, msg.chatroom_id)
+            if r is None:
+                return
+            room = r.name
+            rows = (db.query(Operator.callsign)
+                      .join(ChatRoomMember, ChatRoomMember.operator_id == Operator.id)
+                      .filter(ChatRoomMember.chatroom_id == r.id).all())
+            member_uids = [f"ARROW.{cs}" for (cs,) in rows if cs]
 
     cot = build_geochat(
         sender_callsign=sender.callsign, text=msg.content,
-        room=room, recipient_uid=recipient_uid,
+        room=room, recipient_uid=recipient_uid, member_uids=member_uids,
         image_url=image_url,
+    )
+    await _Pool.broadcast(cot)
+
+
+# ── Photo bridge (geo-pinned images, ATAK ↔ Arrow) ────────────────────────────
+
+async def _handle_cot_image(img: dict) -> None:
+    """Persist an inbound ATAK photo CoT as a Photo + a POI pinned at its grid."""
+    from backend.api.schemas import TacticalObjectOut
+    from backend.photos.router import MIME_TO_EXT, PHOTO_DIR, _encrypt, _get_aesgcm
+
+    mime = img.get("mime") or "image/jpeg"
+    blob = _encrypt(img["image_bytes"])
+    ext  = MIME_TO_EXT.get(mime, "jpg")
+    fname = f"{uuid.uuid4().hex}.{ext}" + (".enc" if _get_aesgcm() is not None else "")
+    try:
+        (PHOTO_DIR / fname).write_bytes(blob)
+    except Exception as exc:
+        log.warning("photo write failed: %s", exc)
+        return
+
+    with SessionLocal() as db:
+        op_id = _resolve_operator_id(db, img.get("callsign"))
+        if op_id is None:
+            log.warning("ATAK photo dropped: no operators exist to attribute it to")
+            return
+        photo = Photo(filename=fname, original_name=img.get("caption") or "atak-photo",
+                      mime_type=mime, uploaded_by=op_id)
+        db.add(photo)
+        db.commit()
+        db.refresh(photo)
+        obj = TacticalObject(
+            type="POI", symbol_code="", created_by=op_id,
+            latitude=img["lat"], longitude=img["lon"],
+            notes=img.get("caption") or "ATAK photo",
+            photo_id=photo.id, affiliation="FRIENDLY",
+        )
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        data = TacticalObjectOut.model_validate(obj).model_dump(mode="json")
+        mid  = obj.mission_id
+        photo_id_v, obj_id_v = photo.id, obj.id   # capture before session closes
+
+    await broadcaster.broadcast({
+        "channel": "tactical-object", "event": "created", "mission_id": mid, "data": data,
+    })
+    log.info("ATAK photo from %s at %s,%s → photo#%s poi#%s",
+             img.get("callsign"), img["lat"], img["lon"], photo_id_v, obj_id_v)
+
+
+def _load_photo_bytes(photo: Photo) -> bytes | None:
+    """Read + decrypt a stored photo from disk."""
+    from backend.photos.router import PHOTO_DIR, _decrypt
+    path = PHOTO_DIR / photo.filename
+    if not path.exists():
+        return None
+    raw = path.read_bytes()
+    if photo.filename.endswith(".enc"):
+        try:
+            raw = _decrypt(raw)
+        except Exception:
+            return None
+    return raw
+
+
+async def broadcast_photo_to_atak(obj: TacticalObject, sender: Operator) -> None:
+    """Forward an Arrow geo-pinned photo to ATAK as an image CoT (called on create)."""
+    if _Pool.count() == 0 or not obj.photo_id:
+        return
+    with SessionLocal() as db:
+        photo = db.get(Photo, obj.photo_id)
+        if photo is None:
+            return
+        photo_id, mime = photo.id, photo.mime_type
+        raw = _load_photo_bytes(photo)   # reads while still session-bound
+    if raw is None:
+        return
+    if len(raw) > PHOTO_COT_MAX_BYTES:
+        log.info("photo#%s too large (%d B) to bridge to ATAK over CoT — skipped",
+                 photo_id, len(raw))
+        return
+    cot = build_image_cot(
+        lat=obj.latitude, lon=obj.longitude, callsign=sender.callsign,
+        image_bytes=raw, mime=mime, caption=obj.notes or "",
     )
     await _Pool.broadcast(cot)
 

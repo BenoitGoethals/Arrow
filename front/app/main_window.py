@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
+        self._map.set_auth(self._server_url, self._token)
 
         # ---- Collapsible side panels ----------------------------------
         self._left_panel = CollapsibleSidePanel(

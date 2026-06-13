@@ -20,7 +20,12 @@ server (port 8087); see [[project_atak_medevac]] for the same ingestion pattern.
 
 `backend/messaging/router.py::send_message` calls `broadcast_chat_to_atak` (lazy import) after its `chat` broadcast.
 
-Clients need no change — they already react to `chat` events by re-fetching `/messages`.
+Clients need no change for basic chat — they react to `chat` events by re-fetching `/messages`.
 Limitation: an ATAK sender with no matching operator is persisted under the fallback operator_id
 (live event still carries the real `sender_callsign`).
-Verified live both directions + loop guard; tests `-k "cot or messag or chat"` 44 passed.
+
+CHATROOMS refactor (2026-06-13): real `ChatRoom` + `ChatRoomMember` tables (see [[project_chatrooms]]).
+Message types now DIRECT | BROADCAST | ROOM (was the role-based GROUP). ROOM ⇄ ATAK named GeoChat
+room (room name == ChatRoom.name; `build_geochat(member_uids=[...])` lists members as chatgrp uid1..N;
+`parse_geochat` returns `members`/`room_id`). Inbound ATAK named room → get-or-create ChatRoom (origin
+ATAK) via `_handle_geochat`; room name matching an operator callsign → DIRECT. Verified both directions.
