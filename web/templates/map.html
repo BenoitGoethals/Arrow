@@ -4602,26 +4602,52 @@
     // dismiss when the alert is acknowledged.
     if (!state.alertLayers) state.alertLayers = new Map();    // id -> LayerGroup
     const ALERT_COLOURS = {
-        TIC:            '#dc2626',
-        DRONE_SPOTTED:  '#a855f7',
-        MEDICAL:        '#16a34a',
-        MEDEVAC:        '#22c55e',
-        EVAC:           '#f59e0b',
-        LOST_COMMS:     '#6366f1',
+        TIC:             '#dc2626',
+        DRONE_SPOTTED:   '#a855f7',
+        MEDICAL:         '#16a34a',
+        MEDEVAC:         '#22c55e',
+        EVAC:            '#f59e0b',
+        LOST_COMMS:      '#6366f1',
+        ATAK_EMERGENCY:  '#ff3030',
     };
     const ALERT_ICONS = {
-        TIC:            '⚡',
-        DRONE_SPOTTED:  '🛸',
-        MEDICAL:        '🏥',
-        MEDEVAC:        '🚁',
-        EVAC:           '🚁',
-        LOST_COMMS:     '📡',
+        TIC:             '⚡',
+        DRONE_SPOTTED:   '🛸',
+        MEDICAL:         '🏥',
+        MEDEVAC:         '🚁',
+        EVAC:            '🚁',
+        LOST_COMMS:      '📡',
+        ATAK_EMERGENCY:  '🚨',
     };
+
+    // ── Alert sound — Web Audio API beep pattern ──────────────────────────────
+    function _playAlertTone(urgent) {
+        try {
+            const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+            const freq = urgent ? 880 : 660;
+            const reps = urgent ? 3   : 2;
+            for (let i = 0; i < reps; i++) {
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                const t0 = ctx.currentTime + i * 0.28;
+                gain.gain.setValueAtTime(0.25, t0);
+                gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+                osc.start(t0);
+                osc.stop(t0 + 0.22);
+            }
+        } catch (_) {}
+    }
 
     // ── Alert toast — shown for every alert regardless of lat/lon ─────────────
     function showAlertToast(d) {
         const colour = ALERT_COLOURS[d.type] || '#dc2626';
         const icon   = ALERT_ICONS[d.type]   || '⚠';
+        // Sound: urgent (3-beep) for TIC/ATAK_EMERGENCY, normal (2-beep) otherwise
+        const urgent = ['TIC', 'ATAK_EMERGENCY'].includes(d.type);
+        _playAlertTone(urgent);
         const op     = state.operators.get(d.operator_id);
         const cs     = op ? op.callsign : (d.callsign || (d.operator_id ? `op#${d.operator_id}` : 'UNKNOWN'));
         const hasPos = d.latitude != null && d.longitude != null;
@@ -4747,12 +4773,14 @@
     }
 
     function handleAlertTriggered(d) {
-        const hasPos = d.latitude != null && d.longitude != null;
+        // Valid position: non-null AND not the 0,0 fallback (no GPS fix)
+        const hasPos = d.latitude != null && d.longitude != null
+                    && !(d.latitude === 0 && d.longitude === 0);
 
-        // 1. Toast — always, regardless of visibility or coordinates
+        // 1. Toast + sound — always
         showAlertToast(d);
 
-        // 2. Zoom — always when we have a position, before any visibility gate
+        // 2. Zoom — when position is valid
         if (hasPos) {
             map.setView([d.latitude, d.longitude], 16, { animate: true });
         }
@@ -4788,12 +4816,16 @@
         }).addTo(grp);
         // MEDEVAC / EVAC → drop a 🚁 medevac marker at the casualty grid so it
         // reads as a medevac request, not just a generic alert dot.
-        if (['MEDEVAC', 'EVAC', 'MEDICAL'].includes(d.type)) {
+        const markerEmoji = {
+            MEDEVAC: '🚁', EVAC: '🚁', MEDICAL: '🚁',
+            ATAK_EMERGENCY: '🚨', TIC: '⚡',
+        }[d.type];
+        if (markerEmoji) {
             L.marker([d.latitude, d.longitude], {
                 interactive: false, zIndexOffset: 1500,
                 icon: L.divIcon({
                     className: '',
-                    html: `<div style="font-size:24px;line-height:1;filter:drop-shadow(0 0 3px ${colour})">🚁</div>`,
+                    html: `<div style="font-size:24px;line-height:1;filter:drop-shadow(0 0 4px ${colour})">${markerEmoji}</div>`,
                     iconSize: [24, 24], iconAnchor: [12, -6],
                 }),
             }).addTo(grp);
