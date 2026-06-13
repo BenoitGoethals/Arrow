@@ -280,7 +280,22 @@ class CotTrack(Base):
     speed:      Mapped[float]         = mapped_column(Float,        default=0.0)
     course:     Mapped[float]         = mapped_column(Float,        default=0.0)
     team:       Mapped[str]           = mapped_column(String(60),  default="")
+    remarks:    Mapped[str | None]   = mapped_column(Text,          nullable=True)
     last_seen:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AtakShape(Base):
+    """ATAK-drawn map annotation (route, line, area) received over CoT TCP."""
+    __tablename__ = "atak_shapes"
+
+    id:            Mapped[int]       = mapped_column(primary_key=True)
+    uid:           Mapped[str]       = mapped_column(String(160), unique=True, index=True)
+    cot_type:      Mapped[str]       = mapped_column(String(40),  default="")
+    shape_type:    Mapped[str]       = mapped_column(String(20),  default="LINE")
+    title:         Mapped[str]       = mapped_column(String(200), default="")
+    callsign:      Mapped[str]       = mapped_column(String(80),  default="")
+    geometry_json: Mapped[str]       = mapped_column(Text,        default="")
+    last_seen:     Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class Alert(Base):

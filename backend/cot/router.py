@@ -115,6 +115,7 @@ async def receive_cot(
         track.speed     = evt.speed
         track.course    = evt.course
         track.team      = evt.team
+        track.remarks   = getattr(evt, "remarks", None) or None
         track.last_seen = datetime.now(timezone.utc)
         db.commit()
         db.refresh(track)
@@ -134,6 +135,7 @@ async def receive_cot(
                 "speed":     track.speed,
                 "course":    track.course,
                 "team":      track.team,
+                "remarks":   track.remarks or "",
                 "last_seen": track.last_seen.isoformat(),
             },
         })
@@ -168,6 +170,25 @@ def list_cot_tracks(
 ) -> list[CotTrack]:
     """Return all live CoT track entities for the tactical map to load on startup."""
     return db.query(CotTrack).all()
+
+
+@router.get("/shapes")
+def list_atak_shapes(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    """Return all persisted ATAK drawn shapes."""
+    from backend.storage.models import AtakShape
+    shapes = db.query(AtakShape).all()
+    return [
+        {
+            "id": s.id, "uid": s.uid, "cot_type": s.cot_type,
+            "shape_type": s.shape_type, "title": s.title,
+            "callsign": s.callsign, "geometry_json": s.geometry_json,
+            "last_seen": s.last_seen.isoformat() if s.last_seen else None,
+        }
+        for s in shapes
+    ]
 
 
 @router.get(

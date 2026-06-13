@@ -165,6 +165,9 @@
                    border-left: 3px solid #a78bfa; background: #130d1f; }
     .atak-client-cs { font-size: 0.72rem; font-weight: 700; color: #c4b5fd; }
     .atak-client-meta { font-size: 0.62rem; color: #6b7280; }
+    .atak-shape-line  { stroke: #f59e0b; stroke-width: 2.5; fill: none; }
+    .atak-shape-route { stroke: #60a5fa; stroke-width: 2.5; fill: none; }
+    .atak-shape-area  { stroke: #a78bfa; stroke-width: 2; fill: rgba(167,139,250,.15); }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
     .sb-section > summary { list-style: none; cursor: pointer; user-select: none;
                             display: flex; align-items: center; gap: 6px; }
@@ -3774,6 +3777,52 @@
         }
     }
 
+    // ── ATAK drawn shapes (routes, lines, areas) ─────────────────────────────
+    const _atakShapesLayer = L.layerGroup().addTo(map);
+    const _atakShapes = new Map(); // uid → {layer, data}
+
+    function _renderAtakShape(s) {
+        // Remove old layer if exists
+        const existing = _atakShapes.get(s.uid);
+        if (existing) _atakShapesLayer.removeLayer(existing.layer);
+
+        let geo;
+        try { geo = JSON.parse(s.geometry_json); } catch(_) { return; }
+
+        const isRoute = s.shape_type === 'ROUTE';
+        const isArea  = s.shape_type === 'AREA';
+
+        let layer;
+        const opts = isRoute
+            ? {color:'#60a5fa', weight:2.5, opacity:0.85, dashArray:'8,4'}
+            : isArea
+                ? {color:'#a78bfa', weight:2, opacity:0.85, fillColor:'#a78bfa', fillOpacity:0.12}
+                : {color:'#f59e0b', weight:2.5, opacity:0.85};
+
+        if (geo.type === 'LineString') {
+            layer = L.polyline(geo.coordinates.map(c => [c[1],c[0]]), opts);
+        } else if (geo.type === 'Polygon') {
+            layer = L.polygon(geo.coordinates[0].map(c => [c[1],c[0]]), opts);
+        } else { return; }
+
+        const icon = isRoute ? '🗺' : isArea ? '⬡' : '✏';
+        layer.bindTooltip(`${icon} ${escHtml(s.title || s.callsign)}`, {sticky:true, className:'leaflet-tooltip'});
+        layer.bindPopup(
+            `<b>${escHtml(s.title || s.uid)}</b><br/>` +
+            `${escHtml(s.shape_type)} · ${escHtml(s.callsign)}<br/>` +
+            `<small style="color:#64748b">${escHtml(s.cot_type)}</small>`
+        );
+        layer.addTo(_atakShapesLayer);
+        _atakShapes.set(s.uid, {layer, data: s});
+    }
+
+    async function loadAtakShapes() {
+        const r = await api('/cot/shapes');
+        if (!r.ok) return;
+        const list = await r.json();
+        list.forEach(_renderAtakShape);
+    }
+
     let _chatPhotoId = null;
     function handleChatPhotoChange(input) {
         _chatPhotoId = null;
@@ -4842,6 +4891,8 @@
                 if (msg.event === 'triggered') handleAlertTriggered(msg.data);
                 else if (msg.event === 'ack')  removeAlertLayer(msg.data.id);
                 loadMapAlerts();
+            } else if (msg.channel === 'atak-shape') {
+                _renderAtakShape(msg.data);
             } else if (msg.channel === 'cot-presence') {
                 loadAtakClients();
             } else if (msg.channel === 'presence') {
@@ -4913,7 +4964,7 @@
     function reloadAllMapData() {
         loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles();
         loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
-        loadMapAlerts(); loadMapMessages(); loadAtakClients();
+        loadMapAlerts(); loadMapMessages(); loadAtakClients(); loadAtakShapes();
     }
     window.addEventListener('arrow-mission-changed', () => {
         flyToActiveMission();
@@ -4921,7 +4972,7 @@
     });
     flyToActiveMission();
 
-    loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages(); loadAtakClients();
+    loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages(); loadAtakClients(); loadAtakShapes();
     setInterval(loadVehicles, 20000);
     setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);

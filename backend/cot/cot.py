@@ -24,6 +24,7 @@ MIL-STD-2525C SIDC ↔ CoT type mapping is symmetrical (see tables below).
 from __future__ import annotations
 
 import base64
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -121,6 +122,7 @@ class CotEvent:
     course: float = 0.0     # degrees true north
     team: str = ""
     platform: str = "ARROW"
+    remarks: str = ""
     time: datetime | None = None
 
     @property
@@ -194,6 +196,7 @@ def parse_cot(xml: bytes | str) -> CotEvent:
     track   = root.find("detail/track")
     group   = root.find("detail/__group")
     takv    = root.find("detail/takv")
+    remarks_el = root.find("detail/remarks")
 
     callsign = ""
     if contact is not None:
@@ -206,6 +209,8 @@ def parse_cot(xml: bytes | str) -> CotEvent:
     # locale-independent.
     def _f(s: str | None, default: str = "0") -> float:
         return float((s or default).replace(",", "."))
+
+    remarks = (remarks_el.text or "").strip() if remarks_el is not None else ""
 
     return CotEvent(
         uid      = root.get("uid", ""),
@@ -221,6 +226,7 @@ def parse_cot(xml: bytes | str) -> CotEvent:
         team     = group.get("name",  "") if group is not None else "",
         role     = group.get("role",  "") if group is not None else "",
         platform = takv.get("platform", "ARROW") if takv is not None else "ARROW",
+        remarks  = remarks,
     )
 
 
@@ -408,6 +414,173 @@ def is_arrow_geochat(chat: dict) -> bool:
     """True if a parsed GeoChat originated from Arrow (our own echo)."""
     return str(chat.get("source", "")).startswith(_GEOCHAT_SOURCE) \
         or str(chat.get("uid", "")).startswith(_GEOCHAT_UID_PREFIX)
+
+
+def parse_emergency(xml: bytes | str) -> dict | None:
+    """Parse ATAK emergency button CoT (b-a-o-opn = active, b-a-o-can = cancel).
+    Returns {uid, callsign, lat, lon, active, text} or None if not emergency.
+    """
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+    cot_type = root.get("type", "")
+    if not (cot_type.startswith("b-a-o-opn") or cot_type.startswith("b-a-o-can")):
+        return None
+    point   = root.find("point")
+    contact = root.find("detail/contact")
+    emerg   = root.find("detail/emergency")
+    callsign = (contact.get("callsign","") if contact is not None else "") or root.get("uid","ATAK")
+    text = (emerg.get("type","") if emerg is not None else "") or ("911 Alert" if "opn" in cot_type else "Cancelled")
+    def _f(s):
+        return float((s or "0").replace(",","."))
+    return {
+        "uid":      root.get("uid",""),
+        "callsign": callsign,
+        "lat":      _f(point.get("lat")) if point is not None else 0.0,
+        "lon":      _f(point.get("lon")) if point is not None else 0.0,
+        "active":   "opn" in cot_type,
+        "text":     text,
+    }
+
+
+def parse_spot_report(xml: bytes | str) -> dict | None:
+    """Parse ATAK contact/spot reports (b-r-f-* except b-r-f-h-c MEDEVAC).
+    Returns {callsign, lat, lon, cot_type, remarks, title} or None.
+    """
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+    cot_type = root.get("type","")
+    if not cot_type.startswith("b-r-f-") or cot_type.startswith("b-r-f-h-c"):
+        return None
+    point   = root.find("point")
+    contact = root.find("detail/contact")
+    remarks = root.find("detail/remarks")
+    callsign = (contact.get("callsign","") if contact is not None else "") or root.get("uid","ATAK")
+    text = (remarks.text or "").strip() if remarks is not None else ""
+    def _f(s):
+        return float((s or "0").replace(",","."))
+    return {
+        "callsign": callsign,
+        "lat":      _f(point.get("lat")) if point is not None else 0.0,
+        "lon":      _f(point.get("lon")) if point is not None else 0.0,
+        "cot_type": cot_type,
+        "remarks":  text,
+        "title":    callsign,
+    }
+
+
+def parse_fileshare_announcement(xml: bytes | str) -> dict | None:
+    """Parse ATAK file transfer announcement (b-f-t-a).
+    Returns {filename, sender_callsign, url, mime} or None.
+    """
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+    if root.get("type","") != "b-f-t-a":
+        return None
+    fs  = root.find("detail/fileshare")
+    ack = root.find("detail/ackrequest")
+    if fs is None:
+        return None
+    filename = fs.get("filename","") or fs.get("name","")
+    sender   = fs.get("senderCallsign","") or root.get("uid","ATAK")
+    url      = (ack.get("endpoint","") if ack is not None else "")
+    if not url:
+        return None
+    # Infer mime type from extension
+    ext = filename.rsplit(".",1)[-1].lower() if "." in filename else "jpg"
+    MIME = {"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png",
+            "gif":"image/gif","webp":"image/webp","mp4":"video/mp4",
+            "mov":"video/quicktime","pdf":"application/pdf"}
+    mime = MIME.get(ext, "application/octet-stream")
+    return {"filename": filename, "sender_callsign": sender, "url": url, "mime": mime}
+
+
+def parse_atak_shape(xml: bytes | str) -> dict | None:
+    """Parse ATAK drawn shapes: routes (b-m-r), drawings (u-d-*), areas.
+    Returns {uid, cot_type, title, callsign, geometry_json} or None.
+    """
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+    cot_type = root.get("type","")
+    # Match route and drawing types
+    if not (cot_type.startswith("b-m-r") or cot_type.startswith("u-d-")
+            or cot_type.startswith("u-rb-")):
+        return None
+    uid     = root.get("uid","")
+    contact = root.find("detail/contact")
+    remarks = root.find("detail/remarks")
+    callsign = (contact.get("callsign","") if contact is not None else "") or uid
+    title    = (remarks.text or "").strip() if remarks is not None else callsign
+
+    def _f(s):
+        return float((s or "0").replace(",","."))
+
+    coords = []
+
+    # Route: waypoints as <link lat="..." lon="..."/>
+    if cot_type.startswith("b-m-r") or cot_type.startswith("u-rb-"):
+        for lnk in root.findall("detail/link"):
+            lat = lnk.get("lat") or lnk.get("point","").split(",")[0] if "," in (lnk.get("point","")) else lnk.get("lat")
+            lon = lnk.get("lon") or (lnk.get("point","").split(",")[1] if "," in (lnk.get("point","")) else lnk.get("lon"))
+            if lat and lon:
+                coords.append([_f(lon), _f(lat)])
+        if len(coords) < 2:
+            return None
+        geometry_json = json.dumps({"type":"LineString","coordinates":coords})
+        shape_type = "ROUTE"
+
+    # Drawing/area: <shape><polyline/> or <shape><polygon/>
+    else:
+        shape_el = root.find("detail/shape")
+        if shape_el is not None:
+            _pl = shape_el.find("polyline")
+            poly = _pl if _pl is not None else shape_el.find("polygon")
+            if poly is not None:
+                for v in poly.findall("vertex"):
+                    lat = v.get("lat"); lon = v.get("lon")
+                    if lat and lon:
+                        coords.append([_f(lon), _f(lat)])
+        # Fallback: link elements
+        if not coords:
+            for lnk in root.findall("detail/link"):
+                lat = lnk.get("lat"); lon = lnk.get("lon")
+                if lat and lon:
+                    coords.append([_f(lon), _f(lat)])
+        if len(coords) < 2:
+            return None
+        closed = (shape_el is not None and shape_el.find("polygon") is not None) or cot_type.startswith("u-d-r")
+        if closed and coords[0] != coords[-1]:
+            coords.append(coords[0])
+        if closed:
+            geometry_json = json.dumps({"type":"Polygon","coordinates":[coords]})
+            shape_type = "AREA"
+        else:
+            geometry_json = json.dumps({"type":"LineString","coordinates":coords})
+            shape_type = "LINE"
+
+    return {
+        "uid":           uid,
+        "cot_type":      cot_type,
+        "title":         title or callsign,
+        "callsign":      callsign,
+        "shape_type":    shape_type,
+        "geometry_json": geometry_json,
+    }
 
 
 def build_geochat(

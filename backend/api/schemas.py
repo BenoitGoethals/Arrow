@@ -425,6 +425,7 @@ class CotTrackOut(ORMModel):
     speed:     float
     course:    float
     team:      str
+    remarks:   str | None = None
     last_seen: datetime
 
     @computed_field
@@ -432,3 +433,14 @@ class CotTrackOut(ORMModel):
     def sidc(self) -> str:
         from backend.cot.cot import cot_type_to_sidc  # noqa: PLC0415
         return cot_type_to_sidc(self.cot_type)
+
+
+class AtakShapeOut(ORMModel):
+    id:            int
+    uid:           str
+    cot_type:      str
+    shape_type:    str
+    title:         str
+    callsign:      str
+    geometry_json: str
+    last_seen:     datetime

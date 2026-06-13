@@ -21,13 +21,14 @@ from lxml import etree
 from backend.cot.cot import (
     ALL_CHAT_ROOMS, PHOTO_COT_MAX_BYTES, CotEvent, build_fileshare, build_geochat,
     build_image_cot, cot_type_to_sidc, is_arrow_fileshare, is_arrow_geochat,
-    is_arrow_photo, parse_cot, parse_cot_image, parse_fileshare, parse_geochat,
-    parse_medevac, role_to_cot_type,
+    is_arrow_photo, parse_atak_shape, parse_cot, parse_cot_image, parse_emergency,
+    parse_fileshare, parse_fileshare_announcement, parse_geochat, parse_medevac,
+    parse_spot_report, role_to_cot_type,
 )
 from backend.storage.database import SessionLocal
 from backend.storage.models import (
-    Alert, ChatRoom, ChatRoomMember, CotTrack, Message, Operator, Photo, Report,
-    TacticalObject,
+    Alert, AtakShape, ChatRoom, ChatRoomMember, CotTrack, Message, Operator, Photo,
+    Report, TacticalObject,
 )
 from backend.websocket.manager import broadcaster
 
@@ -209,6 +210,39 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
 
     _Pool.update(sender_uid, evt)
 
+    # Emergency button
+    emerg = parse_emergency(raw)
+    if emerg is not None:
+        await _handle_emergency(emerg)
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
+    # Spot/contact report (non-MEDEVAC b-r-f-*)
+    spot = parse_spot_report(raw)
+    if spot is not None:
+        await _handle_spot_report(spot)
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
+    # File share announcement (b-f-t-a)
+    fsa = parse_fileshare_announcement(raw)
+    if fsa is not None:
+        sender_ip = _Pool._clients.get(sender_uid)
+        ip = sender_ip.ip if sender_ip else ""
+        # Resolve relative URL using sender IP if needed
+        if not fsa["url"].startswith("http"):
+            fsa["url"] = f"http://{ip}:8080/Attachment/{fsa['filename']}"
+        asyncio.create_task(_handle_fileshare_announcement(fsa, ip))
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
+    # ATAK drawn shape / route
+    shape = parse_atak_shape(raw)
+    if shape is not None:
+        await _handle_atak_shape(shape)
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
     # ATAK 9-line MEDEVAC / CASEVAC request → persist a Report + raise an Alert,
     # then relay the raw frame on to other ATAK clients. It is not a position fix,
     # so skip the operator/track persistence below.
@@ -289,6 +323,7 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
             track.speed     = evt.speed
             track.course    = evt.course
             track.team      = evt.team
+            track.remarks   = evt.remarks if hasattr(evt, 'remarks') else None
             track.last_seen = datetime.now(timezone.utc)
             db.commit()
             db.refresh(track)
@@ -301,7 +336,8 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
                     "callsign": track.callsign,
                     "latitude": track.latitude, "longitude": track.longitude,
                     "hae": track.hae, "speed": track.speed, "course": track.course,
-                    "team": track.team, "last_seen": track.last_seen.isoformat(),
+                    "team": track.team, "remarks": track.remarks or "",
+                    "last_seen": track.last_seen.isoformat(),
                 },
             })
 
@@ -479,6 +515,167 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
         image_url=image_url,
     )
     await _Pool.broadcast(cot)
+
+
+# ── Emergency / panic button ──────────────────────────────────────────────────
+
+async def _handle_emergency(emerg: dict) -> None:
+    """Persist an ATAK emergency alert and broadcast on the alert channel."""
+    lat, lon = emerg.get("lat", 0.0), emerg.get("lon", 0.0)
+    active   = emerg.get("active", True)
+    with SessionLocal() as db:
+        op_id = _resolve_operator_id(db, emerg.get("callsign"))
+        if op_id is None:
+            return
+        if active:
+            alert = Alert(
+                type="ATAK_EMERGENCY", operator_id=op_id,
+                latitude=lat, longitude=lon, status="ACTIVE",
+            )
+            db.add(alert)
+            db.commit()
+            db.refresh(alert)
+            al_id, al_ts, al_mid = alert.id, alert.timestamp, alert.mission_id
+        else:
+            # Cancel: mark the most recent active emergency for this operator as RESOLVED
+            alert = db.query(Alert).filter(
+                Alert.operator_id == op_id,
+                Alert.type == "ATAK_EMERGENCY",
+                Alert.status == "ACTIVE",
+            ).order_by(Alert.id.desc()).first()
+            if alert:
+                alert.status = "RESOLVED"
+                db.commit()
+                al_id, al_ts, al_mid = alert.id, alert.timestamp, alert.mission_id
+            else:
+                return
+
+    callsign = emerg.get("callsign","ATAK")
+    await broadcaster.broadcast({
+        "channel": "alert", "event": "triggered" if active else "ack",
+        "mission_id": al_mid,
+        "data": {
+            "id": al_id, "type": "ATAK_EMERGENCY",
+            "operator_id": op_id, "callsign": callsign,
+            "latitude": lat, "longitude": lon,
+            "status": "ACTIVE" if active else "RESOLVED",
+            "timestamp": al_ts.isoformat() if al_ts else None,
+        },
+    })
+    log.info("ATAK emergency %s from %s", "ACTIVE" if active else "RESOLVED", callsign)
+
+
+# ── Spot / contact report ─────────────────────────────────────────────────────
+
+async def _handle_spot_report(spot: dict) -> None:
+    """Persist an ATAK spot/contact report and broadcast on the report channel."""
+    with SessionLocal() as db:
+        op_id = _resolve_operator_id(db, spot.get("callsign"))
+        if op_id is None:
+            return
+        rep = Report(
+            type="CONTACT_REPORT", operator_id=op_id,
+            payload=json.dumps(spot), status="RECEIVED",
+        )
+        db.add(rep)
+        db.commit()
+        db.refresh(rep)
+        rep_id, rep_mid, rep_status = rep.id, rep.mission_id, rep.status
+
+    callsign = spot.get("callsign","ATAK")
+    await broadcaster.broadcast({
+        "channel": "report", "event": "submitted", "mission_id": rep_mid,
+        "data": {
+            "id": rep_id, "type": "CONTACT_REPORT", "status": rep_status,
+            "operator_id": op_id, "callsign": callsign,
+            "source": "ATAK", "payload": json.dumps(spot),
+        },
+    })
+    log.info("ATAK spot report from %s: %.60s", callsign, spot.get("remarks",""))
+
+
+# ── File share announcement (b-f-t-a) ────────────────────────────────────────
+
+async def _handle_fileshare_announcement(fs: dict, sender_ip: str) -> None:
+    """Download an ATAK file-share attachment, store as Photo, post as chat."""
+    url = fs.get("url","")
+    if not url:
+        return
+    # Download the file (ATAK serves on port 8080)
+    import urllib.request
+    import urllib.error
+    try:
+        loop = asyncio.get_event_loop()
+        def _dl():
+            req = urllib.request.Request(url, headers={"User-Agent": "ArrowServer/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.read()
+        raw = await loop.run_in_executor(None, _dl)
+    except Exception as exc:
+        log.warning("ATAK fileshare announcement download failed (%s): %s", url, exc)
+        return
+
+    mime      = fs.get("mime","image/jpeg")
+    filename  = fs.get("filename","photo")
+    sender_cs = fs.get("sender_callsign","ATAK")
+
+    from backend.photos.router import store_photo_bytes
+    with SessionLocal() as db:
+        op_id = _resolve_operator_id(db, sender_cs)
+        if op_id is None:
+            return
+        photo = store_photo_bytes(db, raw, mime, op_id, filename)
+        msg = Message(
+            sender_id=op_id,
+            content=f"[ATAK photo from {sender_cs}]",
+            message_type="BROADCAST",
+            photo_id=photo.id,
+        )
+        db.add(msg)
+        db.commit()
+        db.refresh(msg)
+        from backend.api.schemas import MessageOut
+        data     = MessageOut.model_validate(msg).model_dump(mode="json")
+        mid      = msg.mission_id
+        photo_id = photo.id   # capture before session closes
+
+    data["sender_callsign"] = sender_cs
+    data["source"] = "ATAK"
+    await broadcaster.broadcast({
+        "channel": "chat", "event": "message", "mission_id": mid, "data": data,
+    })
+    log.info("ATAK fileshare announcement from %s stored as photo#%s", sender_cs, photo_id)
+
+
+# ── ATAK drawn shapes ─────────────────────────────────────────────────────────
+
+async def _handle_atak_shape(shape: dict) -> None:
+    """Upsert an ATAK drawn shape and broadcast on the atak-shape channel."""
+    with SessionLocal() as db:
+        obj = db.query(AtakShape).filter(AtakShape.uid == shape["uid"]).first()
+        if obj is None:
+            obj = AtakShape(uid=shape["uid"])
+            db.add(obj)
+        obj.cot_type      = shape["cot_type"]
+        obj.shape_type    = shape["shape_type"]
+        obj.title         = shape["title"]
+        obj.callsign      = shape["callsign"]
+        obj.geometry_json = shape["geometry_json"]
+        obj.last_seen     = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(obj)
+        shape_id = obj.id
+
+    await broadcaster.broadcast({
+        "channel": "atak-shape", "event": "upsert",
+        "data": {
+            "id": shape_id, "uid": shape["uid"],
+            "cot_type": shape["cot_type"], "shape_type": shape["shape_type"],
+            "title": shape["title"], "callsign": shape["callsign"],
+            "geometry_json": shape["geometry_json"],
+        },
+    })
+    log.info("ATAK shape %s (%s) from %s", shape["uid"], shape["shape_type"], shape["callsign"])
 
 
 # ── Photo bridge (geo-pinned images, ATAK ↔ Arrow) ────────────────────────────

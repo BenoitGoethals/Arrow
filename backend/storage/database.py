@@ -222,6 +222,19 @@ def _migrate(conn: object) -> None:
         "ALTER TABLE messages ADD COLUMN chatroom_id INTEGER REFERENCES chatrooms(id)",
         # SHA-256 for TAK Marti file-share lookup (binary photo transfer to ATAK)
         "ALTER TABLE photos ADD COLUMN sha256 VARCHAR(64)",
+        # ATAK CoT track remarks field (from <detail/remarks>)
+        "ALTER TABLE cot_tracks ADD COLUMN remarks TEXT",
+        # ATAK drawn shapes — routes, lines, areas received over CoT TCP
+        "CREATE TABLE IF NOT EXISTS atak_shapes ("
+        "  id INTEGER PRIMARY KEY,"
+        "  uid VARCHAR(160) UNIQUE NOT NULL,"
+        "  cot_type VARCHAR(40) DEFAULT '',"
+        "  shape_type VARCHAR(20) DEFAULT 'LINE',"
+        "  title VARCHAR(200) DEFAULT '',"
+        "  callsign VARCHAR(80) DEFAULT '',"
+        "  geometry_json TEXT DEFAULT '',"
+        "  last_seen DATETIME"
+        ")",
     ]
     for sql in migrations:
         try:
