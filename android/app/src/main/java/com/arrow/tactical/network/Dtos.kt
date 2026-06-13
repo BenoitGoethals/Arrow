@@ -142,6 +142,7 @@ data class AlertDto(
 data class MessageIn(
     @SerialName("receiver_id") val receiverId: Int? = null,
     @SerialName("group_id") val groupId: String? = null,
+    @SerialName("chatroom_id") val chatroomId: Int? = null,
     val content: String,
     @SerialName("message_type") val messageType: String = "DIRECT",
     @SerialName("photo_id") val photoId: Int? = null,
@@ -155,8 +156,38 @@ data class MessageDto(
     @SerialName("group_id") val groupId: String? = null,
     val content: String,
     @SerialName("message_type") val messageType: String,
+    @SerialName("chatroom_id") val chatroomId: Int? = null,
     @SerialName("photo_id") val photoId: Int? = null,
     @SerialName("photo_mime_type") val photoMimeType: String? = null,
+    @SerialName("sender_callsign") val senderCallsign: String? = null,
+)
+
+@Serializable
+data class ChatRoomMemberDto(
+    @SerialName("operator_id") val operatorId: Int,
+    val callsign: String? = null,
+)
+
+@Serializable
+data class ChatRoomDto(
+    val id: Int,
+    val name: String,
+    @SerialName("created_by") val createdBy: Int = -1,
+    @SerialName("mission_id") val missionId: Int? = null,
+    val origin: String = "ARROW",
+    @SerialName("member_ids") val memberIds: List<Int> = emptyList(),
+    val members: List<ChatRoomMemberDto> = emptyList(),
+)
+
+@Serializable
+data class ChatRoomIn(
+    val name: String,
+    @SerialName("member_ids") val memberIds: List<Int> = emptyList(),
+)
+
+@Serializable
+data class ChatRoomMemberIn(
+    @SerialName("operator_id") val operatorId: Int,
 )
 
 @Serializable

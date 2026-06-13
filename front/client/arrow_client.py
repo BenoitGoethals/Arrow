@@ -40,6 +40,12 @@ class ArrowClient:
         r.raise_for_status()
         return r.json()
 
+    def _delete(self, path: str) -> None:
+        r = httpx.request("DELETE", f"{self.base_url}{path}",
+                          headers=self._headers(), timeout=8.0, verify=_VERIFY)
+        log.debug("DELETE %s → %d", path, r.status_code)
+        r.raise_for_status()
+
     # ---- Auth -------------------------------------------------------
     def login(self, callsign: str, password: str) -> dict:
         log.info("Login: callsign=%s  server=%s", callsign, self.base_url)
@@ -185,16 +191,32 @@ class ArrowClient:
             body["photo_id"] = photo_id
         return self._post("/messages", body)
 
-    def send_message_group(self, content: str, group_id: int,
-                           photo_id: Optional[int] = None) -> dict:
+    def send_message_room(self, content: str, chatroom_id: int,
+                          photo_id: Optional[int] = None) -> dict:
         body: dict = {
             "content": content,
-            "message_type": "GROUP",
-            "group_id": group_id,
+            "message_type": "ROOM",
+            "chatroom_id": chatroom_id,
         }
         if photo_id is not None:
             body["photo_id"] = photo_id
         return self._post("/messages", body)
+
+    # ---- Chat rooms -------------------------------------------------
+    def chatrooms(self) -> list:
+        return self._get("/chatrooms")
+
+    def create_chatroom(self, name: str, member_ids: Optional[list[int]] = None) -> dict:
+        return self._post("/chatrooms", {"name": name, "member_ids": member_ids or []})
+
+    def add_chatroom_member(self, room_id: int, operator_id: int) -> dict:
+        return self._post(f"/chatrooms/{room_id}/members", {"operator_id": operator_id})
+
+    def remove_chatroom_member(self, room_id: int, operator_id: int) -> None:
+        self._delete(f"/chatrooms/{room_id}/members/{operator_id}")
+
+    def delete_chatroom(self, room_id: int) -> None:
+        self._delete(f"/chatrooms/{room_id}")
 
     # ---- Missions ---------------------------------------------------
     def missions(self) -> list:

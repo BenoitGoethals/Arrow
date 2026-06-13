@@ -24,9 +24,16 @@ BROADCAST; `list_messages` shows sender/receiver/BROADCAST + rooms the caller is
 ATAK interop in [[project_atak_chat_bridge]]. Direct messaging unchanged + still bridges to ATAK.
 Photo→ATAK (geo-pinned POI base64 image CoT, [[project_atak_photo_bridge]]) re-verified working.
 
-Web UI `web/templates/messaging.html`: sidebar "Chat Rooms" list + ＋ create + per-room ⚙ member
-manager (checkbox add/remove, delete room); send/forward target rooms via `chatroom_id`.
-Front/Android not yet updated for room management (still do direct + broadcast).
+Room management on ALL THREE clients (DONE 2026-06-13):
+- web `messaging.html`: sidebar "Chat Rooms" list + ＋ create + per-room ⚙ member manager.
+- front: `arrow_client` chatroom methods (+`_delete`, `send_message_room`); MessagesPanel ROOM scope
+  + "⚙ Rooms" button → `front/panels/messages/room_manager.py` RoomManagerDialog (create/add-remove/
+  delete); main_window `_open_room_manager`/`_load_chatrooms`; WS room events (no message_type) refresh rooms.
+- android: `ChatRoomDto`/`ChatRoomIn`/`ChatRoomMemberIn` DTOs + `chatroomId` on Message DTOs;
+  `MessageRepository.listRooms/createRoom/addMember/removeMember/deleteRoom` + `send(chatroomId=)`;
+  MessagingScreen Recipient.Room + dropdown rooms + "⚙ Manage rooms…" → RoomManagerDialog composable.
+Front client chatroom methods verified live end-to-end; Android shares the same endpoints.
+All send to rooms via `chatroom_id`; direct + broadcast unchanged.
 
 GOTCHA repeat: kill stale servers by port owner — `lsof -nP -iTCP:8087,6001,6002 -sTCP:LISTEN -t |
 xargs -r kill -9` (NOT pkill -f backend.main; and quote/word-split PIDs carefully). A stale server

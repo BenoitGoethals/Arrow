@@ -21,6 +21,7 @@ from front.app.statusbar  import StatusBar
 from front.panels.orbat.panel     import ORBATPanel
 from front.panels.reports.panel   import ReportsPanel
 from front.panels.messages.panel  import MessagesPanel
+from front.panels.messages.room_manager import RoomManagerDialog
 from front.panels.alerts.panel    import AlertsPanel
 from front.panels.draw.panel      import DrawPanel
 from front.panels.log.panel       import LogPanel
@@ -230,6 +231,7 @@ class MainWindow(QMainWindow):
             lambda lat, lon: self._map.center_on(lat, lon, zoom=14)
         )
         self._messages_panel.message_send_requested.connect(self._send_message_scoped)
+        self._messages_panel.manage_rooms_requested.connect(self._open_room_manager)
         self._draw_panel.draw_mode_changed.connect(self._map.set_draw_mode)
         self._draw_panel.draw_graphic.connect(self._map.set_draw_graphic)
         self._draw_panel.free_draw_changed.connect(self._map.set_free_draw)
@@ -642,6 +644,23 @@ class MainWindow(QMainWindow):
             self._messages_panel.load_messages(self._client.messages())
         except Exception:
             pass
+        self._load_chatrooms()
+
+    def _load_chatrooms(self):
+        try:
+            self._messages_panel.set_rooms(self._client.chatrooms())
+        except Exception:
+            pass
+
+    def _open_room_manager(self):
+        try:
+            ops = self._client.operators()
+        except Exception:
+            ops = []
+        dlg = RoomManagerDialog(self._client, ops, self)
+        dlg.rooms_changed.connect(self._load_chatrooms)
+        dlg.exec()
+        self._load_chatrooms()
 
     def _load_missions(self):
         try:
@@ -749,6 +768,11 @@ class MainWindow(QMainWindow):
                 pass
 
     def _on_message(self, data: dict):
+        # Room lifecycle events (room_created / member_added / …) ride the `chat`
+        # channel but carry a room dict, not a message — refresh the room list.
+        if "message_type" not in data:
+            self._load_chatrooms()
+            return
         self._messages_panel.add_message(data)
         sender = data.get("sender") or data.get("callsign") or "?"
         if sender != self._callsign:
@@ -1224,8 +1248,9 @@ class MainWindow(QMainWindow):
                 photo_id = self._client.upload_media(str(file_path))
             if scope == "DIRECT" and receiver_id is not None:
                 self._client.send_message(content, receiver_id=int(receiver_id), photo_id=photo_id)
-            elif scope == "MISSION" and mission_id is not None:
-                self._client.send_message_group(content, group_id=int(mission_id), photo_id=photo_id)
+            elif scope == "ROOM" and mission_id is not None:
+                # `mission_id` slot carries the chatroom_id for ROOM scope.
+                self._client.send_message_room(content, chatroom_id=int(mission_id), photo_id=photo_id)
             else:
                 self._client.send_message(content, photo_id=photo_id)
         except Exception as e:
