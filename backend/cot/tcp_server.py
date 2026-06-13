@@ -37,6 +37,18 @@ log = logging.getLogger("backend.cot.tcp")
 _END_TAG  = b"</event>"
 _CFG_FILE = Path("data/tak_cot_config.json")
 
+
+def _stream_frame(data: bytes) -> bytes:
+    """Normalise a CoT blob into a bare stream frame for ATAK.
+
+    lxml emits ``<?xml …?>\\n<event>…`` per event. Concatenated into a TCP
+    stream those repeated XML prologs are malformed CoT — ATAK parses the first
+    event and rejects the rest, so nothing past it shows. Strip any leading
+    declaration so the wire carries only ``<event>…</event>`` frames.
+    """
+    i = data.find(b"<event")
+    return data[i:] if i > 0 else data
+
 # ── Persistent config ─────────────────────────────────────────────────────────
 
 _cfg: dict = {
@@ -136,6 +148,7 @@ class _Pool:
 
     @classmethod
     async def broadcast(cls, data: bytes, exclude: str = "") -> int:
+        data = _stream_frame(data)
         dead: list[str] = []
         sent = 0
         for uid, w in list(cls._writers.items()):
@@ -807,7 +820,7 @@ async def _client_handler(
         lat=0.0, lon=0.0, callsign="ARROW", platform="Arrow",
     )
     try:
-        writer.write(presence.to_xml())
+        writer.write(_stream_frame(presence.to_xml()))
         await writer.drain()
     except Exception:
         _Pool.remove(uid)
@@ -830,7 +843,7 @@ async def _client_handler(
                 await _handle_frame(frame, uid)
     except asyncio.TimeoutError:
         try:
-            writer.write(presence.to_xml())
+            writer.write(_stream_frame(presence.to_xml()))
             await writer.drain()
         except Exception:
             pass
@@ -856,19 +869,19 @@ async def _push_snapshot(writer: asyncio.StreamWriter) -> None:
     try:
         with SessionLocal() as db:
             for op in db.query(Operator).all():
-                writer.write(CotEvent(
+                writer.write(_stream_frame(CotEvent(
                     uid=f"ARROW.{op.callsign}",
                     cot_type=role_to_cot_type(op.role),
                     lat=op.latitude or 0.0, lon=op.longitude or 0.0,
                     hae=op.altitude or 0.0,
                     callsign=op.callsign, role=op.role, platform="Arrow",
-                ).to_xml())
+                ).to_xml()))
             # Replay existing tactical objects so the web map picture appears in ATAK.
             for obj in db.query(TacticalObject).all():
                 if obj.latitude is None or obj.longitude is None:
                     continue
                 try:
-                    writer.write(_tactical_object_to_cot(obj))
+                    writer.write(_stream_frame(_tactical_object_to_cot(obj)))
                 except Exception as exc:
                     log.debug("snapshot TO #%s skipped: %s", obj.id, exc)
             await writer.drain()
