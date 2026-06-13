@@ -3724,12 +3724,16 @@
         }
     }
 
+    function _zoomToDevice(lat, lon) {
+        if (!lat || !lon || (lat === 0 && lon === 0)) return;
+        map.flyTo([lat, lon], 15, { animate: true, duration: 0.8 });
+    }
+
     async function loadAtakClients() {
         const el  = document.getElementById('atak-clients');
         const cnt = document.getElementById('atak-count');
         if (!el) return;
         try {
-            // Fetch both sources in parallel
             const [opsR, atakR] = await Promise.all([
                 api('/operators'),
                 api('/cot/clients'),
@@ -3743,17 +3747,23 @@
 
             let html = '';
             onlineOps.forEach(op => {
-                const via = op.position_source === 'ATAK' ? ' · via ATAK' : '';
-                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e">
+                const via      = op.position_source === 'ATAK' ? ' · via ATAK' : '';
+                const hasPos   = op.latitude && op.longitude;
+                const clickFn  = hasPos ? `_zoomToDevice(${op.latitude},${op.longitude})` : '';
+                const cursor   = hasPos ? 'cursor:pointer' : '';
+                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;${cursor}" ${hasPos ? `onclick="${clickFn}"` : ''}>
                     <div class="atak-client-cs">🖥 ${escHtml(op.callsign)}</div>
                     <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
                 </div>`;
             });
             atakList.forEach(c => {
-                const ago = c.last_seen_ago_s < 60
+                const ago     = c.last_seen_ago_s < 60
                     ? `${c.last_seen_ago_s}s ago`
                     : `${Math.round(c.last_seen_ago_s / 60)}m ago`;
-                html += `<div class="atak-client">
+                const hasPos  = c.last_lat && c.last_lon && !(c.last_lat === 0 && c.last_lon === 0);
+                const clickFn = hasPos ? `_zoomToDevice(${c.last_lat},${c.last_lon})` : '';
+                const cursor  = hasPos ? 'cursor:pointer' : '';
+                html += `<div class="atak-client" style="${cursor}" ${hasPos ? `onclick="${clickFn}"` : ''}>
                     <div class="atak-client-cs">📡 ${escHtml(c.callsign || c.uid)}</div>
                     <div class="atak-client-meta">${escHtml(c.ip)} · ${escHtml(c.cot_type || '?')} · ${ago} · rx:${c.rx_count}</div>
                 </div>`;
