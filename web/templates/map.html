@@ -3734,7 +3734,7 @@
                 api('/operators'),
                 api('/cot/clients'),
             ]);
-            const onlineOps = opsR.ok  ? (await opsR.json()).filter(o => o.online) : [];
+            const onlineOps = opsR.ok  ? (await opsR.json()).filter(o => o.status === 'ONLINE') : [];
             const atakList  = atakR.ok ? await atakR.json() : [];
 
             const total = onlineOps.length + atakList.length;
