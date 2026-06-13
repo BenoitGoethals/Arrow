@@ -305,7 +305,7 @@
 
 
         <details class="sb-section" style="margin-top:1rem" open>
-            <summary><h3 style="display:inline">ATAK Devices</h3>
+            <summary><h3 style="display:inline">Live Devices</h3>
                 <span id="atak-count" class="sb-count">0</span>
             </summary>
             <div id="atak-clients"><small style="color:#475569">Checking…</small></div>
@@ -3729,20 +3729,38 @@
         const cnt = document.getElementById('atak-count');
         if (!el) return;
         try {
+            // Arrow operators already in state (populated by loadHierarchy)
+            const onlineOps = [...state.operators.values()].filter(o => o.online);
+
+            // ATAK TCP clients
             const r = await api('/cot/clients');
-            if (!r.ok) { el.innerHTML = `<small style="color:#ef4444">Error ${r.status}</small>`; return; }
-            const list = await r.json();
-            if (cnt) cnt.textContent = list.length;
-            if (!list.length) { el.innerHTML = '<small style="color:#475569">No ATAK devices connected</small>'; return; }
-            el.innerHTML = list.map(c => {
+            const atakList = r.ok ? await r.json() : [];
+
+            const total = onlineOps.length + atakList.length;
+            if (cnt) cnt.textContent = total;
+            if (!total) { el.innerHTML = '<small style="color:#475569">No devices online</small>'; return; }
+
+            let html = '';
+
+            onlineOps.forEach(op => {
+                const via = op.position_source === 'ATAK' ? ' · via ATAK' : '';
+                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e">
+                    <div class="atak-client-cs">🖥 ${escHtml(op.callsign)}</div>
+                    <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
+                </div>`;
+            });
+
+            atakList.forEach(c => {
                 const ago = c.last_seen_ago_s < 60
                     ? `${c.last_seen_ago_s}s ago`
-                    : `${Math.round(c.last_seen_ago_s/60)}m ago`;
-                return `<div class="atak-client">
+                    : `${Math.round(c.last_seen_ago_s / 60)}m ago`;
+                html += `<div class="atak-client">
                     <div class="atak-client-cs">📡 ${escHtml(c.callsign || c.uid)}</div>
-                    <div class="atak-client-meta">${escHtml(c.ip)}  ·  ${escHtml(c.cot_type || '?')}  ·  ${ago}  ·  rx:${c.rx_count}</div>
+                    <div class="atak-client-meta">${escHtml(c.ip)} · ${escHtml(c.cot_type || '?')} · ${ago} · rx:${c.rx_count}</div>
                 </div>`;
-            }).join('');
+            });
+
+            el.innerHTML = html;
         } catch (e) {
             el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
         }
@@ -4819,7 +4837,7 @@
             } else if (msg.channel === 'cot-presence') {
                 loadAtakClients();
             } else if (msg.channel === 'presence') {
-                loadHierarchy();
+                loadHierarchy().then(loadAtakClients);
                 if (msg.event === 'ops_status') loadVehicles();  // vehicle status may follow operator
             } else if (msg.channel === 'vehicle') {
                 const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
