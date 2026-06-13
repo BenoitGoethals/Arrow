@@ -881,6 +881,81 @@ async def broadcast_operator_cot(op: Operator) -> None:
     ).to_xml())
 
 
+# ── Tactical-object ↔ ATAK bridge ────────────────────────────────────────────
+# Tactical objects placed from the web map (enemies, POIs, objectives, friendly
+# markers, etc.) are forwarded to connected ATAK clients as standard CoT
+# events so the radio operator sees them in ATAK alongside the operators'
+# positions.  We pick a CoT type from the SIDC if present, otherwise infer it
+# from the type+affiliation.
+
+from backend.cot.cot import sidc_to_cot_type   # noqa: E402  (late import to avoid cycle)
+
+_TO_TYPE_FALLBACK = {
+    # type-name        affiliation → cot type
+    "ENEMY":      {"HOSTILE": "a-h-G-U-C-I", "FRIENDLY": "a-f-G-U-C",
+                   "UNKNOWN": "a-u-G",       "NEUTRAL":  "a-n-G"},
+    "POI":        {"FRIENDLY": "a-n-G-I-N",  "HOSTILE":  "a-h-G",
+                   "UNKNOWN":  "a-u-G",      "NEUTRAL":  "a-n-G"},
+    "OBJECTIVE":  {"FRIENDLY": "a-f-G-U-C-O","HOSTILE":  "a-h-G-U-C",
+                   "UNKNOWN":  "a-u-G",      "NEUTRAL":  "a-n-G"},
+    "MARKER":     {"FRIENDLY": "a-f-G",      "HOSTILE":  "a-h-G",
+                   "UNKNOWN":  "a-u-G",      "NEUTRAL":  "a-n-G"},
+}
+
+
+def _tactical_object_cot_type(obj: "TacticalObject") -> str:
+    """Pick the best CoT type for a TacticalObject row."""
+    if obj.symbol_code:
+        return sidc_to_cot_type(obj.symbol_code)
+    aff = (obj.affiliation or "FRIENDLY").upper()
+    return _TO_TYPE_FALLBACK.get(obj.type, {}).get(aff, "a-u-G")
+
+
+def _tactical_object_to_cot(obj: "TacticalObject", *, stale: bool = False) -> bytes:
+    """Build a CoT XML frame for a TacticalObject.  When `stale=True`, sets the
+    stale timestamp to NOW so ATAK drops the marker (used for delete)."""
+    from datetime import timedelta as _td
+    now = datetime.now(timezone.utc)
+    evt = CotEvent(
+        uid      = f"ARROW.TO.{obj.id}",
+        cot_type = _tactical_object_cot_type(obj),
+        lat      = obj.latitude or 0.0,
+        lon      = obj.longitude or 0.0,
+        callsign = (obj.notes or obj.type or "")[:60] or f"TO-{obj.id}",
+        platform = "Arrow",
+        time     = now,
+    )
+    xml = evt.to_xml()
+    if stale:
+        # Rewrite stale=now so ATAK immediately considers the event expired
+        from lxml import etree as _et
+        root = _et.fromstring(xml)
+        ts = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+        root.set("stale", ts)
+        xml = _et.tostring(root, xml_declaration=True, encoding="UTF-8")
+    return xml
+
+
+async def broadcast_tactical_object_to_atak(obj: "TacticalObject") -> None:
+    """Forward a created/updated TacticalObject to all ATAK clients as CoT."""
+    if _Pool.count() == 0:
+        return
+    try:
+        await _Pool.broadcast(_tactical_object_to_cot(obj))
+    except Exception as exc:
+        log.warning("tactical-object CoT broadcast failed: %s", exc)
+
+
+async def broadcast_tactical_object_delete_to_atak(obj: "TacticalObject") -> None:
+    """Tell ATAK to drop a marker by sending the same UID with stale=now."""
+    if _Pool.count() == 0:
+        return
+    try:
+        await _Pool.broadcast(_tactical_object_to_cot(obj, stale=True))
+    except Exception as exc:
+        log.warning("tactical-object stale-CoT broadcast failed: %s", exc)
+
+
 def get_status() -> dict:
     """Return full TAK server status for the admin UI."""
     return {
