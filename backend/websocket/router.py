@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
@@ -11,9 +12,11 @@ from backend.websocket.manager import broadcaster
 
 router = APIRouter()
 
+_HEARTBEAT_INTERVAL = 60  # seconds — must be < the 90 s online window
 
-def _set_operator_status(callsign: str, online: bool) -> None:
-    """Update Operator.status and last_seen in the DB on WS connect/disconnect."""
+
+def _touch_operator(callsign: str, online: bool) -> None:
+    """Set status + last_seen (when online) for the operator in the DB."""
     try:
         with SessionLocal() as db:
             op = db.query(Operator).filter(
@@ -40,12 +43,20 @@ async def websocket_endpoint(
         return
 
     callsign = payload.get("sub", "unknown")
-    _set_operator_status(callsign, online=True)
+    _touch_operator(callsign, online=True)
 
     await broadcaster.connect(websocket)
     await broadcaster.broadcast(
         {"channel": "presence", "event": "online", "data": {"callsign": callsign}}
     )
+
+    async def _heartbeat():
+        """Refresh last_seen every 60 s so the 90 s online window stays open."""
+        while True:
+            await asyncio.sleep(_HEARTBEAT_INTERVAL)
+            _touch_operator(callsign, online=True)
+
+    hb_task = asyncio.create_task(_heartbeat())
     try:
         while True:
             msg = await websocket.receive_json()
@@ -55,7 +66,8 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         pass
     finally:
-        _set_operator_status(callsign, online=False)
+        hb_task.cancel()
+        _touch_operator(callsign, online=False)
         await broadcaster.disconnect(websocket)
         await broadcaster.broadcast(
             {"channel": "presence", "event": "offline", "data": {"callsign": callsign}}
