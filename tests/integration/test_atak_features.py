@@ -254,6 +254,151 @@ class TestEmergencyAlert:
         assert "ATAK_EMERGENCY" in types
 
 
+    # ── Contract: data shape the JS frontend depends on ─────────────────────
+    # These tests verify the broadcast payload contains EVERY field that the
+    # web map's handleAlertTriggered/showAlertToast/_speakAlert functions read.
+    # If any of these break, the toast/voice/zoom won't render in the browser.
+
+    def test_emergency_broadcast_data_has_all_js_required_fields(self, client):
+        """The broadcast `data` dict must contain every field the JS reads."""
+        callsign, token, op_id = register(client)
+
+        from backend.cot.cot import parse_emergency
+        from backend.cot.tcp_server import _handle_emergency
+
+        captured = []
+        with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
+            mock_bc.broadcast = AsyncMock(side_effect=lambda msg: captured.append(msg))
+            _run(_handle_emergency(
+                parse_emergency(_emergency_xml(callsign, lat=51.5, lon=4.2))
+            ))
+
+        assert len(captured) == 1
+        msg = captured[0]
+        assert msg["channel"] == "alert",  "JS handler keys on channel==='alert'"
+        assert msg["event"]   == "triggered", \
+            "JS only calls handleAlertTriggered() when event==='triggered'"
+
+        d = msg["data"]
+        # JS field-by-field expectations
+        assert d["type"] == "ATAK_EMERGENCY", \
+            "JS looks up ALERT_COLOURS[d.type] / ALERT_ICONS[d.type]"
+        assert d["operator_id"] == op_id, \
+            "JS resolves the callsign via state.operators.get(d.operator_id)"
+        assert d["callsign"] == callsign, \
+            "JS falls back to d.callsign and the voice speaks it"
+        assert isinstance(d["latitude"], (int, float)), \
+            "JS checks d.latitude != null for the hasPos zoom decision"
+        assert isinstance(d["longitude"], (int, float)), \
+            "JS checks d.longitude != null for the hasPos zoom decision"
+        assert abs(d["latitude"]  - 51.5) < 1e-5
+        assert abs(d["longitude"] - 4.2)  < 1e-5
+        assert d["id"] is not None, \
+            "JS keys state.alertLayers by d.id to remove on ack"
+        assert d["status"] == "ACTIVE"
+        assert d.get("timestamp") is not None, \
+            "Alert list UI shows the alert time"
+
+    def test_emergency_broadcast_position_not_null_when_present(self, client):
+        """JS uses `d.latitude != null` — values must be real floats, not None."""
+        callsign, token, op_id = register(client)
+
+        from backend.cot.cot import parse_emergency
+        from backend.cot.tcp_server import _handle_emergency
+
+        captured = []
+        with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
+            mock_bc.broadcast = AsyncMock(side_effect=lambda msg: captured.append(msg))
+            _run(_handle_emergency(
+                parse_emergency(_emergency_xml(callsign, lat=52.0, lon=5.5))
+            ))
+
+        d = captured[0]["data"]
+        # Critical: None would make `d.latitude != null` false → no zoom
+        assert d["latitude"]  is not None
+        assert d["longitude"] is not None
+
+    def test_emergency_reaches_websocket_subscriber(self, client):
+        """End-to-end: when _handle_emergency runs, every connected WS client
+        receives the `alert/triggered` event — same contract the browser uses."""
+        callsign, token, op_id = register(client)
+
+        from backend.cot.cot import parse_emergency
+        from backend.cot.tcp_server import _handle_emergency
+
+        # Open a WS connection BEFORE the handler runs, then verify the
+        # broadcast arrives — this is exactly the path the web map uses.
+        with client.websocket_connect(f"/ws?token={token}") as ws:
+            with _tcp_db():
+                _run(_handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, lat=51.5, lon=4.2))
+                ))
+
+            # Drain WS until alert/triggered arrives (presence msgs may precede)
+            alert_msg = None
+            for _ in range(20):
+                m = ws.receive_json()
+                if m.get("channel") == "alert" and m.get("event") == "triggered":
+                    alert_msg = m
+                    break
+            assert alert_msg is not None, \
+                "alert/triggered event did not reach the WebSocket subscriber"
+
+            d = alert_msg["data"]
+            assert d["type"]        == "ATAK_EMERGENCY"
+            assert d["callsign"]    == callsign
+            assert d["operator_id"] == op_id
+            assert abs(d["latitude"]  - 51.5) < 1e-5
+            assert abs(d["longitude"] - 4.2)  < 1e-5
+
+    def test_emergency_cancel_reaches_websocket(self, client):
+        """Cancel CoT → WS receives alert/ack so the map can clear the marker."""
+        callsign, token, op_id = register(client)
+
+        from backend.cot.cot import parse_emergency
+        from backend.cot.tcp_server import _handle_emergency
+
+        with client.websocket_connect(f"/ws?token={token}") as ws:
+            with _tcp_db():
+                _run(_handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, active=True))
+                ))
+                _run(_handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, active=False))
+                ))
+
+            ack_msg = None
+            for _ in range(40):
+                m = ws.receive_json()
+                if m.get("channel") == "alert" and m.get("event") == "ack":
+                    ack_msg = m
+                    break
+            assert ack_msg is not None
+            assert ack_msg["data"]["status"] == "RESOLVED"
+
+    def test_emergency_callsign_falls_back_when_unknown_operator(self, client):
+        """If the ATAK callsign doesn't match any Arrow operator, the broadcast
+        still includes a non-empty callsign so the JS voice can announce it."""
+        callsign, token, op_id = register(client)  # known operator exists (fallback)
+
+        from backend.cot.cot import parse_emergency
+        from backend.cot.tcp_server import _handle_emergency
+
+        captured = []
+        with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
+            mock_bc.broadcast = AsyncMock(side_effect=lambda msg: captured.append(msg))
+            # Unknown callsign — _resolve_operator_id falls back to lowest-id op
+            _run(_handle_emergency(
+                parse_emergency(_emergency_xml("UNKNOWN-ATAK-USER"))
+            ))
+
+        assert len(captured) == 1
+        d = captured[0]["data"]
+        # The original ATAK callsign must be preserved for voice/toast
+        assert d["callsign"] == "UNKNOWN-ATAK-USER", \
+            "Original ATAK callsign must reach the UI, not the fallback operator's"
+
+
 # ── Feature 2: SA marker remarks stored on CotTrack ──────────────────────────
 
 class TestCotTrackRemarks:

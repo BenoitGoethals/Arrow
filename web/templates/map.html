@@ -809,19 +809,115 @@
     }
 
     // ── Base-layer + overlay switcher ──────────────────────────────────────
-    // OSM is *always* the bottom layer — it fills any gaps where a chosen
-    // MBTiles has no tile (deduplicated empties, redacted areas, coverage
-    // edges). Other sources from /map/sources are added as an overlay on top
-    // with transparent gaps so OSM shows through. Selecting "OpenStreetMap"
-    // simply means "no overlay". User choice is persisted in localStorage.
-    const baseOsm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        minZoom: 0, maxZoom: 19,
-        attribution: '© OpenStreetMap contributors',
-        zIndex: 0,
-    }).addTo(map);
+    // Two-tier model:
+    //   1. BASE  — one public tile layer at zIndex 0 (the bottom of the map).
+    //      Selecting a base SWAPS the underlying imagery: OSM, satellite,
+    //      topo, hydrographic, dark, mixed (satellite + labels), etc.
+    //   2. OVERLAY — file-backed MBTiles from /map/sources stacked on top
+    //      at zIndex 10 (transparent gaps reveal the base).
+    // User picks both via the same <select>; the choice is persisted.
+    //
+    // Public tile sources (all CDN-served, no API key required):
+    const BASE_LAYERS = {
+        osm: {
+            label: '🗺 OpenStreetMap',
+            url:   'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            opts:  { maxZoom: 19, subdomains: 'abc',
+                     attribution: '© OpenStreetMap contributors' },
+        },
+        osm_hot: {
+            label: '🚑 OSM Humanitarian',
+            url:   'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+            opts:  { maxZoom: 19, subdomains: 'abc',
+                     attribution: '© OSM HOT' },
+        },
+        satellite: {
+            label: '🛰 Satellite',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 19,
+                     attribution: 'Tiles © Esri — World Imagery' },
+        },
+        satellite_hybrid: {
+            // Esri reference layer (roads + labels) is partially transparent —
+            // when stacked over satellite it forms the classic "hybrid" look.
+            label: '🛰 Satellite + Labels',
+            composite: ['satellite', 'esri_reference'],
+        },
+        topo: {
+            label: '⛰ Topographic',
+            url:   'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+            opts:  { maxZoom: 17, subdomains: 'abc',
+                     attribution: '© OpenTopoMap (CC-BY-SA)' },
+        },
+        esri_topo: {
+            label: '⛰ Esri Topo',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 19,
+                     attribution: 'Tiles © Esri — World Topo' },
+        },
+        ocean: {
+            label: '🌊 Hydrographic',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 13,
+                     attribution: 'Tiles © Esri — Ocean Base' },
+        },
+        cartodb_dark: {
+            label: '🌑 Dark',
+            url:   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+            opts:  { maxZoom: 20, subdomains: 'abcd',
+                     attribution: '© CARTO © OSM contributors' },
+        },
+        cartodb_positron: {
+            label: '☀ Light',
+            url:   'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+            opts:  { maxZoom: 20, subdomains: 'abcd',
+                     attribution: '© CARTO © OSM contributors' },
+        },
+        esri_streets: {
+            label: '🚙 Esri Streets',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 19,
+                     attribution: 'Tiles © Esri — Streets' },
+        },
+        // Helper layer used by satellite_hybrid (not selectable on its own —
+        // hidden via the `_hidden` flag below).
+        esri_reference: {
+            _hidden: true,
+            url:    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+            opts:   { maxZoom: 19, attribution: '' },
+        },
+    };
 
+    const _baseLayerCache = {};
+    function _buildBaseLayer(key) {
+        if (_baseLayerCache[key]) return _baseLayerCache[key];
+        const def = BASE_LAYERS[key];
+        if (!def) return null;
+        // Composite (hybrid) — wrap multiple tile layers in a LayerGroup.
+        if (def.composite) {
+            const grp = L.layerGroup(def.composite.map(k => _buildBaseLayer(k)));
+            _baseLayerCache[key] = grp;
+            return grp;
+        }
+        const layer = L.tileLayer(def.url, { ...def.opts, zIndex: 0 });
+        _baseLayerCache[key] = layer;
+        return layer;
+    }
+
+    let activeBaseKey = null;
+    let activeBaseLayer = null;
+    function setBase(key) {
+        if (!BASE_LAYERS[key] || BASE_LAYERS[key]._hidden) key = 'osm';
+        if (activeBaseLayer) map.removeLayer(activeBaseLayer);
+        activeBaseLayer = _buildBaseLayer(key).addTo(map);
+        activeBaseKey   = key;
+        localStorage.setItem(LS_BASEMAP, key);
+    }
+    setBase('osm');   // immediate default so the map renders while /map/sources loads
+
+    // File-backed MBTiles overlays from /map/sources (stacked on top).
     const overlayLayers = {};   // name -> L.tileLayer
-    let   activeOverlay = null; // name of the overlay currently on the map
+    let   activeOverlay = null;
     const basemapSelect = document.getElementById('basemap-select');
 
     function buildOverlayLayer(src) {
@@ -833,56 +929,68 @@
             minZoom:     src.min_zoom ?? 0,
             maxZoom:     src.max_zoom ?? 19,
             attribution: src.attribution || '',
-            // Higher than the OSM base so overlay paints on top.
             zIndex:      10,
         });
     }
 
     function activateBasemap(name) {
-        // Drop the previous overlay if any.
+        // Drop any existing MBTiles overlay first.
         if (activeOverlay && overlayLayers[activeOverlay]) {
             map.removeLayer(overlayLayers[activeOverlay]);
+            activeOverlay = null;
         }
-        activeOverlay = null;
-        // 'osm' (or anything not in overlayLayers) → no overlay; OSM base alone.
-        if (name && name !== 'osm' && overlayLayers[name]) {
+        // Built-in base layer? Swap the base.
+        if (BASE_LAYERS[name] && !BASE_LAYERS[name]._hidden) {
+            setBase(name);
+        } else if (overlayLayers[name]) {
+            // File-backed MBTiles overlay on top of the current base.
             overlayLayers[name].addTo(map);
             activeOverlay = name;
+            localStorage.setItem(LS_BASEMAP, name);
         }
-        localStorage.setItem(LS_BASEMAP, name);
         basemapSelect.value = name;
     }
 
-    api('/map/sources').then(r => r.ok ? r.json() : []).then(sources => {
-        sources = Array.isArray(sources) ? sources : [];
-
-        // Populate the <select>. OSM is always first; only file-backed
-        // sources need a tile layer built (the OSM entry just selects "no
-        // overlay" mode).
+    function _populateBasemapSelect(sources) {
         basemapSelect.innerHTML = '';
-        const osmOpt = document.createElement('option');
-        osmOpt.value = 'osm';
-        osmOpt.textContent = '🗺 OpenStreetMap';
-        basemapSelect.appendChild(osmOpt);
 
-        for (const src of sources) {
-            if (src.name === 'osm' || !src.downloadable) continue;
-            overlayLayers[src.name] = buildOverlayLayer(src);
-            const opt = document.createElement('option');
-            opt.value = src.name;
-            opt.textContent = '🗺 ' + (src.title || src.name);
-            basemapSelect.appendChild(opt);
+        const grpBase = document.createElement('optgroup');
+        grpBase.label = 'Base maps';
+        basemapSelect.appendChild(grpBase);
+        for (const [k, def] of Object.entries(BASE_LAYERS)) {
+            if (def._hidden) continue;
+            const o = document.createElement('option');
+            o.value = k;
+            o.textContent = def.label;
+            grpBase.appendChild(o);
         }
 
-        const saved = localStorage.getItem(LS_BASEMAP);
-        const initial = (saved && (saved === 'osm' || overlayLayers[saved])) ? saved : 'osm';
-        activateBasemap(initial);
+        const mbtSources = sources.filter(s => s && s.name !== 'osm' && s.downloadable);
+        if (mbtSources.length) {
+            const grpOv = document.createElement('optgroup');
+            grpOv.label = 'MBTiles overlays';
+            basemapSelect.appendChild(grpOv);
+            for (const src of mbtSources) {
+                overlayLayers[src.name] = buildOverlayLayer(src);
+                const o = document.createElement('option');
+                o.value = src.name;
+                o.textContent = '🗺 ' + (src.title || src.name);
+                grpOv.appendChild(o);
+            }
+        }
 
-        basemapSelect.addEventListener('change', e => {
-            if (e.target.value) activateBasemap(e.target.value);
-        });
-    }).catch(() => {
-        // OSM base is already on the map — no overlay needed on failure.
+        const saved   = localStorage.getItem(LS_BASEMAP);
+        const initial = (saved && (BASE_LAYERS[saved] || overlayLayers[saved])) ? saved : 'osm';
+        activateBasemap(initial);
+    }
+
+    api('/map/sources')
+        .then(r => r.ok ? r.json() : [])
+        .then(s => _populateBasemapSelect(Array.isArray(s) ? s : []))
+        .catch(() => _populateBasemapSelect([]));
+
+    basemapSelect.addEventListener('change', e => {
+        if (e.target.value) activateBasemap(e.target.value);
     });
     // Used by loadEnemies() to suppress the one-shot auto-fit once the user
     // has actively panned/zoomed somewhere of their own choosing.
@@ -1574,9 +1682,7 @@
                 ? `<br/><a href="#" onclick="window.__arrowDeleteEnemy(${obj.id});return false" style="color:#ef4444">Delete</a>`
                 : '')
         );
-        if (role === 'ADMIN' || role === 'BATTLE_CAPTAIN') {
-            layer.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, false); });
-        }
+        layer.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, false); });
         state.markers.set(key, layer);
     }
 
@@ -1631,9 +1737,7 @@
                     `<a href="#" onclick="window.__arrowDeleteEnemy(${obj.id});return false" style="color:#ef4444">Delete</a>` : '')
             );
         }
-        if (role === 'ADMIN' || role === 'BATTLE_CAPTAIN') {
-            m.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, true); });
-        }
+        m.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, true); });
         state.markers.set(key, m);
     }
 
@@ -1680,7 +1784,6 @@
     }
 
     function showMarkerRadial(e, objId, canMove = true) {
-        if (role !== 'ADMIN' && role !== 'BATTLE_CAPTAIN') return;
         closeMarkerRadial();
         _mrObjId = objId;
 
@@ -2263,18 +2366,37 @@
         state.selection = new Set([-1]); refreshAllMarkers();
     });
 
-    // ── Radial context menu on double-click ───────────────────────────────
+    // ── Radial context menu — opens on right-click OR double-click ───────────
     let _radialLat = 0, _radialLon = 0;
 
+    function _openCreateRadialAt(e) {
+        _radialLat = e.latlng.lat;
+        _radialLon = e.latlng.lng;
+        openRadial(e.originalEvent.clientX, e.originalEvent.clientY);
+    }
+
+    // Right-click on the map → open the create radial (friendly / enemy /
+    // fire / objective / POI / report).  Leaflet's `contextmenu` event fires
+    // on right-click; suppressing the browser menu keeps the radial visible.
+    map.on('contextmenu', (e) => {
+        if (tgDraw.type) return;  // active draw — let it consume the event
+        L.DomEvent.preventDefault(e.originalEvent);
+        L.DomEvent.stopPropagation(e.originalEvent);
+        _openCreateRadialAt(e);
+    });
+    // Also suppress the browser context menu on the map container so the
+    // radial isn't covered by the native menu.
+    map.getContainer().addEventListener('contextmenu',
+        (ev) => ev.preventDefault());
+
+    // Double-click — same behaviour, kept for users who don't right-click.
     map.on('dblclick', (e) => {
         if (tgDraw.type) {
             // Multi-vertex graphics finish on double-click
             tgFinishDraw();
             return;
         }
-        _radialLat = e.latlng.lat;
-        _radialLon = e.latlng.lng;
-        openRadial(e.originalEvent.clientX, e.originalEvent.clientY);
+        _openCreateRadialAt(e);
     });
     map.doubleClickZoom.disable();
 
