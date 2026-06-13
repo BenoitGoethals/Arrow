@@ -850,10 +850,12 @@ async def _client_handler(
 
 
 async def _push_snapshot(writer: asyncio.StreamWriter) -> None:
+    """On ATAK connect, replay the current picture: operator positions AND every
+    tactical object (enemies, POIs, objectives, markers) placed from the web/app —
+    otherwise a freshly-connected device shows none of the existing map elements."""
     try:
         with SessionLocal() as db:
-            ops = db.query(Operator).all()
-            for op in ops:
+            for op in db.query(Operator).all():
                 writer.write(CotEvent(
                     uid=f"ARROW.{op.callsign}",
                     cot_type=role_to_cot_type(op.role),
@@ -861,6 +863,14 @@ async def _push_snapshot(writer: asyncio.StreamWriter) -> None:
                     hae=op.altitude or 0.0,
                     callsign=op.callsign, role=op.role, platform="Arrow",
                 ).to_xml())
+            # Replay existing tactical objects so the web map picture appears in ATAK.
+            for obj in db.query(TacticalObject).all():
+                if obj.latitude is None or obj.longitude is None:
+                    continue
+                try:
+                    writer.write(_tactical_object_to_cot(obj))
+                except Exception as exc:
+                    log.debug("snapshot TO #%s skipped: %s", obj.id, exc)
             await writer.drain()
     except Exception as exc:
         log.debug("snapshot error: %s", exc)
