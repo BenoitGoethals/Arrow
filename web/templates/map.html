@@ -3729,19 +3729,19 @@
         const cnt = document.getElementById('atak-count');
         if (!el) return;
         try {
-            // Arrow operators already in state (populated by loadHierarchy)
-            const onlineOps = [...state.operators.values()].filter(o => o.online);
-
-            // ATAK TCP clients
-            const r = await api('/cot/clients');
-            const atakList = r.ok ? await r.json() : [];
+            // Fetch both sources in parallel
+            const [opsR, atakR] = await Promise.all([
+                api('/operators'),
+                api('/cot/clients'),
+            ]);
+            const onlineOps = opsR.ok  ? (await opsR.json()).filter(o => o.online) : [];
+            const atakList  = atakR.ok ? await atakR.json() : [];
 
             const total = onlineOps.length + atakList.length;
             if (cnt) cnt.textContent = total;
             if (!total) { el.innerHTML = '<small style="color:#475569">No devices online</small>'; return; }
 
             let html = '';
-
             onlineOps.forEach(op => {
                 const via = op.position_source === 'ATAK' ? ' · via ATAK' : '';
                 html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e">
@@ -3749,7 +3749,6 @@
                     <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
                 </div>`;
             });
-
             atakList.forEach(c => {
                 const ago = c.last_seen_ago_s < 60
                     ? `${c.last_seen_ago_s}s ago`
@@ -3759,7 +3758,6 @@
                     <div class="atak-client-meta">${escHtml(c.ip)} · ${escHtml(c.cot_type || '?')} · ${ago} · rx:${c.rx_count}</div>
                 </div>`;
             });
-
             el.innerHTML = html;
         } catch (e) {
             el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
