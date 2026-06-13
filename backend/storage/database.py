@@ -220,6 +220,8 @@ def _migrate(conn: object) -> None:
         "  operator_id INTEGER REFERENCES operators(id)"
         ")",
         "ALTER TABLE messages ADD COLUMN chatroom_id INTEGER REFERENCES chatrooms(id)",
+        # SHA-256 for TAK Marti file-share lookup (binary photo transfer to ATAK)
+        "ALTER TABLE photos ADD COLUMN sha256 VARCHAR(64)",
     ]
     for sql in migrations:
         try:

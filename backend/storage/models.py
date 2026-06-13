@@ -187,6 +187,9 @@ class Photo(Base):
     mime_type: Mapped[str] = mapped_column(String(80), default="image/jpeg")
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    # SHA-256 of the plaintext bytes — used by the TAK Marti file-share API so
+    # ATAK can fetch the binary by hash (GET /Marti/sync/content?hash=...).
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
 
 class MapVisibility(Base):

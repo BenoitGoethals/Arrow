@@ -19,9 +19,10 @@ from pathlib import Path
 from lxml import etree
 
 from backend.cot.cot import (
-    ALL_CHAT_ROOMS, PHOTO_COT_MAX_BYTES, CotEvent, build_geochat, build_image_cot,
-    cot_type_to_sidc, is_arrow_geochat, is_arrow_photo, parse_cot, parse_cot_image,
-    parse_geochat, parse_medevac, role_to_cot_type,
+    ALL_CHAT_ROOMS, PHOTO_COT_MAX_BYTES, CotEvent, build_fileshare, build_geochat,
+    build_image_cot, cot_type_to_sidc, is_arrow_fileshare, is_arrow_geochat,
+    is_arrow_photo, parse_cot, parse_cot_image, parse_fileshare, parse_geochat,
+    parse_medevac, role_to_cot_type,
 )
 from backend.storage.database import SessionLocal
 from backend.storage.models import (
@@ -225,7 +226,15 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
         await _Pool.broadcast(raw, exclude=sender_uid)
         return
 
-    # ATAK photo (point CoT with embedded image) → Arrow Photo + pinned POI.
+    # ATAK file-share (binary attachment transfer) → store centrally + pin a POI.
+    fs = parse_fileshare(raw)
+    if fs is not None:
+        if not is_arrow_fileshare(fs):   # ignore our own outbound echoed back
+            await _handle_fileshare(fs)
+        await _Pool.broadcast(raw, exclude=sender_uid)
+        return
+
+    # ATAK photo (point CoT with embedded base64 image — legacy) → store + pin.
     img = parse_cot_image(raw)
     if img is not None:
         if not is_arrow_photo(img):      # ignore our own outbound echoed back
@@ -474,85 +483,113 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
 
 # ── Photo bridge (geo-pinned images, ATAK ↔ Arrow) ────────────────────────────
 
-async def _handle_cot_image(img: dict) -> None:
-    """Persist an inbound ATAK photo CoT as a Photo + a POI pinned at its grid."""
+def _guess_mime(filename: str | None) -> str:
+    ext = (filename or "").rsplit(".", 1)[-1].lower()
+    return {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+            "gif": "image/gif", "webp": "image/webp", "mp4": "video/mp4"}.get(ext, "image/jpeg")
+
+
+def _create_photo_poi(db, photo: Photo, lat: float, lon: float, caption: str, op_id: int):
+    """Create a POI tactical object pinned to a stored photo. Returns (data, mid, ids)."""
     from backend.api.schemas import TacticalObjectOut
-    from backend.photos.router import MIME_TO_EXT, PHOTO_DIR, _encrypt, _get_aesgcm
+    obj = TacticalObject(
+        type="POI", symbol_code="", created_by=op_id,
+        latitude=lat, longitude=lon, notes=caption or "ATAK photo",
+        photo_id=photo.id, affiliation="FRIENDLY",
+    )
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return (TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
+            obj.mission_id, photo.id, obj.id)
 
-    mime = img.get("mime") or "image/jpeg"
-    blob = _encrypt(img["image_bytes"])
-    ext  = MIME_TO_EXT.get(mime, "jpg")
-    fname = f"{uuid.uuid4().hex}.{ext}" + (".enc" if _get_aesgcm() is not None else "")
-    try:
-        (PHOTO_DIR / fname).write_bytes(blob)
-    except Exception as exc:
-        log.warning("photo write failed: %s", exc)
-        return
 
+async def _handle_cot_image(img: dict) -> None:
+    """Inbound ATAK photo embedded as base64 (legacy) → store binary + pin a POI."""
+    from backend.photos.router import store_photo_bytes
     with SessionLocal() as db:
         op_id = _resolve_operator_id(db, img.get("callsign"))
         if op_id is None:
             log.warning("ATAK photo dropped: no operators exist to attribute it to")
             return
-        photo = Photo(filename=fname, original_name=img.get("caption") or "atak-photo",
-                      mime_type=mime, uploaded_by=op_id)
-        db.add(photo)
-        db.commit()
-        db.refresh(photo)
-        obj = TacticalObject(
-            type="POI", symbol_code="", created_by=op_id,
-            latitude=img["lat"], longitude=img["lon"],
-            notes=img.get("caption") or "ATAK photo",
-            photo_id=photo.id, affiliation="FRIENDLY",
-        )
-        db.add(obj)
-        db.commit()
-        db.refresh(obj)
-        data = TacticalObjectOut.model_validate(obj).model_dump(mode="json")
-        mid  = obj.mission_id
-        photo_id_v, obj_id_v = photo.id, obj.id   # capture before session closes
-
+        photo = store_photo_bytes(db, img["image_bytes"], img.get("mime") or "image/jpeg",
+                                  uploaded_by=op_id, original_name=img.get("caption") or "atak-photo")
+        data, mid, pid, oid = _create_photo_poi(db, photo, img["lat"], img["lon"],
+                                                img.get("caption"), op_id)
     await broadcaster.broadcast({
         "channel": "tactical-object", "event": "created", "mission_id": mid, "data": data,
     })
-    log.info("ATAK photo from %s at %s,%s → photo#%s poi#%s",
-             img.get("callsign"), img["lat"], img["lon"], photo_id_v, obj_id_v)
+    log.info("ATAK photo (base64) from %s → photo#%s poi#%s", img.get("callsign"), pid, oid)
 
 
-def _load_photo_bytes(photo: Photo) -> bytes | None:
-    """Read + decrypt a stored photo from disk."""
-    from backend.photos.router import PHOTO_DIR, _decrypt
-    path = PHOTO_DIR / photo.filename
-    if not path.exists():
+def _fetch_binary(url: str) -> bytes | None:
+    if not url or not url.lower().startswith(("http://", "https://")):
         return None
-    raw = path.read_bytes()
-    if photo.filename.endswith(".enc"):
-        try:
-            raw = _decrypt(raw)
-        except Exception:
-            return None
-    return raw
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=15) as r:  # noqa: S310 — TAK file fetch
+            return r.read()
+    except Exception as exc:
+        log.debug("fileshare fetch failed (%s): %s", url, exc)
+        return None
+
+
+async def _handle_fileshare(fs: dict) -> None:
+    """Inbound TAK file-share → ensure the binary is stored centrally + pin a POI.
+
+    The file is normally already in our store (ATAK POSTed it to /Marti/sync/upload
+    before sending the CoT); otherwise we fetch it from senderUrl. Either way the
+    photo ends up in the server's central store.
+    """
+    from backend.photos.router import find_photo_by_hash, store_photo_bytes
+    sha = fs.get("sha256") or ""
+    with SessionLocal() as db:
+        op_id = _resolve_operator_id(db, fs.get("sender_callsign"))
+        if op_id is None:
+            return
+        photo = find_photo_by_hash(db, sha) if sha else None
+        if photo is None:
+            raw = _fetch_binary(fs.get("url"))
+            if not raw:
+                log.info("ATAK fileshare %s: binary not in store and senderUrl unfetchable",
+                         sha[:12] or "?")
+                return
+            photo = store_photo_bytes(db, raw, _guess_mime(fs.get("filename")),
+                                      uploaded_by=op_id, original_name=fs.get("filename") or "atak-file")
+        # Only pin a POI when the share carries a real location.
+        lat, lon = fs.get("lat") or 0.0, fs.get("lon") or 0.0
+        if lat or lon:
+            data, mid, pid, oid = _create_photo_poi(db, photo, lat, lon, fs.get("filename"), op_id)
+        else:
+            data = mid = pid = oid = None
+        photo_id_v = photo.id
+    if data is not None:
+        await broadcaster.broadcast({
+            "channel": "tactical-object", "event": "created", "mission_id": mid, "data": data,
+        })
+    log.info("ATAK fileshare from %s → stored photo#%s (poi=%s)",
+             fs.get("sender_callsign"), photo_id_v, oid)
 
 
 async def broadcast_photo_to_atak(obj: TacticalObject, sender: Operator) -> None:
-    """Forward an Arrow geo-pinned photo to ATAK as an image CoT (called on create)."""
+    """Forward an Arrow geo-pinned photo to ATAK as a binary TAK file-share."""
+    from backend.marti.router import content_url
+    from backend.photos.router import ensure_photo_hash, read_photo_bytes
     if _Pool.count() == 0 or not obj.photo_id:
         return
+    lat, lon, notes = obj.latitude, obj.longitude, obj.notes or ""
     with SessionLocal() as db:
         photo = db.get(Photo, obj.photo_id)
         if photo is None:
             return
-        photo_id, mime = photo.id, photo.mime_type
-        raw = _load_photo_bytes(photo)   # reads while still session-bound
-    if raw is None:
+        sha   = ensure_photo_hash(db, photo)
+        raw   = read_photo_bytes(photo)
+        fname = photo.original_name or f"photo_{photo.id}.jpg"
+    if not sha or raw is None:
         return
-    if len(raw) > PHOTO_COT_MAX_BYTES:
-        log.info("photo#%s too large (%d B) to bridge to ATAK over CoT — skipped",
-                 photo_id, len(raw))
-        return
-    cot = build_image_cot(
-        lat=obj.latitude, lon=obj.longitude, callsign=sender.callsign,
-        image_bytes=raw, mime=mime, caption=obj.notes or "",
+    cot = build_fileshare(
+        filename=fname, sha256=sha, size_bytes=len(raw), url=content_url(sha),
+        sender_callsign=sender.callsign, lat=lat, lon=lon, caption=notes,
     )
     await _Pool.broadcast(cot)
 

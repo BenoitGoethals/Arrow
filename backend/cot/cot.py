@@ -552,3 +552,85 @@ def build_image_cot(
     if caption:
         etree.SubElement(detail, "remarks").text = caption
     return etree.tostring(event, xml_declaration=True, encoding="UTF-8")
+
+
+# ── TAK file-share (binary attachment transfer) ───────────────────────────────
+# ATAK transfers files as binary over HTTP and announces them with a `b-f-t-r`
+# CoT carrying a <fileshare> detail. The receiver downloads `senderUrl` (a
+# /Marti/sync/content?hash=… URL) and stores the binary — no base64 on the wire.
+
+_FILESHARE_UID_PREFIX = "ARROW.FSHARE."
+
+
+def build_fileshare(
+    *,
+    filename: str,
+    sha256: str,
+    size_bytes: int,
+    url: str,
+    sender_callsign: str,
+    lat: float = 0.0,
+    lon: float = 0.0,
+    caption: str = "",
+    time: datetime | None = None,
+) -> bytes:
+    """Build a TAK `b-f-t-r` file-transfer CoT pointing at a binary download URL."""
+    now   = time or datetime.now(timezone.utc)
+    stale = now + timedelta(seconds=STALE_SECONDS["neutral"])
+    ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    ss    = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    uid   = f"{_FILESHARE_UID_PREFIX}{sha256[:16]}"
+
+    event = etree.Element("event", version="2.0", uid=uid, type="b-f-t-r",
+                          how="h-e", time=ts, start=ts, stale=ss)
+    etree.SubElement(event, "point", lat=f"{lat:.7f}", lon=f"{lon:.7f}",
+                     hae="0.0", ce="9999999.0", le="9999999.0")
+    detail = etree.SubElement(event, "detail")
+    etree.SubElement(
+        detail, "fileshare",
+        filename=filename, name=filename, senderUrl=url,
+        sizeInBytes=str(size_bytes), sha256=sha256,
+        senderUid=f"ARROW.{sender_callsign}", senderCallsign=sender_callsign,
+    )
+    etree.SubElement(detail, "ackrequest", uid=uid, ackrequested="true", tag=filename)
+    if caption:
+        etree.SubElement(detail, "remarks").text = caption
+    return etree.tostring(event, xml_declaration=True, encoding="UTF-8")
+
+
+def is_arrow_fileshare(fs: dict) -> bool:
+    return str(fs.get("uid", "")).startswith(_FILESHARE_UID_PREFIX)
+
+
+def parse_fileshare(xml: bytes | str) -> dict | None:
+    """Parse a TAK `b-f-t-r` file-share CoT. Returns the file metadata or None."""
+    if isinstance(xml, str):
+        xml = xml.encode("utf-8")
+    try:
+        root = etree.fromstring(xml, _SAFE_PARSER)
+    except Exception:
+        return None
+    fs = root.find("detail/fileshare")
+    cot_type = root.get("type", "")
+    if fs is None and not cot_type.startswith("b-f-t-r"):
+        return None
+    if fs is None:
+        return None
+
+    point = root.find("point")
+    def _f(s: str | None) -> float:
+        return float((s or "0").replace(",", "."))
+    try:
+        size = int(fs.get("sizeInBytes") or "0")
+    except ValueError:
+        size = 0
+    return {
+        "uid":             root.get("uid", ""),
+        "filename":        fs.get("filename") or fs.get("name") or "file",
+        "sha256":          fs.get("sha256", ""),
+        "size_bytes":      size,
+        "url":             fs.get("senderUrl", ""),
+        "sender_callsign": fs.get("senderCallsign", "") or "ATAK",
+        "lat":             _f(point.get("lat")) if point is not None else 0.0,
+        "lon":             _f(point.get("lon")) if point is not None else 0.0,
+    }
