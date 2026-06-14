@@ -928,12 +928,25 @@ _TO_TYPE_FALLBACK = {
 }
 
 
+_AFF_CHAR = {"FRIENDLY": "f", "ASSUMED_FRIEND": "f", "HOSTILE": "h",
+             "ENEMY": "h", "NEUTRAL": "n", "UNKNOWN": "u"}
+
+
 def _tactical_object_cot_type(obj: "TacticalObject") -> str:
-    """Pick the best CoT type for a TacticalObject row."""
+    """Pick the best CoT type for a TacticalObject row.
+
+    The affiliation must always survive the trip to ATAK: an object marked
+    HOSTILE has to arrive hostile (red), never unknown (yellow). So when there's
+    no exact symbol/type match we fall back to a generic ground type carrying the
+    object's affiliation (a-h-G), not 'a-u-G'.
+    """
+    aff = (obj.affiliation or "FRIENDLY").upper()
     if obj.symbol_code:
         return sidc_to_cot_type(obj.symbol_code)
-    aff = (obj.affiliation or "FRIENDLY").upper()
-    return _TO_TYPE_FALLBACK.get(obj.type, {}).get(aff, "a-u-G")
+    explicit = _TO_TYPE_FALLBACK.get(obj.type, {}).get(aff)
+    if explicit:
+        return explicit
+    return f"a-{_AFF_CHAR.get(aff, 'u')}-G"
 
 
 def _tactical_object_to_cot(obj: "TacticalObject", *, stale: bool = False) -> bytes:
