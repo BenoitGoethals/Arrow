@@ -3864,7 +3864,17 @@
                 api('/cot/clients'),
             ]);
             const onlineOps = opsR.ok  ? (await opsR.json()).filter(o => o.online) : [];
-            const atakList  = atakR.ok ? await atakR.json() : [];
+            const atakListRaw = atakR.ok ? await atakR.json() : [];
+
+            // Only show *identified* ATAK devices: a raw TCP socket that hasn't sent
+            // any CoT yet (rx:0, callsign still the "atak-ip-port" socket id) is just
+            // connection churn — hide it. Also drop ones already listed as an operator.
+            const opCallsigns = new Set(onlineOps.map(o => (o.callsign || '').toLowerCase()));
+            const atakList = atakListRaw.filter(c => {
+                const cs = (c.callsign || '').trim();
+                if (!cs || cs === c.uid || (c.rx_count || 0) === 0) return false;
+                return !opCallsigns.has(cs.toLowerCase());
+            });
 
             const total = onlineOps.length + atakList.length;
             if (cnt) cnt.textContent = total;
