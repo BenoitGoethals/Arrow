@@ -84,7 +84,20 @@ def role_to_cot_type(role: str) -> str:
 
 
 def sidc_to_cot_type(sidc: str) -> str:
-    return SIDC_TO_COT.get(sidc.upper(), "a-u-G")
+    """Map a MIL-STD-2525 SIDC to a CoT type.
+
+    Falls back to an affiliation-correct generic ground type derived from the
+    SIDC's affiliation char (index 1: S/F/H/N/U/A) instead of always 'a-u-G'.
+    Without this, any SIDC missing from the exact table (e.g. with an echelon
+    suffix like 'SHGPUCI----E') went out as unknown → yellow in ATAK rather than
+    its real affiliation (hostile → red).
+    """
+    s = (sidc or "").upper()
+    if s in SIDC_TO_COT:
+        return SIDC_TO_COT[s]
+    aff = {"F": "f", "H": "h", "N": "n", "U": "u", "A": "f"}.get(s[1] if len(s) > 1 else "U", "u")
+    dim = s[2] if len(s) > 2 else "G"
+    return f"a-{aff}-A" if dim == "A" else f"a-{aff}-G"
 
 
 def cot_type_to_sidc(cot_type: str) -> str:
