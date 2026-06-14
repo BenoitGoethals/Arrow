@@ -125,13 +125,15 @@ class _Pool:
         cls._writers[info.uid] = writer
         cls._clients[info.uid] = info
         cls._total_conns += 1
-        log.info("ATAK connect: %s %s:%d  (total=%d)", info.uid, info.ip, info.port, cls.count())
+        log.info("ATAK connect: %s %s:%d  (total=%d)", info.uid, info.ip, info.port, cls.count(),
+                 extra={"cat": "connections"})
 
     @classmethod
     def remove(cls, uid: str) -> None:
         cls._writers.pop(uid, None)
         cls._clients.pop(uid, None)
-        log.info("ATAK disconnect: %s  (total=%d)", uid, cls.count())
+        log.info("ATAK disconnect: %s  (total=%d)", uid, cls.count(),
+                 extra={"cat": "connections"})
 
     @classmethod
     def update(cls, uid: str, evt: "CotEvent") -> None:

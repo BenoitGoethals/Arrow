@@ -122,6 +122,10 @@ def _configure_logging() -> None:
     root.addHandler(handler)
     root.setLevel(level)
 
+    # In-memory ring buffer feeding the admin Logs viewer (captures everything).
+    from backend import logbuffer
+    logbuffer.install()
+
     # Arrow domain loggers — all at the configured level
     for ns in (
         "backend",
@@ -189,6 +193,28 @@ def create_app() -> FastAPI:
     # Rate limiting
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # HTTP access log — every request (method, path, status, ms, client) so the
+    # admin Logs viewer shows full backend API traffic.
+    import time as _time
+    _req_log = logging.getLogger("backend.request")
+
+    @app.middleware("http")
+    async def _access_log(request, call_next):
+        t0 = _time.monotonic()
+        try:
+            response = await call_next(request)
+        except Exception:
+            ms = (_time.monotonic() - t0) * 1000
+            _req_log.exception("%s %s → ERROR (%.0f ms)", request.method, request.url.path)
+            raise
+        ms = (_time.monotonic() - t0) * 1000
+        client = request.client.host if request.client else "?"
+        lvl = logging.WARNING if response.status_code >= 500 else logging.DEBUG \
+            if request.url.path in ("/health",) else logging.INFO
+        _req_log.log(lvl, "%s %s → %d (%.0f ms) [%s]",
+                     request.method, request.url.path, response.status_code, ms, client)
+        return response
 
     # CORS
     _raw_origins = os.environ.get("ARROW_ALLOWED_ORIGINS", "http://localhost:6002")

@@ -155,6 +155,7 @@ main { padding: 0; }
 
     <h4>Interoperability</h4>
     <button class="nav-btn" onclick="show('tak',this)"><span class="ico">📡</span> TAK / ATAK</button>
+    <button class="nav-btn" onclick="show('logs',this)"><span class="ico">📜</span> Logs</button>
 
     <h4>System</h4>
     <button class="nav-btn" onclick="show('config',this)"><span class="ico">⚙</span> Configuration</button>
@@ -405,7 +406,9 @@ main { padding: 0; }
             case 'octopus':         main.innerHTML = ''; renderOctopus(main); break;
             case 'strike-packages': main.innerHTML = ''; renderStrikePackages(main); break;
             case 'tak':             main.innerHTML = ''; renderTak(main); break;
+            case 'logs':            main.innerHTML = ''; renderLogs(main); break;
         }
+        if (section !== 'logs' && window._logTimer) { clearInterval(window._logTimer); window._logTimer = null; }
     }
 
     // Battle Captains land directly on the Maps tab since other tabs are hidden.
@@ -2125,6 +2128,64 @@ main { padding: 0; }
 
   // ── TAK / ATAK admin ───────────────────────────────────────────────────────
   let _takRefreshTimer = null;
+
+  // ── Logs viewer ────────────────────────────────────────────────────────────
+  function renderLogs(el) {
+    const LVL = { DEBUG:'#64748b', INFO:'#93c5fd', WARNING:'#fbbf24', ERROR:'#f87171', CRITICAL:'#fca5a5' };
+    const CATS = [['all','All'],['connections','Connections'],['cot','CoT'],['backend','Backend'],['web','Web']];
+    const st = { cat:'all', level:'', q:'', since:0, paused:false };
+    const ctl = "background:#0d1117;color:#e2e8f0;border:1px solid #2a3142;border-radius:6px;padding:.35rem .6rem;font:inherit;font-size:.82rem";
+    el.innerHTML = `
+      <h2 style="margin-top:0">Logs <span style="font-size:.7rem;color:#64748b">live · backend · cot · connections · web</span></h2>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem">
+        <div id="log-cats" style="display:flex;gap:.3rem"></div>
+        <select id="log-level" style="${ctl}">
+          <option value="">All levels</option><option>DEBUG</option><option>INFO</option><option>WARNING</option><option>ERROR</option>
+        </select>
+        <input id="log-q" placeholder="🔍 search…" style="${ctl};min-width:160px"/>
+        <button id="log-pause" style="${ctl};cursor:pointer">⏸ Pause</button>
+        <button id="log-clear" style="${ctl};cursor:pointer">Clear</button>
+      </div>
+      <div id="log-out" style="background:#0a0e14;border:1px solid #2a3142;border-radius:6px;height:64vh;overflow:auto;font:12px/1.55 'SF Mono',Menlo,Consolas,monospace;padding:.5rem"></div>`;
+    const out = el.querySelector('#log-out'), catsEl = el.querySelector('#log-cats');
+    function renderCats(counts) {
+      counts = counts || {};
+      catsEl.innerHTML = CATS.map(([k,lbl]) =>
+        `<button data-cat="${k}" style="${ctl};cursor:pointer;${st.cat===k?'border-color:#34d399;color:#34d399':''}">${lbl}${(k!=='all'&&counts[k])?` (${counts[k]})`:''}</button>`).join('');
+      catsEl.querySelectorAll('button').forEach(b => b.onclick = () => { st.cat=b.dataset.cat; reset(); renderCats(); });
+    }
+    function line(r) {
+      const c = LVL[r.level] || '#cbd5e1';
+      return `<div style="white-space:pre-wrap;border-left:2px solid ${c};padding-left:6px;margin:1px 0">`
+        + `<span style="color:#475569">${esc(r.ts)}</span> `
+        + `<span style="color:${c};font-weight:600">${esc((r.level+'    ').slice(0,5))}</span> `
+        + `<span style="color:#7dd3fc">[${esc(r.category)}]</span> `
+        + `<span style="color:#64748b">${esc(r.logger)}</span>  `
+        + `<span style="color:#e2e8f0">${esc(r.message)}</span></div>`;
+    }
+    function reset() { st.since = 0; out.innerHTML = ''; }
+    async function poll() {
+      if (st.paused) return;
+      const p = new URLSearchParams({ category:st.cat, level:st.level, q:st.q, since:st.since, limit:'800' });
+      const r = await api('/admin/logs?'+p).then(r => r.ok ? r.json() : null);
+      if (!r) return;
+      if (r.logs && r.logs.length) {
+        const atBottom = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
+        out.insertAdjacentHTML('beforeend', r.logs.map(line).join(''));
+        st.since = r.logs[r.logs.length - 1].id;
+        while (out.childNodes.length > 4000) out.removeChild(out.firstChild);
+        if (atBottom) out.scrollTop = out.scrollHeight;
+      }
+      if (r.counts) renderCats(r.counts);
+    }
+    el.querySelector('#log-level').onchange = e => { st.level = e.target.value; reset(); };
+    let qt; el.querySelector('#log-q').oninput = e => { clearTimeout(qt); qt = setTimeout(() => { st.q = e.target.value.trim(); reset(); }, 300); };
+    el.querySelector('#log-pause').onclick = e => { st.paused = !st.paused; e.target.textContent = st.paused ? '▶ Resume' : '⏸ Pause'; };
+    el.querySelector('#log-clear').onclick = () => reset();
+    renderCats(); poll();
+    if (window._logTimer) clearInterval(window._logTimer);
+    window._logTimer = setInterval(poll, 1500);
+  }
 
   async function renderTak(el) {
     const [status, cfg] = await Promise.all([

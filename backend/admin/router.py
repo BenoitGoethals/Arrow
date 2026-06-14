@@ -27,6 +27,42 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 ONLINE_WINDOW = timedelta(seconds=90)
 
 
+@router.get("/logs")
+def get_logs(
+    category: str | None = None,
+    level: str | None = None,
+    q: str | None = None,
+    since: int = 0,
+    limit: int = 500,
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Tail of the in-process log ring buffer (admin only).
+
+    Filter by ``category`` (connections/cot/backend/web), minimum ``level``,
+    free-text ``q``, and ``since`` (last seen record id, for incremental polling).
+    """
+    from backend import logbuffer
+    result = logbuffer.query(category=category, level=level, q=q, since=since, limit=limit)
+    result["counts"] = logbuffer.categories()
+    return result
+
+
+@router.post("/logs/ingest", status_code=status.HTTP_202_ACCEPTED)
+def ingest_logs(payload: dict, request: Request) -> dict:
+    """Accept log records shipped from the web (Flask) process.
+
+    Gated by the ``X-Log-Token`` header matching ``ARROW_LOG_TOKEN`` when that
+    env var is set (recommended in production); open otherwise (single-host dev).
+    """
+    import os
+    token = os.environ.get("ARROW_LOG_TOKEN", "")
+    if token and request.headers.get("X-Log-Token") != token:
+        raise HTTPException(status.HTTP_403_FORBIDDEN)
+    from backend import logbuffer
+    n = logbuffer.ingest(payload.get("records", []))
+    return {"ingested": n}
+
+
 @router.get("/config")
 def get_config(
     request: Request,
