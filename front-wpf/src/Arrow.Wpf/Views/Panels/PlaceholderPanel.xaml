@@ -1,0 +1,25 @@
+<UserControl x:Class="Arrow.Wpf.Views.Panels.PlaceholderPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource Bg1Brush}">
+    <Grid>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="280">
+            <TextBlock Text="{Binding PanelName, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                       Foreground="{StaticResource AccentBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="16"
+                       FontWeight="Bold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="Coming soon"
+                       Foreground="{StaticResource TextDimBrush}"
+                       FontSize="11"
+                       HorizontalAlignment="Center"
+                       Margin="0,4,0,12" />
+            <TextBlock Text="{Binding Description, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                       Foreground="{StaticResource TextDimBrush}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center" />
+        </StackPanel>
+    </Grid>
+</UserControl>

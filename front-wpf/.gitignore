@@ -1,0 +1,13 @@
+# .NET build artefacts
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Rider
+.idea/
+*.DotSettings.user
+
+# Logs
+*.log

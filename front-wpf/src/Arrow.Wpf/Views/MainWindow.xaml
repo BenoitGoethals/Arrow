@@ -1,0 +1,161 @@
+<Window x:Class="Arrow.Wpf.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Arrow.Wpf.ViewModels"
+        xmlns:panels="clr-namespace:Arrow.Wpf.Views.Panels"
+        xmlns:ctrls="clr-namespace:Arrow.Wpf.Views.Controls"
+        d:DataContext="{d:DesignInstance vm:MainViewModel}"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        mc:Ignorable="d"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        Title="{Binding Title}"
+        MinWidth="1280"
+        MinHeight="800"
+        Width="1600"
+        Height="960"
+        WindowStartupLocation="CenterScreen"
+        Style="{StaticResource ArrowWindowStyle}">
+
+    <DockPanel LastChildFill="True">
+
+        <!--  Toolbar  -->
+        <Border DockPanel.Dock="Top"
+                Background="{StaticResource Bg1Brush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,3">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="⊡ Fit" Command="{Binding FitTracksCommand}" Margin="2" />
+                <Border Width="1" Background="{StaticResource BorderBrush}" Margin="6,4" />
+
+                <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextDimBrush}"
+                           FontFamily="{StaticResource MonoFont}" FontSize="10" Margin="6,0,4,0"
+                           Text="BASE:" />
+                <Button Content="OSM"      Command="{Binding ChangeBaseLayerCommand}" CommandParameter="osm"       Margin="2" />
+                <Button Content="Sat"      Command="{Binding ChangeBaseLayerCommand}" CommandParameter="satellite" Margin="2" />
+                <Button Content="Dark"     Command="{Binding ChangeBaseLayerCommand}" CommandParameter="dark"      Margin="2" />
+                <Button Content="Topo"     Command="{Binding ChangeBaseLayerCommand}" CommandParameter="topo"      Margin="2" />
+
+                <Border Width="1" Background="{StaticResource BorderBrush}" Margin="10,4" />
+
+                <TextBlock VerticalAlignment="Center" FontFamily="{StaticResource MonoFont}"
+                           Foreground="{StaticResource AccentBrush}"
+                           FontSize="12" FontWeight="Bold" Margin="6,0">
+                    ARROW FRONT
+                </TextBlock>
+
+                <Border Width="1" Background="{StaticResource BorderBrush}" Margin="10,4" />
+
+                <!-- Emergency buttons -->
+                <Button Content="⚡ TIC"
+                        Background="#8b1538"
+                        Foreground="White"
+                        BorderBrush="#da3633"
+                        Command="{Binding SendEmergencyAlertCommand}"
+                        CommandParameter="TIC"
+                        Margin="2" />
+                <Button Content="🏥 MEDICAL"
+                        Background="#1e3a2f"
+                        Foreground="White"
+                        BorderBrush="#22c55e"
+                        Command="{Binding SendEmergencyAlertCommand}"
+                        CommandParameter="MEDICAL"
+                        Margin="2" />
+            </StackPanel>
+        </Border>
+
+        <!--  Status bar  -->
+        <Border DockPanel.Dock="Bottom"
+                Background="{StaticResource Bg1Brush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="8,3">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Foreground="{StaticResource TextDimBrush}"
+                           FontFamily="{StaticResource MonoFont}"
+                           FontSize="11">
+                    <Run Text="MGRS:" />
+                    <Run Text="{Binding State.CursorMgrs, Mode=OneWay}"
+                         Foreground="{StaticResource TextBrush}" />
+                </TextBlock>
+
+                <TextBlock Grid.Column="2"
+                           Foreground="{StaticResource TextDimBrush}"
+                           FontFamily="{StaticResource MonoFont}"
+                           FontSize="11"
+                           Text="{Binding StatusMsg}" />
+            </Grid>
+        </Border>
+
+        <!--  Main 3-column splitter  -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="270" />
+                <ColumnDefinition Width="3" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="3" />
+                <ColumnDefinition Width="380" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: ORBAT -->
+            <panels:OrbatPanel Grid.Column="0" DataContext="{Binding Orbat}" />
+
+            <GridSplitter Grid.Column="1" Width="3" Background="{StaticResource BorderBrush}"
+                          HorizontalAlignment="Stretch" />
+
+            <!-- Center: Map -->
+            <ctrls:MapControl Grid.Column="2" x:Name="MapView" />
+
+            <GridSplitter Grid.Column="3" Width="3" Background="{StaticResource BorderBrush}"
+                          HorizontalAlignment="Stretch" />
+
+            <!-- Right: tabbed info panel -->
+            <TabControl Grid.Column="4" Background="{StaticResource Bg0Brush}">
+                <TabItem Header="MISS">
+                    <panels:MissionsPanel DataContext="{Binding Missions}" />
+                </TabItem>
+                <TabItem Header="RPTS">
+                    <panels:ReportsPanel DataContext="{Binding Reports}" />
+                </TabItem>
+                <TabItem Header="MSG">
+                    <panels:MessagesPanel DataContext="{Binding Messages}" />
+                </TabItem>
+                <TabItem Header="ALRT">
+                    <panels:AlertsPanel DataContext="{Binding Alerts}" />
+                </TabItem>
+                <TabItem Header="DRAW">
+                    <panels:PlaceholderPanel PanelName="DRAW"
+                                              Description="Tactical graphics (phase lines, boundaries, FSCL, NFA, FFA, objectives) — wire to MapBridge draw commands." />
+                </TabItem>
+                <TabItem Header="STRK">
+                    <panels:PlaceholderPanel PanelName="STRIKE" />
+                </TabItem>
+                <TabItem Header="OPORD">
+                    <panels:PlaceholderPanel PanelName="OPORD" />
+                </TabItem>
+                <TabItem Header="STRMS">
+                    <panels:PlaceholderPanel PanelName="STREAMS" />
+                </TabItem>
+                <TabItem Header="MEDIA">
+                    <panels:PlaceholderPanel PanelName="MEDIA" />
+                </TabItem>
+                <TabItem Header="VOICE">
+                    <panels:PlaceholderPanel PanelName="MUMBLE" />
+                </TabItem>
+                <TabItem Header="ROUTE">
+                    <panels:PlaceholderPanel PanelName="ROUTES" />
+                </TabItem>
+                <TabItem Header="LOG">
+                    <panels:PlaceholderPanel PanelName="LOG" />
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </DockPanel>
+</Window>
