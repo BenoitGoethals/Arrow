@@ -1,0 +1,100 @@
+<Window x:Class="Arrow.Wpf.Views.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Arrow Front — Login"
+        Width="400"
+        Height="430"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Style="{StaticResource ArrowWindowStyle}">
+
+    <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="22">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="ARROW FRONT"
+                       Foreground="{StaticResource AccentBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="22"
+                       FontWeight="Bold"
+                       HorizontalAlignment="Center" />
+
+            <TextBlock Grid.Row="1"
+                       Text="TACTICAL OPERATIONS CENTRE"
+                       Foreground="{StaticResource TextDimBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="10"
+                       HorizontalAlignment="Center"
+                       Margin="0,3,0,22" />
+
+            <TextBlock Grid.Row="2"
+                       Text="SERVER URL"
+                       Foreground="{StaticResource TextDimBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="9"
+                       Margin="0,0,0,3" />
+            <TextBox Grid.Row="3"
+                     Text="{Binding ServerUrl, UpdateSourceTrigger=PropertyChanged}"
+                     Margin="0,0,0,14" />
+
+            <TextBlock Grid.Row="4"
+                       Text="CALLSIGN"
+                       Foreground="{StaticResource TextDimBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="9"
+                       Margin="0,0,0,3" />
+            <Grid Grid.Row="5">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBox Grid.Column="0"
+                         Text="{Binding Callsign, UpdateSourceTrigger=PropertyChanged}"
+                         Margin="0,0,5,14" />
+                <PasswordBox x:Name="PasswordBox"
+                             Grid.Column="1"
+                             PasswordChanged="PasswordBox_OnPasswordChanged"
+                             Margin="5,0,0,14" />
+            </Grid>
+
+            <TextBlock Grid.Row="6"
+                       Text="{Binding ErrorMessage}"
+                       Foreground="{StaticResource AccentRedBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Top" />
+
+            <Grid Grid.Row="7">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="1"
+                        Content="Cancel"
+                        Margin="0,0,8,0"
+                        Click="Cancel_Click" />
+                <Button Grid.Column="2"
+                        Content="Login"
+                        IsDefault="True"
+                        IsEnabled="{Binding IsBusy, Converter={x:Static y:BoolNegationConverter.Instance}}"
+                        Command="{Binding LoginCommand}"
+                        Background="{StaticResource AccentBlueBrush}"
+                        BorderBrush="{StaticResource AccentBlueBrush}"
+                        Foreground="White"
+                        xmlns:y="clr-namespace:Arrow.Wpf.Services" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

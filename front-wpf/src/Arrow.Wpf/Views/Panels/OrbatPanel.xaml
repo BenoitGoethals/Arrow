@@ -1,0 +1,68 @@
+<UserControl x:Class="Arrow.Wpf.Views.Panels.OrbatPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:Arrow.Wpf.ViewModels"
+             d:DataContext="{d:DesignInstance vm:OrbatViewModel}"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             Background="{StaticResource Bg1Brush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" Padding="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <TextBlock Text="ORBAT"
+                       Foreground="{StaticResource TextDimBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="10"
+                       FontWeight="Bold" />
+        </Border>
+
+        <TextBox Grid.Row="1"
+                 Margin="6"
+                 Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}"
+                 ToolTip="Filter callsign" />
+
+        <TreeView Grid.Row="2"
+                  Margin="6,0"
+                  ItemsSource="{Binding Roots}"
+                  Background="Transparent"
+                  BorderThickness="0">
+            <TreeView.Resources>
+                <HierarchicalDataTemplate DataType="{x:Type vm:HierarchyNode}"
+                                          ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="Transparent" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsOnline}" Value="True">
+                                            <Setter Property="Fill" Value="{StaticResource AccentBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsOperator}" Value="False">
+                                            <Setter Property="Fill" Value="Transparent" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <TextBlock Text="{Binding Label}" />
+                    </StackPanel>
+                </HierarchicalDataTemplate>
+            </TreeView.Resources>
+        </TreeView>
+
+        <Border Grid.Row="3" Padding="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+            <TextBlock Text="{Binding StatusLine}"
+                       Foreground="{StaticResource TextDimBrush}"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="10" />
+        </Border>
+    </Grid>
+</UserControl>

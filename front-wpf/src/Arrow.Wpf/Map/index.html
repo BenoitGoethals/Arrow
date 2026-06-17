@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Arrow Front COP</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body, #map { width:100%; height:100%; margin:0; padding:0; background:#0d1117; }
+  body { font-family: 'Segoe UI', sans-serif; color:#c9d1d9; }
+  .leaflet-container { background:#0d1117 !important; }
+  .arrow-marker-popup b { color:#3fb950; }
+  .arrow-alert {
+    background:rgba(248,81,73,.18); border:2px solid #f85149;
+    width:32px; height:32px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; color:#fff;
+    font-weight:700; box-shadow:0 0 16px rgba(248,81,73,.6);
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+'use strict';
+
+// ── Bridge to WPF host ───────────────────────────────────────────────────
+const HOST_AVAILABLE = !!(window.chrome && window.chrome.webview);
+
+function postToHost(payload) {
+  if (HOST_AVAILABLE) window.chrome.webview.postMessage(JSON.stringify(payload));
+}
+
+// ── Leaflet map ──────────────────────────────────────────────────────────
+const BASE_LAYERS = {
+  osm: {
+    label: 'OpenStreetMap',
+    url:   'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    opts:  { maxZoom: 19, subdomains: 'abc', attribution: '© OpenStreetMap' },
+  },
+  satellite: {
+    label: 'Satellite',
+    url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    opts:  { maxZoom: 19, attribution: '© Esri' },
+  },
+  dark: {
+    label: 'Dark',
+    url:   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    opts:  { maxZoom: 20, subdomains: 'abcd', attribution: '© CARTO' },
+  },
+  topo: {
+    label: 'Topographic',
+    url:   'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    opts:  { maxZoom: 17, subdomains: 'abc', attribution: '© OpenTopoMap' },
+  },
+};
+
+const map = L.map('map', { zoomControl: true }).setView([50.85, 4.35], 11);
+let activeBase = L.tileLayer(BASE_LAYERS.osm.url, BASE_LAYERS.osm.opts).addTo(map);
+
+const trackLayers   = new Map();   // operator_id → L.marker
+const tobjLayers    = new Map();   // tactical_object_id → L.marker
+const alertLayers   = new Map();   // alert_id → L.layerGroup
+
+// ── Coordinate broadcast ─────────────────────────────────────────────────
+let _lastSent = 0;
+map.on('mousemove', e => {
+  const t = Date.now();
+  if (t - _lastSent < 100) return;
+  _lastSent = t;
+  postToHost({
+    kind: 'coords',
+    lat: e.latlng.lat,
+    lon: e.latlng.lng,
+    mgrs: `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`,
+  });
+});
+
+map.on('click',       e => postToHost({ kind: 'map_clicked', lat: e.latlng.lat, lon: e.latlng.lng }));
+map.on('contextmenu', e => postToHost({ kind: 'radial_action', action: 'menu', lat: e.latlng.lat, lon: e.latlng.lng }));
+
+// ── Public API the WPF MapBridge calls ───────────────────────────────────
+window.updateTrack = function (op) {
+  if (!op || op.latitude == null || op.longitude == null) return;
+  const existing = trackLayers.get(op.id);
+  if (existing) {
+    existing.setLatLng([op.latitude, op.longitude]);
+    return;
+  }
+  const colour = op.role === 'BATTLE_CAPTAIN' || op.role === 'ADMIN' ? '#388bfd' : '#3fb950';
+  const m = L.circleMarker([op.latitude, op.longitude], {
+    radius: 8, color: colour, fillColor: colour, fillOpacity: 0.85, weight: 2,
+  }).addTo(map);
+  m.bindPopup(`<b>${op.callsign}</b><br/>${op.role}`);
+  m.on('click', () => postToHost({ kind: 'track_clicked', id: op.id }));
+  trackLayers.set(op.id, m);
+};
+
+window.removeTrack = function (operatorId) {
+  const m = trackLayers.get(operatorId);
+  if (m) { map.removeLayer(m); trackLayers.delete(operatorId); }
+};
+
+window.addTacticalObject = function (obj) {
+  if (!obj) return;
+  const existing = tobjLayers.get(obj.id);
+  if (existing) {
+    existing.setLatLng([obj.latitude, obj.longitude]);
+    return;
+  }
+  const aff = (obj.affiliation || 'FRIENDLY').toUpperCase();
+  const colour = aff === 'HOSTILE' || aff === 'ENEMY' ? '#f85149'
+               : aff === 'NEUTRAL' ? '#d29922' : '#388bfd';
+  const m = L.circleMarker([obj.latitude, obj.longitude], {
+    radius: 7, color: colour, fillColor: colour, fillOpacity: 0.65, weight: 2,
+  }).addTo(map);
+  m.bindPopup(`<b>${obj.type}</b><br/>${obj.notes || ''}`);
+  tobjLayers.set(obj.id, m);
+};
+
+window.removeTacticalObject = function (id) {
+  const m = tobjLayers.get(id);
+  if (m) { map.removeLayer(m); tobjLayers.delete(id); }
+};
+
+window.addAlertMarker = function (alert) {
+  if (!alert || alert.latitude == null || alert.longitude == null) return;
+  const grp = L.layerGroup().addTo(map);
+  L.circleMarker([alert.latitude, alert.longitude], {
+    radius: 9, color: '#f85149', fillColor: '#f85149', fillOpacity: 0.9, weight: 2,
+  }).addTo(grp);
+  const icon = L.divIcon({ className: '', html: `<div class="arrow-alert">⚡</div>`, iconSize: [32, 32], iconAnchor: [16, 16] });
+  L.marker([alert.latitude, alert.longitude], { icon, interactive: false }).addTo(grp);
+  alertLayers.set(alert.id, grp);
+};
+
+window.centerOn = function (lat, lon, zoom) {
+  map.setView([lat, lon], zoom || 14, { animate: true });
+};
+
+window.fitTracks = function () {
+  const pts = [...trackLayers.values()].map(m => m.getLatLng());
+  if (!pts.length) return;
+  const b = L.latLngBounds(pts);
+  map.fitBounds(b, { padding: [40, 40] });
+};
+
+window.setBaseLayer = function (name) {
+  const def = BASE_LAYERS[name];
+  if (!def) return;
+  map.removeLayer(activeBase);
+  activeBase = L.tileLayer(def.url, def.opts).addTo(map);
+};
+
+// ── Ready signal ─────────────────────────────────────────────────────────
+postToHost({ kind: 'map_ready' });
+</script>
+</body>
+</html>
