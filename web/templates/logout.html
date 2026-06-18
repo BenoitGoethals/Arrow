@@ -8,7 +8,12 @@
 {% endblock %}
 {% block scripts %}
 <script>
+    // Clear all client-side session state, then send the user straight to the
+    // home/login page — "Sign out" should land you back at the front door
+    // automatically rather than parking on a static "Signed out" notice.
     localStorage.removeItem('arrow_token');
     localStorage.removeItem('arrow_role');
+    try { sessionStorage.removeItem('arrow_mission'); } catch (_) {}
+    window.location.replace("{{ url_for('login') }}");
 </script>
 {% endblock %}
