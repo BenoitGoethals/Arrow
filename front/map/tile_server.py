@@ -14,7 +14,7 @@ import mimetypes
 import sqlite3
 import threading
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
 
@@ -160,7 +160,14 @@ class MBTilesServer:
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
     def start(self) -> int:
-        server = HTTPServer(("127.0.0.1", self._port), _Handler)
+        # ThreadingHTTPServer (not HTTPServer): Chromium opens speculative /
+        # preconnect sockets while loading the page. A single-threaded server
+        # blocks its only thread reading a request that never arrives on such a
+        # socket, starving the real leaflet.js / milsymbol.js requests — the page
+        # then renders with `L` undefined ("Leaflet not loaded"). One thread per
+        # connection keeps asset loads from stalling each other.
+        server = ThreadingHTTPServer(("127.0.0.1", self._port), _Handler)
+        server.daemon_threads = True
         server._mbtiles_server = self   # type: ignore[attr-defined]
         self._httpd  = server
         self._thread = threading.Thread(

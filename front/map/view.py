@@ -225,6 +225,10 @@ class MapView(QWebEngineView):
     def _js(self, code: str):
         self._page.runJavaScript(code)
 
+    def eval_js(self, code: str, callback):
+        """Run JS and deliver the result to `callback` (used for readiness probes)."""
+        self._page.runJavaScript(code, callback)
+
     def update_track(self, track: dict):
         self._js(f"updateTrack({json.dumps(track)})")
 

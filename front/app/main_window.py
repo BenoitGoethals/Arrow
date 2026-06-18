@@ -92,7 +92,14 @@ class MainWindow(QMainWindow):
         self._map.set_map_server_port(port)
         self._connect_signals()
         self._start_ws()
-        QTimer.singleShot(1800, self._load_all)
+        # Fallback in case bridge.map_ready never fires (e.g. a QWebChannel
+        # hiccup). It must NOT fire blindly: the map page is large and reloaded
+        # fresh each launch (HTTP cache is cleared), so at a fixed delay its
+        # script may not have run yet — calling _load_all then pushes data into a
+        # page whose functions don't exist ("X is not defined") AND the _loaded
+        # guard would block the real map_ready from ever re-running it. So poll
+        # for JS readiness and only then load.
+        QTimer.singleShot(1800, self._fallback_load_when_ready)
 
     # ================================================================
     # UI
@@ -317,6 +324,27 @@ class MainWindow(QMainWindow):
     # INITIAL DATA LOAD
     # ================================================================
     _loaded = False
+
+    def _fallback_load_when_ready(self):
+        """Poll the map page for JS readiness, then run the initial load.
+
+        Acts as a safety net if bridge.map_ready never arrives. If map_ready
+        already fired, the _loaded guard makes this a no-op. Otherwise it probes
+        the page and only loads once the map script has actually defined its
+        functions — never pushing data into a half-loaded page.
+        """
+        if self._loaded:
+            return
+
+        def _on_probe(ready):
+            if self._loaded:
+                return
+            if ready:
+                self._load_all()
+            else:
+                QTimer.singleShot(400, self._fallback_load_when_ready)
+
+        self._map.eval_js("typeof setGPSConfig === 'function'", _on_probe)
 
     def _load_all(self):
         if self._loaded:
