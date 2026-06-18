@@ -3901,9 +3901,15 @@
             let html = '';
             onlineOps.forEach(op => {
                 const via      = op.position_source === 'ATAK' ? ' · via ATAK' : '';
-                const hasPos   = op.latitude && op.longitude;
+                // Prefer the live tracked position (what the map marker uses);
+                // the /operators roster often carries a null/stale lat-lon.
+                const live     = (typeof state !== 'undefined' && state.operators)
+                                 ? state.operators.get(op.id) : null;
+                const lat      = (live && live.latitude  != null) ? live.latitude  : op.latitude;
+                const lon      = (live && live.longitude != null) ? live.longitude : op.longitude;
+                const hasPos   = lat != null && lon != null && !(Number(lat) === 0 && Number(lon) === 0);
                 const cursor   = hasPos ? 'cursor:pointer' : '';
-                const posAttr  = hasPos ? `data-lat="${op.latitude}" data-lon="${op.longitude}"` : '';
+                const posAttr  = hasPos ? `data-lat="${lat}" data-lon="${lon}"` : '';
                 html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;${cursor}" ${posAttr}>
                     <div class="atak-client-cs">🖥 ${escHtml(op.callsign)}</div>
                     <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
