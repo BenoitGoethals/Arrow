@@ -71,6 +71,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", mime)
         self.send_header("Access-Control-Allow-Origin", "*")
+        # No-store so QtWebEngine's persistent disk cache can never serve a
+        # stale map.html / lib asset across restarts — edits always take effect.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if body:

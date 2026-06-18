@@ -44,14 +44,22 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
    RADIAL MENU (circular, large touch targets)
    ================================================================ */
 /* backdrop removed — was creating a new GPU compositing layer in Qt6/macOS
-   Metal that caused the map to go black; replaced with document mousedown */
+   Metal that caused the map to go black; replaced with document mousedown.
+   The menu is ALSO never display:none — going display:none→block promotes a
+   brand-new compositing layer at click time, which is exactly what blacks out
+   the Qt6/macOS Metal view. Instead it stays laid out and GPU-promoted
+   (will-change:transform) from page load, and we only flip `visibility`, which
+   never creates a new layer. pointer-events:none keeps the invisible 300px box
+   from swallowing map clicks; visibility:hidden also makes it non-interactive. */
 #radial-menu{
-  display:none;position:absolute;z-index:2000;
+  position:absolute;z-index:2000;
   width:300px;height:300px;
   transform:translate(-50%,-50%);
+  will-change:transform;
   pointer-events:none;
+  visibility:hidden;
 }
-#radial-menu.active{display:block;}
+#radial-menu.active{visibility:visible;}
 /* central hub */
 #radial-hub{
   position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -74,12 +82,16 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
   border-radius:50%;
   background:rgba(14,18,26,.97);
   border:2px solid #30363d;
-  display:none;flex-direction:column;
+  /* always display:flex + will-change so each petal keeps its own promoted
+     layer from load — setting the ring transform in openRadial then only MOVES
+     an existing layer instead of creating one (no Metal black-out). The parent
+     menu's visibility:hidden keeps the petals invisible until .active. */
+  display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:3px;
   cursor:pointer;pointer-events:all;user-select:none;
+  will-change:transform;
   box-shadow:0 3px 14px rgba(0,0,0,.6);
 }
-#radial-menu.active .radial-petal{display:flex;}
 .radial-petal .rp-icon{font-size:26px;line-height:1;pointer-events:none;}
 .radial-petal .rp-lbl{
   font-family:'Courier New',monospace;font-size:8px;font-weight:700;
@@ -95,13 +107,16 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 /* ================================================================
    TACTICAL OBJECT RADIAL (Delete / Move) — same Qt6/macOS constraints
    ================================================================ */
+/* same visibility-toggle / pre-promoted-layer strategy as #radial-menu */
 #tobj-radial{
-  display:none;position:absolute;z-index:2001;
+  position:absolute;z-index:2001;
   width:300px;height:300px;
   transform:translate(-50%,-50%);
+  will-change:transform;
   pointer-events:none;
+  visibility:hidden;
 }
-#tobj-radial.active{display:block;}
+#tobj-radial.active{visibility:visible;}
 #tobj-hub{
   position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
   width:54px;height:54px;border-radius:50%;

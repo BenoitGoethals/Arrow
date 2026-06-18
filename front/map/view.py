@@ -8,7 +8,10 @@ from pathlib import Path
 from PyQt6.QtCore import QUrl, QFile, QIODevice, Qt, QEvent, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEngineScript, QWebEnginePage, QWebEngineSettings, QWebEnginePermission
+from PyQt6.QtWebEngineCore import (
+    QWebEngineScript, QWebEnginePage, QWebEngineSettings, QWebEnginePermission,
+    QWebEngineProfile,
+)
 from PyQt6.QtWebChannel import QWebChannel
 
 from front.map.bridge import MapBridge
@@ -42,8 +45,24 @@ class MapView(QWebEngineView):
         self.customContextMenuRequested.connect(lambda _: None)
         self.setAcceptDrops(True)
 
+        # Flush any stale map.html / lib asset already in WebEngine's persistent
+        # disk cache so local edits are picked up. (Online map tiles still cache
+        # normally — the local server sends Cache-Control: no-store itself, so
+        # only its own responses are excluded going forward.)
+        QWebEngineProfile.defaultProfile().clearHttpCache()
+
         self._page = _DebugPage(self)
         self.setPage(self._page)
+
+        # DIAGNOSTIC: if the map blacks out because the WebEngine render/GPU
+        # process dies, this prints exactly that (no front-end fix can help a
+        # crashed renderer). Remove once the black-out cause is confirmed.
+        self._page.renderProcessTerminated.connect(
+            lambda status, code: print(
+                f"[MapView] *** RENDER PROCESS TERMINATED *** status={status} exitCode={code}",
+                file=sys.stderr,
+            )
+        )
 
         # Grant geolocation permission so navigator.geolocation works
         self._page.permissionRequested.connect(self._on_permission_requested)
@@ -98,24 +117,16 @@ class MapView(QWebEngineView):
         self.load(QUrl(url))
 
     def _force_repaint(self):
-        """Force the Chromium GPU process to submit a new compositor frame.
+        """Nudge the Qt widget to repaint the WebEngine surface.
 
-        map.invalidateSize() is a no-op when the container size hasn't changed,
-        so it can't recover a black screen caused by a native Qt overlay.
-        Toggling document.body opacity by an imperceptible amount (1 → 0.9999 →
-        back) forces Chromium to generate two fresh frames and push them to the
-        macOS Metal compositor, which clears the black state.
+        IMPORTANT: this used to toggle document.body opacity (1 → 0.9999 → back)
+        to "force a fresh frame". That was the cause of the permanent map
+        black-out on macOS: setting opacity < 1 on <body> promotes the WHOLE
+        page (including the #map GPU layer) into a single new compositing layer,
+        and on the Qt6/macOS Metal backend that loses the GPU surface for good.
+        We now only ask Qt to repaint the widget — no DOM layer promotion.
         """
         self.update()
-        # setTimeout (not requestAnimationFrame) so this runs even when the
-        # WebEngine rendering loop is paused by the native QMenu taking focus.
-        self._page.runJavaScript(
-            "var b=document.body;"
-            "if(b){"
-            "b.style.opacity='0.9999';"
-            "setTimeout(function(){b.style.opacity='';},50);"
-            "}"
-        )
 
     def notify_menu_closed(self):
         """Call when any native QMenu that appeared over this view has closed.
@@ -136,6 +147,7 @@ class MapView(QWebEngineView):
     def contextMenuEvent(self, event):
         # Swallow the Qt context-menu event so no native menu appears over the
         # WebEngine view (a native overlay would drop the Metal framebuffer).
+        print("[MapView] contextMenuEvent (right-click) fired", file=sys.stderr)  # DIAGNOSTIC
         event.accept()
         self._force_repaint()
         QTimer.singleShot(40,  self._force_repaint)

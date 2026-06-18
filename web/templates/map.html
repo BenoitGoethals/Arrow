@@ -3901,16 +3901,12 @@
             let html = '';
             onlineOps.forEach(op => {
                 const via      = op.position_source === 'ATAK' ? ' · via ATAK' : '';
-                // Prefer the live tracked position (what the map marker uses);
-                // the /operators roster often carries a null/stale lat-lon.
-                const live     = (typeof state !== 'undefined' && state.operators)
-                                 ? state.operators.get(op.id) : null;
-                const lat      = (live && live.latitude  != null) ? live.latitude  : op.latitude;
-                const lon      = (live && live.longitude != null) ? live.longitude : op.longitude;
-                const hasPos   = lat != null && lon != null && !(Number(lat) === 0 && Number(lon) === 0);
-                const cursor   = hasPos ? 'cursor:pointer' : '';
-                const posAttr  = hasPos ? `data-lat="${lat}" data-lon="${lon}"` : '';
-                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;${cursor}" ${posAttr}>
+                // Operator rows are ALWAYS clickable and carry the operator id.
+                // Position is resolved at click-time from the live `state.operators`
+                // map (the same source the map markers use), because GPS fixes can
+                // arrive over the WebSocket *after* this list was rendered — baking
+                // the coordinates in here would leave a row permanently un-clickable.
+                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;cursor:pointer" data-op-id="${op.id}">
                     <div class="atak-client-cs">🖥 ${escHtml(op.callsign)}</div>
                     <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
                 </div>`;
@@ -3931,6 +3927,26 @@
 
             // Wire clicks via addEventListener (robust — no dependency on inline
             // onclick handlers resolving a window-scoped function).
+            // Operator rows resolve their position live from `state.operators`
+            // at click-time (falling back to the roster), so a row drawn before
+            // its first GPS fix still flies to the marker once it appears.
+            el.querySelectorAll('.atak-client[data-op-id]').forEach(row => {
+                row.addEventListener('click', () => {
+                    const id   = Number(row.dataset.opId);
+                    const live = (typeof state !== 'undefined' && state.operators)
+                                 ? state.operators.get(id) : null;
+                    const fb   = onlineOps.find(o => o.id === id) || {};
+                    const lat  = (live && live.latitude  != null) ? live.latitude  : fb.latitude;
+                    const lon  = (live && live.longitude != null) ? live.longitude : fb.longitude;
+                    if (lat == null || lon == null || (Number(lat) === 0 && Number(lon) === 0)) {
+                        if (typeof toast === 'function') toast(`${fb.callsign || 'Operator'} has no position yet`);
+                        else console.warn('[liveDevices] operator', id, 'has no position yet');
+                        return;
+                    }
+                    window.zoomToDevice(lat, lon, { popupKey: `op-${id}` });
+                });
+            });
+            // ATAK (non-operator) rows carry their last fix inline.
             el.querySelectorAll('.atak-client[data-lat]').forEach(row => {
                 row.addEventListener('click', () => {
                     window.zoomToDevice(row.dataset.lat, row.dataset.lon);
