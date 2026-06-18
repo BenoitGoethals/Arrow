@@ -18,6 +18,14 @@ os.environ["ARROW_ALLOWED_ORIGINS"]    = "*"
 import backend.limiter as _limiter_mod
 _limiter_mod.limiter._key_func = lambda request: uuid.uuid4().hex
 
+# ── Disable CoT TCP server so tests don't try to bind port 8087 ─────────────
+# The lifespan calls tcp_server.start(); patch it to a coroutine no-op so
+# tests work even when the real server is already running on that port.
+import backend.cot.tcp_server as _cot_tcp
+async def _noop() -> None: ...
+_cot_tcp.start = _noop
+_cot_tcp.stop  = _noop
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text

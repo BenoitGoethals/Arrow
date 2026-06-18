@@ -25,10 +25,15 @@ object AlertMarker {
     fun colourForType(type: String): Int = when (type.uppercase()) {
         "TIC"        -> 0xFFDC2626.toInt()
         "MEDICAL"    -> 0xFF16A34A.toInt()
+        "MEDEVAC"    -> 0xFF22C55E.toInt()
         "EVAC"       -> 0xFFF59E0B.toInt()
         "LOST_COMMS" -> 0xFF6366F1.toInt()
         else         -> 0xFFDC2626.toInt()
     }
+
+    // MEDEVAC / EVAC / MEDICAL get a 🚁 medevac arrow drawn over the disc.
+    private fun isMedevac(type: String): Boolean =
+        type.uppercase() in setOf("MEDEVAC", "EVAC", "MEDICAL")
 
     fun build(
         map: MapView,
@@ -42,7 +47,7 @@ object AlertMarker {
         position = GeoPoint(lat, lon)
         this.title    = title
         this.snippet  = snippet
-        icon          = circleIcon(res, colourForType(type))
+        icon          = circleIcon(res, colourForType(type), isMedevac(type))
         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
         // Tagged so we can tell our alert markers apart from the tactical
         // ones the main render loop wipes/rebuilds. The radial-menu fix on
@@ -61,7 +66,7 @@ object AlertMarker {
 
     private const val TAG = "arrow.alert-marker"
 
-    private fun circleIcon(res: Resources, color: Int): Drawable {
+    private fun circleIcon(res: Resources, color: Int, medevac: Boolean = false): Drawable {
         val density = res.displayMetrics.density
         val sizePx  = (40f * density).toInt().coerceAtLeast(40)
         val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
@@ -82,10 +87,19 @@ object AlertMarker {
         p.style = Paint.Style.STROKE
         p.strokeWidth = density * 2.2f
         cnv.drawCircle(cx, cy, sizePx * 0.34f, p)
-        // Central white pip.
-        p.color = 0xFFFFFFFF.toInt()
-        p.style = Paint.Style.FILL
-        cnv.drawCircle(cx, cy, sizePx * 0.08f, p)
+        if (medevac) {
+            // 🚁 medevac glyph centred on the disc.
+            val tp = Paint(Paint.ANTI_ALIAS_FLAG)
+            tp.textSize  = sizePx * 0.42f
+            tp.textAlign = Paint.Align.CENTER
+            val fm = tp.fontMetrics
+            cnv.drawText("🚁", cx, cy - (fm.ascent + fm.descent) / 2f, tp)
+        } else {
+            // Central white pip.
+            p.color = 0xFFFFFFFF.toInt()
+            p.style = Paint.Style.FILL
+            cnv.drawCircle(cx, cy, sizePx * 0.08f, p)
+        }
         return BitmapDrawable(res, bmp)
     }
 }

@@ -11,6 +11,7 @@ Generate a key:
 
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from pathlib import Path
@@ -72,6 +73,60 @@ def _decrypt(data: bytes) -> bytes:
     return aesgcm.decrypt(nonce, ct, None)
 
 
+# ── Shared binary store (used by /photos upload, the Marti sync API and the
+#    ATAK CoT bridge) — one place that writes the encrypted file + Photo row. ──
+
+def store_photo_bytes(db: Session, raw: bytes, mime: str, uploaded_by: int,
+                      original_name: str = "photo") -> Photo:
+    """Persist binary image/video bytes to disk + a Photo row (with SHA-256).
+
+    Records the plaintext SHA-256 so the file is retrievable by hash via the TAK
+    Marti API. Inbound ATAK paths de-dupe via ``find_photo_by_hash`` before
+    calling this; the regular upload endpoint always creates a distinct Photo.
+    """
+    sha   = hashlib.sha256(raw).hexdigest()
+    ext   = MIME_TO_EXT.get(mime, "jpg")
+    fname = f"{uuid.uuid4().hex}.{ext}" + (".enc" if _get_aesgcm() is not None else "")
+    (PHOTO_DIR / fname).write_bytes(_encrypt(raw))
+
+    photo = Photo(filename=fname, original_name=original_name or "photo",
+                  mime_type=mime, uploaded_by=uploaded_by, sha256=sha)
+    db.add(photo)
+    db.commit()
+    db.refresh(photo)
+    return photo
+
+
+def read_photo_bytes(photo: Photo) -> bytes | None:
+    """Return the decrypted plaintext bytes for a stored Photo, or None."""
+    path = PHOTO_DIR / photo.filename
+    if not path.exists():
+        return None
+    raw = path.read_bytes()
+    if photo.filename.endswith(".enc"):
+        try:
+            raw = _decrypt(raw)
+        except Exception:
+            return None
+    return raw
+
+
+def find_photo_by_hash(db: Session, sha256: str) -> Photo | None:
+    return db.query(Photo).filter(Photo.sha256 == sha256).first()
+
+
+def ensure_photo_hash(db: Session, photo: Photo) -> str | None:
+    """Backfill sha256 for a legacy Photo (computed from its plaintext)."""
+    if photo.sha256:
+        return photo.sha256
+    raw = read_photo_bytes(photo)
+    if raw is None:
+        return None
+    photo.sha256 = hashlib.sha256(raw).hexdigest()
+    db.commit()
+    return photo.sha256
+
+
 @router.get("")
 def list_photos(
     db: Session = Depends(get_db),
@@ -126,16 +181,9 @@ async def upload_photo(
     if len(raw) > limit:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                             f"File too large (max {limit // (1024 * 1024)} MB for {media_cat})")
-    blob = _encrypt(raw)
-    ext  = MIME_TO_EXT.get(mime, "jpg")
-    encrypted = _get_aesgcm() is not None
-    filename = f"{uuid.uuid4().hex}.{ext}" + (".enc" if encrypted else "")
 
-    (PHOTO_DIR / filename).write_bytes(blob)
-
-    photo = Photo(filename=filename, original_name=file.filename or "photo",
-                  mime_type=mime, uploaded_by=current.id)
-    db.add(photo); db.commit(); db.refresh(photo)
+    photo = store_photo_bytes(db, raw, mime, uploaded_by=current.id,
+                              original_name=file.filename or "photo")
     return PhotoOut(id=photo.id, url=f"/photos/{photo.id}")
 
 

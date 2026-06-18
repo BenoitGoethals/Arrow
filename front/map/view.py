@@ -1,5 +1,6 @@
 """MapView — QWebEngineView hosting the Leaflet tactical COP."""
 from __future__ import annotations
+import base64
 import json
 import sys
 from pathlib import Path
@@ -68,8 +69,10 @@ class MapView(QWebEngineView):
         # Log load result + start repaint guard
         self._page.loadFinished.connect(self._on_load_finished)
 
-        # Periodic repaint — guards against Qt6/macOS compositor dropping the
-        # WebEngine framebuffer after DOM changes (tile layer switch, overlays)
+        # Periodic safety-net: keep the Qt compositor from showing a stale
+        # WebEngine frame.  self.update() is deliberately the only call here —
+        # no JS — so it never interferes with tile loading.  Reactive JS repaints
+        # (map.invalidateSize) are fired once by notify_menu_closed / contextMenuEvent.
         self._repaint_guard = QTimer(self)
         self._repaint_guard.setInterval(250)
         self._repaint_guard.timeout.connect(self.update)
@@ -81,6 +84,12 @@ class MapView(QWebEngineView):
         # map_url is set by MapView.set_map_server_port() once the server starts.
         self._map_server_port: int = 0
 
+        # Auth + photo cache for geo-pinned tactical-object images.
+        self._server_url: str = ""
+        self._token: str = ""
+        self._photo_cache: dict[str, str] = {}
+        self._img_threads: list = []
+
     def set_map_server_port(self, port: int):
         """Call once the MBTilesServer is running before showing the window."""
         self._map_server_port = port
@@ -88,14 +97,49 @@ class MapView(QWebEngineView):
         print(f"[MapView] Loading: {url}", file=sys.stderr)
         self.load(QUrl(url))
 
+    def _force_repaint(self):
+        """Force the Chromium GPU process to submit a new compositor frame.
+
+        map.invalidateSize() is a no-op when the container size hasn't changed,
+        so it can't recover a black screen caused by a native Qt overlay.
+        Toggling document.body opacity by an imperceptible amount (1 → 0.9999 →
+        back) forces Chromium to generate two fresh frames and push them to the
+        macOS Metal compositor, which clears the black state.
+        """
+        self.update()
+        # setTimeout (not requestAnimationFrame) so this runs even when the
+        # WebEngine rendering loop is paused by the native QMenu taking focus.
+        self._page.runJavaScript(
+            "var b=document.body;"
+            "if(b){"
+            "b.style.opacity='0.9999';"
+            "setTimeout(function(){b.style.opacity='';},50);"
+            "}"
+        )
+
+    def notify_menu_closed(self):
+        """Call when any native QMenu that appeared over this view has closed.
+
+        Uses a longer delay than contextMenuEvent because macOS NSMenu has a
+        fade-out animation (~50ms) that keeps the native surface alive; firing
+        before it fully closes would repaint into the wrong compositor state.
+        """
+        QTimer.singleShot(80,  self._force_repaint)
+        QTimer.singleShot(300, self._force_repaint)
+
+    def focusInEvent(self, event):
+        """Repaint when focus returns — covers the QMenu-close focus transition."""
+        super().focusInEvent(event)
+        QTimer.singleShot(50,  self._force_repaint)
+        QTimer.singleShot(200, self._force_repaint)
+
     def contextMenuEvent(self, event):
-        # Accept (swallow) the event — no native context menu.
-        # Two deferred repaints fix the Qt6 WebEngine black-compositor bug on
-        # macOS: one short (catches the overlay appearing) and one longer
-        # (catches the overlay being removed after the user picks an action).
+        # Swallow the Qt context-menu event so no native menu appears over the
+        # WebEngine view (a native overlay would drop the Metal framebuffer).
         event.accept()
-        QTimer.singleShot(40,  self.update)
-        QTimer.singleShot(200, self.update)
+        self._force_repaint()
+        QTimer.singleShot(40,  self._force_repaint)
+        QTimer.singleShot(200, self._force_repaint)
 
     def _on_permission_requested(self, permission):
         try:
@@ -215,8 +259,47 @@ class MapView(QWebEngineView):
     def update_cot_track(self, track: dict):
         self._js(f"updateCotTrack({json.dumps(track)})")
 
+    def set_auth(self, server_url: str, token: str):
+        """Provide backend URL + JWT so the map can fetch auth-gated photos."""
+        self._server_url = (server_url or "").rstrip("/")
+        self._token = token or ""
+
     def add_tactical_object(self, obj: dict):
         self._js(f"addTacticalObject({json.dumps(obj)})")
+        # Geo-pinned photo: fetch with Bearer auth, then inject the data-URI.
+        pid = obj.get("photo_id")
+        if pid and self._server_url and self._token:
+            self._fetch_obj_photo(obj.get("id"), pid)
+
+    def _fetch_obj_photo(self, obj_id, photo_id):
+        from front.panels.messages.panel import _ImageFetchThread
+        url = f"{self._server_url}/photos/{photo_id}"
+        cached = self._photo_cache.get(url)
+        if cached:
+            self._js(f"setObjPhoto({json.dumps(obj_id)}, {json.dumps(cached)})")
+            return
+        if url in self._photo_cache:   # in-flight (marked with "")
+            return
+        self._photo_cache[url] = ""
+        t = _ImageFetchThread(url, self._token)
+        t.loaded.connect(lambda u, data, oid=obj_id: self._on_obj_photo(oid, u, data))
+        t.start()
+        self._img_threads.append(t)
+
+    def _on_obj_photo(self, obj_id, url: str, data: bytes):
+        if not data:
+            return
+        if data[:4] == b"\x89PNG":
+            mime = "image/png"
+        elif data[:3] == b"GIF":
+            mime = "image/gif"
+        elif b"WEBP" in data[:12]:
+            mime = "image/webp"
+        else:
+            mime = "image/jpeg"
+        uri = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+        self._photo_cache[url] = uri
+        self._js(f"setObjPhoto({json.dumps(obj_id)}, {json.dumps(uri)})")
 
     def remove_tactical_object(self, obj_id: str):
         self._js(f"removeTacticalObject({json.dumps(obj_id)})")

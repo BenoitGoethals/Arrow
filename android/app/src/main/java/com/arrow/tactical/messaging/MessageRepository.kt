@@ -5,6 +5,9 @@ import com.arrow.tactical.data.local.AppDatabase
 import com.arrow.tactical.data.local.entity.CachedMessageEntity
 import com.arrow.tactical.data.local.entity.PendingActionEntity
 import com.arrow.tactical.network.ApiClient
+import com.arrow.tactical.network.ChatRoomDto
+import com.arrow.tactical.network.ChatRoomIn
+import com.arrow.tactical.network.ChatRoomMemberIn
 import com.arrow.tactical.network.MessageDto
 import com.arrow.tactical.network.MessageIn
 import com.arrow.tactical.sync.ConnectivityObserver
@@ -33,11 +36,12 @@ class MessageRepository(
         content: String,
         receiverId: Int? = null,
         groupId: String? = null,
-        type: String = if (receiverId != null) "DIRECT" else "BROADCAST",
+        chatroomId: Int? = null,
+        type: String = if (chatroomId != null) "ROOM" else if (receiverId != null) "DIRECT" else "BROADCAST",
         photoId: Int? = null,
     ): Result<MessageDto> = runCatching {
         val localId = -System.currentTimeMillis()  // negative = not yet on server
-        val payload = MessageIn(receiverId = receiverId, groupId = groupId,
+        val payload = MessageIn(receiverId = receiverId, groupId = groupId, chatroomId = chatroomId,
             content = content, messageType = type, photoId = photoId)
         val payloadJson = api.json.encodeToString(payload)
 
@@ -87,6 +91,36 @@ class MessageRepository(
     private fun localDto(localId: Long, content: String, type: String, receiverId: Int?, groupId: String?) =
         MessageDto(id = localId.toInt(), senderId = -1, receiverId = receiverId,
             groupId = groupId, content = content, messageType = type)
+
+    // ── Chat rooms ──────────────────────────────────────────────────────────
+    suspend fun listRooms(): Result<List<ChatRoomDto>> = runCatching {
+        val r = api.get("/chatrooms")
+        if (!r.ok) error("rooms ${r.code}")
+        api.json.decodeFromString<List<ChatRoomDto>>(r.body)
+    }
+
+    suspend fun createRoom(name: String): Result<ChatRoomDto> = runCatching {
+        val r = api.postJson("/chatrooms", api.json.encodeToString(ChatRoomIn(name = name)))
+        if (!r.ok) error("create ${r.code}")
+        api.json.decodeFromString<ChatRoomDto>(r.body)
+    }
+
+    suspend fun addMember(roomId: Int, operatorId: Int): Result<ChatRoomDto> = runCatching {
+        val r = api.postJson("/chatrooms/$roomId/members",
+            api.json.encodeToString(ChatRoomMemberIn(operatorId = operatorId)))
+        if (!r.ok) error("add ${r.code}")
+        api.json.decodeFromString<ChatRoomDto>(r.body)
+    }
+
+    suspend fun removeMember(roomId: Int, operatorId: Int): Result<Unit> = runCatching {
+        val r = api.delete("/chatrooms/$roomId/members/$operatorId")
+        if (!r.ok) error("remove ${r.code}")
+    }
+
+    suspend fun deleteRoom(roomId: Int): Result<Unit> = runCatching {
+        val r = api.delete("/chatrooms/$roomId")
+        if (!r.ok && r.code != 204) error("delete ${r.code}")
+    }
 }
 
 private fun CachedMessageEntity.toDto() = MessageDto(

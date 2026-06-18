@@ -17,7 +17,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import CotTrackOut
-from backend.auth.jwt_auth import get_current_operator
+from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.cot.cot import CotEvent, cot_type_to_sidc, parse_cot, role_to_cot_type
 from backend.storage.database import get_db
 from backend.storage.models import CotTrack, Operator
@@ -115,6 +115,7 @@ async def receive_cot(
         track.speed     = evt.speed
         track.course    = evt.course
         track.team      = evt.team
+        track.remarks   = getattr(evt, "remarks", None) or None
         track.last_seen = datetime.now(timezone.utc)
         db.commit()
         db.refresh(track)
@@ -134,6 +135,7 @@ async def receive_cot(
                 "speed":     track.speed,
                 "course":    track.course,
                 "team":      track.team,
+                "remarks":   track.remarks or "",
                 "last_seen": track.last_seen.isoformat(),
             },
         })
@@ -152,6 +154,15 @@ async def receive_cot(
     return Response(content=ack.to_xml(), media_type="application/xml")
 
 
+@router.get("/clients")
+def list_cot_clients(
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    """Return list of currently connected ATAK TCP clients."""
+    from backend.cot.tcp_server import _Pool
+    return _Pool.client_list()
+
+
 @router.get("/tracks", response_model=list[CotTrackOut])
 def list_cot_tracks(
     db: Session = Depends(get_db),
@@ -159,6 +170,25 @@ def list_cot_tracks(
 ) -> list[CotTrack]:
     """Return all live CoT track entities for the tactical map to load on startup."""
     return db.query(CotTrack).all()
+
+
+@router.get("/shapes")
+def list_atak_shapes(
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    """Return all persisted ATAK drawn shapes."""
+    from backend.storage.models import AtakShape
+    shapes = db.query(AtakShape).all()
+    return [
+        {
+            "id": s.id, "uid": s.uid, "cot_type": s.cot_type,
+            "shape_type": s.shape_type, "title": s.title,
+            "callsign": s.callsign, "geometry_json": s.geometry_json,
+            "last_seen": s.last_seen.isoformat() if s.last_seen else None,
+        }
+        for s in shapes
+    ]
 
 
 @router.get(
@@ -187,3 +217,65 @@ def get_cot_snapshot(
         role     = op.role,
     )
     return Response(content=evt.to_xml(), media_type="application/xml")
+
+
+# ── TAK / CoT TCP server admin endpoints ─────────────────────────────────────
+
+@router.get("/tcp/status")
+def tcp_status(
+    _: Operator = Depends(get_current_operator),
+) -> dict:
+    """Return CoT TCP server status + list of connected ATAK devices."""
+    from backend.cot.tcp_server import get_status
+    return get_status()
+
+
+@router.get("/tcp/config")
+def tcp_get_config(
+    _: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> dict:
+    """Return current CoT TCP server configuration."""
+    from backend.cot.tcp_server import get_config
+    return get_config()
+
+
+@router.put("/tcp/config")
+async def tcp_update_config(
+    patch: dict,
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Update CoT TCP server configuration (persisted to data/tak_cot_config.json).
+
+    Changes to ``enabled``, ``host``, or ``port`` require a server restart to
+    take effect — use POST /cot/tcp/restart after updating.
+    """
+    from backend.cot.tcp_server import update_config
+    return update_config(patch)
+
+
+@router.post("/tcp/restart")
+async def tcp_restart(
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Stop and restart the CoT TCP server (picks up new host/port config)."""
+    from backend.cot import tcp_server
+    await tcp_server.stop()
+    await tcp_server.start()
+    return {"status": "restarted", **tcp_server.get_status()}
+
+
+@router.delete("/tracks/{track_id}", status_code=204)
+async def delete_cot_track(
+    track_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> None:
+    """Remove a foreign CoT track from the DB and map."""
+    track = db.get(CotTrack, track_id)
+    if track:
+        db.delete(track)
+        db.commit()
+        await broadcaster.broadcast({
+            "channel": "cot-track", "event": "deleted",
+            "data": {"id": track_id},
+        })

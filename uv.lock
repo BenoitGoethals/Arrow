@@ -80,6 +80,11 @@ front = [
     { name = "pyqt6-webengine" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "bcrypt", specifier = ">=4.2" },
@@ -117,6 +122,9 @@ requires-dist = [
     { name = "wxpython", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'cot-sim'", specifier = "==4.2.4" },
 ]
 provides-extras = ["dev", "cot-sim", "front"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=9.0.3" }]
 
 [[package]]
 name = "bcrypt"

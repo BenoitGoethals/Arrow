@@ -25,6 +25,7 @@ async def update_position(
     current.altitude  = payload.altitude
     current.last_seen = datetime.now(timezone.utc)
     current.status    = "ONLINE"
+    current.position_source = "APP"   # fix arrived from the mobile/web app GPS
 
     # Persist every fix for track history and behaviour analytics.
     db.add(OperatorPosition(
@@ -62,11 +63,12 @@ async def update_position(
                 "team_id":     current.team_id,
                 "mission_id":  current.mission_id,
                 "cot_type":    cot_type,
+                "position_source": "APP",
             },
         }
     )
 
-    # Forward position to all connected ATAK devices over TCP CoT
+    # Push live position to all connected ATAK devices over TCP CoT
     from backend.cot.tcp_server import broadcast_operator_cot
     await broadcast_operator_cot(current)
 

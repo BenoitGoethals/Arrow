@@ -35,6 +35,7 @@ import androidx.media3.ui.PlayerView
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import com.arrow.tactical.di.AppContainer
+import com.arrow.tactical.network.ChatRoomDto
 import com.arrow.tactical.network.MessageDto
 import com.arrow.tactical.network.OperatorDto
 import kotlinx.coroutines.delay
@@ -42,7 +43,7 @@ import kotlinx.coroutines.launch
 
 private sealed class Recipient(val label: String) {
     data object Broadcast : Recipient("📢 Broadcast (everyone)")
-    data object BattleCaptains : Recipient("⭐ Battle Captains")
+    data class Room(val room: ChatRoomDto) : Recipient("# ${room.name}")
     data class Direct(val op: OperatorDto) : Recipient("→ ${op.callsign} (${op.rank})")
 }
 
@@ -52,9 +53,11 @@ fun MessagingScreen(container: AppContainer) {
     val context = LocalContext.current
     var messages  by remember { mutableStateOf<List<MessageDto>>(emptyList()) }
     var operators by remember { mutableStateOf<List<OperatorDto>>(emptyList()) }
+    var rooms     by remember { mutableStateOf<List<ChatRoomDto>>(emptyList()) }
     var draft     by remember { mutableStateOf("") }
     var recipient by remember { mutableStateOf<Recipient>(Recipient.Broadcast) }
     var menuOpen  by remember { mutableStateOf(false) }
+    var showRoomManager by remember { mutableStateOf(false) }
     var meId      by remember { mutableStateOf<Int?>(null) }
 
     // Media (photo or video) attachment state
@@ -90,12 +93,25 @@ fun MessagingScreen(container: AppContainer) {
     suspend fun refreshMessages() {
         container.messageRepository.list().onSuccess { messages = it.sortedBy { m -> m.id } }
     }
+    suspend fun refreshRooms() {
+        container.messageRepository.listRooms().onSuccess { rooms = it }
+    }
 
     LaunchedEffect(Unit) {
         container.authRepository.me().onSuccess { meId = it.id }
         container.tacticalRepository.listOperators().onSuccess { operators = it }
+        refreshRooms()
         refreshMessages()
         videoToken = container.tokenStore.current() ?: ""
+    }
+
+    // Keep the selected room object fresh; drop selection if the room is gone.
+    LaunchedEffect(rooms) {
+        val r = recipient
+        if (r is Recipient.Room) {
+            val updated = rooms.find { it.id == r.room.id }
+            recipient = if (updated != null) Recipient.Room(updated) else Recipient.Broadcast
+        }
     }
 
     LaunchedEffect(messages.size) {
@@ -103,7 +119,7 @@ fun MessagingScreen(container: AppContainer) {
     }
 
     LaunchedEffect(Unit) {
-        while (true) { refreshMessages(); delay(4_000) }
+        while (true) { refreshMessages(); refreshRooms(); delay(4_000) }
     }
 
     val baseUrl = remember { mutableStateOf("") }
@@ -115,6 +131,23 @@ fun MessagingScreen(container: AppContainer) {
             url   = url,
             token = videoToken,
             onDismiss = { videoPlayUrl = null },
+        )
+    }
+
+    if (showRoomManager) {
+        RoomManagerDialog(
+            rooms     = rooms,
+            operators = operators,
+            onDismiss = { showRoomManager = false },
+            onCreate  = { name -> scope.launch { container.messageRepository.createRoom(name); refreshRooms() } },
+            onDelete  = { rid  -> scope.launch { container.messageRepository.deleteRoom(rid); refreshRooms() } },
+            onToggleMember = { rid, opId, add ->
+                scope.launch {
+                    if (add) container.messageRepository.addMember(rid, opId)
+                    else     container.messageRepository.removeMember(rid, opId)
+                    refreshRooms()
+                }
+            },
         )
     }
 
@@ -133,9 +166,21 @@ fun MessagingScreen(container: AppContainer) {
                                 text = { Text(Recipient.Broadcast.label) },
                                 onClick = { recipient = Recipient.Broadcast; menuOpen = false },
                             )
+                            HorizontalDivider()
+                            Text(
+                                "Chat rooms",
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                            rooms.forEach { room ->
+                                DropdownMenuItem(
+                                    text = { Text("# ${room.name}  (${room.memberIds.size})") },
+                                    onClick = { recipient = Recipient.Room(room); menuOpen = false },
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text(Recipient.BattleCaptains.label) },
-                                onClick = { recipient = Recipient.BattleCaptains; menuOpen = false },
+                                text = { Text("⚙ Manage rooms…") },
+                                onClick = { showRoomManager = true; menuOpen = false },
                             )
                             HorizontalDivider()
                             Text(
@@ -248,8 +293,8 @@ fun MessagingScreen(container: AppContainer) {
                         when (val r = recipient) {
                             Recipient.Broadcast ->
                                 container.messageRepository.send(text, type = "BROADCAST", photoId = photoId)
-                            Recipient.BattleCaptains ->
-                                container.messageRepository.send(text, groupId = "BATTLE_CAPTAINS", type = "GROUP", photoId = photoId)
+                            is Recipient.Room ->
+                                container.messageRepository.send(text, chatroomId = r.room.id, type = "ROOM", photoId = photoId)
                             is Recipient.Direct ->
                                 container.messageRepository.send(text, receiverId = r.op.id, type = "DIRECT", photoId = photoId)
                         }
@@ -273,7 +318,7 @@ private fun MessageBubble(
     val bg = when {
         isMine -> MaterialTheme.colorScheme.primary
         message.messageType == "BROADCAST" -> MaterialTheme.colorScheme.tertiaryContainer
-        message.messageType == "GROUP"     -> MaterialTheme.colorScheme.secondaryContainer
+        message.messageType == "ROOM"      -> MaterialTheme.colorScheme.secondaryContainer
         else   -> MaterialTheme.colorScheme.surfaceVariant
     }
     val fg = when {
@@ -284,7 +329,7 @@ private fun MessageBubble(
     Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = align) {
         val tag = when (message.messageType) {
             "BROADCAST" -> "BROADCAST"
-            "GROUP"     -> message.groupId ?: "GROUP"
+            "ROOM"      -> "ROOM"
             else        -> "DIRECT"
         }
         Text(
@@ -423,6 +468,83 @@ fun VideoPlayerDialog(url: String, token: String, onDismiss: () -> Unit) {
                     .padding(8.dp),
             ) {
                 Icon(Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoomManagerDialog(
+    rooms: List<ChatRoomDto>,
+    operators: List<OperatorDto>,
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+    onDelete: (Int) -> Unit,
+    onToggleMember: (Int, Int, Boolean) -> Unit,
+) {
+    var selectedId by remember(rooms) { mutableStateOf(rooms.firstOrNull()?.id) }
+    var newName by remember { mutableStateOf("") }
+    val selected = rooms.find { it.id == selectedId }
+    val memberIds = selected?.memberIds?.toSet() ?: emptySet()
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(shape = RoundedCornerShape(12.dp)) {
+            Column(Modifier.padding(16.dp).fillMaxWidth()) {
+                Text("Chat Rooms", style = MaterialTheme.typography.titleMedium,
+                     fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newName, onValueChange = { newName = it },
+                        label = { Text("New room") }, singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Button(onClick = {
+                        if (newName.isNotBlank()) { onCreate(newName.trim()); newName = "" }
+                    }) { Text("Create") }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                if (rooms.isEmpty()) {
+                    Text("No rooms yet", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Text("Room", style = MaterialTheme.typography.labelSmall)
+                    rooms.forEach { r ->
+                        Row(verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()) {
+                            RadioButton(selected = r.id == selectedId,
+                                        onClick = { selectedId = r.id })
+                            Text("# ${r.name}", modifier = Modifier.weight(1f))
+                            if (r.id == selectedId) {
+                                TextButton(onClick = { onDelete(r.id) }) { Text("Delete") }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Members of # ${selected?.name ?: ""}",
+                         style = MaterialTheme.typography.labelSmall)
+                    LazyColumn(modifier = Modifier.heightIn(max = 240.dp)) {
+                        items(operators) { op ->
+                            Row(verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()) {
+                                Checkbox(
+                                    checked = op.id in memberIds,
+                                    onCheckedChange = { checked ->
+                                        selected?.let { onToggleMember(it.id, op.id, checked) }
+                                    },
+                                )
+                                Text("${op.callsign}  ·  ${op.role}")
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Close") }
+                }
             }
         }
     }

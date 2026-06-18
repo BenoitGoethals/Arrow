@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QMessageBox,
 )
-from front.app.right_info_panel import RightInfoPanel
+from front.app.activity_panel import ActivityPanel
 from PyQt6.QtCore import Qt, QTimer, QSettings
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction
 
@@ -21,6 +21,7 @@ from front.app.statusbar  import StatusBar
 from front.panels.orbat.panel     import ORBATPanel
 from front.panels.reports.panel   import ReportsPanel
 from front.panels.messages.panel  import MessagesPanel
+from front.panels.messages.room_manager import RoomManagerDialog
 from front.panels.alerts.panel    import AlertsPanel
 from front.panels.draw.panel      import DrawPanel
 from front.panels.log.panel       import LogPanel
@@ -37,7 +38,6 @@ from front.windows.medevac_window import MedevacWindow
 from front.client.arrow_client    import ArrowClient
 from front.client.ws_listener    import WSListener
 from front.map.tile_server       import MBTilesServer
-from front.app.collapsible_panel  import CollapsibleSidePanel
 from front.app.toast_manager      import ToastManager
 from front.app.settings_dialog    import ConfigDialog, read_gps_config, load as _settings_load, _bool as _settings_bool
 from front.app.voice_alerts       import VoiceAlertPlayer
@@ -126,7 +126,9 @@ class MainWindow(QMainWindow):
         self._stream_viewers:  list[StreamViewerWindow]  = []
         self._medevac_windows: list[MedevacWindow]       = []
 
-        self._info = RightInfoPanel()
+        # Right: vertical activity bar — feature panels open in the right window.
+        self._right_panel = ActivityPanel(side="right", default_width=360)
+        self._info = self._right_panel
         self._info.add_panel("missions", "◈",  "MISS",   self._missions_panel, "1")
         self._info.add_panel("strike",   "◆",  "STRK",   self._strike_panel,   "2")
         self._info.add_panel("opord",    "📋", "OPORD",  self._opord_panel,    "3")
@@ -142,14 +144,14 @@ class MainWindow(QMainWindow):
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
+        self._map.set_auth(self._server_url, self._token)
 
-        # ---- Collapsible side panels ----------------------------------
-        self._left_panel = CollapsibleSidePanel(
-            self._orbat_panel, "ORBAT", side="left", default_width=270
-        )
-        self._right_panel = CollapsibleSidePanel(
-            self._info, "INFO", side="right", default_width=360
-        )
+        # ---- Side panels ----------------------------------------------
+        # Left: vertical activity bar — ORBAT opens in the left window.
+        # (Add further icons here later with another add_panel(...) call.)
+        self._left_panel = ActivityPanel(side="left", default_width=270)
+        self._left_panel.add_panel("orbat", "⊟", "ORBAT", self._orbat_panel, "O")
+        # (self._right_panel was created above with all feature panels added.)
 
         # ---- Splitter (fills the whole central area) ------------------
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -163,9 +165,12 @@ class MainWindow(QMainWindow):
         self._splitter.addWidget(self._map)
         self._splitter.addWidget(self._right_panel)
 
-        # Bind splitter references (needed for resize logic)
-        self._left_panel.bind_splitter(self._splitter, 0)
-        self._right_panel.bind_splitter(self._splitter, 2)
+        # Bind splitter references (needed for resize logic). Fallback sizes
+        # describe the fully-expanded 3-column layout (icon bar + content each
+        # side) for the pre-layout case where the splitter reports zero widths.
+        _fallback = [316, 900, 406]
+        self._left_panel.bind_splitter(self._splitter, 0, fallback=_fallback)
+        self._right_panel.bind_splitter(self._splitter, 2, fallback=_fallback)
 
         # Defer collapse until after window is shown and splitter has real px dimensions
         QTimer.singleShot(0, self._right_panel.collapse)
@@ -174,7 +179,7 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setStretchFactor(2, 0)
-        self._splitter.setSizes([270, 900, 360])
+        self._splitter.setSizes([316, 900, 406])
 
         self.setCentralWidget(self._splitter)
 
@@ -198,6 +203,10 @@ class MainWindow(QMainWindow):
     # ================================================================
     def _connect_signals(self):
         tb = self._toolbar
+        # Each toolbar QMenu is a native popup that appears over the WebEngine
+        # view and drops the Metal compositor framebuffer when it closes.
+        for menu in tb.popup_menus:
+            menu.aboutToHide.connect(self._map.notify_menu_closed)
         tb.mode_changed.connect(self._on_mode_from_toolbar)
         tb.layer_toggled.connect(self._map.toggle_layer)
         tb.base_changed.connect(self._map.set_base_layer)
@@ -225,6 +234,7 @@ class MainWindow(QMainWindow):
             lambda lat, lon: self._map.center_on(lat, lon, zoom=14)
         )
         self._messages_panel.message_send_requested.connect(self._send_message_scoped)
+        self._messages_panel.manage_rooms_requested.connect(self._open_room_manager)
         self._draw_panel.draw_mode_changed.connect(self._map.set_draw_mode)
         self._draw_panel.draw_graphic.connect(self._map.set_draw_graphic)
         self._draw_panel.free_draw_changed.connect(self._map.set_free_draw)
@@ -562,6 +572,7 @@ class MainWindow(QMainWindow):
                         "unit":      op.get("team", ""),
                         "online":    True,
                         "last_seen": op.get("recorded_at", ""),
+                        "position_source": op.get("position_source"),
                     })
         except Exception:
             pass
@@ -636,6 +647,23 @@ class MainWindow(QMainWindow):
             self._messages_panel.load_messages(self._client.messages())
         except Exception:
             pass
+        self._load_chatrooms()
+
+    def _load_chatrooms(self):
+        try:
+            self._messages_panel.set_rooms(self._client.chatrooms())
+        except Exception:
+            pass
+
+    def _open_room_manager(self):
+        try:
+            ops = self._client.operators()
+        except Exception:
+            ops = []
+        dlg = RoomManagerDialog(self._client, ops, self)
+        dlg.rooms_changed.connect(self._load_chatrooms)
+        dlg.exec()
+        self._load_chatrooms()
 
     def _load_missions(self):
         try:
@@ -743,6 +771,11 @@ class MainWindow(QMainWindow):
                 pass
 
     def _on_message(self, data: dict):
+        # Room lifecycle events (room_created / member_added / …) ride the `chat`
+        # channel but carry a room dict, not a message — refresh the room list.
+        if "message_type" not in data:
+            self._load_chatrooms()
+            return
         self._messages_panel.add_message(data)
         sender = data.get("sender") or data.get("callsign") or "?"
         if sender != self._callsign:
@@ -1218,8 +1251,9 @@ class MainWindow(QMainWindow):
                 photo_id = self._client.upload_media(str(file_path))
             if scope == "DIRECT" and receiver_id is not None:
                 self._client.send_message(content, receiver_id=int(receiver_id), photo_id=photo_id)
-            elif scope == "MISSION" and mission_id is not None:
-                self._client.send_message_group(content, group_id=int(mission_id), photo_id=photo_id)
+            elif scope == "ROOM" and mission_id is not None:
+                # `mission_id` slot carries the chatroom_id for ROOM scope.
+                self._client.send_message_room(content, chatroom_id=int(mission_id), photo_id=photo_id)
             else:
                 self._client.send_message(content, photo_id=photo_id)
         except Exception as e:
@@ -1473,6 +1507,7 @@ class MainWindow(QMainWindow):
             "online":    data.get("online", True),
             "last_seen": data.get("last_seen") or data.get("recorded_at", ""),
             "affiliation": "FRIENDLY",
+            "position_source": data.get("position_source"),
         })
 
     # ================================================================

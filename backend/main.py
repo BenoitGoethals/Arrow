@@ -17,6 +17,7 @@ from backend.fire_missions.router import router as fire_missions_router
 from backend.history.router import router as history_router
 from backend.cot.router import router as cot_router
 from backend.photos.router import router as photos_router
+from backend.marti.router import router as marti_router
 from backend.api.companies import router as companies_router
 from backend.api.exports import router as exports_router
 from backend.api.hierarchy import router as hierarchy_router
@@ -35,6 +36,7 @@ from backend.kml.router import router as kml_router
 from backend.map.router import router as map_router
 from backend.overlays.router import router as overlays_router
 from backend.messaging.router import router as messaging_router
+from backend.chatrooms.router import router as chatrooms_router
 from backend.missions.router import router as missions_router
 from backend.opord.router import router as opord_router
 from backend.reports.router import router as reports_router
@@ -120,6 +122,10 @@ def _configure_logging() -> None:
     root.addHandler(handler)
     root.setLevel(level)
 
+    # In-memory ring buffer feeding the admin Logs viewer (captures everything).
+    from backend import logbuffer
+    logbuffer.install()
+
     # Arrow domain loggers — all at the configured level
     for ns in (
         "backend",
@@ -173,7 +179,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Graceful shutdown
     await _cot_tcp.stop()
     _mumble_monitor.stop()
 
@@ -188,6 +193,28 @@ def create_app() -> FastAPI:
     # Rate limiting
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # HTTP access log — every request (method, path, status, ms, client) so the
+    # admin Logs viewer shows full backend API traffic.
+    import time as _time
+    _req_log = logging.getLogger("backend.request")
+
+    @app.middleware("http")
+    async def _access_log(request, call_next):
+        t0 = _time.monotonic()
+        try:
+            response = await call_next(request)
+        except Exception:
+            ms = (_time.monotonic() - t0) * 1000
+            _req_log.exception("%s %s → ERROR (%.0f ms)", request.method, request.url.path)
+            raise
+        ms = (_time.monotonic() - t0) * 1000
+        client = request.client.host if request.client else "?"
+        lvl = logging.WARNING if response.status_code >= 500 else logging.DEBUG \
+            if request.url.path in ("/health",) else logging.INFO
+        _req_log.log(lvl, "%s %s → %d (%.0f ms) [%s]",
+                     request.method, request.url.path, response.status_code, ms, client)
+        return response
 
     # CORS
     _raw_origins = os.environ.get("ARROW_ALLOWED_ORIGINS", "http://localhost:6002")
@@ -216,6 +243,7 @@ def create_app() -> FastAPI:
     app.include_router(tactical_objects_router)
     app.include_router(alerts_router)
     app.include_router(messaging_router)
+    app.include_router(chatrooms_router)
     app.include_router(tracking_router)
     app.include_router(battles_router)
     app.include_router(strike_packages_router)
@@ -233,6 +261,7 @@ def create_app() -> FastAPI:
     app.include_router(streams_router)
     app.include_router(octopus_router)
     app.include_router(photos_router)
+    app.include_router(marti_router)
     app.include_router(ws_router)
     app.include_router(mumble_router)
 

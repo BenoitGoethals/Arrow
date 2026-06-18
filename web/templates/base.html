@@ -1095,6 +1095,7 @@
             EVAC:           'Evacuation! All units evacuate!',
             LOST_COMMS:     'Lost communications! Check radio!',
             DRONE_SPOTTED:  'Drone spotted! Drone spotted!',
+            ATAK_EMERGENCY: 'Emergency beacon! Operator emergency!',
         };
         const voice = voiceMap[type] || `Alert: ${type}`;
 
@@ -1111,7 +1112,18 @@
         let headerIcon  = '🚨';
         let headerLabel = `${type} ALERT`;
 
-        if (type === 'DRONE_SPOTTED') {
+        if (type === 'ATAK_EMERGENCY') {
+            headerColor = '#ff3030';
+            headerIcon  = '🆘';
+            headerLabel = 'EMERGENCY BEACON';
+            const cs     = d.callsign || (d.operator_id ? `op #${d.operator_id}` : 'UNKNOWN');
+            const locTxt = window.mgrsOrDash ? window.mgrsOrDash(d.latitude, d.longitude) : '—';
+            bodyHtml = `
+                <div class="arrow-toast-body" style="color:#fecaca;font-size:13px;line-height:1.45">
+                    <div><b>${esc(cs)}</b> triggered an emergency beacon</div>
+                    <div><b>Pos:</b> ${esc(locTxt)}</div>
+                </div>`;
+        } else if (type === 'DRONE_SPOTTED') {
             headerColor = '#c084fc';
             headerIcon  = '🛸';
             headerLabel = 'DRONE SPOTTED';

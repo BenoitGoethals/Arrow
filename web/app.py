@@ -36,6 +36,33 @@ def create_app(
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["BACKEND_URL"] = cfg.backend_url
 
+    # Ship web logs to the backend so the admin Logs viewer shows them, and log
+    # every request. Uses the server-to-server backend URL (not the public prefix).
+    import logging as _logging
+    import os as _os
+    import time as _time
+    from flask import g, request
+    try:
+        from web.log_shipper import install as _install_shipper
+        _install_shipper(cfg.backend_url, token=_os.environ.get("ARROW_LOG_TOKEN", ""))
+    except Exception:
+        pass
+    _web_log = _logging.getLogger("web.request")
+
+    @app.before_request
+    def _t0() -> None:
+        g._t0 = _time.monotonic()
+
+    @app.after_request
+    def _access_log(response: Response) -> Response:
+        try:
+            ms = (_time.monotonic() - getattr(g, "_t0", _time.monotonic())) * 1000
+            _web_log.info("%s %s → %d (%.0f ms)", request.method, request.path,
+                          response.status_code, ms)
+        except Exception:
+            pass
+        return response
+
     for module in (
         dashboard, tactical_map, messaging, fire_missions, streams,
         reports, history, objectives, opord, admin, apk, tracks, missions,

@@ -13,7 +13,7 @@ from PyQt6.QtGui import QFont, QKeyEvent
 
 SCOPE_BROADCAST = "BROADCAST"
 SCOPE_DIRECT    = "DIRECT"
-SCOPE_MISSION   = "MISSION"
+SCOPE_ROOM      = "ROOM"
 
 
 class _ImageFetchThread(QThread):
@@ -43,12 +43,15 @@ class MessagesPanel(QWidget):
     """Compose and display messages with scope selection."""
 
     message_send_requested = pyqtSignal(str, str, object, object, object)
-    # (content, message_type, receiver_id_or_None, mission_id_or_None, file_path_or_None)
+    # (content, message_type, receiver_id_or_None, target_id_or_None, file_path_or_None)
+    # target_id carries the chatroom_id when message_type == "ROOM".
+    manage_rooms_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._operators: list[dict] = []
         self._missions:  list[dict] = []
+        self._rooms:     list[dict] = []
         self._my_callsign: str = ""
         self._pending_file: str | None = None
         self._server_url: str = ""
@@ -78,7 +81,7 @@ class MessagesPanel(QWidget):
         )
 
         self._scope_combo = QComboBox()
-        self._scope_combo.addItems(["BROADCAST", "DIRECT", "MISSION"])
+        self._scope_combo.addItems(["BROADCAST", "DIRECT", "ROOM"])
         self._scope_combo.setFixedHeight(24)
         self._scope_combo.setStyleSheet(
             "QComboBox{font-family:'Courier New',monospace;font-size:13px;}"
@@ -94,6 +97,17 @@ class MessagesPanel(QWidget):
         )
         self._recipient_combo.setVisible(False)
         scope_layout.addWidget(self._recipient_combo, 1)
+
+        # Manage chat rooms (create / add / remove members)
+        self._rooms_btn = QPushButton("⚙ Rooms")
+        self._rooms_btn.setFixedHeight(24)
+        self._rooms_btn.setStyleSheet(
+            "QPushButton{background:#161b22;border:1px solid #30363d;color:#c9d1d9;"
+            "font-size:12px;border-radius:2px;padding:0 8px;}"
+            "QPushButton:hover{border-color:#388bfd;}"
+        )
+        self._rooms_btn.clicked.connect(self.manage_rooms_requested.emit)
+        scope_layout.addWidget(self._rooms_btn)
 
         root.addWidget(scope_bar)
 
@@ -194,6 +208,10 @@ class MessagesPanel(QWidget):
         self._missions = missions
         self._refresh_recipient_list()
 
+    def set_rooms(self, rooms: list[dict]):
+        self._rooms = rooms or []
+        self._refresh_recipient_list()
+
     def add_message(self, data: dict):
         self._msg_data.append(data)
         self._maybe_fetch_image(data)
@@ -272,8 +290,10 @@ class MessagesPanel(QWidget):
         scope_tag = ""
         if scope == "DIRECT":
             scope_tag = " [DM]"
-        elif scope == "GROUP":
-            scope_tag = " [GRP]"
+        elif scope == "ROOM":
+            rid = data.get("chatroom_id")
+            rname = next((r.get("name") for r in self._rooms if r.get("id") == rid), None)
+            scope_tag = f" [# {rname}]" if rname else " [ROOM]"
 
         color_sender = "#388bfd" if is_mine else "#3fb950"
         align = "right" if is_mine else "left"
@@ -314,7 +334,7 @@ class MessagesPanel(QWidget):
     # ---- Private ----------------------------------------------------------
 
     def _on_scope_changed(self, scope: str):
-        show_recipient = scope in (SCOPE_DIRECT, SCOPE_MISSION)
+        show_recipient = scope in (SCOPE_DIRECT, SCOPE_ROOM)
         self._recipient_combo.setVisible(show_recipient)
         self._refresh_recipient_list()
 
@@ -326,9 +346,10 @@ class MessagesPanel(QWidget):
             for op in self._operators:
                 cs = op.get("callsign", "?")
                 self._recipient_combo.addItem(cs, userData=op.get("id"))
-        elif scope == SCOPE_MISSION:
-            for m in self._missions:
-                self._recipient_combo.addItem(m.get("name", "?"), userData=m.get("id"))
+        elif scope == SCOPE_ROOM:
+            for r in self._rooms:
+                n = r.get("name", "?")
+                self._recipient_combo.addItem(f"# {n}", userData=r.get("id"))
         self._recipient_combo.blockSignals(False)
 
     def _pick_attachment(self):
@@ -352,16 +373,18 @@ class MessagesPanel(QWidget):
             return
         scope       = self._scope_combo.currentText()
         receiver_id = None
-        mission_id  = None
+        target_id   = None   # chatroom_id for ROOM scope
 
         if scope == SCOPE_DIRECT:
             receiver_id = self._recipient_combo.currentData()
             if receiver_id is None:
                 return
-        elif scope == SCOPE_MISSION:
-            mission_id = self._recipient_combo.currentData()
+        elif scope == SCOPE_ROOM:
+            target_id = self._recipient_combo.currentData()
+            if target_id is None:
+                return
 
-        self.message_send_requested.emit(content, scope, receiver_id, mission_id, file_path)
+        self.message_send_requested.emit(content, scope, receiver_id, target_id, file_path)
         self._input.clear()
         self._clear_attachment()
 

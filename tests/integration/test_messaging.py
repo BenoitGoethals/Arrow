@@ -13,33 +13,50 @@ def _recv_on_channel(ws, channel: str, max_msgs: int = 10) -> dict:
     raise AssertionError(f"No message on channel '{channel}'")
 
 
-def test_group_messages_visible_to_battle_captains_only(client) -> None:
-    _, op_token, op_id     = register(client, "OPERATOR")
-    _, capt_token, capt_id = register(client, "BATTLE_CAPTAIN")
-    _, admin_token, _      = register(client, "ADMIN")
+def test_room_messages_visible_to_members_only(client) -> None:
+    _, out_token, out_id       = register(client, "OPERATOR")   # non-member
+    _, member_token, member_id = register(client, "OPERATOR")   # room member
+    _, capt_token, capt_id     = register(client, "BATTLE_CAPTAIN")  # creator
 
-    h_admin = auth(admin_token)
-    h_capt  = auth(capt_token)
-    h_op    = auth(op_token)
+    h_capt   = auth(capt_token)
+    h_member = auth(member_token)
+    h_out    = auth(out_token)
 
-    r = client.post("/messages", headers=h_admin, json={
-        "content": "BC sync at 1800",
-        "message_type": "GROUP",
-        "group_id": "BATTLE_CAPTAINS",
+    # Battle Captain creates a room and adds `member`.
+    r = client.post("/chatrooms", headers=h_capt,
+                    json={"name": "ALPHA NET", "member_ids": [member_id]})
+    assert r.status_code == 201, r.text
+    room = r.json()
+    rid = room["id"]
+    assert member_id in room["member_ids"]
+    assert capt_id in room["member_ids"]   # creator is auto-added
+
+    # Post a ROOM message.
+    r = client.post("/messages", headers=h_capt, json={
+        "content": "net check", "message_type": "ROOM", "chatroom_id": rid,
     })
     assert r.status_code == 201, r.text
 
-    def _has_bc_msg(messages: list[dict]) -> bool:
-        return any(
-            m["message_type"] == "GROUP"
-            and m["group_id"] == "BATTLE_CAPTAINS"
-            and m["content"] == "BC sync at 1800"
-            for m in messages
-        )
+    def _has(msgs: list[dict]) -> bool:
+        return any(m["message_type"] == "ROOM" and m.get("chatroom_id") == rid
+                   and m["content"] == "net check" for m in msgs)
 
-    assert _has_bc_msg(client.get("/messages", headers=h_admin).json()), "admin should see"
-    assert _has_bc_msg(client.get("/messages", headers=h_capt).json()),  "BC should see"
-    assert not _has_bc_msg(client.get("/messages", headers=h_op).json()), "OPERATOR should NOT see"
+    assert _has(client.get("/messages", headers=h_capt).json()),   "creator should see"
+    assert _has(client.get("/messages", headers=h_member).json()), "member should see"
+    assert not _has(client.get("/messages", headers=h_out).json()), "non-member should NOT see"
+
+    # A non-member may not post to the room.
+    r = client.post("/messages", headers=h_out, json={
+        "content": "intruder", "message_type": "ROOM", "chatroom_id": rid,
+    })
+    assert r.status_code == 403, r.text
+
+    # Add/remove membership.
+    client.post(f"/chatrooms/{rid}/members", headers=h_capt, json={"operator_id": out_id})
+    client.delete(f"/chatrooms/{rid}/members/{member_id}", headers=h_capt)
+    room2 = client.get(f"/chatrooms/{rid}", headers=h_capt).json()
+    assert out_id in room2["member_ids"]
+    assert member_id not in room2["member_ids"]
 
 
 def test_direct_and_broadcast_routing(client) -> None:

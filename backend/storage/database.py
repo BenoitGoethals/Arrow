@@ -203,6 +203,38 @@ def _migrate(conn: object) -> None:
         # Vehicles map-visibility toggle + strike-package vehicle links
         "ALTER TABLE map_visibility ADD COLUMN vehicles BOOLEAN DEFAULT 1",
         "ALTER TABLE strike_packages ADD COLUMN vehicle_ids TEXT DEFAULT '[]'",
+        # Track where an operator's last position fix came from (ATAK device vs app GPS)
+        "ALTER TABLE operators ADD COLUMN position_source VARCHAR(10)",
+        # Chatrooms with explicit membership (ATAK GeoChat named-room interop)
+        "CREATE TABLE IF NOT EXISTS chatrooms ("
+        "  id INTEGER PRIMARY KEY,"
+        "  name VARCHAR(120),"
+        "  created_by INTEGER REFERENCES operators(id),"
+        "  created_at DATETIME,"
+        "  mission_id INTEGER REFERENCES missions(id),"
+        "  origin VARCHAR(10) DEFAULT 'ARROW'"
+        ")",
+        "CREATE TABLE IF NOT EXISTS chatroom_members ("
+        "  id INTEGER PRIMARY KEY,"
+        "  chatroom_id INTEGER REFERENCES chatrooms(id) ON DELETE CASCADE,"
+        "  operator_id INTEGER REFERENCES operators(id)"
+        ")",
+        "ALTER TABLE messages ADD COLUMN chatroom_id INTEGER REFERENCES chatrooms(id)",
+        # SHA-256 for TAK Marti file-share lookup (binary photo transfer to ATAK)
+        "ALTER TABLE photos ADD COLUMN sha256 VARCHAR(64)",
+        # ATAK CoT track remarks field (from <detail/remarks>)
+        "ALTER TABLE cot_tracks ADD COLUMN remarks TEXT",
+        # ATAK drawn shapes — routes, lines, areas received over CoT TCP
+        "CREATE TABLE IF NOT EXISTS atak_shapes ("
+        "  id INTEGER PRIMARY KEY,"
+        "  uid VARCHAR(160) UNIQUE NOT NULL,"
+        "  cot_type VARCHAR(40) DEFAULT '',"
+        "  shape_type VARCHAR(20) DEFAULT 'LINE',"
+        "  title VARCHAR(200) DEFAULT '',"
+        "  callsign VARCHAR(80) DEFAULT '',"
+        "  geometry_json TEXT DEFAULT '',"
+        "  last_seen DATETIME"
+        ")",
     ]
     for sql in migrations:
         try:

@@ -37,7 +37,7 @@
     .badge { font-size: 0.65rem; padding: 1px 5px; border-radius: 3px; background: #2a3142; color: #cbd5e1; }
     .badge.adm { background: #7c2d12; color: #fed7aa; }
     .badge.bc { background: #1e40af; color: #bfdbfe; }
-    #map { height: 100%; }
+    #map { height: 100%; will-change:transform; transform:translateZ(0); isolation:isolate; }
     main { padding: 0; }
     .filter-bar { display: flex; gap: 8px; align-items: center; padding: 0.5rem 0.75rem; background: #161b25; border-bottom: 1px solid #2a3142; font-size: 0.85rem; }
     .filter-bar label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
@@ -65,21 +65,18 @@
     /* ── Marker right-click radial menu ──────────────────────────────── */
     #mr-overlay { position:fixed; inset:0; z-index:900; pointer-events:none; }
     #mr-overlay:not([hidden]) { pointer-events:all; }
-    #mr-scrim { position:absolute; inset:0; background:transparent;
-                transition:background .18s ease; cursor:default; }
+    #mr-scrim { position:absolute; inset:0; background:transparent; cursor:default; }
     #mr-overlay.open #mr-scrim { background:rgba(0,0,0,.46); }
     #mr-svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible;
-              opacity:0; transition:opacity .16s ease; pointer-events:none; }
+              opacity:0; pointer-events:none; }
     #mr-overlay.open #mr-svg { opacity:1; }
     #mr-items { position:absolute; inset:0; pointer-events:none; }
     .mr-item { position:fixed; display:flex; flex-direction:column; align-items:center;
-               transform:translate(-50%,-50%) scale(0); opacity:0; pointer-events:all;
-               transition: transform .26s cubic-bezier(.34,1.56,.64,1),
-                           opacity .16s ease; }
+               transform:translate(-50%,-50%) scale(0); opacity:0; pointer-events:all; }
     #mr-overlay.open .mr-item { transform:translate(-50%,-50%) scale(1); opacity:1; }
     .mr-btn { width:58px; height:58px; border-radius:50%; border:1.5px solid rgba(255,255,255,.28);
               cursor:pointer; display:flex; align-items:center; justify-content:center;
-              font-size:24px; line-height:1; transition:transform .12s ease, filter .12s ease;
+              font-size:24px; line-height:1;
               box-shadow:0 2px 12px rgba(0,0,0,.5); }
     .mr-btn:hover { transform:scale(1.14); filter:brightness(1.22); }
     .mr-lbl { margin-top:5px; font-size:11px; font-weight:700; color:#fff; letter-spacing:.03em;
@@ -93,8 +90,6 @@
         opacity:0;
         pointer-events:none;
         overflow:visible;
-        transition: transform .35s cubic-bezier(.34,1.56,.64,1),
-                    opacity   .20s ease;
     }
     #radial-menu.open #r-rings {
         transform:translate(-50%,-50%) scale(1);
@@ -149,10 +144,30 @@
     .map-alert-type { font-size: 0.65rem; font-weight: 700; }
     .map-alert-meta { font-size: 0.65rem; color: #475569; }
     .map-alert-grid { font-size: 0.7rem; color: #fca5a5; font-family: monospace; }
-    .map-msg { padding: 0.35rem 0.45rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid #2563eb; cursor: pointer; }
+    .map-msg { padding: 0.35rem 0.45rem; border-radius: 4px; margin-bottom: 3px; border-left: 3px solid #2563eb; }
     .map-msg:hover { background: #1f2937; }
+    .map-msg.atak-msg { border-left-color: #a78bfa; background: #130d1f; }
     .map-msg-header { font-size: 0.65rem; color: #475569; }
-    .map-msg-body { font-size: 0.72rem; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .map-msg-body { font-size: 0.72rem; color: #cbd5e1; }
+    .map-chat-form { margin-top: 0.5rem; }
+    .map-chat-input { width: 100%; background: #0e1217; color: #e6e6e6;
+                      border: 1px solid #2a3142; border-radius: 3px; padding: 4px 6px;
+                      font-size: 0.72rem; resize: none; font-family: inherit; box-sizing: border-box; }
+    .map-chat-input:focus { outline: none; border-color: #2563eb; }
+    .map-chat-actions { display: flex; gap: 4px; margin-top: 4px; align-items: center; }
+    .map-chat-send { background: #1d4ed8; color: #fff; border: none; border-radius: 3px;
+                     padding: 3px 10px; font-size: 0.72rem; cursor: pointer; margin-left: auto; }
+    .map-chat-send:hover { background: #2563eb; }
+    .map-chat-attach { background: #1f2937; color: #94a3b8; border: 1px solid #2a3142;
+                       border-radius: 3px; padding: 3px 8px; font-size: 0.68rem; cursor: pointer; }
+    .map-msg-photo { max-width: 100%; border-radius: 3px; margin-top: 4px; display: block; }
+    .atak-client { padding: 0.3rem 0.45rem; border-radius: 4px; margin-bottom: 3px;
+                   border-left: 3px solid #a78bfa; background: #130d1f; }
+    .atak-client-cs { font-size: 0.72rem; font-weight: 700; color: #c4b5fd; }
+    .atak-client-meta { font-size: 0.62rem; color: #6b7280; }
+    .atak-shape-line  { stroke: #f59e0b; stroke-width: 2.5; fill: none; }
+    .atak-shape-route { stroke: #60a5fa; stroke-width: 2.5; fill: none; }
+    .atak-shape-area  { stroke: #a78bfa; stroke-width: 2; fill: rgba(167,139,250,.15); }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
     .sb-section > summary { list-style: none; cursor: pointer; user-select: none;
                             display: flex; align-items: center; gap: 6px; }
@@ -291,11 +306,12 @@
             <div id="map-alerts"><small style="color:#475569">Loading…</small></div>
         </details>
 
-        <details class="sb-section" style="margin-top:1rem">
-            <summary><h3 style="display:inline">Messages</h3>
-                <span id="msgs-count" class="sb-count">0</span>
+
+        <details class="sb-section" style="margin-top:1rem" open>
+            <summary><h3 style="display:inline">Live Devices</h3>
+                <span id="atak-count" class="sb-count">0</span>
             </summary>
-            <div id="map-messages"><small style="color:#475569">Loading…</small></div>
+            <div id="atak-clients"><small style="color:#475569">Checking…</small></div>
         </details>
 
         <details class="sb-section" style="margin-top:1rem">
@@ -793,19 +809,115 @@
     }
 
     // ── Base-layer + overlay switcher ──────────────────────────────────────
-    // OSM is *always* the bottom layer — it fills any gaps where a chosen
-    // MBTiles has no tile (deduplicated empties, redacted areas, coverage
-    // edges). Other sources from /map/sources are added as an overlay on top
-    // with transparent gaps so OSM shows through. Selecting "OpenStreetMap"
-    // simply means "no overlay". User choice is persisted in localStorage.
-    const baseOsm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        minZoom: 0, maxZoom: 19,
-        attribution: '© OpenStreetMap contributors',
-        zIndex: 0,
-    }).addTo(map);
+    // Two-tier model:
+    //   1. BASE  — one public tile layer at zIndex 0 (the bottom of the map).
+    //      Selecting a base SWAPS the underlying imagery: OSM, satellite,
+    //      topo, hydrographic, dark, mixed (satellite + labels), etc.
+    //   2. OVERLAY — file-backed MBTiles from /map/sources stacked on top
+    //      at zIndex 10 (transparent gaps reveal the base).
+    // User picks both via the same <select>; the choice is persisted.
+    //
+    // Public tile sources (all CDN-served, no API key required):
+    const BASE_LAYERS = {
+        osm: {
+            label: '🗺 OpenStreetMap',
+            url:   'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            opts:  { maxZoom: 19, subdomains: 'abc',
+                     attribution: '© OpenStreetMap contributors' },
+        },
+        osm_hot: {
+            label: '🚑 OSM Humanitarian',
+            url:   'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+            opts:  { maxZoom: 19, subdomains: 'abc',
+                     attribution: '© OSM HOT' },
+        },
+        satellite: {
+            label: '🛰 Satellite',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 19,
+                     attribution: 'Tiles © Esri — World Imagery' },
+        },
+        satellite_hybrid: {
+            // Esri reference layer (roads + labels) is partially transparent —
+            // when stacked over satellite it forms the classic "hybrid" look.
+            label: '🛰 Satellite + Labels',
+            composite: ['satellite', 'esri_reference'],
+        },
+        topo: {
+            label: '⛰ Topographic',
+            url:   'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+            opts:  { maxZoom: 17, subdomains: 'abc',
+                     attribution: '© OpenTopoMap (CC-BY-SA)' },
+        },
+        esri_topo: {
+            label: '⛰ Esri Topo',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 19,
+                     attribution: 'Tiles © Esri — World Topo' },
+        },
+        ocean: {
+            label: '🌊 Hydrographic',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 13,
+                     attribution: 'Tiles © Esri — Ocean Base' },
+        },
+        cartodb_dark: {
+            label: '🌑 Dark',
+            url:   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+            opts:  { maxZoom: 20, subdomains: 'abcd',
+                     attribution: '© CARTO © OSM contributors' },
+        },
+        cartodb_positron: {
+            label: '☀ Light',
+            url:   'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+            opts:  { maxZoom: 20, subdomains: 'abcd',
+                     attribution: '© CARTO © OSM contributors' },
+        },
+        esri_streets: {
+            label: '🚙 Esri Streets',
+            url:   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+            opts:  { maxZoom: 19,
+                     attribution: 'Tiles © Esri — Streets' },
+        },
+        // Helper layer used by satellite_hybrid (not selectable on its own —
+        // hidden via the `_hidden` flag below).
+        esri_reference: {
+            _hidden: true,
+            url:    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+            opts:   { maxZoom: 19, attribution: '' },
+        },
+    };
 
+    const _baseLayerCache = {};
+    function _buildBaseLayer(key) {
+        if (_baseLayerCache[key]) return _baseLayerCache[key];
+        const def = BASE_LAYERS[key];
+        if (!def) return null;
+        // Composite (hybrid) — wrap multiple tile layers in a LayerGroup.
+        if (def.composite) {
+            const grp = L.layerGroup(def.composite.map(k => _buildBaseLayer(k)));
+            _baseLayerCache[key] = grp;
+            return grp;
+        }
+        const layer = L.tileLayer(def.url, { ...def.opts, zIndex: 0 });
+        _baseLayerCache[key] = layer;
+        return layer;
+    }
+
+    let activeBaseKey = null;
+    let activeBaseLayer = null;
+    function setBase(key) {
+        if (!BASE_LAYERS[key] || BASE_LAYERS[key]._hidden) key = 'osm';
+        if (activeBaseLayer) map.removeLayer(activeBaseLayer);
+        activeBaseLayer = _buildBaseLayer(key).addTo(map);
+        activeBaseKey   = key;
+        localStorage.setItem(LS_BASEMAP, key);
+    }
+    setBase('osm');   // immediate default so the map renders while /map/sources loads
+
+    // File-backed MBTiles overlays from /map/sources (stacked on top).
     const overlayLayers = {};   // name -> L.tileLayer
-    let   activeOverlay = null; // name of the overlay currently on the map
+    let   activeOverlay = null;
     const basemapSelect = document.getElementById('basemap-select');
 
     function buildOverlayLayer(src) {
@@ -817,56 +929,68 @@
             minZoom:     src.min_zoom ?? 0,
             maxZoom:     src.max_zoom ?? 19,
             attribution: src.attribution || '',
-            // Higher than the OSM base so overlay paints on top.
             zIndex:      10,
         });
     }
 
     function activateBasemap(name) {
-        // Drop the previous overlay if any.
+        // Drop any existing MBTiles overlay first.
         if (activeOverlay && overlayLayers[activeOverlay]) {
             map.removeLayer(overlayLayers[activeOverlay]);
+            activeOverlay = null;
         }
-        activeOverlay = null;
-        // 'osm' (or anything not in overlayLayers) → no overlay; OSM base alone.
-        if (name && name !== 'osm' && overlayLayers[name]) {
+        // Built-in base layer? Swap the base.
+        if (BASE_LAYERS[name] && !BASE_LAYERS[name]._hidden) {
+            setBase(name);
+        } else if (overlayLayers[name]) {
+            // File-backed MBTiles overlay on top of the current base.
             overlayLayers[name].addTo(map);
             activeOverlay = name;
+            localStorage.setItem(LS_BASEMAP, name);
         }
-        localStorage.setItem(LS_BASEMAP, name);
         basemapSelect.value = name;
     }
 
-    api('/map/sources').then(r => r.ok ? r.json() : []).then(sources => {
-        sources = Array.isArray(sources) ? sources : [];
-
-        // Populate the <select>. OSM is always first; only file-backed
-        // sources need a tile layer built (the OSM entry just selects "no
-        // overlay" mode).
+    function _populateBasemapSelect(sources) {
         basemapSelect.innerHTML = '';
-        const osmOpt = document.createElement('option');
-        osmOpt.value = 'osm';
-        osmOpt.textContent = '🗺 OpenStreetMap';
-        basemapSelect.appendChild(osmOpt);
 
-        for (const src of sources) {
-            if (src.name === 'osm' || !src.downloadable) continue;
-            overlayLayers[src.name] = buildOverlayLayer(src);
-            const opt = document.createElement('option');
-            opt.value = src.name;
-            opt.textContent = '🗺 ' + (src.title || src.name);
-            basemapSelect.appendChild(opt);
+        const grpBase = document.createElement('optgroup');
+        grpBase.label = 'Base maps';
+        basemapSelect.appendChild(grpBase);
+        for (const [k, def] of Object.entries(BASE_LAYERS)) {
+            if (def._hidden) continue;
+            const o = document.createElement('option');
+            o.value = k;
+            o.textContent = def.label;
+            grpBase.appendChild(o);
         }
 
-        const saved = localStorage.getItem(LS_BASEMAP);
-        const initial = (saved && (saved === 'osm' || overlayLayers[saved])) ? saved : 'osm';
-        activateBasemap(initial);
+        const mbtSources = sources.filter(s => s && s.name !== 'osm' && s.downloadable);
+        if (mbtSources.length) {
+            const grpOv = document.createElement('optgroup');
+            grpOv.label = 'MBTiles overlays';
+            basemapSelect.appendChild(grpOv);
+            for (const src of mbtSources) {
+                overlayLayers[src.name] = buildOverlayLayer(src);
+                const o = document.createElement('option');
+                o.value = src.name;
+                o.textContent = '🗺 ' + (src.title || src.name);
+                grpOv.appendChild(o);
+            }
+        }
 
-        basemapSelect.addEventListener('change', e => {
-            if (e.target.value) activateBasemap(e.target.value);
-        });
-    }).catch(() => {
-        // OSM base is already on the map — no overlay needed on failure.
+        const saved   = localStorage.getItem(LS_BASEMAP);
+        const initial = (saved && (BASE_LAYERS[saved] || overlayLayers[saved])) ? saved : 'osm';
+        activateBasemap(initial);
+    }
+
+    api('/map/sources')
+        .then(r => r.ok ? r.json() : [])
+        .then(s => _populateBasemapSelect(Array.isArray(s) ? s : []))
+        .catch(() => _populateBasemapSelect([]));
+
+    basemapSelect.addEventListener('change', e => {
+        if (e.target.value) activateBasemap(e.target.value);
     });
     // Used by loadEnemies() to suppress the one-shot auto-fit once the user
     // has actively panned/zoomed somewhere of their own choosing.
@@ -1034,9 +1158,16 @@
         // Other operators — NATO mil-symbol (cached)
         const sidc = op.role === 'BATTLE_CAPTAIN' ? 'SFGPUCI----E' : 'SFGPUCI-----';
         const s = msSvg(sidc, 28);
+        // Tag operators whose last fix came from an ATAK device.
+        const atakBadge = op.position_source === 'ATAK'
+            ? `<div style="position:absolute;top:-4px;right:-6px;background:#7c3aed;color:#fff;
+                          font-size:8px;font-weight:700;line-height:1;padding:1px 3px;border-radius:3px;
+                          border:1px solid #0d1117;letter-spacing:.04em;font-family:monospace"
+                     title="Position from ATAK device">ATAK</div>`
+            : '';
         return L.divIcon({
             className: 'op-icon' + (op.online ? '' : ' offline'),
-            html: `<div style="opacity:${op.online ? 1 : 0.45}">${s.svg}</div>`,
+            html: `<div style="position:relative;opacity:${op.online ? 1 : 0.45}">${s.svg}${atakBadge}</div>`,
             iconSize: [s.w, s.h], iconAnchor: [s.ax, s.ay],
         });
     }
@@ -1163,7 +1294,9 @@
                ${op.rank} · ${op.role}<br/>
                ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`
             : `<b>${op.callsign}</b><br/>${op.rank} · ${op.role}<br/>
-               ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`;
+               ${op.online ? '<span style="color:#22c55e">● online</span>' : '<span style="color:#475569">○ offline</span>'}`
+               + (op.position_source === 'ATAK'
+                    ? `<br/><span style="color:#a78bfa">📡 ATAK device</span>` : '');
         if (existing) {
             existing.setLatLng([op.latitude, op.longitude]);
             existing.setIcon(icon);
@@ -1549,9 +1682,7 @@
                 ? `<br/><a href="#" onclick="window.__arrowDeleteEnemy(${obj.id});return false" style="color:#ef4444">Delete</a>`
                 : '')
         );
-        if (role === 'ADMIN' || role === 'BATTLE_CAPTAIN') {
-            layer.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, false); });
-        }
+        layer.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, false); });
         state.markers.set(key, layer);
     }
 
@@ -1606,9 +1737,7 @@
                     `<a href="#" onclick="window.__arrowDeleteEnemy(${obj.id});return false" style="color:#ef4444">Delete</a>` : '')
             );
         }
-        if (role === 'ADMIN' || role === 'BATTLE_CAPTAIN') {
-            m.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, true); });
-        }
+        m.on('contextmenu', (e) => { L.DomEvent.stop(e); showMarkerRadial(e.originalEvent, obj.id, true); });
         state.markers.set(key, m);
     }
 
@@ -1655,7 +1784,6 @@
     }
 
     function showMarkerRadial(e, objId, canMove = true) {
-        if (role !== 'ADMIN' && role !== 'BATTLE_CAPTAIN') return;
         closeMarkerRadial();
         _mrObjId = objId;
 
@@ -1710,7 +1838,7 @@
 
             const col = document.createElement('div');
             col.className = 'mr-item';
-            col.style.cssText = `left:${bx}px;top:${by}px;transition-delay:${i * 35}ms`;
+            col.style.cssText = `left:${bx}px;top:${by}px`;
 
             const btn = document.createElement('button');
             btn.className = 'mr-btn';
@@ -2238,18 +2366,37 @@
         state.selection = new Set([-1]); refreshAllMarkers();
     });
 
-    // ── Radial context menu on double-click ───────────────────────────────
+    // ── Radial context menu — opens on right-click OR double-click ───────────
     let _radialLat = 0, _radialLon = 0;
 
+    function _openCreateRadialAt(e) {
+        _radialLat = e.latlng.lat;
+        _radialLon = e.latlng.lng;
+        openRadial(e.originalEvent.clientX, e.originalEvent.clientY);
+    }
+
+    // Right-click on the map → open the create radial (friendly / enemy /
+    // fire / objective / POI / report).  Leaflet's `contextmenu` event fires
+    // on right-click; suppressing the browser menu keeps the radial visible.
+    map.on('contextmenu', (e) => {
+        if (tgDraw.type) return;  // active draw — let it consume the event
+        L.DomEvent.preventDefault(e.originalEvent);
+        L.DomEvent.stopPropagation(e.originalEvent);
+        _openCreateRadialAt(e);
+    });
+    // Also suppress the browser context menu on the map container so the
+    // radial isn't covered by the native menu.
+    map.getContainer().addEventListener('contextmenu',
+        (ev) => ev.preventDefault());
+
+    // Double-click — same behaviour, kept for users who don't right-click.
     map.on('dblclick', (e) => {
         if (tgDraw.type) {
             // Multi-vertex graphics finish on double-click
             tgFinishDraw();
             return;
         }
-        _radialLat = e.latlng.lat;
-        _radialLon = e.latlng.lng;
-        openRadial(e.originalEvent.clientX, e.originalEvent.clientY);
+        _openCreateRadialAt(e);
     });
     map.doubleClickZoom.disable();
 
@@ -3640,8 +3787,8 @@
     }
 
     const ALERT_TYPE_COLORS = {
-        TIC: '#dc2626', MEDICAL: '#16a34a', EVAC: '#f59e0b',
-        LOST_COMMS: '#6366f1', DRONE_SPOTTED: '#f97316',
+        TIC: '#dc2626', MEDICAL: '#16a34a', MEDEVAC: '#22c55e', EVAC: '#f59e0b',
+        LOST_COMMS: '#6366f1', DRONE_SPOTTED: '#f97316', ATAK_EMERGENCY: '#ff3030',
     };
 
     async function loadMapAlerts() {
@@ -3682,16 +3829,177 @@
             const list = await r.json();
             if (cnt) cnt.textContent = list.length;
             if (!list.length) { el.innerHTML = '<small style="color:#475569">No messages</small>'; return; }
-            el.innerHTML = list.slice(0, 20).map(m => {
+            el.innerHTML = list.slice(-40).reverse().map(m => {
                 const time = (m.timestamp || '').slice(11, 16);
-                const dest = m.group_id ? `grp:${m.group_id}` : (m.receiver_id ? `op#${m.receiver_id}` : 'ALL');
-                return `<div class="map-msg" onclick="window.location='/messaging/'">
-                    <div class="map-msg-header">op#${m.sender_id} → ${dest} · ${time}</div>
-                    <div class="map-msg-body">${escHtml(m.content.slice(0, 80))}</div>
+                const cs   = m.sender_callsign || `op#${m.sender_id}`;
+                const src  = m.source === 'ATAK' ? ' <span style="color:#a78bfa;font-size:0.6rem">ATAK</span>' : '';
+                const dest = m.group_id ? `→ grp:${m.group_id}` : (m.receiver_id ? `→ op#${m.receiver_id}` : '→ ALL');
+                const photoHtml = m.photo_id
+                    ? `<img data-photo-id="${m.photo_id}" class="map-msg-photo" alt="photo" style="max-height:80px">`
+                    : '';
+                return `<div class="map-msg${m.source==='ATAK'?' atak-msg':''}">
+                    <div class="map-msg-header">${escHtml(cs)}${src} ${dest} · ${time}</div>
+                    <div class="map-msg-body">${escHtml(m.content)}</div>
+                    ${photoHtml}
                 </div>`;
             }).join('');
+            if (typeof window.arrowApplyPhotos === 'function') window.arrowApplyPhotos(el);
         } catch (e) {
             el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
+    function _zoomToDevice(lat, lon) {
+        if (!lat || !lon || (lat === 0 && lon === 0)) return;
+        map.flyTo([lat, lon], 15, { animate: true, duration: 0.8 });
+    }
+
+    async function loadAtakClients() {
+        const el  = document.getElementById('atak-clients');
+        const cnt = document.getElementById('atak-count');
+        if (!el) return;
+        try {
+            const [opsR, atakR] = await Promise.all([
+                api('/operators'),
+                api('/cot/clients'),
+            ]);
+            const onlineOps = opsR.ok  ? (await opsR.json()).filter(o => o.online) : [];
+            const atakListRaw = atakR.ok ? await atakR.json() : [];
+
+            // Only show *identified* ATAK devices: a raw TCP socket that hasn't sent
+            // any CoT yet (rx:0, callsign still the "atak-ip-port" socket id) is just
+            // connection churn — hide it. Also drop ones already listed as an operator.
+            const opCallsigns = new Set(onlineOps.map(o => (o.callsign || '').toLowerCase()));
+            const atakList = atakListRaw.filter(c => {
+                const cs = (c.callsign || '').trim();
+                if (!cs || cs === c.uid || (c.rx_count || 0) === 0) return false;
+                return !opCallsigns.has(cs.toLowerCase());
+            });
+
+            const total = onlineOps.length + atakList.length;
+            if (cnt) cnt.textContent = total;
+            if (!total) { el.innerHTML = '<small style="color:#475569">No devices online</small>'; return; }
+
+            let html = '';
+            onlineOps.forEach(op => {
+                const via      = op.position_source === 'ATAK' ? ' · via ATAK' : '';
+                const hasPos   = op.latitude && op.longitude;
+                const clickFn  = hasPos ? `_zoomToDevice(${op.latitude},${op.longitude})` : '';
+                const cursor   = hasPos ? 'cursor:pointer' : '';
+                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;${cursor}" ${hasPos ? `onclick="${clickFn}"` : ''}>
+                    <div class="atak-client-cs">🖥 ${escHtml(op.callsign)}</div>
+                    <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
+                </div>`;
+            });
+            atakList.forEach(c => {
+                const ago     = c.last_seen_ago_s < 60
+                    ? `${c.last_seen_ago_s}s ago`
+                    : `${Math.round(c.last_seen_ago_s / 60)}m ago`;
+                const hasPos  = c.last_lat && c.last_lon && !(c.last_lat === 0 && c.last_lon === 0);
+                const clickFn = hasPos ? `_zoomToDevice(${c.last_lat},${c.last_lon})` : '';
+                const cursor  = hasPos ? 'cursor:pointer' : '';
+                html += `<div class="atak-client" style="${cursor}" ${hasPos ? `onclick="${clickFn}"` : ''}>
+                    <div class="atak-client-cs">📡 ${escHtml(c.callsign || c.uid)}</div>
+                    <div class="atak-client-meta">${escHtml(c.ip)} · ${escHtml(c.cot_type || '?')} · ${ago} · rx:${c.rx_count}</div>
+                </div>`;
+            });
+            el.innerHTML = html;
+        } catch (e) {
+            el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
+        }
+    }
+
+    // ── ATAK drawn shapes (routes, lines, areas) ─────────────────────────────
+    const _atakShapesLayer = L.layerGroup().addTo(map);
+    const _atakShapes = new Map(); // uid → {layer, data}
+
+    function _renderAtakShape(s) {
+        // Remove old layer if exists
+        const existing = _atakShapes.get(s.uid);
+        if (existing) _atakShapesLayer.removeLayer(existing.layer);
+
+        let geo;
+        try { geo = JSON.parse(s.geometry_json); } catch(_) { return; }
+
+        const isRoute = s.shape_type === 'ROUTE';
+        const isArea  = s.shape_type === 'AREA';
+
+        let layer;
+        const opts = isRoute
+            ? {color:'#60a5fa', weight:2.5, opacity:0.85, dashArray:'8,4'}
+            : isArea
+                ? {color:'#a78bfa', weight:2, opacity:0.85, fillColor:'#a78bfa', fillOpacity:0.12}
+                : {color:'#f59e0b', weight:2.5, opacity:0.85};
+
+        if (geo.type === 'LineString') {
+            layer = L.polyline(geo.coordinates.map(c => [c[1],c[0]]), opts);
+        } else if (geo.type === 'Polygon') {
+            layer = L.polygon(geo.coordinates[0].map(c => [c[1],c[0]]), opts);
+        } else { return; }
+
+        const icon = isRoute ? '🗺' : isArea ? '⬡' : '✏';
+        layer.bindTooltip(`${icon} ${escHtml(s.title || s.callsign)}`, {sticky:true, className:'leaflet-tooltip'});
+        layer.bindPopup(
+            `<b>${escHtml(s.title || s.uid)}</b><br/>` +
+            `${escHtml(s.shape_type)} · ${escHtml(s.callsign)}<br/>` +
+            `<small style="color:#64748b">${escHtml(s.cot_type)}</small>`
+        );
+        layer.addTo(_atakShapesLayer);
+        _atakShapes.set(s.uid, {layer, data: s});
+    }
+
+    async function loadAtakShapes() {
+        const r = await api('/cot/shapes');
+        if (!r.ok) return;
+        const list = await r.json();
+        list.forEach(_renderAtakShape);
+    }
+
+    let _chatPhotoId = null;
+    function handleChatPhotoChange(input) {
+        _chatPhotoId = null;
+        const nameEl = document.getElementById('map-chat-photo-name');
+        if (!input.files.length) { if (nameEl) nameEl.textContent = ''; return; }
+        if (nameEl) nameEl.textContent = input.files[0].name;
+    }
+
+    async function sendMapChat() {
+        const input = document.getElementById('map-chat-input');
+        const text  = (input ? input.value : '').trim();
+        if (!text && !document.getElementById('map-chat-photo')?.files.length) return;
+
+        _chatPhotoId = null;
+        const fileInput = document.getElementById('map-chat-photo');
+        if (fileInput && fileInput.files.length) {
+            const file = fileInput.files[0];
+            const pr = await fetch(window.ARROW_BACKEND_URL + '/photos', {
+                method: 'POST',
+                headers: missionHeaders({'Content-Type': file.type}),
+                body: file,
+            });
+            if (pr.ok) {
+                const pd = await pr.json();
+                _chatPhotoId = pd.id;
+            }
+        }
+
+        const payload = {
+            content: text || '',
+            message_type: 'BROADCAST',
+            photo_id: _chatPhotoId,
+        };
+        const r = await fetch(window.ARROW_BACKEND_URL + '/messages', {
+            method: 'POST',
+            headers: missionHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify(payload),
+        });
+        if (r.ok) {
+            if (input) input.value = '';
+            if (fileInput) { fileInput.value = ''; }
+            const nameEl = document.getElementById('map-chat-photo-name');
+            if (nameEl) nameEl.textContent = '';
+            _chatPhotoId = null;
+            loadMapMessages();
         }
     }
 
@@ -4426,30 +4734,98 @@
     // dismiss when the alert is acknowledged.
     if (!state.alertLayers) state.alertLayers = new Map();    // id -> LayerGroup
     const ALERT_COLOURS = {
-        TIC:            '#dc2626',
-        DRONE_SPOTTED:  '#a855f7',
-        MEDICAL:        '#16a34a',
-        MEDEVAC:        '#22c55e',
-        EVAC:           '#f59e0b',
-        LOST_COMMS:     '#6366f1',
+        TIC:             '#dc2626',
+        DRONE_SPOTTED:   '#a855f7',
+        MEDICAL:         '#16a34a',
+        MEDEVAC:         '#22c55e',
+        EVAC:            '#f59e0b',
+        LOST_COMMS:      '#6366f1',
+        ATAK_EMERGENCY:  '#ff3030',
     };
     const ALERT_ICONS = {
-        TIC:            '⚡',
-        DRONE_SPOTTED:  '🛸',
-        MEDICAL:        '🏥',
-        MEDEVAC:        '🚁',
-        EVAC:           '🚁',
-        LOST_COMMS:     '📡',
+        TIC:             '⚡',
+        DRONE_SPOTTED:   '🛸',
+        MEDICAL:         '🏥',
+        MEDEVAC:         '🚁',
+        EVAC:            '🚁',
+        LOST_COMMS:      '📡',
+        ATAK_EMERGENCY:  '🚨',
     };
+
+    // ── Alert sound — Web Audio API beep pattern ──────────────────────────────
+    function _playAlertTone(urgent) {
+        try {
+            const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+            const freq = urgent ? 880 : 660;
+            const reps = urgent ? 3   : 2;
+            for (let i = 0; i < reps; i++) {
+                const osc  = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                const t0 = ctx.currentTime + i * 0.28;
+                gain.gain.setValueAtTime(0.25, t0);
+                gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+                osc.start(t0);
+                osc.stop(t0 + 0.22);
+            }
+        } catch (_) {}
+    }
+
+    // ── Voice announcement — Web Speech API ─────────────────────────────────
+    // Speaks the alert type + callsign so the operator hears who is in contact
+    // even when looking away from the screen. Fires AFTER the tone so the beep
+    // alerts attention first, then the voice delivers the detail.
+    function _speakAlert(alertType, callsign, grid) {
+        if (!('speechSynthesis' in window)) return;
+        try {
+            // Map raw types to human-friendly phrases
+            const phrases = {
+                ATAK_EMERGENCY: 'ATAK emergency beacon',
+                TIC:            'Troops in contact',
+                MEDEVAC:        'Medical evacuation request',
+                EVAC:           'Evacuation request',
+                MEDICAL:        'Medical alert',
+                DRONE_SPOTTED:  'Drone spotted',
+                LOST_COMMS:     'Lost comms',
+            };
+            const phrase = phrases[alertType] || alertType.replace(/_/g, ' ').toLowerCase();
+            // Read callsign letter-by-letter when it looks alphanumeric so
+            // "OPS-3" is heard as "O P S three", not "ops dash three".
+            const csSpoken = /^[A-Z0-9-]+$/i.test(callsign)
+                ? callsign.replace(/[-_]/g, ' ').split('').join(' ')
+                : callsign;
+            const text = `${phrase}. From ${csSpoken}.` + (grid ? ` Grid ${grid}.` : '');
+
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.rate   = 0.95;
+            utter.pitch  = 1.0;
+            utter.volume = 1.0;
+            // Wait 350 ms so the beep tone plays uninterrupted first
+            setTimeout(() => {
+                try {
+                    window.speechSynthesis.cancel();   // drop any queued speech
+                    window.speechSynthesis.speak(utter);
+                } catch (_) {}
+            }, 350);
+        } catch (_) {}
+    }
 
     // ── Alert toast — shown for every alert regardless of lat/lon ─────────────
     function showAlertToast(d) {
         const colour = ALERT_COLOURS[d.type] || '#dc2626';
         const icon   = ALERT_ICONS[d.type]   || '⚠';
+        // Sound: urgent (3-beep) for TIC/ATAK_EMERGENCY, normal (2-beep) otherwise
+        const urgent = ['TIC', 'ATAK_EMERGENCY'].includes(d.type);
+        _playAlertTone(urgent);
         const op     = state.operators.get(d.operator_id);
         const cs     = op ? op.callsign : (d.callsign || (d.operator_id ? `op#${d.operator_id}` : 'UNKNOWN'));
-        const hasPos = d.latitude != null && d.longitude != null;
+        const hasPos = d.latitude != null && d.longitude != null
+                    && !(d.latitude === 0 && d.longitude === 0);
         const grid   = hasPos ? toMgrs(d.latitude, d.longitude) : null;
+        // Voice: speak the alert type + callsign so the operator hears who is in contact
+        _speakAlert(d.type, cs, grid);
 
         // Ensure the toast stack container exists
         let wrap = document.getElementById('alert-toast-wrap');
@@ -4462,19 +4838,27 @@
             document.body.appendChild(wrap);
         }
 
+        const isEmerg = d.type === 'ATAK_EMERGENCY';
+        const label   = isEmerg ? 'EMERGENCY BEACON · ATAK' : 'ALERT';
+        const title   = isEmerg ? '🚨 ATAK EMERGENCY' : escHtml(d.type);
+
         const card = document.createElement('div');
         card.style.cssText =
-            `background:#0d1117;border:2px solid ${colour};border-radius:6px;`
-            + `padding:10px 16px;font-family:monospace;`
-            + `box-shadow:0 4px 24px rgba(0,0,0,.85);pointer-events:auto;cursor:pointer;`
-            + `min-width:280px;max-width:360px;transition:opacity .4s;`;
+            `background:#0d1117;border:${isEmerg ? '3' : '2'}px solid ${colour};border-radius:6px;`
+            + `padding:${isEmerg ? '14px 18px' : '10px 16px'};font-family:monospace;`
+            + `box-shadow:0 4px 24px rgba(0,0,0,.85)${isEmerg ? `,0 0 28px ${colour}80` : ''};`
+            + `pointer-events:auto;cursor:pointer;`
+            + `min-width:${isEmerg ? '320' : '280'}px;max-width:${isEmerg ? '420' : '360'}px;`
+            + `transition:opacity .4s;`;
         card.innerHTML =
-            `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">`
-            + `<span style="font-size:1.3rem">${icon}</span>`
-            + `<span style="color:${colour};font-weight:700;font-size:1rem;letter-spacing:2px">${escHtml(d.type)}</span>`
-            + `<span style="margin-left:auto;color:#475569;font-size:.7rem;letter-spacing:1px">ALERT</span>`
+            `<div style="display:flex;align-items:center;gap:8px;margin-bottom:${isEmerg ? '8' : '5'}px">`
+            + `<span style="font-size:${isEmerg ? '1.8' : '1.3'}rem">${icon}</span>`
+            + `<span style="color:${colour};font-weight:700;font-size:${isEmerg ? '1.15' : '1'}rem;letter-spacing:2px">${title}</span>`
+            + `<span style="margin-left:auto;color:#475569;font-size:.65rem;letter-spacing:1px">${label}</span>`
             + `</div>`
-            + `<div style="color:#94a3b8;font-size:.8rem">FROM <b style="color:#e2e8f0">${escHtml(cs)}</b></div>`
+            + `<div style="color:#94a3b8;font-size:${isEmerg ? '.95' : '.8'}rem">`
+            + (isEmerg ? `IN CONTACT: ` : `FROM `)
+            + `<b style="color:${isEmerg ? colour : '#e2e8f0'};font-size:${isEmerg ? '1.1rem' : 'inherit'};letter-spacing:${isEmerg ? '2px' : '0'}">${escHtml(cs)}</b></div>`
             + (grid ? `<div style="color:#94a3b8;font-size:.8rem">GRID <b style="color:${colour};letter-spacing:1px">${grid}</b></div>` : '')
             + `<div style="color:#475569;font-size:.7rem;margin-top:5px">${hasPos ? 'Click to zoom · ' : ''}Dismiss after 15 s</div>`;
 
@@ -4571,12 +4955,14 @@
     }
 
     function handleAlertTriggered(d) {
-        const hasPos = d.latitude != null && d.longitude != null;
+        // Valid position: non-null AND not the 0,0 fallback (no GPS fix)
+        const hasPos = d.latitude != null && d.longitude != null
+                    && !(d.latitude === 0 && d.longitude === 0);
 
-        // 1. Toast — always, regardless of visibility or coordinates
+        // 1. Toast + sound — always
         showAlertToast(d);
 
-        // 2. Zoom — always when we have a position, before any visibility gate
+        // 2. Zoom — when position is valid
         if (hasPos) {
             map.setView([d.latitude, d.longitude], 16, { animate: true });
         }
@@ -4610,6 +4996,22 @@
         const ring = L.circleMarker([d.latitude, d.longitude], {
             color: colour, fill: false, radius: 16, weight: 3, opacity: 1,
         }).addTo(grp);
+        // MEDEVAC / EVAC → drop a 🚁 medevac marker at the casualty grid so it
+        // reads as a medevac request, not just a generic alert dot.
+        const markerEmoji = {
+            MEDEVAC: '🚁', EVAC: '🚁', MEDICAL: '🚁',
+            ATAK_EMERGENCY: '🚨', TIC: '⚡',
+        }[d.type];
+        if (markerEmoji) {
+            L.marker([d.latitude, d.longitude], {
+                interactive: false, zIndexOffset: 1500,
+                icon: L.divIcon({
+                    className: '',
+                    html: `<div style="font-size:24px;line-height:1;filter:drop-shadow(0 0 4px ${colour})">${markerEmoji}</div>`,
+                    iconSize: [24, 24], iconAnchor: [12, -6],
+                }),
+            }).addTo(grp);
+        }
         let frame = 0;
         const timer = setInterval(() => {
             frame++;
@@ -4669,6 +5071,7 @@
                 if (_mid && d.mission_id && d.mission_id !== _mid) return;
                 const op = state.operators.get(d.operator_id) || { id: d.operator_id, callsign: d.callsign, rank: '', role: 'OPERATOR' };
                 op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
+                if (d.position_source) op.position_source = d.position_source;
                 state.operators.set(op.id, op);
                 placeOperator(op);
                 // Vehicles assigned to this operator inherit its position.
@@ -4702,8 +5105,12 @@
                 if (msg.event === 'triggered') handleAlertTriggered(msg.data);
                 else if (msg.event === 'ack')  removeAlertLayer(msg.data.id);
                 loadMapAlerts();
+            } else if (msg.channel === 'atak-shape') {
+                _renderAtakShape(msg.data);
+            } else if (msg.channel === 'cot-presence') {
+                loadAtakClients();
             } else if (msg.channel === 'presence') {
-                loadHierarchy();
+                loadHierarchy().then(loadAtakClients);
                 if (msg.event === 'ops_status') loadVehicles();  // vehicle status may follow operator
             } else if (msg.channel === 'vehicle') {
                 const _mid = typeof arrowGetMissionId === 'function' ? arrowGetMissionId() : null;
@@ -4771,7 +5178,7 @@
     function reloadAllMapData() {
         loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles();
         loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports();
-        loadMapAlerts(); loadMapMessages();
+        loadMapAlerts(); loadMapMessages(); loadAtakClients(); loadAtakShapes();
     }
     window.addEventListener('arrow-mission-changed', () => {
         flyToActiveMission();
@@ -4779,7 +5186,7 @@
     });
     flyToActiveMission();
 
-    loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages();
+    loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages(); loadAtakClients(); loadAtakShapes();
     setInterval(loadVehicles, 20000);
     setInterval(loadFmMarkers, 20000);
     setInterval(loadMapFireMissions, 15000);
