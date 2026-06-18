@@ -1475,7 +1475,7 @@
         localStorage.removeItem('arrow_token');
         localStorage.removeItem('arrow_role');
         try { sessionStorage.removeItem('arrow_mission'); } catch (_) {}
-        window.location.href = '/auth/login?reason=' + (reason || 'logout');
+        window.location.href = '/login?reason=' + (reason || 'logout');
     };
 
     // ── Inactivity auto-logout ────────────────────────────────────────────────

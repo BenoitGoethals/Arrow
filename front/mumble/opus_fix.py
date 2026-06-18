@@ -47,6 +47,14 @@ else:
         "/usr/local/lib/libopus.so.0",
     ]
 
+# Inside a py2app .app bundle we ship libopus at Contents/Resources/lib so voice
+# works on machines without Homebrew. Search it first so the bundled copy wins.
+if getattr(sys, "frozen", False) and sys.platform == "darwin":
+    _bundle_lib = os.path.normpath(
+        os.path.join(os.path.dirname(sys.executable), os.pardir, "Resources", "lib")
+    )
+    _OPUS_SEARCH.insert(0, os.path.join(_bundle_lib, "libopus.0.dylib"))
+
 _opus_real_path: str | None = None
 
 
