@@ -2826,6 +2826,7 @@ let _gpsUsingWifi     = false;  // true when running on WiFi fallback
 let _gpsMaxAgeMs      = 4000;
 let _gpsEnabled       = true;
 let _gpsHighAccuracy  = true;
+let _gpsNativeActive  = false;  // true once Python pushes a native (Core Location) fix
 
 // Called by Python after map ready (and after settings change)
 function setGPSConfig(enabled, highAccuracy, maxAgeMs, centerOnFix, showAccuracy) {
@@ -2886,14 +2887,26 @@ function initGPS() {
 }
 
 function _onGPSSuccess(pos) {
-  const lat  = pos.coords.latitude;
-  const lon  = pos.coords.longitude;
-  const acc  = Math.round(pos.coords.accuracy);
-  const mgrs = latLonToMGRS(lat, lon);
-
-  // If WiFi fallback fired but GPS watcher is still open, keep both running —
-  // GPS watcher will win once it gets a fix (higher accuracy shows in HUD).
+  // In-page (navigator.geolocation) fix. Native macOS Core Location, when
+  // active, drives the HUD instead — ignore the browser watcher so the two
+  // don't fight over the marker.
+  if (_gpsNativeActive) return;
   const viaWifi = (pos.coords.accuracy > 200);   // rough heuristic
+  const hdg = pos.coords.heading;
+  _renderOwnPos(
+    pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy,
+    (hdg !== null && hdg !== undefined && !isNaN(hdg)) ? hdg : -1,
+    viaWifi ? 'WIFI' : 'GPS'
+  );
+}
+
+// Shared own-position renderer used by both the in-page geolocation watcher
+// and the native (Core Location) bridge. `source` is the badge text ('GPS' /
+// 'WIFI'); `heading` is degrees or -1 when unknown.
+function _renderOwnPos(lat, lon, accRaw, heading, source) {
+  const acc  = Math.round(accRaw);
+  const mgrs = latLonToMGRS(lat, lon);
+  const viaWifi = (source === 'WIFI');
   _gpsUsingWifi = viaWifi;
 
   // Center map on first fix
@@ -2903,7 +2916,7 @@ function _onGPSSuccess(pos) {
   }
 
   // Source badge
-  const src   = viaWifi ? 'WIFI' : 'GPS';
+  const src   = source;
   const color = viaWifi ? '#d29922' : '#3fb950';
 
   // Update HUD
@@ -2952,8 +2965,7 @@ function _onGPSSuccess(pos) {
     const head  = wrap.querySelector('.my-pos-heading');
     const arrow = wrap.querySelector('.my-pos-arrow');
     if (ring) { ring.style.background = ringColor; }
-    const hdg = pos.coords.heading;
-    const rot = (hdg !== null && hdg !== undefined && !isNaN(hdg)) ? hdg : 0;
+    const rot = (heading !== null && heading !== undefined && heading >= 0) ? heading : 0;
     if (head)  { head.style.transform = 'rotate(' + rot + 'deg)'; }
     if (arrow) { arrow.style.borderBottomColor = dotColor; }
   }
@@ -2970,6 +2982,7 @@ function _onGPSSuccess(pos) {
 
 // Primary (GPS) error → start WiFi fallback, keep GPS watcher alive for recovery
 function _onGPSPrimaryError(err) {
+  if (_gpsNativeActive) return;   // native provider owns the HUD
   if (err.code === 1) {
     // PERMISSION_DENIED — no point retrying
     _gpsSetLabel('DENIED', '#f85149');
@@ -2982,10 +2995,32 @@ function _onGPSPrimaryError(err) {
 
 // WiFi fallback also failed
 function _onGPSFinalError(err) {
+  if (_gpsNativeActive) return;   // native provider owns the HUD
   const msgs = {1: 'DENIED', 2: 'NO SIGNAL', 3: 'TIMEOUT'};
   _gpsSetLabel(msgs[err.code] || 'ERR', '#f85149');
   document.getElementById('own-gps-acc').textContent = '';
   document.getElementById('own-gps-hud').classList.remove('has-fix');
+}
+
+// ── Native location bridge (macOS Core Location, driven from Python) ─────────
+// Called by MapView.set_own_position_native(). The first native fix takes over
+// the HUD from the in-page geolocation watcher and stops it to avoid conflict.
+function setOwnPositionNative(lat, lon, acc, heading, source) {
+  if (!_gpsEnabled) return;
+  if (!_gpsNativeActive) {
+    _gpsNativeActive = true;
+    _gpsStopAll();   // browser geolocation can't get a fix here; native wins
+    document.getElementById('own-gps-hud').style.display = '';
+  }
+  _renderOwnPos(lat, lon, acc, heading, source);
+}
+
+// Status text for the HUD when native location has no usable fix yet.
+function setOwnPositionStatus(text) {
+  if (!_gpsEnabled) return;
+  _gpsNativeActive = true;
+  const color = (text === 'DENIED') ? '#f85149' : '#d29922';
+  _gpsSetLabel(text, color);
 }
 
 function _gpsSetLabel(text, color) {

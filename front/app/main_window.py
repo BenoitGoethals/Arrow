@@ -41,6 +41,7 @@ from front.map.tile_server       import MBTilesServer
 from front.app.toast_manager      import ToastManager
 from front.app.settings_dialog    import ConfigDialog, read_gps_config, load as _settings_load, _bool as _settings_bool
 from front.app.voice_alerts       import VoiceAlertPlayer
+from front.utils.location_provider import LocationProvider, is_supported as _native_loc_supported
 from front.panels.mbtiles.dialog  import MBTilesDialog
 from front.panels.routes.panel    import RoutesPanel, RoutePropertiesDialog
 
@@ -72,6 +73,11 @@ class MainWindow(QMainWindow):
         self._suppress_toasts = False
         self._voice      = VoiceAlertPlayer(self)
         self._voice.enabled = _settings_bool(_settings_load("display_voice_alerts"), True)
+
+        # Native OS location (macOS Core Location). QtWebEngine's
+        # navigator.geolocation does not resolve a fix on macOS, so on darwin we
+        # source the own-position fix natively and push it into the map HUD.
+        self._location = LocationProvider(self)
 
         # Pending route colors: route_id → color (set when draw is requested)
         self._pending_route_colors: dict[str, str] = {}
@@ -517,13 +523,35 @@ class MainWindow(QMainWindow):
         dlg.voice_alerts_changed.connect(lambda on: setattr(self._voice, "enabled", on))
         dlg.exec()
 
+    _native_loc_wired = False
+
+    def _wire_native_location(self):
+        """Connect the native location provider to the map HUD once."""
+        if self._native_loc_wired:
+            return
+        self._native_loc_wired = True
+        self._location.position_changed.connect(self._map.set_own_position_native)
+        self._location.status_changed.connect(self._map.set_own_position_status)
+
+    def _apply_native_location(self, enabled: bool, high_acc: bool):
+        """Start/stop native OS location to match the GPS config (macOS only)."""
+        if not _native_loc_supported():
+            return
+        if enabled:
+            self._wire_native_location()
+            self._location.start(high_accuracy=high_acc)
+        else:
+            self._location.stop()
+
     def _apply_gps_config(self):
         enabled, high_acc, max_age, center, show_acc = read_gps_config()
         self._map.set_gps_config(enabled, high_acc, max_age, center, show_acc)
+        self._apply_native_location(enabled, high_acc)
 
     def _on_gps_config(self, enabled: bool, high_acc: bool,
                         max_age: int, center: bool, show_acc: bool):
         self._map.set_gps_config(enabled, high_acc, max_age, center, show_acc)
+        self._apply_native_location(enabled, high_acc)
 
     def _resolve_role(self):
         try:
@@ -1521,4 +1549,8 @@ class MainWindow(QMainWindow):
         if self._ws:
             self._ws.stop()
             self._ws.wait(2000)
+        try:
+            self._location.stop()
+        except Exception:
+            pass
         event.accept()

@@ -344,6 +344,21 @@ class MapView(QWebEngineView):
             f"{int(max_age_ms)}, {json.dumps(center_on_fix)}, {json.dumps(show_accuracy)})"
         )
 
+    def set_own_position_native(self, lat: float, lon: float, accuracy: float,
+                                heading: float, source: str):
+        """Push a fix obtained from native OS location services (macOS Core
+        Location) into the own-position HUD, bypassing the in-page geolocation
+        watcher that does not resolve under QtWebEngine on macOS."""
+        self._js(
+            f"setOwnPositionNative({json.dumps(float(lat))}, {json.dumps(float(lon))}, "
+            f"{json.dumps(float(accuracy))}, {json.dumps(float(heading))}, "
+            f"{json.dumps(source)})"
+        )
+
+    def set_own_position_status(self, text: str):
+        """Update the own-position HUD label when there is no usable fix."""
+        self._js(f"setOwnPositionStatus({json.dumps(text)})")
+
     def set_weather_layer(self, layer_name: str, visible: bool):
         self._js(f"setWeatherLayer({json.dumps(layer_name)}, {json.dumps(visible)})")
 

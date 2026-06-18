@@ -32,6 +32,10 @@ dependencies = [
     "pymumble>=1.6",
     "numpy>=2.4.6",
     "sounddevice>=0.5.5",
+    # Native own-position fix for the front desktop COP. QtWebEngine's
+    # navigator.geolocation does not resolve on macOS, so we query Core Location
+    # directly (GPS when present, Wi-Fi/network otherwise). macOS-only.
+    "pyobjc-framework-CoreLocation>=10.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +54,11 @@ front = [
     "pyqt6>=6.7",
     "pyqt6-webengine>=6.7",
     "keyring>=25",
+]
+# Package Arrow Front as a macOS .app bundle (needed for Core Location to work —
+# see setup_front_app.py). Build with: uv run --extra front-bundle python setup_front_app.py py2app
+front-bundle = [
+    "py2app>=0.28; sys_platform == 'darwin'",
 ]
 
 [project.scripts]
