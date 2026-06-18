@@ -3898,9 +3898,9 @@
             onlineOps.forEach(op => {
                 const via      = op.position_source === 'ATAK' ? ' · via ATAK' : '';
                 const hasPos   = op.latitude && op.longitude;
-                const clickFn  = hasPos ? `_zoomToDevice(${op.latitude},${op.longitude})` : '';
                 const cursor   = hasPos ? 'cursor:pointer' : '';
-                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;${cursor}" ${hasPos ? `onclick="${clickFn}"` : ''}>
+                const posAttr  = hasPos ? `data-lat="${op.latitude}" data-lon="${op.longitude}"` : '';
+                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;${cursor}" ${posAttr}>
                     <div class="atak-client-cs">🖥 ${escHtml(op.callsign)}</div>
                     <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
                 </div>`;
@@ -3910,14 +3910,22 @@
                     ? `${c.last_seen_ago_s}s ago`
                     : `${Math.round(c.last_seen_ago_s / 60)}m ago`;
                 const hasPos  = c.last_lat && c.last_lon && !(c.last_lat === 0 && c.last_lon === 0);
-                const clickFn = hasPos ? `_zoomToDevice(${c.last_lat},${c.last_lon})` : '';
                 const cursor  = hasPos ? 'cursor:pointer' : '';
-                html += `<div class="atak-client" style="${cursor}" ${hasPos ? `onclick="${clickFn}"` : ''}>
+                const posAttr = hasPos ? `data-lat="${c.last_lat}" data-lon="${c.last_lon}"` : '';
+                html += `<div class="atak-client" style="${cursor}" ${posAttr}>
                     <div class="atak-client-cs">📡 ${escHtml(c.callsign || c.uid)}</div>
                     <div class="atak-client-meta">${escHtml(c.ip)} · ${escHtml(c.cot_type || '?')} · ${ago} · rx:${c.rx_count}</div>
                 </div>`;
             });
             el.innerHTML = html;
+
+            // Wire clicks via addEventListener (robust — no dependency on inline
+            // onclick handlers resolving a window-scoped function).
+            el.querySelectorAll('.atak-client[data-lat]').forEach(row => {
+                row.addEventListener('click', () => {
+                    window.zoomToDevice(row.dataset.lat, row.dataset.lon);
+                });
+            });
         } catch (e) {
             el.innerHTML = `<small style="color:#ef4444">${e.message}</small>`;
         }
