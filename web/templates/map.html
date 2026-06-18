@@ -3939,7 +3939,7 @@
                     const lat  = (live && live.latitude  != null) ? live.latitude  : fb.latitude;
                     const lon  = (live && live.longitude != null) ? live.longitude : fb.longitude;
                     if (lat == null || lon == null || (Number(lat) === 0 && Number(lon) === 0)) {
-                        if (typeof toast === 'function') toast(`${fb.callsign || 'Operator'} has no position yet`);
+                        if (typeof toast === 'function') toast(`📍 ${fb.callsign || 'Operator'} has no position yet`, '#f59e0b');
                         else console.warn('[liveDevices] operator', id, 'has no position yet');
                         return;
                     }
@@ -4960,6 +4960,30 @@
                 && Notification.permission === 'granted') {
             new Notification(`${icon} ${d.type}`, { body: `From: ${sender}` });
         }
+    }
+
+    // ── Generic transient toast ───────────────────────────────────────────────
+    // Lightweight top-right notice for incidental feedback (e.g. clicking a
+    // device that has no position yet). Styled to match showLogrepToast but
+    // with no click action and a shorter dwell.
+    function toast(msg, color) {
+        color = color || '#94a3b8';
+        let wrap = document.getElementById('app-toast-wrap');
+        if (!wrap) {
+            wrap = document.createElement('div');
+            wrap.id = 'app-toast-wrap';
+            wrap.style.cssText = 'position:fixed;top:68px;right:16px;z-index:9999;'
+                + 'display:flex;flex-direction:column;gap:6px;pointer-events:none';
+            document.body.appendChild(wrap);
+        }
+        const card = document.createElement('div');
+        card.style.cssText = `background:#0d1117;border:1px solid ${color};border-radius:6px;`
+            + `padding:8px 14px;color:${color};font-size:.82rem;font-family:monospace;`
+            + `box-shadow:0 4px 18px rgba(0,0,0,.7);max-width:320px;word-break:break-word;`
+            + `transition:opacity .4s`;
+        card.textContent = msg;
+        wrap.appendChild(card);
+        setTimeout(() => { card.style.opacity = '0'; setTimeout(() => card.remove(), 450); }, 3500);
     }
 
     // ── LOGREP notification toast ─────────────────────────────────────────────
