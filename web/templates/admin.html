@@ -2188,9 +2188,10 @@ main { padding: 0; }
   }
 
   async function renderTak(el) {
-    const [status, cfg] = await Promise.all([
+    const [status, cfg, tls] = await Promise.all([
       api('/cot/tcp/status').then(r => r.ok ? r.json() : null),
       api('/cot/tcp/config').then(r => r.ok ? r.json() : {}),
+      api('/cot/tcp/tls/info').then(r => r.ok ? r.json() : null),
     ]);
     if (!status) { el.innerHTML = '<p style="color:#ef4444">Could not reach CoT TCP status endpoint.</p>'; return; }
 
@@ -2311,6 +2312,53 @@ main { padding: 0; }
       </div>
     </div>
 
+    <!-- TLS / SSL for ATAK -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>🔐 TLS / SSL <span style="color:#475569;font-size:.75rem;font-weight:400">— for ATAK SSL connections</span></h3>
+      <div style="padding:.75rem 1rem 1rem">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;font-size:.85rem;margin-bottom:1rem">
+          <div>
+            <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.25rem">TLS listener</div>
+            <div>${status.tls_running
+                   ? '<span class="badge badge-ok" style="font-size:.72rem">RUNNING</span>'
+                   : '<span class="badge badge-err" style="font-size:.72rem">STOPPED</span>'}</div>
+          </div>
+          <div>
+            <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.25rem">TLS port</div>
+            <div style="font-family:monospace;color:#34d399">${status.tls_port || 8089}</div>
+          </div>
+          <div>
+            <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.25rem">Truststore password</div>
+            <div style="font-family:monospace">${tls ? _e(tls.password) : '—'}</div>
+          </div>
+          <div>
+            <div style="color:#64748b;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.25rem">Cert SAN (IPs)</div>
+            <div style="font-size:.75rem;color:#94a3b8;word-break:break-all">${tls ? _e((tls.san_ips||[]).join(', ')) : '—'}</div>
+          </div>
+        </div>
+
+        ${tls && tls.generated
+          ? `<div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.8rem">
+               <button class="btn btn-primary btn-sm" onclick="takTlsDownload('truststore')">⬇ Truststore (.p12)</button>
+               <button class="btn btn-ghost btn-sm"   onclick="takTlsDownload('client')">⬇ Client keystore (.p12)</button>
+               <button class="btn btn-ghost btn-sm"   onclick="takTlsDownload('ca')">⬇ CA (.pem)</button>
+               <button class="btn btn-ghost btn-sm"   onclick="takTlsDownload('server-cert')">⬇ Server cert (.pem)</button>
+             </div>`
+          : `<p style="color:#94a3b8;font-size:.85rem;margin:.2rem 0 .8rem">No TLS certificates generated yet — click Generate below.</p>`}
+
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="takTlsGenerate(false)">🔐 Generate TLS certs</button>
+          <button class="btn btn-danger btn-sm" onclick="if(confirm('Regenerate the CA + server cert? Existing ATAK truststores stop working until re-imported.')) takTlsGenerate(true)">↺ Regenerate (new CA)</button>
+        </div>
+
+        <p style="color:#64748b;font-size:.78rem;margin-top:.7rem;line-height:1.5">
+          In ATAK add an <b>SSL</b> server — host <code>${_e(location.hostname)}</code>, port <code>${status.tls_port || 8089}</code> —
+          and import the downloaded <b>truststore .p12</b> as the CA (password above). The cert SAN must include the
+          address ATAK dials; set <code>ARROW_COT_EXTRA_IPS=&lt;public-ip&gt;</code> in the container env before generating if it's missing above.
+        </p>
+      </div>
+    </div>
+
     <!-- Upstream TAK server -->
     <div class="cfg-section" style="margin-bottom:1.5rem">
       <h3>Upstream TAK Server <span style="color:#475569;font-size:.75rem;font-weight:400">— optional relay to FreeTAKServer / TAKServer</span></h3>
@@ -2411,6 +2459,37 @@ main { padding: 0; }
       if (msg) { msg.style.color='#34d399'; msg.textContent=`✓ Server ${s.running?'started on port '+s.port:'stopped'}`; }
       setTimeout(refreshTak, 800);
     }
+  };
+
+  window.takTlsGenerate = async function(force) {
+    const msg = document.getElementById('tak-save-msg');
+    if (msg) { msg.style.color='#94a3b8'; msg.textContent = force ? 'Regenerating TLS PKI…' : 'Generating TLS PKI…'; }
+    const r = await api('/cot/tcp/tls/generate?force=' + (force ? 'true' : 'false'), { method:'POST' });
+    if (r.ok) {
+      if (msg) { msg.style.color='#34d399'; msg.textContent='✓ TLS certificates ready — listener restarted'; }
+      setTimeout(refreshTak, 800);
+    } else {
+      if (msg) { msg.style.color='#ef4444'; msg.textContent='Generate failed (' + r.status + ')'; }
+    }
+  };
+
+  const _TLS_FALLBACK_NAMES = {
+    'truststore':  'atak-truststore.p12',
+    'client':      'atak-client.p12',
+    'ca':          'arrow-cot-ca.pem',
+    'server-cert': 'cot-server.pem',
+  };
+  window.takTlsDownload = async function(name) {
+    const r = await api('/cot/tcp/tls/download/' + name);
+    if (!r.ok) { alert('Download failed (' + r.status + ') — generate the certs first.'); return; }
+    const blob = await r.blob();
+    const cd   = r.headers.get('Content-Disposition') || '';
+    const m    = cd.match(/filename="?([^"]+)"?/);
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = (m && m[1]) || _TLS_FALLBACK_NAMES[name] || name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
   };
 
   function _e(s) {

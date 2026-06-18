@@ -367,25 +367,19 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
   border-radius:50%;background:rgba(56,139,253,.28);
   animation:gps-pulse 2s ease-out infinite;
 }
-.my-pos-dot{
-  position:absolute;top:50%;left:50%;
-  width:10px;height:10px;margin:-5px 0 0 -5px;
-  border-radius:50%;background:#388bfd;
-  border:2px solid #fff;box-shadow:0 0 6px rgba(56,139,253,.9);
-}
-/* Heading arrow — rotates around the dot to show GPS course (blue). */
+/* Big blue heading arrow — THE own-position marker. Always visible; points
+   north when no GPS heading is available, otherwise along the course. */
 .my-pos-heading{
   position:absolute;top:50%;left:50%;width:0;height:0;
-  transform-origin:0 0;             /* rotate around the dot centre */
+  transform-origin:0 0;             /* rotate around the position */
   transition:transform .2s linear;
-  display:none;                     /* shown only when a heading is known */
 }
 .my-pos-arrow{
-  position:absolute;left:-7px;top:-22px;width:0;height:0;
-  border-left:7px solid transparent;
-  border-right:7px solid transparent;
-  border-bottom:13px solid #388bfd;
-  filter:drop-shadow(0 0 3px rgba(56,139,253,.9));
+  position:absolute;left:-13px;top:-17px;width:0;height:0;
+  border-left:13px solid transparent;
+  border-right:13px solid transparent;
+  border-bottom:32px solid #388bfd;
+  filter:drop-shadow(0 0 5px rgba(56,139,253,.95));
 }
 @keyframes gps-pulse{
   0%  {transform:scale(0.5);opacity:1;}
@@ -2914,7 +2908,7 @@ function _onGPSSuccess(pos) {
   if (!_myPosMarker) {
     const icon = L.divIcon({
       className: '',
-      html: '<div class="my-pos-wrap"><div class="my-pos-ring"></div><div class="my-pos-heading"><div class="my-pos-arrow"></div></div><div class="my-pos-dot"></div></div>',
+      html: '<div class="my-pos-wrap"><div class="my-pos-ring"></div><div class="my-pos-heading"><div class="my-pos-arrow"></div></div></div>',
       iconSize: [20, 20], iconAnchor: [10, 10], popupAnchor: [0, -12],
     });
     _myPosMarker = L.marker(ll, {icon, zIndexOffset: 2000, interactive: true})
@@ -2935,28 +2929,18 @@ function _onGPSSuccess(pos) {
     });
   }
 
-  // Recolour pulsing dot via CSS variable trick (inject style)
+  // Big blue heading arrow (own-position marker). Always shown; points along
+  // the GPS course when known, otherwise defaults to north (0°).
   const wrap = _myPosMarker.getElement();
   if (wrap) {
-    const dot  = wrap.querySelector('.my-pos-dot');
-    const ring = wrap.querySelector('.my-pos-ring');
-    if (dot)  { dot.style.background  = dotColor;  dot.style.boxShadow = `0 0 6px ${dotColor}cc`; }
-    if (ring) { ring.style.background = ringColor; }
-
-    // Heading arrow — point it along the GPS course when moving; hide it
-    // (just the dot) when stationary, where heading is null/NaN.
+    const ring  = wrap.querySelector('.my-pos-ring');
     const head  = wrap.querySelector('.my-pos-heading');
     const arrow = wrap.querySelector('.my-pos-arrow');
-    const hdg   = pos.coords.heading;
-    if (head) {
-      if (hdg !== null && hdg !== undefined && !isNaN(hdg)) {
-        head.style.display   = 'block';
-        head.style.transform = 'rotate(' + hdg + 'deg)';
-        if (arrow) arrow.style.borderBottomColor = dotColor;
-      } else {
-        head.style.display = 'none';
-      }
-    }
+    if (ring) { ring.style.background = ringColor; }
+    const hdg = pos.coords.heading;
+    const rot = (hdg !== null && hdg !== undefined && !isNaN(hdg)) ? hdg : 0;
+    if (head)  { head.style.transform = 'rotate(' + rot + 'deg)'; }
+    if (arrow) { arrow.style.borderBottomColor = dotColor; }
   }
 
   _myPosMarker.setPopupContent(

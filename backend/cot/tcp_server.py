@@ -52,13 +52,15 @@ def _stream_frame(data: bytes) -> bytes:
 # ── Persistent config ─────────────────────────────────────────────────────────
 
 _cfg: dict = {
-    "enabled":   True,
-    "host":      "0.0.0.0",
-    "port":      int(os.environ.get("ARROW_COT_TCP_PORT", "8087")),
-    "tak_host":  "",          # upstream TAK server (optional)
-    "tak_port":  8087,
-    "tak_ssl":   False,
-    "note":      "ATAK devices connect to this server's IP on the configured port.",
+    "enabled":     True,
+    "host":        "0.0.0.0",
+    "port":        int(os.environ.get("ARROW_COT_TCP_PORT", "8087")),
+    "tls_enabled": os.environ.get("ARROW_COT_TLS", "1") != "0",
+    "tls_port":    int(os.environ.get("ARROW_COT_TLS_PORT", "8089")),
+    "tak_host":    "",          # upstream TAK server (optional)
+    "tak_port":    8087,
+    "tak_ssl":     False,
+    "note":        "ATAK devices connect to this server's IP — plain TCP on `port`, TLS on `tls_port`.",
 }
 
 
@@ -997,13 +999,16 @@ async def broadcast_tactical_object_delete_to_atak(obj: "TacticalObject") -> Non
 def get_status() -> dict:
     """Return full TAK server status for the admin UI."""
     return {
-        "enabled":  _cfg.get("enabled", True),
-        "host":     _cfg.get("host", "0.0.0.0"),
-        "port":     _cfg.get("port", 8087),
-        "running":  _server is not None,
-        "tak_host": _cfg.get("tak_host", ""),
-        "tak_port": _cfg.get("tak_port", 8087),
-        "tak_ssl":  _cfg.get("tak_ssl", False),
+        "enabled":     _cfg.get("enabled", True),
+        "host":        _cfg.get("host", "0.0.0.0"),
+        "port":        _cfg.get("port", 8087),
+        "running":     _server is not None,
+        "tls_enabled": _cfg.get("tls_enabled", True),
+        "tls_port":    _cfg.get("tls_port", 8089),
+        "tls_running": _tls_server is not None,
+        "tak_host":    _cfg.get("tak_host", ""),
+        "tak_port":    _cfg.get("tak_port", 8087),
+        "tak_ssl":     _cfg.get("tak_ssl", False),
         **_Pool.stats(),
         "clients": _Pool.client_list(),
     }
@@ -1011,28 +1016,57 @@ def get_status() -> dict:
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-_server: asyncio.Server | None = None
+_server:     asyncio.Server | None = None
+_tls_server: asyncio.Server | None = None
 
 
 async def start() -> None:
-    global _server
+    global _server, _tls_server
     load_config()
-    if not _cfg.get("enabled", True):
-        log.info("CoT TCP server disabled in config")
-        return
     host = _cfg.get("host", "0.0.0.0")
-    port = int(_cfg.get("port", 8087))
-    _server = await asyncio.start_server(_client_handler, host, port)
-    log.info("CoT TCP server listening on %s:%d — ATAK devices connect here", host, port)
+
+    # Plain TCP listener (ATAK non-SSL connections)
+    if _cfg.get("enabled", True):
+        port = int(_cfg.get("port", 8087))
+        _server = await asyncio.start_server(_client_handler, host, port)
+        log.info("CoT TCP server listening on %s:%d — ATAK (plain) connects here", host, port)
+    else:
+        log.info("CoT plain TCP server disabled in config")
+
+    # TLS listener (ATAK SSL connections). The same _client_handler is used —
+    # asyncio terminates TLS transparently, so the framing code is unchanged.
+    if _cfg.get("tls_enabled", True):
+        try:
+            _tls_server = await _start_tls(host)
+        except Exception:
+            log.exception("CoT TLS listener failed to start — continuing without TLS")
+
+
+async def _start_tls(host: str) -> asyncio.Server:
+    import ssl
+
+    from backend.cot.tls_cert import ensure_cot_tls
+
+    cert_path, key_path = ensure_cot_tls()
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(cert_path, key_path)
+    ctx.verify_mode = ssl.CERT_NONE          # ATAK only needs to trust us (no mTLS)
+    tls_port = int(_cfg.get("tls_port", 8089))
+    srv = await asyncio.start_server(_client_handler, host, tls_port, ssl=ctx)
+    log.info("CoT TLS server listening on %s:%d — ATAK (SSL) connects here", host, tls_port)
+    return srv
 
 
 async def stop() -> None:
-    global _server
-    if _server:
-        _server.close()
-        await _server.wait_closed()
-        _server = None
-        log.info("CoT TCP server stopped")
+    global _server, _tls_server
+    for srv in (_server, _tls_server):
+        if srv:
+            srv.close()
+            await srv.wait_closed()
+    if _server or _tls_server:
+        log.info("CoT TCP/TLS servers stopped")
+    _server = None
+    _tls_server = None
 
 
 def connected_clients() -> int:

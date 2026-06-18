@@ -264,6 +264,55 @@ async def tcp_restart(
     return {"status": "restarted", **tcp_server.get_status()}
 
 
+# ── TLS / SSL certificate management (for ATAK SSL connections) ───────────────
+
+@router.get("/tcp/tls/info")
+def tcp_tls_info(
+    _: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+) -> dict:
+    """Report which TLS artifacts exist, the truststore password, and cert SANs."""
+    from backend.cot.tls_cert import info
+    return info()
+
+
+@router.post("/tcp/tls/generate")
+async def tcp_tls_generate(
+    force: bool = False,
+    _: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Generate the CoT TLS PKI (CA + server cert + ATAK truststore), then
+    restart the listener so it serves the cert. ``force=true`` regenerates from
+    scratch (new CA — existing ATAK truststores must be re-imported)."""
+    from backend.cot import tcp_server
+    from backend.cot.tls_cert import ensure_cot_tls, info, regenerate
+    if force:
+        regenerate()
+    else:
+        ensure_cot_tls()
+    await tcp_server.stop()
+    await tcp_server.start()
+    return {"status": "ok", "tls": info(), **tcp_server.get_status()}
+
+
+@router.get("/tcp/tls/download/{name}")
+def tcp_tls_download(
+    name: str,
+    _: Operator = Depends(require_role("ADMIN")),
+) -> Response:
+    """Download a generated TLS artifact (truststore / client / ca / server-cert)."""
+    from backend.cot.tls_cert import artifact
+    got = artifact(name)
+    if not got:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "Unknown or not-yet-generated TLS artifact")
+    data, fname, mime = got
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @router.delete("/tracks/{track_id}", status_code=204)
 async def delete_cot_track(
     track_id: int,

@@ -11,7 +11,15 @@ services:
     # The backend is reachable within Docker as backend:6001.
     expose:
       - "6001"
+    # CoT ports ARE published to the host so ATAK devices can connect directly
+    # (raw TCP/TLS — not HTTP, so they bypass the nginx proxy).
+    ports:
+      - "8087:8087"   # CoT plain TCP (ATAK, non-SSL)
+      - "8089:8089"   # CoT TLS       (ATAK, SSL)
     environment:
+      # Public IP/hostname ATAK dials — added to the CoT TLS cert SAN so SSL
+      # connections validate. Set in .env, e.g. ARROW_COT_EXTRA_IPS=78.21.255.210
+      ARROW_COT_EXTRA_IPS: "${ARROW_COT_EXTRA_IPS:-}"
       # ARROW_JWT_SECRET: ""    # set a 64-char hex secret here or in .env for production
       #                         # if unset, a random secret is auto-generated on first boot
       #                         # and saved to data/jwt_secret.key (persisted in arrow-data volume)
