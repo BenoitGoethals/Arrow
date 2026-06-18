@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QMessageBox,
 )
-from front.app.right_info_panel import RightInfoPanel
+from front.app.activity_panel import ActivityPanel
 from PyQt6.QtCore import Qt, QTimer, QSettings
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction
 
@@ -38,7 +38,6 @@ from front.windows.medevac_window import MedevacWindow
 from front.client.arrow_client    import ArrowClient
 from front.client.ws_listener    import WSListener
 from front.map.tile_server       import MBTilesServer
-from front.app.collapsible_panel  import CollapsibleSidePanel
 from front.app.toast_manager      import ToastManager
 from front.app.settings_dialog    import ConfigDialog, read_gps_config, load as _settings_load, _bool as _settings_bool
 from front.app.voice_alerts       import VoiceAlertPlayer
@@ -127,7 +126,9 @@ class MainWindow(QMainWindow):
         self._stream_viewers:  list[StreamViewerWindow]  = []
         self._medevac_windows: list[MedevacWindow]       = []
 
-        self._info = RightInfoPanel()
+        # Right: vertical activity bar — feature panels open in the right window.
+        self._right_panel = ActivityPanel(side="right", default_width=360)
+        self._info = self._right_panel
         self._info.add_panel("missions", "◈",  "MISS",   self._missions_panel, "1")
         self._info.add_panel("strike",   "◆",  "STRK",   self._strike_panel,   "2")
         self._info.add_panel("opord",    "📋", "OPORD",  self._opord_panel,    "3")
@@ -145,13 +146,12 @@ class MainWindow(QMainWindow):
         self._map = MapView(self)
         self._map.set_auth(self._server_url, self._token)
 
-        # ---- Collapsible side panels ----------------------------------
-        self._left_panel = CollapsibleSidePanel(
-            self._orbat_panel, "ORBAT", side="left", default_width=270
-        )
-        self._right_panel = CollapsibleSidePanel(
-            self._info, "INFO", side="right", default_width=360
-        )
+        # ---- Side panels ----------------------------------------------
+        # Left: vertical activity bar — ORBAT opens in the left window.
+        # (Add further icons here later with another add_panel(...) call.)
+        self._left_panel = ActivityPanel(side="left", default_width=270)
+        self._left_panel.add_panel("orbat", "⊟", "ORBAT", self._orbat_panel, "O")
+        # (self._right_panel was created above with all feature panels added.)
 
         # ---- Splitter (fills the whole central area) ------------------
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -165,9 +165,12 @@ class MainWindow(QMainWindow):
         self._splitter.addWidget(self._map)
         self._splitter.addWidget(self._right_panel)
 
-        # Bind splitter references (needed for resize logic)
-        self._left_panel.bind_splitter(self._splitter, 0)
-        self._right_panel.bind_splitter(self._splitter, 2)
+        # Bind splitter references (needed for resize logic). Fallback sizes
+        # describe the fully-expanded 3-column layout (icon bar + content each
+        # side) for the pre-layout case where the splitter reports zero widths.
+        _fallback = [316, 900, 406]
+        self._left_panel.bind_splitter(self._splitter, 0, fallback=_fallback)
+        self._right_panel.bind_splitter(self._splitter, 2, fallback=_fallback)
 
         # Defer collapse until after window is shown and splitter has real px dimensions
         QTimer.singleShot(0, self._right_panel.collapse)
@@ -176,7 +179,7 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setStretchFactor(2, 0)
-        self._splitter.setSizes([270, 900, 360])
+        self._splitter.setSizes([316, 900, 406])
 
         self.setCentralWidget(self._splitter)
 
