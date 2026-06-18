@@ -2240,7 +2240,7 @@
 
     loadOverlays();
 
-    window.__arrowFocus = (lat, lon) => map.setView([lat, lon], 14);
+    window.__arrowFocus = (lat, lon) => window.zoomToDevice(lat, lon);
     window.__arrowDeleteEnemy = async (id) => {
         await fetch(window.ARROW_BACKEND_URL + '/tactical-objects/' + id, { method: 'DELETE', headers: missionHeaders() });
         state.tacticalObjects.delete(id); refreshEnemies();
@@ -2335,9 +2335,7 @@
                 const id = parseInt(el.dataset.op, 10);
                 const op = state.operators.get(id);
                 if (!op || op.latitude == null) return;
-                map.setView([op.latitude, op.longitude], 13);
-                const m = state.markers.get(`op-${id}`);
-                if (m) m.openPopup();
+                window.zoomToDevice(op.latitude, op.longitude, { popupKey: `op-${id}` });
             });
         });
         root.querySelectorAll('.select-group').forEach(btn => {
@@ -3849,13 +3847,26 @@
         }
     }
 
-    // Exposed on window so the inline onclick="_zoomToDevice(...)" handlers in
-    // the Live Devices list (built as HTML strings) can reach it — the whole
-    // script runs inside an IIFE, so a plain function would be out of scope.
-    window._zoomToDevice = function (lat, lon) {
-        if (!lat || !lon || (lat === 0 && lon === 0)) return;
-        map.flyTo([lat, lon], 16, { animate: true, duration: 0.8 });
+    // Canonical "click a device → fly the map to it and zoom in" helper.
+    // Every device/operator click path (Live Devices list, ORBAT tree rows,
+    // enemy/tactical object list) routes through this so the behaviour is
+    // consistent: an animated fly-to at a single zoom level, optionally opening
+    // the target's map popup. Exposed on window because device rows are built
+    // as HTML strings with inline onclick handlers and the whole script runs
+    // inside an IIFE (a plain inner function would be out of their scope).
+    window.zoomToDevice = function (lat, lon, opts) {
+        lat = Number(lat); lon = Number(lon);
+        if (!isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) return;
+        const zoom = (opts && opts.zoom) || 16;
+        map.flyTo([lat, lon], zoom, { animate: true, duration: 0.8 });
+        const key = opts && opts.popupKey;
+        if (key && typeof state !== 'undefined' && state.markers) {
+            const m = state.markers.get(key);
+            if (m) m.openPopup();
+        }
     };
+    // Backward-compatible alias for the Live Devices list rows.
+    window._zoomToDevice = window.zoomToDevice;
 
     async function loadAtakClients() {
         const el  = document.getElementById('atak-clients');

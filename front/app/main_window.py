@@ -1455,7 +1455,7 @@ class MainWindow(QMainWindow):
             for op in self._client.live_operators():
                 oid = op.get("operator_id") or op.get("id")
                 if oid == operator_id and op.get("latitude") and op.get("longitude"):
-                    self._map.center_on(op["latitude"], op["longitude"], zoom=15)
+                    self._map.center_on(op["latitude"], op["longitude"], zoom=16)
                     return
         except Exception:
             pass

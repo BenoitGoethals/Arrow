@@ -218,9 +218,12 @@ class ORBATPanel(QWidget):
             visit(self._tree.topLevelItem(i))
 
     def _on_click(self, item: QTreeWidgetItem, _col):
-        """Single-click: toggle expand/collapse for non-operator rows."""
+        """Single-click: zoom to the operator's device, or toggle group rows."""
         op_id = item.data(0, Qt.ItemDataRole.UserRole)
-        if op_id is None and item.childCount() > 0:
+        if op_id is not None:
+            # Operator (device) row — fly the map to it and zoom in.
+            self.operator_focus_requested.emit(op_id)
+        elif item.childCount() > 0:
             item.setExpanded(not item.isExpanded())
 
     def _on_double_click(self, item: QTreeWidgetItem, _col):
