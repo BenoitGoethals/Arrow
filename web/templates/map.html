@@ -3849,10 +3849,13 @@
         }
     }
 
-    function _zoomToDevice(lat, lon) {
+    // Exposed on window so the inline onclick="_zoomToDevice(...)" handlers in
+    // the Live Devices list (built as HTML strings) can reach it — the whole
+    // script runs inside an IIFE, so a plain function would be out of scope.
+    window._zoomToDevice = function (lat, lon) {
         if (!lat || !lon || (lat === 0 && lon === 0)) return;
-        map.flyTo([lat, lon], 15, { animate: true, duration: 0.8 });
-    }
+        map.flyTo([lat, lon], 16, { animate: true, duration: 0.8 });
+    };
 
     async function loadAtakClients() {
         const el  = document.getElementById('atak-clients');
