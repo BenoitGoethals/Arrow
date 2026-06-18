@@ -3856,9 +3856,13 @@
     // inside an IIFE (a plain inner function would be out of their scope).
     window.zoomToDevice = function (lat, lon, opts) {
         lat = Number(lat); lon = Number(lon);
-        if (!isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) return;
+        console.log('[zoomToDevice]', lat, lon, opts);   // TEMP diagnostic
+        if (!isFinite(lat) || !isFinite(lon) || (lat === 0 && lon === 0)) {
+            console.warn('[zoomToDevice] ignored — missing/zero coordinates');
+            return;
+        }
         const zoom = (opts && opts.zoom) || 16;
-        map.flyTo([lat, lon], zoom, { animate: true, duration: 0.8 });
+        map.setView([lat, lon], zoom, { animate: true });
         const key = opts && opts.popupKey;
         if (key && typeof state !== 'undefined' && state.markers) {
             const m = state.markers.get(key);
