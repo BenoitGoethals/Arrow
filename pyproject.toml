@@ -62,6 +62,7 @@ arrow-cot-sim = "tools.cot_simulator:main"
 arrow-nuts = "simulate_ranger_bastogne:main"
 arrow-zeebrugge = "simulate_zeebrugge_assault:main"
 arrow-front = "front.main:main"
+tak-bridge = "tak_bridge.run:main"
 
 [build-system]
 requires = ["hatchling"]
