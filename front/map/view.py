@@ -341,6 +341,9 @@ class MapView(QWebEngineView):
     def remove_tactical_object(self, obj_id: str):
         self._js(f"removeTacticalObject({json.dumps(obj_id)})")
 
+    def clear_all_graphics(self):
+        self._js("clearAllGraphics()")
+
     def update_vehicle(self, vehicle: dict):
         self._js(f"updateVehicle({json.dumps(vehicle)})")
 

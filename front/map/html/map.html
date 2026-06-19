@@ -919,22 +919,24 @@ function addTacticalObject(obj){
       const color = notes.color||'#ef4444';
       if(type==='FREEDRAW_LINE' && geom && geom.coords && geom.coords.length>=2){
         const lyr=L.polyline(geom.coords.map(c=>[c[0],c[1]]),{
-          color,weight:notes.thick||2,opacity:.92,lineCap:'round',lineJoin:'round',interactive:false
+          color,weight:notes.thick||2,opacity:.92,lineCap:'round',lineJoin:'round',interactive:true
         }).addTo(LAYERS.freedraw);
         if(graphics[obj.id]) LAYERS.freedraw.removeLayer(graphics[obj.id]);
         graphics[obj.id]=lyr;
       } else if(type==='FREEDRAW_TEXT' && geom && geom.coords && geom.coords[0]){
         const [lat,lon]=geom.coords[0];
         const sh='1px 1px 3px #000,-1px -1px 3px #000';
-        const lyr=L.marker([lat,lon],{interactive:false,icon:L.divIcon({
+        const lyr=L.marker([lat,lon],{interactive:true,icon:L.divIcon({
           className:'',
-          html:`<div style="color:${color};font-family:'Courier New',monospace;font-size:13px;font-weight:700;white-space:nowrap;text-shadow:${sh};pointer-events:none">${esc(notes.text||'')}</div>`,
+          html:`<div style="color:${color};font-family:'Courier New',monospace;font-size:13px;font-weight:700;white-space:nowrap;text-shadow:${sh}">${esc(notes.text||'')}</div>`,
           iconSize:[0,0],iconAnchor:[0,8]
         })}).addTo(LAYERS.freedraw);
         if(graphics[obj.id]) LAYERS.freedraw.removeLayer(graphics[obj.id]);
         graphics[obj.id]=lyr;
       }
     } catch(e){}
+    tobjData[obj.id]=obj;
+    _attachTobjMenu(graphics[obj.id], obj.id);
     return;
   }
 
@@ -946,6 +948,8 @@ function addTacticalObject(obj){
     lyr.addTo(LAYERS.graphics);
     if(graphics[obj.id]) LAYERS.graphics.removeLayer(graphics[obj.id]);
     graphics[obj.id]=lyr;
+    tobjData[obj.id]=obj;
+    _attachTobjMenu(lyr, obj.id);
     return;
   }
 
@@ -968,15 +972,21 @@ function addTacticalObject(obj){
       const sidc=UNIT_SIDC[type]||'SUGPUU----D----';
       icon=buildMilIcon(sidc,'','',obj.rotation);
     }
-    tobjData[obj.id]=obj;
     lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
-    const _capObjId=obj.id;
-    lyr.on('contextmenu',function(e){L.DomEvent.stop(e);openTobjRadial(e.containerPoint,_capObjId);});
   }
   if(graphics[obj.id]) layer.removeLayer(graphics[obj.id]);
   graphics[obj.id]=lyr;
+  // Every tactical object — point marker, plain line/polygon — is movable and
+  // deletable via the right-click radial (line/polygon graphics and free-draw
+  // are wired up in their own branches above).
+  tobjData[obj.id]=obj;
+  _attachTobjMenu(lyr, obj.id);
 }
-function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);LAYERS.graphics.removeLayer(graphics[id]);delete graphics[id];}}
+function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);LAYERS.graphics.removeLayer(graphics[id]);LAYERS.freedraw.removeLayer(graphics[id]);delete graphics[id];}delete tobjData[id];}
+// Remove every tactical object / graphic / free-draw layer from the map at once.
+function clearAllGraphics(){
+  Object.keys(graphics).forEach(id=>removeTacticalObject(id));
+}
 // Geo-pinned photos: data-URIs injected from Python (setObjPhoto) keyed by object id.
 const objPhotos={}, tobjData={};
 function buildObjPopup(obj){const c=obj.affiliation==='HOSTILE'?'#f85149':'#d29922';const photo=objPhotos[obj.id]?`<img src="${objPhotos[obj.id]}" alt="photo" style="display:block;max-width:230px;border-radius:4px;margin-top:6px"/>`:(obj.photo_id?`<div style="color:#6e7681;font-size:9px;margin-top:5px">📷 loading photo…</div>`:'');return `<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:${c};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">${esc(obj.type)} ${obj.echelon?'['+esc(obj.echelon)+']':''}</div>${obj.notes?`<div>${esc(obj.notes)}</div>`:''}${obj.latitude?`<div>MGRS ${latLonToMGRS(obj.latitude,obj.longitude)}</div>`:''}${photo}<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(obj.timestamp||'')}</div></div>`;}
@@ -1714,7 +1724,7 @@ function _navCompleteRoute() {
 // otherwise a fixed standard colour is used (FSCMs, FLOT/FLET).
 const TG = {
   // Offensive manoeuvre
-  ATK_AXIS:      {kind:'mainattack', w:4,   affByAff:true},  // line + solid filled arrowhead
+  ATK_AXIS:      {kind:'wideArrow',  w:3,   affByAff:true},  // 2525D Axis of Advance (hollow arrow)
   AXIS:          {kind:'arrow',      w:3.5, affByAff:true},  // line + open V arrowhead
   COUNTERATTACK: {kind:'arrow',      w:3,   dash:'12,5', affByAff:true}, // dashed + open V
   BYPASS:        {kind:'arrow',      w:3,                affByAff:true},
@@ -1782,6 +1792,15 @@ function _ptAtDist(pts,d){
   return {pt:pts[n], brg:_bearing(pts[Math.max(0,n-1)],pts[n])};
 }
 
+// Custom display name for a graphic: the user's notes, unless they merely repeat
+// the type (so "PHASE_LINE" notes don't render as "PL PHASE LINE" — just "PL").
+function _tgName(label,type){
+  const n=(label||'').replace(/_/g,' ').trim();
+  if(!n) return '';
+  const norm=s=>String(s).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  return norm(n)===norm(type) ? '' : n;
+}
+
 // Boxed text label as a divIcon marker
 function _tgLabel(latlng,text,color){
   return L.marker(latlng,{interactive:false,icon:L.divIcon({
@@ -1793,30 +1812,32 @@ function _tgLabel(latlng,text,color){
   })});
 }
 
-// Scalloped line — semicircle bumps toward the RIGHT of travel (toward enemy for FLOT)
+// Scalloped line (FLOT/FLET) — a chain of semicircular bumps whose diameters
+// lie ON the baseline and bulge to the RIGHT of travel (enemy side). Each bump
+// is a true half-circle: it leaves the baseline at the sub-segment start, arcs
+// out, and returns to the baseline at the sub-segment end.
 function _scallopPts(pts,radiusM){
   const out=[];
   for(let i=0;i<pts.length-1;i++){
     const a=pts[i],b=pts[i+1];
     const segLen=_distLL(a,b);
-    const n=Math.max(1,Math.round(segLen/(radiusM*2)));
     const brg=_bearing(a,b);
+    const n=Math.max(1,Math.round(segLen/(radiusM*2)));   // bumps on this segment
     for(let k=0;k<n;k++){
       const t0=k/n,t1=(k+1)/n;
-      const s=[a.lat+(b.lat-a.lat)*t0, a.lng+(b.lng-a.lng)*t0];
-      const e=[a.lat+(b.lat-a.lat)*t1, a.lng+(b.lng-a.lng)*t1];
-      out.push(s);
-      const midLat=(s[0]+e[0])/2, midLng=(s[1]+e[1])/2;
-      // bump to the right (+90° = enemy side)
-      const c=destPoint(midLat,midLng,brg+90,radiusM);
-      for(let a2=0;a2<=180;a2+=20){
-        const ang=brg+90+(180-a2);
-        const p=destPoint(c[0],c[1],ang,radiusM);
+      const s=L.latLng(a.lat+(b.lat-a.lat)*t0, a.lng+(b.lng-a.lng)*t0);
+      const e=L.latLng(a.lat+(b.lat-a.lat)*t1, a.lng+(b.lng-a.lng)*t1);
+      const r=_distLL(s,e)/2;                               // radius = half the chord
+      const midLat=(s.lat+e.lat)/2, midLng=(s.lng+e.lng)/2; // arc centre on baseline
+      // Sweep the half-circle: from s (bearing brg+180 off centre) through the
+      // right-side apex (brg+90) to e (bearing brg off centre).
+      for(let deg=0;deg<=180;deg+=15){
+        const ang=(brg+180-deg+360)%360;
+        const p=destPoint(midLat,midLng,ang,r);
         out.push([p[0],p[1]]);
       }
     }
   }
-  out.push([pts[pts.length-1].lat,pts[pts.length-1].lng]);
   return out;
 }
 
@@ -1832,9 +1853,28 @@ function buildTacticalGraphic(type,pts,label,aff){
   const head = Math.min(Math.max(len*0.15, 200), 3000);
   const isArea = ['area','areadash','hatch'].includes(spec.kind);
 
+  // ── Axis of Advance (2525D) — wide HOLLOW arrow body that follows the path
+  // and flares into a chevron head at the tip. Used for ATK_AXIS.
+  if(spec.kind==='wideArrow'){
+    if(pts.length<2){L.polyline(pts,{color:C,weight:W}).addTo(grp);return grp;}
+    const halfW  = Math.min(Math.max(len*0.06, 120), 900);
+    const headLen= halfW*3;
+    const tip=pts[pts.length-1], prev=pts[pts.length-2];
+    const brg=_bearing(prev,tip);
+    const baseArr=destPoint(tip.lat,tip.lng,(brg+180)%360,headLen);
+    const baseLL=L.latLng(baseArr[0],baseArr[1]);
+    const shaft=[...pts.slice(0,pts.length-1), baseLL];   // body stops at head base
+    const left =_offsetPath(shaft, halfW, -1);
+    const right=_offsetPath(shaft, halfW,  1);
+    const wL=destPoint(baseLL.lat,baseLL.lng,(brg-90+360)%360, halfW*2);  // head wings
+    const wR=destPoint(baseLL.lat,baseLL.lng,(brg+90)%360,     halfW*2);
+    const outline=[...left, [wL[0],wL[1]], [tip.lat,tip.lng], [wR[0],wR[1]], ...right.reverse()];
+    L.polygon(outline,{color:C,weight:W,fill:false,lineJoin:'round'}).addTo(grp);
+  }
+
   // ── ATK_AXIS: line + large solid filled arrowhead ────────────────────
   // Shaft stops at the arrowhead base so the line doesn't poke through the tip.
-  if(spec.kind==='mainattack'){
+  else if(spec.kind==='mainattack'){
     if(pts.length<2){L.polyline(pts,{color:C,weight:W}).addTo(grp);return grp;}
     const tip=pts[pts.length-1], prev=pts[pts.length-2];
     const brg=_bearing(prev,tip);
@@ -1885,8 +1925,8 @@ function buildTacticalGraphic(type,pts,label,aff){
   // ── FSCM / Phase-line type (labelled at both ends) ───────────────────
   else if(spec.kind==='linelabel'||spec.kind==='fscm'){
     L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
-    const name=(label||'').replace(/_/g,' ');
-    const txt=spec.tag+(name&&name!==type?' '+name:'');
+    const name=_tgName(label,type);
+    const txt=spec.tag+(name?' '+name:'');
     grp.addLayer(_tgLabel(pts[0],txt,C));
     grp.addLayer(_tgLabel(pts[pts.length-1],txt,C));
   }
@@ -1898,7 +1938,8 @@ function buildTacticalGraphic(type,pts,label,aff){
     [pts[0], pts[Math.floor(pts.length/2)], pts[pts.length-1]].forEach(p=>{
       grp.addLayer(_tgLabel(p,'✕',C));
     });
-    if(label) grp.addLayer(_tgLabel(pts[0],label,C));
+    const bn=_tgName(label,type);
+    if(bn) grp.addLayer(_tgLabel(pts[0],bn,C));
   }
 
   // ── Block (T-bar at end) ─────────────────────────────────────────────
@@ -1938,15 +1979,16 @@ function buildTacticalGraphic(type,pts,label,aff){
     L.polygon(pts,{color:C,weight:W,dashArray:dash,fill:true,fillColor:C,fillOpacity:fillOp}).addTo(grp);
     if(spec.kind==='hatch') _addHatch(grp,pts,C);
     const c=_centroid(pts);
-    const name=(label||'').replace(/_/g,' ');
-    const txt=(spec.tag||'')+(name&&name!==type?' '+name:'');
+    const name=_tgName(label,type);
+    const txt=(spec.tag||'')+(name?' '+name:'');
     if(txt.trim()) grp.addLayer(_tgLabel(L.latLng(c[0],c[1]),txt,C));
   }
 
   // ── Fallback: plain line ─────────────────────────────────────────────
   else {
     L.polyline(pts,{color:C,weight:W,dashArray:spec.dash}).addTo(grp);
-    if(label) grp.addLayer(_tgLabel(pts[Math.floor(pts.length/2)],label.replace(/_/g,' '),C));
+    const fn=_tgName(label,type);
+    if(fn) grp.addLayer(_tgLabel(pts[Math.floor(pts.length/2)],fn,C));
   }
   return grp;
 }
@@ -1956,17 +1998,47 @@ function _centroid(pts){
   return [lat/pts.length, lng/pts.length];
 }
 
-// diagonal hatch fill for NFA
+// Offset a centreline by distM metres to one side (+1 right, -1 left), using the
+// local bearing at each vertex so the rail stays parallel through bends.
+function _offsetPath(pts, distM, side){
+  return pts.map((p,i)=>{
+    let brg;
+    if(i===0)                 brg=_bearing(pts[0],pts[1]);
+    else if(i===pts.length-1) brg=_bearing(pts[i-1],pts[i]);
+    else                      brg=_bearing(pts[i-1],pts[i+1]);
+    const d=destPoint(p.lat,p.lng,(brg+90*side+360)%360,distM);
+    return [d[0],d[1]];
+  });
+}
+
+// Diagonal hatch fill (NFA) — 45°-ish parallel lines CLIPPED to the polygon via
+// a scanline sweep (intersect each line with the ring, pair crossings, draw the
+// inside spans). Lines no longer spill outside the area.
 function _addHatch(grp, pts, color){
   let minLat=90,maxLat=-90,minLng=180,maxLng=-180;
   pts.forEach(p=>{minLat=Math.min(minLat,p.lat);maxLat=Math.max(maxLat,p.lat);
                    minLng=Math.min(minLng,p.lng);maxLng=Math.max(maxLng,p.lng);});
-  const step=(maxLat-minLat)/8 || 0.001;
-  for(let off=-(maxLng-minLng); off<(maxLng-minLng); off+=step*1.4){
-    const l=L.polyline([[minLat,minLng+off],[maxLat,minLng+off+(maxLng-minLng)]],
-      {color:color,weight:1,opacity:.5});
-    // clip visually by bounding (simple — full diagonal lines across bbox)
-    l.addTo(grp);
+  const H=maxLat-minLat, W=(maxLng-minLng)||1e-6;
+  const slope=H/W;                       // normalise to bbox → visually diagonal
+  const dc=(H/9)||0.0005;                // intercept spacing → ~9 hatch lines
+  const cMin=minLat-slope*maxLng, cMax=maxLat-slope*minLng;
+  for(let c=cMin;c<=cMax;c+=dc){
+    const xs=[];
+    for(let i=0;i<pts.length;i++){
+      const p1=pts[i], p2=pts[(i+1)%pts.length];
+      const x1=p1.lng,y1=p1.lat,x2=p2.lng,y2=p2.lat;
+      // line lat = slope*lng + c; edge = p1 + t*(p2-p1), t∈[0,1]
+      const A=(y2-y1)-slope*(x2-x1), B=y1-slope*x1-c;
+      if(Math.abs(A)<1e-12) continue;
+      const t=-B/A;
+      if(t>=0&&t<=1) xs.push([x1+t*(x2-x1), y1+t*(y2-y1)]);
+    }
+    if(xs.length<2) continue;
+    xs.sort((u,v)=>u[0]-v[0]);
+    for(let j=0;j+1<xs.length;j+=2){
+      L.polyline([[xs[j][1],xs[j][0]],[xs[j+1][1],xs[j+1][0]]],
+        {color:color,weight:1,opacity:.55}).addTo(grp);
+    }
   }
 }
 
@@ -2605,12 +2677,60 @@ function _cancelTobjMove() {
   document.getElementById('tobj-move-banner').style.display = 'none';
 }
 
+// Attach the Delete/Move radial to any tactical-object layer (point marker,
+// polyline, polygon, free-draw, or a LayerGroup of tactical-graphic parts).
+// LayerGroups don't bubble child events, so we bind to each child too.
+function _attachTobjMenu(lyr, objId) {
+  if (!lyr) return;
+  const handler = function(e) {
+    if (e && e.originalEvent) L.DomEvent.stop(e);
+    const cp = (e && e.containerPoint)
+      ? e.containerPoint
+      : map.mouseEventToContainerPoint(e.originalEvent);
+    openTobjRadial(cp, objId);
+  };
+  if (typeof lyr.on === 'function') lyr.on('contextmenu', handler);
+  if (typeof lyr.eachLayer === 'function') {
+    lyr.eachLayer(function(child) { if (child && child.on) child.on('contextmenu', handler); });
+  }
+}
+
+// Parsed {type, coords:[[lat,lon],...]} for an object that stores geometry
+// (line, polygon, or a point with explicit coords like free-draw text), else
+// null for a plain marker that lives at obj.latitude/longitude.
+function _objGeom(obj) {
+  let g = obj && obj.geometry;
+  if (typeof g === 'string' && g) { try { g = JSON.parse(g); } catch (_) { g = null; } }
+  return (g && g.coords && g.coords.length) ? g : null;
+}
+
 function _doTobjMove(latlng) {
-  const id = _tobjMoveId;
+  const id  = _tobjMoveId;
   _cancelTobjMove();
+  const obj = tobjData[id];
+  const geom = _objGeom(obj);
+
+  // Line/polygon/free-draw graphic → translate every vertex by the same delta
+  // (anchored on the first vertex), persist the new geometry, and re-render.
+  if (geom) {
+    const a = geom.coords[0];
+    const dLat = latlng.lat - a[0], dLon = latlng.lng - a[1];
+    const newCoords = geom.coords.map(c => [c[0] + dLat, c[1] + dLon]);
+    const newGeom = JSON.stringify({ type: geom.type, coords: newCoords });
+    obj.geometry  = newGeom;
+    obj.latitude  = newCoords[0][0];
+    obj.longitude = newCoords[0][1];
+    removeTacticalObject(id);
+    addTacticalObject(obj);   // re-renders + re-attaches the radial
+    if (bridge) bridge.onTacticalObjectMove(id, obj.latitude, obj.longitude, newGeom);
+    return;
+  }
+
+  // Point object → simple marker move.
   const lyr = graphics[id];
   if (lyr && typeof lyr.setLatLng === 'function') lyr.setLatLng(latlng);
-  if (bridge) bridge.onTacticalObjectMove(id, latlng.lat, latlng.lng);
+  if (obj) { obj.latitude = latlng.lat; obj.longitude = latlng.lng; }
+  if (bridge) bridge.onTacticalObjectMove(id, latlng.lat, latlng.lng, "");
 }
 
 // Right-click opens the radial — UNLESS a measure tool is active
@@ -2646,7 +2766,16 @@ map.getContainer().addEventListener('touchmove', ()=>clearTimeout(_pressTimer), 
 map.on('mousemove',function(e){const mg=latLonToMGRS(e.latlng.lat,e.latlng.lng);if(bridge)bridge.onCoordsChanged(e.latlng.lat,e.latlng.lng,mg);});
 map.on('click',function(e){
   if(_tobjMoveId!==null){_doTobjMove(e.latlng);return;}
-  if(drawMode==='pointer'&&bridge)bridge.onMapClicked(e.latlng.lat,e.latlng.lng);
+  // Left-click on the empty map (default pointer mode) opens the radial menu.
+  // Active tools (draw / measure / range / free-draw / route) keep their own
+  // click handlers, so only pointer mode triggers the radial.
+  if(drawMode!=='pointer')        return;
+  if(_drawType)                   return;
+  if(_measActive)                 return;
+  if(_rangeMode)                  return;
+  if(_fdTool!=='none')            return;
+  if(bridge)bridge.onMapClicked(e.latlng.lat,e.latlng.lng);
+  openRadial(e.containerPoint, e.latlng);
 });
 
 // ================================================================

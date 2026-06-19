@@ -112,10 +112,14 @@ class ArrowClient:
         )
         r.raise_for_status()
 
-    def patch_tactical_object(self, obj_id: int, lat: float, lon: float) -> dict:
+    def patch_tactical_object(self, obj_id: int, lat: float, lon: float,
+                              geometry: str | None = None) -> dict:
+        body = {"latitude": lat, "longitude": lon}
+        if geometry is not None:
+            body["geometry"] = geometry
         r = httpx.patch(
             f"{self.base_url}/tactical-objects/{obj_id}",
-            json={"latitude": lat, "longitude": lon},
+            json=body,
             headers=self._headers(),
             timeout=8.0, verify=_VERIFY,
         )

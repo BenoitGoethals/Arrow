@@ -13,7 +13,7 @@ class MapBridge(QObject):
     symbol_selected       = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
     free_draw_saved       = pyqtSignal(str, str, str)   # type, geom_json, notes_json
     tactical_object_action = pyqtSignal(str, int)        # action ("delete"), obj_id
-    tactical_object_move   = pyqtSignal(int, float, float)  # obj_id, lat, lon
+    tactical_object_move   = pyqtSignal(int, float, float, str)  # obj_id, lat, lon, geometry_json
     route_drawn            = pyqtSignal(str, str)        # route_id, waypoints_json
     route_draw_cancelled   = pyqtSignal(str)             # route_id
     nav_waypoint_reached = pyqtSignal(str, int)   # route_id, wp_idx
@@ -60,9 +60,9 @@ class MapBridge(QObject):
     def onTacticalObjectAction(self, action: str, obj_id: int):
         self.tactical_object_action.emit(action, obj_id)
 
-    @pyqtSlot(int, float, float)
-    def onTacticalObjectMove(self, obj_id: int, lat: float, lon: float):
-        self.tactical_object_move.emit(obj_id, lat, lon)
+    @pyqtSlot(int, float, float, str)
+    def onTacticalObjectMove(self, obj_id: int, lat: float, lon: float, geometry_json: str = ""):
+        self.tactical_object_move.emit(obj_id, lat, lon, geometry_json)
 
     @pyqtSlot(str, str)
     def onRouteDrawn(self, route_id: str, waypoints_json: str):

@@ -83,6 +83,7 @@ class DrawPanel(QWidget):
     free_draw_changed = pyqtSignal(str, str, int)  # tool ('pen'|'text'|'none'), color, thickness
     free_draw_undo    = pyqtSignal()
     free_draw_clear   = pyqtSignal()
+    delete_all_graphics = pyqtSignal()   # wipe every tactical object/graphic
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -170,6 +171,17 @@ class DrawPanel(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
+
+        # Pinned at the bottom (always visible): wipe every graphic at once.
+        del_all_btn = QPushButton("🗑  DELETE ALL GRAPHICS")
+        del_all_btn.setFixedHeight(34)
+        del_all_btn.setStyleSheet(
+            "QPushButton{background:#3d1c1c;border:1px solid #f85149;color:#f85149;"
+            "font-size:13px;font-weight:700;letter-spacing:1px;}"
+            "QPushButton:hover{background:#f85149;color:#fff;}"
+        )
+        del_all_btn.clicked.connect(self.delete_all_graphics.emit)
+        outer.addWidget(del_all_btn)
 
     # ---- Free Draw -------------------------------------------------------
 

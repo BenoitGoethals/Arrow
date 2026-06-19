@@ -253,6 +253,7 @@ class MainWindow(QMainWindow):
         self._draw_panel.free_draw_changed.connect(self._map.set_free_draw)
         self._draw_panel.free_draw_undo.connect(self._map.free_draw_undo)
         self._draw_panel.free_draw_clear.connect(self._map.free_draw_clear)
+        self._draw_panel.delete_all_graphics.connect(self._on_delete_all_graphics)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
         self._map.bridge.free_draw_saved.connect(self._on_free_draw_saved)
         self._map.bridge.tactical_object_action.connect(self._on_tactical_object_action)
@@ -1402,10 +1403,36 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self.statusBar().showMessage(f"Delete failed: {e}", 3000)
 
-    def _on_tactical_object_move(self, obj_id: int, lat: float, lon: float):
+    def _on_delete_all_graphics(self):
+        # Clear the local map immediately for responsiveness, then delete every
+        # tactical object on the backend in a worker thread (each delete is a
+        # blocking HTTP call; the server enforces per-object permissions, so
+        # only objects the user may remove actually go — 403s are skipped).
+        self._map.clear_all_graphics()
+        self.statusBar().showMessage("Deleting all graphics…", 3000)
+
+        import threading
+
+        def _work():
+            try:
+                objs = self._client.tactical_objects()
+            except Exception:
+                return
+            for o in objs:
+                oid = o.get("id")
+                if oid is None:
+                    continue
+                try:
+                    self._client.delete_tactical_object(oid)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_work, daemon=True, name="del-all-graphics").start()
+
+    def _on_tactical_object_move(self, obj_id: int, lat: float, lon: float, geometry_json: str = ""):
         if obj_id > 0:
             try:
-                self._client.patch_tactical_object(obj_id, lat, lon)
+                self._client.patch_tactical_object(obj_id, lat, lon, geometry_json or None)
             except Exception as e:
                 self.statusBar().showMessage(f"Move failed: {e}", 3000)
 

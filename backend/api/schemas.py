@@ -127,6 +127,9 @@ class TacticalObjectPatch(BaseModel):
     longitude: float | None = None
     notes: str | None = None
     rotation: float | None = None
+    # Full {"type":"line|polygon","coords":[[lat,lon],...]} JSON — sent when a
+    # line/polygon graphic is dragged so the whole shape moves, not just the anchor.
+    geometry: str | None = None
 
 
 class TacticalObjectOut(ORMModel):
