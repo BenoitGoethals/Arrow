@@ -203,6 +203,7 @@
     .tg-section-label.friendly { color: #93c5fd; }
     .tg-section-label.enemy    { color: #fca5a5; }
     .tg-status { font-size: 0.7rem; color: #94a3b8; padding: 4px 0; min-height: 1em; }
+    .leaflet-container.tg-drawing { cursor: crosshair !important; }
     .tg-cancel { background: #2a1010; color: #f87171; border-color: #7f1d1d; margin-top: 4px;
                  width: 100%; }
     .tg-rot-popup { position: absolute; top: 12px; right: 12px; z-index: 700;
@@ -1453,21 +1454,21 @@
         // All multipoint lines/polygons → identical geometry to the front
         // client, so graphics drawn on any client sync & render everywhere.
         // Offensive manoeuvre (affiliation-coloured, arrowhead at tip)
-        ATK_AXIS:      { shape: 'line', arrow: true, weight: 3,   label: 'Attack' },
-        AXIS:          { shape: 'line', arrow: true, weight: 3,   label: 'Axis of advance' },
+        ATK_AXIS:      { shape: 'line', wideArrow: true, weight: 3,   label: 'Attack' },
+        AXIS:          { shape: 'line', arrow: true,    weight: 3,   label: 'Axis of advance' },
         COUNTERATTACK: { shape: 'line', arrow: true, dash:'10,6', weight: 2.5, label: 'Counterattack' },
         BYPASS:        { shape: 'line', arrow: true, weight: 2.5, label: 'Bypass' },
         WITHDRAW:      { shape: 'line', arrow: true, dash:'4,4',  weight: 2.5, label: 'Withdraw' },
-        DEF_AREA:      { shape: 'line', weight: 2.5, label: 'Defense' },
-        BLOCK:         { shape: 'line', weight: 2.5, label: 'Block' },
-        AMBUSH:        { shape: 'line', ambush: true, weight: 2.5, label: 'Ambush' },
+        DEF_AREA:      { shape: 'line', deftick: true,  weight: 2.5, label: 'Defense' },
+        BLOCK:         { shape: 'line', block: true,    weight: 2.5, label: 'Block' },
+        AMBUSH:        { shape: 'line', ambush: true,   weight: 2.5, label: 'Ambush' },
         BOUNDARY:      { shape: 'line', dash: '8,4', weight: 1.5, label: 'Boundary' },
         PHASE_LINE:    { shape: 'line', weight: 2.5, tag: 'PL',  label: 'Phase line' },
         ROUTE:         { shape: 'line', dash: '10,5', weight: 2, tag: 'RTE', label: 'Route' },
         OBJ_AREA:      { shape: 'polygon', tag: 'OBJ', label: 'Objective area' },
-        // Forward lines (fixed colours)
-        FLOT:          { shape: 'line', weight: 2.5, fixed:'#22c55e', label: 'FLOT' },
-        FLET:          { shape: 'line', dash: '6,4', weight: 2.5, fixed:'#ef4444', label: 'FLET' },
+        // Forward lines (fixed colours) — scallop bumps face the enemy side
+        FLOT:          { shape: 'line', scallop: 1,  weight: 2.5, fixed:'#22c55e', label: 'FLOT' },
+        FLET:          { shape: 'line', scallop: -1, weight: 2.5, fixed:'#ef4444', label: 'FLET' },
         // Fire-support coordination measures (fixed FSCM colours)
         FSCL:          { shape: 'line', weight: 2.5, fixed:'#f97316', tag:'FSCL', label: 'FSCL' },
         CFL:           { shape: 'line', weight: 2,   fixed:'#ea580c', tag:'CFL',  label: 'CFL' },
@@ -1631,6 +1632,67 @@
             L.polyline([[mnLa,mnLo+off],[mxLa,mnLo+off+span]],{color:color,weight:1,opacity:.5,interactive:false}).addTo(grp);
         }
     }
+
+    // Point + bearing at metric distance d along coords [[lat,lon],...]
+    function _tgPtAtDist(coords, d) {
+        let acc = 0;
+        for (let i = 0; i < coords.length - 1; i++) {
+            const dy = (coords[i+1][0]-coords[i][0])*111320;
+            const dx = (coords[i+1][1]-coords[i][1])*111320*Math.cos(coords[i][0]*Math.PI/180);
+            const seg = Math.hypot(dx, dy);
+            if (acc + seg >= d) {
+                const t = (d - acc) / seg;
+                return { pt: [coords[i][0]+t*(coords[i+1][0]-coords[i][0]),
+                               coords[i][1]+t*(coords[i+1][1]-coords[i][1])],
+                         brg: _tgBearing(coords[i], coords[i+1]) };
+            }
+            acc += seg;
+        }
+        const n = coords.length - 1;
+        return { pt: coords[n], brg: _tgBearing(coords[Math.max(0,n-1)], coords[n]) };
+    }
+
+    // Lateral offset of a [[lat,lon],...] path; side +1=right, -1=left
+    function _tgOffsetPath(coords, distM, side) {
+        return coords.map((p, i) => {
+            let brg;
+            if (i === 0)                    brg = _tgBearing(coords[0], coords[1]);
+            else if (i === coords.length-1) brg = _tgBearing(coords[i-1], coords[i]);
+            else                            brg = _tgBearing(coords[i-1], coords[i+1]);
+            return _tgDest(p[0], p[1], (brg + 90*side + 360) % 360, distM);
+        });
+    }
+
+    // Scallop (APP-6 FLOT/FLET) — semicircle bumps along coords
+    // side +1 = bumps to the RIGHT of direction of travel, -1 = LEFT
+    function _tgScallopPts(coords, side) {
+        const total = _tgLen(coords);
+        const r = Math.min(Math.max(total / 14, 80), 600);
+        const out = [];
+        for (let i = 0; i < coords.length - 1; i++) {
+            const a = coords[i], b = coords[i+1];
+            const dy = (b[0]-a[0])*111320;
+            const dx = (b[1]-a[1])*111320*Math.cos(a[0]*Math.PI/180);
+            const segLen = Math.hypot(dx, dy);
+            const brg = _tgBearing(a, b);
+            const n = Math.max(1, Math.round(segLen / (r * 2)));
+            for (let k = 0; k < n; k++) {
+                const t0 = k/n, t1 = (k+1)/n;
+                const sLat = a[0]+t0*(b[0]-a[0]), sLon = a[1]+t0*(b[1]-a[1]);
+                const eLat = a[0]+t1*(b[0]-a[0]), eLon = a[1]+t1*(b[1]-a[1]);
+                const chord = Math.hypot((eLon-sLon)*111320*Math.cos(sLat*Math.PI/180), (eLat-sLat)*111320);
+                const cr = chord / 2;
+                const mLat = (sLat+eLat)/2, mLon = (sLon+eLon)/2;
+                // Sweep half-circle: from backward (toward segment start) through side apex to forward
+                for (let deg = 0; deg <= 180; deg += 15) {
+                    const ang = (brg + 180 - deg*side + 360) % 360;
+                    out.push(_tgDest(mLat, mLon, ang, cr));
+                }
+            }
+        }
+        return out;
+    }
+
     function placeGraphic(obj) {
         const key  = `to-${obj.id}`;
         // Tactical graphics (lines/polygons) rarely move — skip if already placed.
@@ -1651,19 +1713,67 @@
             const tagTxt = (spec.tag||'') + (obj.notes? ' '+obj.notes : '');
             if (tagTxt.trim()) _tgLabelMarker(_tgCentroid(coords), tagTxt, c).addTo(grp);
         } else { // line
-            L.polyline(coords, { color:c, weight:spec.weight||2.5, dashArray:spec.dash }).addTo(grp);
-            const head = Math.min(Math.max(_tgLen(coords)*0.10, 120), 1500);
-            if (spec.arrow && coords.length>=2) {
-                const p1=coords[coords.length-2], tip=coords[coords.length-1];
-                const b=_tgBearing(p1,tip);
-                const l=_tgDest(tip[0],tip[1],b+148,head), r=_tgDest(tip[0],tip[1],b-148,head);
-                L.polygon([l,tip,r],{color:c,weight:spec.weight||2.5,fillColor:c,fillOpacity:.95}).addTo(grp);
-            }
-            if (spec.ambush && coords.length>=2) {
-                const p1=coords[coords.length-2], tip=coords[coords.length-1];
-                const b=_tgBearing(p1,tip);
-                const l=_tgDest(tip[0],tip[1],b+135,head), r=_tgDest(tip[0],tip[1],b-135,head);
-                L.polyline([l,tip,r],{color:c,weight:spec.weight||2.5}).addTo(grp);
+            const len  = _tgLen(coords);
+            const head = Math.min(Math.max(len*0.10, 120), 1500);
+
+            if (spec.wideArrow && coords.length >= 2) {
+                // 2525B Axis of Attack — hollow wide arrow (outline only)
+                const halfW   = Math.min(Math.max(len*0.06, 80), 700);
+                const headLen = halfW * 3;
+                const tip  = coords[coords.length-1];
+                const brg  = _tgBearing(coords[coords.length-2], tip);
+                const base = _tgDest(tip[0], tip[1], (brg+180+360)%360, headLen);
+                const shaft = [...coords.slice(0,-1), base];
+                const left  = _tgOffsetPath(shaft, halfW, -1);
+                const right = _tgOffsetPath(shaft, halfW, +1);
+                const wL = _tgDest(base[0], base[1], (brg-90+360)%360, halfW*2);
+                const wR = _tgDest(base[0], base[1], (brg+90)%360,     halfW*2);
+                const outline = [...left, wL, tip, wR, ...right.slice().reverse()];
+                L.polygon(outline, {color:c, weight:spec.weight||2.5, fill:false, lineJoin:'round'}).addTo(grp);
+            } else if (spec.scallop) {
+                // 2525B FLOT / FLET — scallop (half-circle bumps) replaces the base line
+                const pts = _tgScallopPts(coords, spec.scallop);
+                L.polyline(pts, {color:c, weight:spec.weight||2.5}).addTo(grp);
+            } else {
+                // Base polyline
+                L.polyline(coords, { color:c, weight:spec.weight||2.5, dashArray:spec.dash }).addTo(grp);
+
+                if (spec.arrow && coords.length >= 2) {
+                    // Solid filled arrowhead at the tip
+                    const p1=coords[coords.length-2], tip=coords[coords.length-1];
+                    const b=_tgBearing(p1,tip);
+                    const l=_tgDest(tip[0],tip[1],b+148,head), r=_tgDest(tip[0],tip[1],b-148,head);
+                    L.polygon([l,tip,r],{color:c,weight:spec.weight||2.5,fillColor:c,fillOpacity:.95}).addTo(grp);
+                }
+                if (spec.ambush && coords.length >= 2) {
+                    // 2525B Ambush — horseshoe arc at tip, opening perpendicular to approach
+                    const tip = coords[coords.length-1];
+                    const b   = _tgBearing(coords[coords.length-2], tip);
+                    const arcPts = [];
+                    for (let a = -90; a <= 90; a += 10) {
+                        arcPts.push(_tgDest(tip[0], tip[1], (b+a+360)%360, head*0.8));
+                    }
+                    L.polyline(arcPts, {color:c, weight:spec.weight||2.5}).addTo(grp);
+                }
+                if (spec.block && coords.length >= 2) {
+                    // 2525B Block — T-bar at the last point
+                    const tip = coords[coords.length-1];
+                    const b   = _tgBearing(coords[coords.length-2], tip);
+                    const bl  = _tgDest(tip[0], tip[1], (b-90+360)%360, head*0.8);
+                    const br  = _tgDest(tip[0], tip[1], (b+90)%360,     head*0.8);
+                    L.polyline([bl, tip, br], {color:c, weight:(spec.weight||2.5)+1}).addTo(grp);
+                }
+                if (spec.deftick && coords.length >= 2) {
+                    // 2525B Defense — perpendicular ticks toward the defended side
+                    const tickSpacing = Math.min(Math.max(len/8, 150), 1000);
+                    let d = tickSpacing / 2;
+                    while (d < len - tickSpacing/4) {
+                        const {pt, brg} = _tgPtAtDist(coords, d);
+                        const t1 = _tgDest(pt[0], pt[1], (brg+90+360)%360, tickSpacing*0.45);
+                        L.polyline([pt, t1], {color:c, weight:spec.weight||2.5}).addTo(grp);
+                        d += tickSpacing;
+                    }
+                }
             }
             if (spec.tag) { _tgLabelMarker(coords[0],spec.tag,c).addTo(grp);
                             _tgLabelMarker(coords[coords.length-1],spec.tag,c).addTo(grp); }
@@ -2404,7 +2514,7 @@
     // grows with the cursor between clicks. `echelon` is the currently-selected
     // unit size designator (TM/SEC/PL/COY/"" for none).
     const tgDraw = { type: null, affiliation: 'FRIENDLY',
-                     vertices: [], preview: null, mouseLine: null, echelon: '' };
+                     vertices: [], preview: null, mouseLine: null, echelon: '', dots: [] };
 
     function tgSetStatus(msg) {
         const el = document.getElementById('tg-status');
@@ -2438,6 +2548,7 @@
         tgDraw.vertices = [];
         if (tgDraw.preview)   { map.removeLayer(tgDraw.preview);   tgDraw.preview = null; }
         if (tgDraw.mouseLine) { map.removeLayer(tgDraw.mouseLine); tgDraw.mouseLine = null; }
+        tgDraw.dots.forEach(d => map.removeLayer(d)); tgDraw.dots = [];
         document.querySelectorAll('.tg-btn[data-tg]').forEach(b => b.classList.remove('active'));
         tgSetStatus('Pick a graphic, then click on the map.');
         L.DomUtil.removeClass(map.getContainer(), 'tg-drawing');
@@ -2456,6 +2567,7 @@
         // but keep the preview on the map until the POST round-trips. We strip
         // the rubber-band cursor line; the polyline/polygon stays visible.
         if (tgDraw.mouseLine) { map.removeLayer(tgDraw.mouseLine); tgDraw.mouseLine = null; }
+        tgDraw.dots.forEach(d => map.removeLayer(d)); tgDraw.dots = [];
         const previewLayer = tgDraw.preview;
         tgDraw.preview = null;          // detach: cancel/save can't kill it
         tgDraw.type = null;
@@ -2518,6 +2630,8 @@
         }
         // Line / polygon: accumulate vertex
         tgDraw.vertices.push(ll);
+        const dot = L.circleMarker(e.latlng, {radius:4, color:c, fillColor:c, fillOpacity:1, weight:1, interactive:false}).addTo(map);
+        tgDraw.dots.push(dot);
         if (tgDraw.preview) map.removeLayer(tgDraw.preview);
         const opts = { color: c, weight: spec.weight || 3,
                        dashArray: spec.dash, fillColor: tgFill(tgDraw.affiliation),
