@@ -77,7 +77,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if body:
-            self.wfile.write(body)
+            # A client (QtWebEngine/Chromium) may close a speculative or
+            # superseded connection mid-write; that surfaces as a benign
+            # ConnectionAbortedError/BrokenPipe — swallow it instead of letting
+            # the threading server dump a traceback.
+            try:
+                self.wfile.write(body)
+            except (ConnectionError, OSError):
+                pass
 
     def log_message(self, *args):
         pass

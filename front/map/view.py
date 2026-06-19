@@ -110,11 +110,32 @@ class MapView(QWebEngineView):
         self._img_threads: list = []
 
     def set_map_server_port(self, port: int):
-        """Call once the MBTilesServer is running before showing the window."""
+        """Call once the MBTilesServer is running before showing the window.
+
+        Loading strategy is platform-specific:
+
+        * macOS: load via the local HTTP server (http://127.0.0.1:PORT/map).
+          The file:// compositor code-path triggers the Qt6/macOS Metal
+          black-screen bug, so http:// is required there.
+
+        * Windows/Linux: load map.html directly via file://. On Windows the
+          http:// navigation gets killed by the system's WPAD/proxy auto-config
+          (QtWebEngine routes through Qt's system proxy; a failing PAC lookup —
+          ERR_PAC_NOT_IN_DHCP / WPAD "No such host" — aborts the in-flight
+          127.0.0.1 navigation, so the /map HTML never arrives, no JS runs, and
+          the view stays on its blank #0d1117 background: the "black map").
+          file:// bypasses the network stack entirely and is how the map
+          originally worked. MBTiles/online tiles still load over the network
+          (LocalContentCanAccessRemoteUrls is enabled).
+        """
         self._map_server_port = port
-        url = f"http://127.0.0.1:{port}/map"
-        print(f"[MapView] Loading: {url}", file=sys.stderr)
-        self.load(QUrl(url))
+        if sys.platform == "darwin":
+            url = QUrl(f"http://127.0.0.1:{port}/map")
+        else:
+            map_html = Path(__file__).parent / "html" / "map.html"
+            url = QUrl.fromLocalFile(str(map_html.resolve()))
+        print(f"[MapView] Loading: {url.toString()}", file=sys.stderr)
+        self.load(url)
 
     def _force_repaint(self):
         """Nudge the Qt widget to repaint the WebEngine surface.
