@@ -3107,6 +3107,12 @@ function _renderOwnPos(lat, lon, accRaw, heading, source) {
     '<div style="color:#6e7681;font-size:9px">' + lat.toFixed(5) + ', ' + lon.toFixed(5) + '</div>' +
     '<div style="color:' + color + ';margin-top:3px">ACC ±' + acc + ' m</div></div>'
   );
+
+  // Report our own fix to the backend so the web COP / other clients can see
+  // and zoom to us. Python throttles the actual POST. Covers both the in-page
+  // geolocation watcher and the native (Core Location) bridge, since both funnel
+  // through _renderOwnPos.
+  if (bridge) bridge.onOwnPosition(lat, lon, accRaw);
 }
 
 // Primary (GPS) error → start WiFi fallback, keep GPS watcher alive for recovery

@@ -5,6 +5,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 class MapBridge(QObject):
     map_ready        = pyqtSignal()
     coords_changed   = pyqtSignal(float, float, str)
+    own_position     = pyqtSignal(float, float, float)  # lat, lon, accuracy (m)
     track_clicked    = pyqtSignal(str)
     map_clicked      = pyqtSignal(float, float)
     graphic_drawn    = pyqtSignal(str, str, str)   # type, geojson, affiliation
@@ -27,6 +28,10 @@ class MapBridge(QObject):
     @pyqtSlot(float, float, str)
     def onCoordsChanged(self, lat, lon, mgrs):
         self.coords_changed.emit(lat, lon, mgrs)
+
+    @pyqtSlot(float, float, float)
+    def onOwnPosition(self, lat, lon, accuracy):
+        self.own_position.emit(lat, lon, accuracy)
 
     @pyqtSlot(str)
     def onTrackClicked(self, track_id):

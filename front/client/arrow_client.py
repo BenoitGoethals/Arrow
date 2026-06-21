@@ -72,6 +72,18 @@ class ArrowClient:
         return self._get("/vehicles")
 
     # ---- Tracking ---------------------------------------------------
+    def push_position(self, lat: float, lon: float,
+                      altitude: Optional[float] = None) -> dict:
+        """Report this operator's own GPS fix to the backend.
+
+        Persists lat/lon on the Operator row (marking it ONLINE) and broadcasts
+        on the `tracking` channel so the web COP can render and zoom to us.
+        """
+        body: dict = {"latitude": float(lat), "longitude": float(lon)}
+        if altitude is not None:
+            body["altitude"] = float(altitude)
+        return self._post("/tracking/position", body)
+
     def live_operators(self) -> list:
         return self._get("/tracking/live")
 

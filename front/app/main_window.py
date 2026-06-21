@@ -232,6 +232,7 @@ class MainWindow(QMainWindow):
         tb.config_requested.connect(self._open_settings)
 
         self._map.bridge.coords_changed.connect(self._statusbar.update_coords)
+        self._map.bridge.own_position.connect(self._on_own_position)
         self._map.bridge.map_ready.connect(self._load_all)
         self._map.bridge.radial_action.connect(self._on_radial_action)
         self._map.bridge.graphic_drawn.connect(self._on_graphic_drawn)
@@ -1292,6 +1293,32 @@ class MainWindow(QMainWindow):
     # ================================================================
     # TOOLBAR HANDLERS
     # ================================================================
+    _last_pos_push = 0.0
+
+    def _on_own_position(self, lat: float, lon: float, accuracy: float):
+        """Push our own GPS fix to the backend so the web COP can see/zoom to us.
+
+        navigator.geolocation.watchPosition can fire several times a second, so
+        throttle to at most one POST per 5 s (the first fix always goes through,
+        since _last_pos_push starts at 0). The HTTP call runs on a daemon thread
+        to keep the UI responsive. No-op in read-only mode (no token)."""
+        if not self._token:
+            return
+        import time, threading
+        now = time.monotonic()
+        if now - self._last_pos_push < 5.0:
+            return
+        self._last_pos_push = now
+
+        def _work():
+            try:
+                self._client.push_position(lat, lon)
+            except Exception as e:
+                import sys
+                print(f"[tracking] position push failed: {e}", file=sys.stderr)
+
+        threading.Thread(target=_work, daemon=True, name="push-position").start()
+
     def _send_alert(self, alert_type: str,
                     lat: Optional[float] = None, lon: Optional[float] = None):
         try:
