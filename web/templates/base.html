@@ -462,9 +462,14 @@
             if (!sel) return;
             const cur = arrowGetMissionId();
             const activeMissions = missions.filter(m => m.status !== 'ENDED');
-            // If the currently selected mission ended, deselect it
-            if (cur && missions.find(m => m.id === cur)?.status === 'ENDED') {
-                arrowSetMissionId(null);
+            // Deselect if the saved mission has ended OR has been deleted
+            // outright (otherwise its id lingers in localStorage and every
+            // mission-scoped API call is sent with a dangling X-Mission-ID).
+            if (cur) {
+                const stored = missions.find(m => m.id === cur);
+                if (!stored || stored.status === 'ENDED') {
+                    arrowSetMissionId(null);
+                }
             }
             sel.innerHTML = '<option value="">— none —</option>' +
                 activeMissions.map(m =>

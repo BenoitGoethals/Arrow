@@ -5,14 +5,15 @@ Every mission-scoped endpoint depends on ``get_active_mission``.  The client
 
     X-Mission-ID: 3
 
-A missing header returns None — endpoints treat that as "no filter"
-(useful for ADMIN/BC who manage the full system).
-An invalid id returns 404 immediately.
+A missing header — or one referencing a mission that no longer exists —
+returns ``None``; endpoints treat that as "no filter" (useful for ADMIN/BC
+who manage the full system, and resilient to a client holding a deleted
+mission id in localStorage).
 """
 
 from __future__ import annotations
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header
 from sqlalchemy.orm import Session
 
 from backend.storage.database import get_db
@@ -25,8 +26,4 @@ def get_active_mission(
 ) -> Mission | None:
     if x_mission_id is None:
         return None
-    mission = db.get(Mission, x_mission_id)
-    if not mission:
-        raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            f"Mission {x_mission_id} not found")
-    return mission
+    return db.get(Mission, x_mission_id)
