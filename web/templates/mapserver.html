@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}MapServer — Arrow{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+#ms-wrap {
+    display: flex;
+    height: calc(100vh - 48px);
+    background: #0d1117;
+}
+
+/* ── Side panel ─────────────────────────────────────────────────────────── */
+#ms-panel {
+    width: 260px;
+    flex-shrink: 0;
+    background: #0f172a;
+    border-right: 1px solid #1e293b;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+#ms-panel h2 {
+    margin: 0;
+    padding: 14px 16px 10px;
+    font-size: .85rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #7dd3fc;
+    border-bottom: 1px solid #1e293b;
+}
+.ms-section {
+    padding: 10px 16px 4px;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: #475569;
+}
+.ms-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px;
+    cursor: pointer;
+    transition: background .15s;
+}
+.ms-layer-row:hover { background: #1e293b; }
+.ms-layer-row input[type=checkbox] { accent-color: #38bdf8; cursor: pointer; }
+.ms-layer-label {
+    font-size: .82rem;
+    color: #cbd5e1;
+    user-select: none;
+    flex: 1;
+}
+.ms-layer-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.ms-opacity-row {
+    padding: 2px 16px 8px 38px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.ms-opacity-row input[type=range] {
+    flex: 1;
+    accent-color: #38bdf8;
+}
+.ms-opacity-val {
+    font-size: .7rem;
+    font-family: monospace;
+    color: #64748b;
+    width: 28px;
+    text-align: right;
+}
+.ms-divider { border: none; border-top: 1px solid #1e293b; margin: 4px 0; }
+
+#ms-refresh-btn {
+    margin: 12px 16px;
+    padding: 7px 0;
+    background: #1e3a5f;
+    color: #7dd3fc;
+    border: 1px solid #2563eb;
+    border-radius: 6px;
+    font-size: .8rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background .15s;
+}
+#ms-refresh-btn:hover { background: #1d4ed8; color: #fff; }
+
+#ms-status {
+    margin: 0 16px 12px;
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-size: .75rem;
+    color: #94a3b8;
+    background: #0d1117;
+    border: 1px solid #1e293b;
+    min-height: 32px;
+    word-break: break-word;
+}
+
+/* ── Map ────────────────────────────────────────────────────────────────── */
+#ms-map { flex: 1; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="ms-wrap">
+    <!-- Side panel -->
+    <div id="ms-panel">
+        <h2>🗺 MapServer WMS</h2>
+
+        <div class="ms-section">Base Map</div>
+        <div class="ms-layer-row">
+            <input type="radio" name="basemap" id="bm-osm" checked onchange="switchBase('osm')">
+            <label class="ms-layer-label" for="bm-osm">OpenStreetMap</label>
+        </div>
+        <div class="ms-layer-row">
+            <input type="radio" name="basemap" id="bm-dark" onchange="switchBase('dark')">
+            <label class="ms-layer-label" for="bm-dark">Dark (CartoDB)</label>
+        </div>
+        <div class="ms-layer-row">
+            <input type="radio" name="basemap" id="bm-sat" onchange="switchBase('sat')">
+            <label class="ms-layer-label" for="bm-sat">Satellite (Esri)</label>
+        </div>
+        <div class="ms-layer-row">
+            <input type="radio" name="basemap" id="bm-none" onchange="switchBase('none')">
+            <label class="ms-layer-label" for="bm-none">None</label>
+        </div>
+
+        <hr class="ms-divider">
+        <div class="ms-section">WMS Overlays</div>
+
+        <!-- Each overlay: checkbox + colour dot + label + opacity slider -->
+        <div class="ms-layer-row" onclick="toggleLayer('operators')">
+            <input type="checkbox" id="chk-operators" checked onclick="event.stopPropagation();toggleLayer('operators')">
+            <span class="ms-layer-dot" style="background:#00c800;border:1px solid #006400"></span>
+            <span class="ms-layer-label">Operators</span>
+        </div>
+        <div class="ms-opacity-row">
+            <input type="range" min="0" max="1" step="0.05" value="0.9"
+                   oninput="setOpacity('operators',+this.value);document.getElementById('op-operators').textContent=Math.round(+this.value*100)+'%'">
+            <span class="ms-opacity-val" id="op-operators">90%</span>
+        </div>
+
+        <div class="ms-layer-row" onclick="toggleLayer('tactical_objects')">
+            <input type="checkbox" id="chk-tactical_objects" checked onclick="event.stopPropagation();toggleLayer('tactical_objects')">
+            <span class="ms-layer-dot" style="background:#3b82f6;border:1px solid #1d4ed8"></span>
+            <span class="ms-layer-label">Tactical Objects</span>
+        </div>
+        <div class="ms-opacity-row">
+            <input type="range" min="0" max="1" step="0.05" value="0.85"
+                   oninput="setOpacity('tactical_objects',+this.value);document.getElementById('op-tactical_objects').textContent=Math.round(+this.value*100)+'%'">
+            <span class="ms-opacity-val" id="op-tactical_objects">85%</span>
+        </div>
+
+        <div class="ms-layer-row" onclick="toggleLayer('cot_tracks')">
+            <input type="checkbox" id="chk-cot_tracks" checked onclick="event.stopPropagation();toggleLayer('cot_tracks')">
+            <span class="ms-layer-dot" style="background:#f97316;border:1px solid #c2410c"></span>
+            <span class="ms-layer-label">CoT Tracks</span>
+        </div>
+        <div class="ms-opacity-row">
+            <input type="range" min="0" max="1" step="0.05" value="0.8"
+                   oninput="setOpacity('cot_tracks',+this.value);document.getElementById('op-cot_tracks').textContent=Math.round(+this.value*100)+'%'">
+            <span class="ms-opacity-val" id="op-cot_tracks">80%</span>
+        </div>
+
+        <div class="ms-layer-row" onclick="toggleLayer('alerts')">
+            <input type="checkbox" id="chk-alerts" checked onclick="event.stopPropagation();toggleLayer('alerts')">
+            <span class="ms-layer-dot" style="background:#ef4444;border:1px solid #991b1b"></span>
+            <span class="ms-layer-label">Alerts</span>
+        </div>
+        <div class="ms-opacity-row">
+            <input type="range" min="0" max="1" step="0.05" value="0.9"
+                   oninput="setOpacity('alerts',+this.value);document.getElementById('op-alerts').textContent=Math.round(+this.value*100)+'%'">
+            <span class="ms-opacity-val" id="op-alerts">90%</span>
+        </div>
+
+        <div class="ms-layer-row" onclick="toggleLayer('fire_missions')">
+            <input type="checkbox" id="chk-fire_missions" onclick="event.stopPropagation();toggleLayer('fire_missions')">
+            <span class="ms-layer-dot" style="background:#ff6400;border:1px solid #7c2d12"></span>
+            <span class="ms-layer-label">Fire Missions</span>
+        </div>
+        <div class="ms-opacity-row">
+            <input type="range" min="0" max="1" step="0.05" value="0.85"
+                   oninput="setOpacity('fire_missions',+this.value);document.getElementById('op-fire_missions').textContent=Math.round(+this.value*100)+'%'">
+            <span class="ms-opacity-val" id="op-fire_missions">85%</span>
+        </div>
+
+        <div class="ms-layer-row" onclick="toggleLayer('supply_points')">
+            <input type="checkbox" id="chk-supply_points" onclick="event.stopPropagation();toggleLayer('supply_points')">
+            <span class="ms-layer-dot" style="background:#10b981;border:1px solid #065f46"></span>
+            <span class="ms-layer-label">Supply Points</span>
+        </div>
+        <div class="ms-opacity-row">
+            <input type="range" min="0" max="1" step="0.05" value="0.85"
+                   oninput="setOpacity('supply_points',+this.value);document.getElementById('op-supply_points').textContent=Math.round(+this.value*100)+'%'">
+            <span class="ms-opacity-val" id="op-supply_points">85%</span>
+        </div>
+
+        <hr class="ms-divider">
+        <button id="ms-refresh-btn" onclick="refreshAll()">↺ Refresh all layers</button>
+        <div id="ms-status">Ready.</div>
+    </div>
+
+    <!-- Leaflet map -->
+    <div id="ms-map"></div>
+</div>
+
+<script>
+const WMS_URL = '/mapserver/';
+
+// ── Base tile layers ────────────────────────────────────────────────────────
+const BASES = {
+    osm:  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              maxZoom: 19, attribution: '© OpenStreetMap contributors'
+          }),
+    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+              maxZoom: 19, attribution: '© OpenStreetMap, © CartoDB'
+          }),
+    sat:  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+              maxZoom: 19, attribution: '© Esri'
+          }),
+    none: L.tileLayer('', { maxZoom: 19 }),
+};
+
+const map = L.map('ms-map', {
+    center: [50.85, 4.35],
+    zoom: 10,
+    layers: [BASES.osm],
+});
+let currentBase = BASES.osm;
+
+function switchBase(name) {
+    map.removeLayer(currentBase);
+    currentBase = BASES[name] || BASES.osm;
+    currentBase.addTo(map);
+}
+
+// ── WMS layers ─────────────────────────────────────────────────────────────
+const LAYER_DEFS = [
+    { id: 'operators',       opacity: 0.9,  active: true },
+    { id: 'tactical_objects',opacity: 0.85, active: true },
+    { id: 'cot_tracks',      opacity: 0.8,  active: true },
+    { id: 'alerts',          opacity: 0.9,  active: true },
+    { id: 'fire_missions',   opacity: 0.85, active: false },
+    { id: 'supply_points',   opacity: 0.85, active: false },
+];
+
+const wmsLayers = {};
+const wmsActive = {};
+
+function makeWMS(layerId, opacity) {
+    return L.tileLayer.wms(WMS_URL, {
+        layers: layerId,
+        format: 'image/png',
+        transparent: true,
+        version: '1.1.1',
+        opacity: opacity,
+        maxZoom: 19,
+    });
+}
+
+LAYER_DEFS.forEach(def => {
+    const lyr = makeWMS(def.id, def.opacity);
+    wmsLayers[def.id] = lyr;
+    wmsActive[def.id] = def.active;
+    if (def.active) lyr.addTo(map);
+});
+
+function toggleLayer(id) {
+    const chk = document.getElementById('chk-' + id);
+    const on = chk ? chk.checked : !wmsActive[id];
+    wmsActive[id] = on;
+    if (chk) chk.checked = on;
+    if (on) {
+        wmsLayers[id].addTo(map);
+    } else {
+        map.removeLayer(wmsLayers[id]);
+    }
+    setStatus(id + (on ? ' on' : ' off'));
+}
+
+function setOpacity(id, val) {
+    wmsLayers[id].setOpacity(val);
+}
+
+function refreshAll() {
+    setStatus('Refreshing…');
+    Object.keys(wmsLayers).forEach(id => {
+        if (wmsActive[id]) {
+            map.removeLayer(wmsLayers[id]);
+            wmsLayers[id] = makeWMS(id, wmsLayers[id].options.opacity);
+            wmsLayers[id].addTo(map);
+        }
+    });
+    setStatus('Refreshed at ' + new Date().toLocaleTimeString());
+}
+
+// Auto-refresh every 30 s
+setInterval(refreshAll, 30000);
+
+function setStatus(msg) {
+    document.getElementById('ms-status').textContent = msg;
+}
+
+// WMS GetCapabilities probe on load
+fetch(WMS_URL + '?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities')
+    .then(r => r.ok ? setStatus('WMS OK — layers loaded') : setStatus('WMS ' + r.status))
+    .catch(() => setStatus('MapServer unreachable — check container'));
+</script>
+{% endblock %}

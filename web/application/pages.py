@@ -117,3 +117,6 @@ class PageService:
 
     def cop_docs(self) -> PageView:
         return PageView("cop.html")
+
+    def mapserver(self) -> PageView:
+        return PageView("mapserver.html")

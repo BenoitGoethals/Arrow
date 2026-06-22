@@ -29,6 +29,7 @@ from web.presentation.blueprints import (
     intcop,
     logcop,
     logrep,
+    mapserver,
     medcop,
     messaging,
     missions,
@@ -122,6 +123,7 @@ def create_app(
         firescop,
         cop,
         weather,
+        mapserver,
     ):
         app.register_blueprint(module.build_blueprint(service, renderer))
     shell_routes.register(app, service, renderer)
