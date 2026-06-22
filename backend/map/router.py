@@ -168,6 +168,40 @@ def map_config(_: Operator = Depends(get_current_operator)) -> dict:
     }
 
 
+_WMS_LAYERS = (
+    ("operators",        "Operators"),
+    ("tactical_objects", "Tactical Objects"),
+    ("cot_tracks",       "CoT Tracks"),
+    ("alerts",           "Alerts"),
+    ("fire_missions",    "Fire Missions"),
+    ("supply_points",    "Supply Points"),
+)
+
+
+def _wms_sources() -> list[MapSource]:
+    """Return MapServer WMS sources when running on PostgreSQL."""
+    cfg = load_config()
+    if not cfg.database.url.startswith("postgresql"):
+        return []
+    wms_base = os.environ.get("ARROW_MAPSERVER_URL", "/mapserver")
+    sources: list[MapSource] = []
+    for layer_id, layer_title in _WMS_LAYERS:
+        sources.append(MapSource(
+            name=f"wms_{layer_id}",
+            title=f"WMS: {layer_title}",
+            type="wms",
+            format="png",
+            min_zoom=0,
+            max_zoom=19,
+            url_template=(
+                f"{wms_base}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap"
+                f"&LAYERS={layer_id}&SRS=EPSG:{{srs}}&FORMAT=image/png"
+                "&TRANSPARENT=true&WIDTH={width}&HEIGHT={height}&BBOX={bbox}"
+            ),
+        ))
+    return sources
+
+
 @router.get("/sources", response_model=list[MapSource])
 def list_sources(_: Operator = Depends(get_current_operator)) -> list[MapSource]:
     """All selectable base map sources: built-in OSM plus every MBTiles in maps/."""
@@ -182,7 +216,7 @@ def list_sources(_: Operator = Depends(get_current_operator)) -> list[MapSource]
         url_template="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         is_default=True,
     )
-    return [osm, *_scan_sources()]
+    return [osm, *_scan_sources(), *_wms_sources()]
 
 
 @router.get("/tiles/{name}/{z}/{x}/{y}.{ext}")

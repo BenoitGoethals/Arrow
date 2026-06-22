@@ -110,7 +110,7 @@ def _seed_admin(engine) -> None:
                 "INSERT INTO operators "
                 "(callsign,rank,status,ops_status,role,password_hash,last_seen,"
                 " failed_login_count,mfa_enabled) "
-                "VALUES ('benoit','OF-3','OFFLINE','OPS','ADMIN',:pw,datetime('now'),0,0)"
+                "VALUES ('benoit','OF-3','OFFLINE','OPS','ADMIN',:pw,CURRENT_TIMESTAMP,0,0)"
             ), {"pw": pw})
 
 

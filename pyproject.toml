@@ -23,6 +23,7 @@ dependencies = [
     "python-json-logger>=3.2",
     "cryptography>=43",
     "reportlab>=4.2",
+    "psycopg[binary]>=3.2",
     "smbprotocol>=1.16.1",
     "pyqt6-sip>=13.11.1",
     "pyqt6>=6.11.0",

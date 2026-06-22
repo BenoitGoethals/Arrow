@@ -1,5 +1,49 @@
 services:
 
+  # ── PostgreSQL + PostGIS ─────────────────────────────────────────────────────
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: arrow-postgres
+    environment:
+      POSTGRES_DB: arrow
+      POSTGRES_USER: arrow
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-arrow_dev}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arrow -d arrow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── MapServer (OGC WMS/WFS from PostGIS) ─────────────────────────────────────
+  mapserver:
+    image: camptocamp/mapserver:8.0
+    container_name: arrow-mapserver
+    entrypoint: ["/mapserver/docker-entrypoint.sh"]
+    command: ["/usr/sbin/apache2ctl", "-D", "FOREGROUND"]
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-arrow_dev}"
+    volumes:
+      - ./infra/mapserver:/mapserver:ro
+    expose:
+      - "80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
+
   # ── Backend (FastAPI) ────────────────────────────────────────────────────────
   backend:
     build:
@@ -24,11 +68,7 @@ services:
       #                         # if unset, a random secret is auto-generated on first boot
       #                         # and saved to data/jwt_secret.key (persisted in arrow-data volume)
       ARROW_REDIS_URL: redis://redis:6379/0
-      # Persist the SQLite DB inside the named volume (same path the backup
-      # service reads from at /data/arrow.db) so it survives container recreation
-      # and the default seed (benoit/capt/ops1/ops2/ops3 — all password "ranger14")
-      # only runs on first boot.
-      ARROW_DATABASE_URL: sqlite:////app/data/arrow.db
+      ARROW_DATABASE_URL: "postgresql+psycopg://arrow:${POSTGRES_PASSWORD:-arrow_dev}@postgres:5432/arrow"
       ARROW_JSON_LOGS: "1"
       # ARROW_PHOTO_KEY: <64-char hex>      # enable photo encryption at rest
     volumes:
@@ -37,6 +77,8 @@ services:
       - ./maps:/app/maps
       - apk-nfs:/mnt/apks:ro
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -115,22 +157,22 @@ services:
 
   # ── Automated backup ─────────────────────────────────────────────────────────
   backup:
-    image: alpine:3.20
+    image: postgres:16-alpine
     container_name: arrow-backup
     entrypoint: /bin/sh
     command:
       - -c
       - |
-        apk add --no-cache sqlite
         echo "Backup service started (interval: $${BACKUP_INTERVAL_HOURS:-24}h)"
         while true; do
           DATE=$$(date -u +%Y-%m-%dT%H%M%SZ)
-          sqlite3 /data/arrow.db ".dump" | gzip > /backups/arrow-db-$${DATE}.sql.gz \
+          PGPASSWORD=$${POSTGRES_PASSWORD} \
+            pg_dump -h postgres -U arrow arrow \
+            | gzip > /backups/arrow-db-$${DATE}.sql.gz \
             && echo "DB backup ok: $${DATE}" \
             || echo "DB backup FAILED"
           tar czf /backups/arrow-photos-$${DATE}.tar.gz -C /data photos 2>/dev/null \
             && echo "Photo backup ok: $${DATE}"
-          # Prune old backups
           find /backups -name "*.gz" -mtime +$${BACKUP_KEEP_DAYS:-7} -delete
           echo "Next backup in $${BACKUP_INTERVAL_HOURS:-24}h"
           sleep $$(( $${BACKUP_INTERVAL_HOURS:-24} * 3600 ))
@@ -139,10 +181,11 @@ services:
       - arrow-data:/data:ro
       - arrow-backups:/backups
     environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-arrow_dev}"
       BACKUP_KEEP_DAYS: "${BACKUP_KEEP_DAYS:-7}"
       BACKUP_INTERVAL_HOURS: "${BACKUP_INTERVAL_HOURS:-24}"
     depends_on:
-      backend:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
@@ -204,6 +247,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres-data:
   arrow-data:
   arrow-backups:
   redis-data:
