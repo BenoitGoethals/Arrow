@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 from tests.conftest import admin_token, auth, register
 
-
 _SAMPLE_KML = b"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
@@ -32,7 +31,9 @@ _SAMPLE_KML = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def _upload(client: TestClient, token: str, data: bytes = _SAMPLE_KML, name: str = "ao.kml"):
+def _upload(
+    client: TestClient, token: str, data: bytes = _SAMPLE_KML, name: str = "ao.kml"
+):
     return client.post(
         "/kml-layers",
         headers=auth(token),
@@ -59,7 +60,9 @@ def test_upload_and_list(client: TestClient) -> None:
     assert layers[0]["bbox"] is not None and len(layers[0]["bbox"]) == 4
 
 
-def test_get_detail_includes_features_and_coords_are_lat_lon(client: TestClient) -> None:
+def test_get_detail_includes_features_and_coords_are_lat_lon(
+    client: TestClient,
+) -> None:
     tok = admin_token(client)
     layer_id = _upload(client, tok).json()["id"]
 
@@ -76,8 +79,9 @@ def test_patch_visibility_round_trip(client: TestClient) -> None:
     tok = admin_token(client)
     layer_id = _upload(client, tok).json()["id"]
 
-    r = client.patch(f"/kml-layers/{layer_id}", headers=auth(tok),
-                     json={"visible": False})
+    r = client.patch(
+        f"/kml-layers/{layer_id}", headers=auth(tok), json={"visible": False}
+    )
     assert r.status_code == 200, r.text
     assert r.json()["visible"] is False
 
@@ -98,7 +102,10 @@ def test_operator_cannot_upload_or_delete(client: TestClient) -> None:
 
     # … or delete.
     layer_id = _upload(client, admin_tok).json()["id"]
-    assert client.delete(f"/kml-layers/{layer_id}", headers=auth(op_token)).status_code == 403
+    assert (
+        client.delete(f"/kml-layers/{layer_id}", headers=auth(op_token)).status_code
+        == 403
+    )
 
 
 def test_upload_rejects_bad_extension(client: TestClient) -> None:
@@ -117,7 +124,9 @@ def test_upload_rejects_empty_kml(client: TestClient) -> None:
 def test_delete_layer(client: TestClient) -> None:
     tok = admin_token(client)
     layer_id = _upload(client, tok).json()["id"]
-    assert client.delete(f"/kml-layers/{layer_id}", headers=auth(tok)).status_code == 204
+    assert (
+        client.delete(f"/kml-layers/{layer_id}", headers=auth(tok)).status_code == 204
+    )
     assert client.get(f"/kml-layers/{layer_id}", headers=auth(tok)).status_code == 404
 
 

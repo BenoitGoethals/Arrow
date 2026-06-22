@@ -74,7 +74,7 @@ from typing import Optional
 import httpx
 
 import sim_utils
-from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, dist_m, step_towards
+from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, step_towards
 
 # ── CLI / persistent config ─────────────────────────────────────────────────
 DEFAULT_BACKEND = (
@@ -83,50 +83,97 @@ DEFAULT_BACKEND = (
     or "https://78.21.255.210:6200/api"
 )
 
-parser = argparse.ArgumentParser(description="Arrow — OPERATION HAMMERHEAD (Koksijde air-assault)")
-parser.add_argument("--backend",  default=DEFAULT_BACKEND,
-                    help=f"Backend base URL (default: {DEFAULT_BACKEND})")
-parser.add_argument("--admin",    default="benoit",   help="Seed ADMIN callsign")
+parser = argparse.ArgumentParser(
+    description="Arrow — OPERATION HAMMERHEAD (Koksijde air-assault)"
+)
+parser.add_argument(
+    "--backend",
+    default=DEFAULT_BACKEND,
+    help=f"Backend base URL (default: {DEFAULT_BACKEND})",
+)
+parser.add_argument("--admin", default="benoit", help="Seed ADMIN callsign")
 parser.add_argument("--password", default="ranger14", help="Seed ADMIN password")
-parser.add_argument("--reset",    action="store_true",
-                    help="Wipe TGs/enemies/POIs, prior HAMMERHEAD OPORD, overlays, sim operators first")
-parser.add_argument("--no-live",  action="store_true",
-                    help="Plant static OPORD + tactical objects then exit")
-parser.add_argument("--no-move",  action="store_true", dest="no_live",
-                    help="Alias for --no-live: plant plan only, skip movement simulation")
-parser.add_argument("--skip-snapshots", action="store_true",
-                    help="Don't request server-side OSM-tile snapshots")
-parser.add_argument("--speed",    type=float, default=None,
-                    help="Time multiplier (default 2× → full op ≈ 4 min)")
-parser.add_argument("--steps",    type=int, default=None,
-                    help="Movement steps. If given with --dt, derives speed (speed = TICK_SECONDS / dt) "
-                         "and limits run to steps × dt real seconds.")
-parser.add_argument("--dt",       type=float, default=None,
-                    help="Seconds between steps. If given with --steps, derives speed and total duration.")
-parser.add_argument("--loop",     action="store_true", default=True,
-                    help="After Φ9 loop back to Φ1 so the demo keeps running (default on)")
-parser.add_argument("--once",     dest="loop", action="store_false",
-                    help="Stop after Φ9 instead of looping")
-parser.add_argument("--mission-name", default="Operation Hammerhead",
-                    help="Mission name to create or adopt (default: Operation Hammerhead)")
+parser.add_argument(
+    "--reset",
+    action="store_true",
+    help="Wipe TGs/enemies/POIs, prior HAMMERHEAD OPORD, overlays, sim operators first",
+)
+parser.add_argument(
+    "--no-live",
+    action="store_true",
+    help="Plant static OPORD + tactical objects then exit",
+)
+parser.add_argument(
+    "--no-move",
+    action="store_true",
+    dest="no_live",
+    help="Alias for --no-live: plant plan only, skip movement simulation",
+)
+parser.add_argument(
+    "--skip-snapshots",
+    action="store_true",
+    help="Don't request server-side OSM-tile snapshots",
+)
+parser.add_argument(
+    "--speed",
+    type=float,
+    default=None,
+    help="Time multiplier (default 2× → full op ≈ 4 min)",
+)
+parser.add_argument(
+    "--steps",
+    type=int,
+    default=None,
+    help="Movement steps. If given with --dt, derives speed (speed = TICK_SECONDS / dt) "
+    "and limits run to steps × dt real seconds.",
+)
+parser.add_argument(
+    "--dt",
+    type=float,
+    default=None,
+    help="Seconds between steps. If given with --steps, derives speed and total duration.",
+)
+parser.add_argument(
+    "--loop",
+    action="store_true",
+    default=True,
+    help="After Φ9 loop back to Φ1 so the demo keeps running (default on)",
+)
+parser.add_argument(
+    "--once", dest="loop", action="store_false", help="Stop after Φ9 instead of looping"
+)
+parser.add_argument(
+    "--mission-name",
+    default="Operation Hammerhead",
+    help="Mission name to create or adopt (default: Operation Hammerhead)",
+)
 ARGS = parser.parse_args()
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s  %(levelname)-7s %(message)s",
-                    datefmt="%H:%M:%S")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s %(message)s",
+    datefmt="%H:%M:%S",
+)
 log = logging.getLogger("hh")
 
-_CTX  = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"))
-api   = _CTX.api
+_CTX = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"))
+api = _CTX.api
 login = _CTX.login
 
 # ── Tactical object type sets ───────────────────────────────────────────────
-POINT_TG_TYPES = {"ATK_AXIS", "COUNTERATTACK", "AMBUSH", "DEF_AREA",
-                  "BLOCK", "BYPASS", "WITHDRAW"}
-LINE_TG_TYPES  = {"BOUNDARY", "FLET", "FLOT", "PHASE_LINE"}
-POLY_TG_TYPES  = {"OBJ_AREA", "ZONE"}
-ALL_TG_TYPES   = POINT_TG_TYPES | LINE_TG_TYPES | POLY_TG_TYPES
-NON_TG_TYPES   = {"ENEMY", "POI", "MARKER", "OBJECTIVE", "ROUTE"}
+POINT_TG_TYPES = {
+    "ATK_AXIS",
+    "COUNTERATTACK",
+    "AMBUSH",
+    "DEF_AREA",
+    "BLOCK",
+    "BYPASS",
+    "WITHDRAW",
+}
+LINE_TG_TYPES = {"BOUNDARY", "FLET", "FLOT", "PHASE_LINE"}
+POLY_TG_TYPES = {"OBJ_AREA", "ZONE"}
+ALL_TG_TYPES = POINT_TG_TYPES | LINE_TG_TYPES | POLY_TG_TYPES
+NON_TG_TYPES = {"ENEMY", "POI", "MARKER", "OBJECTIVE", "ROUTE"}
 
 
 @dataclass(frozen=True)
@@ -135,8 +182,10 @@ class LatLon:
     lon: float
 
     def offset_m(self, north_m: float, east_m: float) -> "LatLon":
-        return LatLon(self.lat + north_m / 111_320.0,
-                      self.lon + east_m  / (111_320.0 * math.cos(math.radians(self.lat))))
+        return LatLon(
+            self.lat + north_m / 111_320.0,
+            self.lon + east_m / (111_320.0 * math.cos(math.radians(self.lat))),
+        )
 
     def bearing_m(self, bearing_deg: float, distance_m: float) -> "LatLon":
         rad = math.radians(bearing_deg)
@@ -148,23 +197,23 @@ class LatLon:
 
 # ── Koksijde Airfield (EBFN) — real coordinates ─────────────────────────────
 # Centre of mass of the airfield; runway 06/24, length ~2895 m.
-AIRFIELD     = LatLon(51.0900, 2.6531)
-RWY_W_END    = LatLon(51.0937, 2.6437)     # west threshold (RWY 06)
-RWY_E_END    = LatLon(51.0858, 2.6624)     # east threshold (RWY 24)
-CONTROL_TOWER = LatLon(51.0897, 2.6486)    # OBJ FALCON
-HANGAR_NW    = LatLon(51.0928, 2.6470)     # OBJ HAWK
-AMMO_DUMP    = LatLon(51.0867, 2.6620)     # OBJ EAGLE
+AIRFIELD = LatLon(51.0900, 2.6531)
+RWY_W_END = LatLon(51.0937, 2.6437)  # west threshold (RWY 06)
+RWY_E_END = LatLon(51.0858, 2.6624)  # east threshold (RWY 24)
+CONTROL_TOWER = LatLon(51.0897, 2.6486)  # OBJ FALCON
+HANGAR_NW = LatLon(51.0928, 2.6470)  # OBJ HAWK
+AMMO_DUMP = LatLon(51.0867, 2.6620)  # OBJ EAGLE
 # LZ EAGLE — open polder ~1.2 km SE of the runway threshold; far enough that
 # touchdown isn't directly observed from the control tower (line of trees).
-LZ_EAGLE     = LatLon(51.0790, 2.6610)
+LZ_EAGLE = LatLon(51.0790, 2.6610)
 # LZ FALCON — alternate, NW of the runway (used by Wave 2 if RWY 06 is hot)
-LZ_FALCON    = LatLon(51.0985, 2.6390)
+LZ_FALCON = LatLon(51.0985, 2.6390)
 # FOB Lombardsijde — coastal Belgian Army base ~7 km E of the AO
-FOB_LAUNCH   = LatLon(51.1480, 2.7470)
+FOB_LAUNCH = LatLon(51.1480, 2.7470)
 # Reinforcement Coy VIPER assembles south at N396 junction near Veurne
-VIPER_AA     = LatLon(51.0480, 2.6420)
+VIPER_AA = LatLon(51.0480, 2.6420)
 # RP RED — where VIPER picks up the linkup south of the airfield
-RP_RED       = LatLon(51.0760, 2.6530)
+RP_RED = LatLon(51.0760, 2.6530)
 
 
 # ── Operation phases ─────────────────────────────────────────────────────────
@@ -173,23 +222,25 @@ class Phase:
     idx: int
     code: str
     label: str
-    seconds_at_speed_1: float    # how long this phase lasts at speed=1
+    seconds_at_speed_1: float  # how long this phase lasts at speed=1
+
 
 PHASES: list[Phase] = [
-    Phase(0, "PREP",       "Final brief at FOB Lombardsijde; CH-47s loaded",                30.0),
-    Phase(1, "LAUNCH",     "CH-47s launch from FOB; nap-of-the-earth flight to LZ EAGLE",   30.0),
-    Phase(2, "INFIL",      "CH-47s arrive at LZ EAGLE; touchdown",                          20.0),
-    Phase(3, "ASSAULT",    "Rangers push N from LZ; suppress airfield perimeter",           30.0),
-    Phase(4, "OBJ_FALCON", "1 PL seizes OBJ FALCON (control tower)",                        30.0),
-    Phase(5, "OBJ_HAWK",   "2 PL seizes OBJ HAWK (hangars / T-72 dispersal)",               30.0),
-    Phase(6, "OBJ_EAGLE",  "3 PL seizes OBJ EAGLE (ammo dump)",                             25.0),
-    Phase(7, "CONSOLIDATE","Coy RANGER consolidates perimeter; CH-47s exfil empty",         30.0),
-    Phase(8, "LINKUP",     "Coy VIPER ground-moves to RP RED, conducts linkup",             40.0),
-    Phase(9, "DEFEND",     "Combined RANGER + VIPER defence; airhead established",          60.0),
+    Phase(0, "PREP", "Final brief at FOB Lombardsijde; CH-47s loaded", 30.0),
+    Phase(
+        1, "LAUNCH", "CH-47s launch from FOB; nap-of-the-earth flight to LZ EAGLE", 30.0
+    ),
+    Phase(2, "INFIL", "CH-47s arrive at LZ EAGLE; touchdown", 20.0),
+    Phase(3, "ASSAULT", "Rangers push N from LZ; suppress airfield perimeter", 30.0),
+    Phase(4, "OBJ_FALCON", "1 PL seizes OBJ FALCON (control tower)", 30.0),
+    Phase(5, "OBJ_HAWK", "2 PL seizes OBJ HAWK (hangars / T-72 dispersal)", 30.0),
+    Phase(6, "OBJ_EAGLE", "3 PL seizes OBJ EAGLE (ammo dump)", 25.0),
+    Phase(
+        7, "CONSOLIDATE", "Coy RANGER consolidates perimeter; CH-47s exfil empty", 30.0
+    ),
+    Phase(8, "LINKUP", "Coy VIPER ground-moves to RP RED, conducts linkup", 40.0),
+    Phase(9, "DEFEND", "Combined RANGER + VIPER defence; airhead established", 60.0),
 ]
-
-
-
 
 
 # ── Tactical-object builder ─────────────────────────────────────────────────
@@ -199,69 +250,135 @@ def build_tactical_objects() -> list[dict]:
     items: list[dict] = []
     NORTH, SOUTH, EAST, WEST = 0.0, 180.0, 90.0, 270.0
 
-    def tg(type_, lat, lon, *, affiliation="FRIENDLY", echelon="", notes="",
-           rotation=0.0, geometry="", symbol_code=""):
-        return {"type": type_, "latitude": lat, "longitude": lon,
-                "affiliation": affiliation, "echelon": echelon, "notes": notes,
-                "rotation": rotation, "geometry": geometry,
-                "symbol_code": symbol_code, "visibility": "COMPANY"}
+    def tg(
+        type_,
+        lat,
+        lon,
+        *,
+        affiliation="FRIENDLY",
+        echelon="",
+        notes="",
+        rotation=0.0,
+        geometry="",
+        symbol_code="",
+    ):
+        return {
+            "type": type_,
+            "latitude": lat,
+            "longitude": lon,
+            "affiliation": affiliation,
+            "echelon": echelon,
+            "notes": notes,
+            "rotation": rotation,
+            "geometry": geometry,
+            "symbol_code": symbol_code,
+            "visibility": "COMPANY",
+        }
 
     def line(type_, pts):
-        return tg(type_, pts[0].lat, pts[0].lon,
-                  geometry=json.dumps({"type": "line",
-                                       "coords": [p.as_pair() for p in pts]}))
+        return tg(
+            type_,
+            pts[0].lat,
+            pts[0].lon,
+            geometry=json.dumps({"type": "line", "coords": [p.as_pair() for p in pts]}),
+        )
 
     def poly(type_, pts, **kw):
-        return tg(type_, pts[0].lat, pts[0].lon,
-                  geometry=json.dumps({"type": "polygon",
-                                       "coords": [p.as_pair() for p in pts]}),
-                  **kw)
+        return tg(
+            type_,
+            pts[0].lat,
+            pts[0].lon,
+            geometry=json.dumps(
+                {"type": "polygon", "coords": [p.as_pair() for p in pts]}
+            ),
+            **kw,
+        )
 
     # ── 1. Airfield outline (large OBJ polygon) ───────────────────────────
     af_poly = [
-        AIRFIELD.offset_m(  500, -1_500),
-        AIRFIELD.offset_m(  500,  1_500),
-        AIRFIELD.offset_m( -400,  1_500),
-        AIRFIELD.offset_m( -400, -1_500),
+        AIRFIELD.offset_m(500, -1_500),
+        AIRFIELD.offset_m(500, 1_500),
+        AIRFIELD.offset_m(-400, 1_500),
+        AIRFIELD.offset_m(-400, -1_500),
     ]
-    items.append(poly("OBJ_AREA", af_poly, echelon="COY",
-                      notes="OBJ HAMMERHEAD — Koksijde Airfield (EBFN) — Coy RANGER objective"))
+    items.append(
+        poly(
+            "OBJ_AREA",
+            af_poly,
+            echelon="COY",
+            notes="OBJ HAMMERHEAD — Koksijde Airfield (EBFN) — Coy RANGER objective",
+        )
+    )
 
     # OBJECTIVE marker (🚩) at the airfield centre — visible at low zoom so
     # the BC can see "Coy RANGER seizes EBFN" even when zoomed out across BE.
     # Notes are formatted as ``title\ndescription\nMGRS:…`` because the web
     # objective renderer pulls the first line as the title.
-    items.append({
-        "type": "OBJECTIVE", "symbol_code": "",
-        "latitude": AIRFIELD.lat, "longitude": AIRFIELD.lon,
-        "affiliation": "FRIENDLY", "echelon": "COY",
-        "notes": ("OBJ HAMMERHEAD\n"
-                  "Coy RANGER air-assault on Koksijde Airfield (EBFN).\n"
-                  "Seize runway, control tower, hangars; defeat EN inf coy."),
-        "rotation": 0.0, "geometry": "", "visibility": "COMPANY",
-    })
+    items.append(
+        {
+            "type": "OBJECTIVE",
+            "symbol_code": "",
+            "latitude": AIRFIELD.lat,
+            "longitude": AIRFIELD.lon,
+            "affiliation": "FRIENDLY",
+            "echelon": "COY",
+            "notes": (
+                "OBJ HAMMERHEAD\n"
+                "Coy RANGER air-assault on Koksijde Airfield (EBFN).\n"
+                "Seize runway, control tower, hangars; defeat EN inf coy."
+            ),
+            "rotation": 0.0,
+            "geometry": "",
+            "visibility": "COMPANY",
+        }
+    )
 
     # ── 2. Sub-objectives — OBJ_AREA polygon + OBJECTIVE flag at the
     #     centroid so they're prominent at any zoom.
     for centre, name, ech, who, narrative in [
-        (CONTROL_TOWER, "FALCON", "PL", "1 PL ME",
-         "Seize control tower intact; preserve EN C2 documents/comms."),
-        (HANGAR_NW,     "HAWK",   "PL", "2 PL",
-         "Clear hangar complex; destroy 3× T-72 in revetments before CT-ATK."),
-        (AMMO_DUMP,     "EAGLE",  "SQD","3 PL",
-         "Secure ammo + fuel dump intact; deny EN demolition."),
+        (
+            CONTROL_TOWER,
+            "FALCON",
+            "PL",
+            "1 PL ME",
+            "Seize control tower intact; preserve EN C2 documents/comms.",
+        ),
+        (
+            HANGAR_NW,
+            "HAWK",
+            "PL",
+            "2 PL",
+            "Clear hangar complex; destroy 3× T-72 in revetments before CT-ATK.",
+        ),
+        (
+            AMMO_DUMP,
+            "EAGLE",
+            "SQD",
+            "3 PL",
+            "Secure ammo + fuel dump intact; deny EN demolition.",
+        ),
     ]:
-        pts = [centre.offset_m( 120, -150), centre.offset_m( 120,  150),
-               centre.offset_m(-120,  150), centre.offset_m(-120, -150)]
-        items.append(poly("OBJ_AREA", pts, echelon=ech,
-                          notes=f"OBJ {name} — {who}"))
-        items.append({
-            "type": "OBJECTIVE", "symbol_code": "",
-            "latitude": centre.lat, "longitude": centre.lon,
-            "affiliation": "FRIENDLY", "echelon": ech,
-            "notes": f"OBJ {name}\n{who} — {narrative}",
-            "rotation": 0.0, "geometry": "", "visibility": "COMPANY",
-        })
+        pts = [
+            centre.offset_m(120, -150),
+            centre.offset_m(120, 150),
+            centre.offset_m(-120, 150),
+            centre.offset_m(-120, -150),
+        ]
+        items.append(poly("OBJ_AREA", pts, echelon=ech, notes=f"OBJ {name} — {who}"))
+        items.append(
+            {
+                "type": "OBJECTIVE",
+                "symbol_code": "",
+                "latitude": centre.lat,
+                "longitude": centre.lon,
+                "affiliation": "FRIENDLY",
+                "echelon": ech,
+                "notes": f"OBJ {name}\n{who} — {narrative}",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     # ── 3. Landing zones — proper LZ graphics ────────────────────────────
     # Each LZ gets:
@@ -273,170 +390,315 @@ def build_tactical_objects() -> list[dict]:
         out: list[LatLon] = []
         for i in range(n):
             ang = 2 * math.pi * i / n
-            out.append(centre.offset_m(radius_m * math.cos(ang),
-                                        radius_m * math.sin(ang)))
+            out.append(
+                centre.offset_m(radius_m * math.cos(ang), radius_m * math.sin(ang))
+            )
         return out
 
     LZ_DEFS = [
-        (LZ_EAGLE,  "EAGLE",  80, NORTH,
-         "PRI LZ — initial assault element (2× CH-47F, Wave 1)"),
-        (LZ_FALCON, "FALCON", 70, NORTH,
-         "ALT LZ — only if RWY 06 hot or LZ EAGLE compromised"),
+        (
+            LZ_EAGLE,
+            "EAGLE",
+            80,
+            NORTH,
+            "PRI LZ — initial assault element (2× CH-47F, Wave 1)",
+        ),
+        (
+            LZ_FALCON,
+            "FALCON",
+            70,
+            NORTH,
+            "ALT LZ — only if RWY 06 hot or LZ EAGLE compromised",
+        ),
     ]
     for lz, name, radius, heading, role in LZ_DEFS:
         # (a) circular ZONE polygon
-        items.append(poly("ZONE", _circle(lz, radius), echelon="COY",
-                          notes=f"LZ {name} — {role}"))
+        items.append(
+            poly(
+                "ZONE", _circle(lz, radius), echelon="COY", notes=f"LZ {name} — {role}"
+            )
+        )
         # (b) heliport POI in the centre — uses the MIL-STD-2525C "Helicopter
         #     Landing Zone" symbol (SFGPIBA-H----) — the H modifier is the
         #     standard helo marking. We fall back to airbase if the renderer
         #     doesn't know the H modifier (still gets a recognisable icon).
-        items.append({"type": "POI", "symbol_code": "SFGPIBA-----",
-                      "latitude": lz.lat, "longitude": lz.lon,
-                      "affiliation": "FRIENDLY", "echelon": "COY",
-                      "notes": f"LZ {name} (helo touchdown) — {role}",
-                      "rotation": 0.0, "geometry": "",
-                      "visibility": "COMPANY"})
+        items.append(
+            {
+                "type": "POI",
+                "symbol_code": "SFGPIBA-----",
+                "latitude": lz.lat,
+                "longitude": lz.lon,
+                "affiliation": "FRIENDLY",
+                "echelon": "COY",
+                "notes": f"LZ {name} (helo touchdown) — {role}",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
         # (c) touchdown direction arrow — CH-47 nose points this way on landing
-        items.append(tg("ATK_AXIS", *lz.bearing_m(heading, radius + 40).as_pair(),
-                        echelon="COY", rotation=heading,
-                        notes=f"LZ {name} touchdown axis — CH-47 nose {int(heading):03d}°"))
+        items.append(
+            tg(
+                "ATK_AXIS",
+                *lz.bearing_m(heading, radius + 40).as_pair(),
+                echelon="COY",
+                rotation=heading,
+                notes=f"LZ {name} touchdown axis — CH-47 nose {int(heading):03d}°",
+            )
+        )
         # (d) Inner "touchdown" octagon at half radius — strengthens the
         #     visual centre of the LZ at high zoom so the BC sees both the
         #     hover-cone (outer circle) and the rotor footprint (inner).
-        items.append(poly("ZONE", _circle(lz, radius * 0.45, n=8),
-                          echelon="",
-                          notes=f"LZ {name} — rotor footprint"))
+        items.append(
+            poly(
+                "ZONE",
+                _circle(lz, radius * 0.45, n=8),
+                echelon="",
+                notes=f"LZ {name} — rotor footprint",
+            )
+        )
         # (e) MARKER point labelled "LZ {name}" so the text is unambiguous
         #     at any zoom (the heliport POI shows the symbol; this one
         #     gives the textual call-out).
-        items.append({"type": "MARKER", "symbol_code": "",
-                      "latitude": lz.lat, "longitude": lz.lon,
-                      "affiliation": "FRIENDLY", "echelon": "COY",
-                      "notes": f"LZ {name}",
-                      "rotation": 0.0, "geometry": "",
-                      "visibility": "COMPANY"})
+        items.append(
+            {
+                "type": "MARKER",
+                "symbol_code": "",
+                "latitude": lz.lat,
+                "longitude": lz.lon,
+                "affiliation": "FRIENDLY",
+                "echelon": "COY",
+                "notes": f"LZ {name}",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     # ── 4. Flight route AA → LZ ──────────────────────────────────────────
-    items.append(line("BOUNDARY", [
-        FOB_LAUNCH,
-        FOB_LAUNCH.offset_m(-3_000, -3_000),       # nap-of-earth dog-leg over polders
-        LZ_EAGLE.offset_m( 1_500,  2_000),
-        LZ_EAGLE,
-    ]))
+    items.append(
+        line(
+            "BOUNDARY",
+            [
+                FOB_LAUNCH,
+                FOB_LAUNCH.offset_m(
+                    -3_000, -3_000
+                ),  # nap-of-earth dog-leg over polders
+                LZ_EAGLE.offset_m(1_500, 2_000),
+                LZ_EAGLE,
+            ],
+        )
+    )
     items[-1]["affiliation"] = "FRIENDLY"
-    items[-1]["echelon"]     = "COY"
-    items[-1]["notes"]       = ("AIR ROUTE TURQUOISE — CH-47 ingress; "
-                                "NOE flight, max 60 ft AGL, hugs the canal")
+    items[-1]["echelon"] = "COY"
+    items[-1]["notes"] = (
+        "AIR ROUTE TURQUOISE — CH-47 ingress; "
+        "NOE flight, max 60 ft AGL, hugs the canal"
+    )
 
     # ── 5. Attack axes from LZ EAGLE onto objectives ─────────────────────
-    items.append(tg("ATK_AXIS", *LZ_EAGLE.bearing_m(NORTH, 200).as_pair(),
-                    echelon="PL", rotation=350.0,
-                    notes="1 PL ME axis — LZ EAGLE → OBJ FALCON (control tower)"))
-    items.append(tg("ATK_AXIS", *LZ_EAGLE.bearing_m(NORTH, 200).bearing_m(WEST, 150).as_pair(),
-                    echelon="PL", rotation=335.0,
-                    notes="2 PL axis — LZ EAGLE → OBJ HAWK (hangars)"))
-    items.append(tg("ATK_AXIS", *LZ_EAGLE.bearing_m(NORTH, 200).bearing_m(EAST, 150).as_pair(),
-                    echelon="PL", rotation=20.0,
-                    notes="3 PL axis — LZ EAGLE → OBJ EAGLE (ammo dump)"))
+    items.append(
+        tg(
+            "ATK_AXIS",
+            *LZ_EAGLE.bearing_m(NORTH, 200).as_pair(),
+            echelon="PL",
+            rotation=350.0,
+            notes="1 PL ME axis — LZ EAGLE → OBJ FALCON (control tower)",
+        )
+    )
+    items.append(
+        tg(
+            "ATK_AXIS",
+            *LZ_EAGLE.bearing_m(NORTH, 200).bearing_m(WEST, 150).as_pair(),
+            echelon="PL",
+            rotation=335.0,
+            notes="2 PL axis — LZ EAGLE → OBJ HAWK (hangars)",
+        )
+    )
+    items.append(
+        tg(
+            "ATK_AXIS",
+            *LZ_EAGLE.bearing_m(NORTH, 200).bearing_m(EAST, 150).as_pair(),
+            echelon="PL",
+            rotation=20.0,
+            notes="3 PL axis — LZ EAGLE → OBJ EAGLE (ammo dump)",
+        )
+    )
 
     # ── 6. Phase lines ───────────────────────────────────────────────────
     pl_assault = AIRFIELD.bearing_m(SOUTH, 600)
-    pl_loa     = AIRFIELD.bearing_m(NORTH, 600)
-    items.append(line("PHASE_LINE",
-                      [pl_assault.bearing_m(WEST, 1_800), pl_assault.bearing_m(EAST, 1_800)]))
+    pl_loa = AIRFIELD.bearing_m(NORTH, 600)
+    items.append(
+        line(
+            "PHASE_LINE",
+            [pl_assault.bearing_m(WEST, 1_800), pl_assault.bearing_m(EAST, 1_800)],
+        )
+    )
     items[-1]["echelon"] = "COY"
-    items[-1]["notes"]   = "PL HAMMER — line of departure (south perimeter fence)"
-    items.append(line("PHASE_LINE",
-                      [pl_loa.bearing_m(WEST, 1_800), pl_loa.bearing_m(EAST, 1_800)]))
+    items[-1]["notes"] = "PL HAMMER — line of departure (south perimeter fence)"
+    items.append(
+        line(
+            "PHASE_LINE", [pl_loa.bearing_m(WEST, 1_800), pl_loa.bearing_m(EAST, 1_800)]
+        )
+    )
     items[-1]["echelon"] = "COY"
-    items[-1]["notes"]   = "PL ANVIL — limit of advance (north perimeter)"
+    items[-1]["notes"] = "PL ANVIL — limit of advance (north perimeter)"
 
     # ── 7. Enemy FLET — runway centreline (where they hold the airfield)
     items.append(line("FLET", [RWY_W_END, RWY_E_END]))
     items[-1]["affiliation"] = "ENEMY"
-    items[-1]["echelon"]     = "COY"
-    items[-1]["notes"]       = "FLET — EN mech inf coy holds runway"
+    items[-1]["echelon"] = "COY"
+    items[-1]["notes"] = "FLET — EN mech inf coy holds runway"
 
     # ── 8. Enemy ORBAT inside the airfield ───────────────────────────────
     enemy = [
-        ("Enemy mech inf coy HQ",     "SHGPUCI-----", CONTROL_TOWER.offset_m( 100, -50)),
-        ("Enemy mech inf plt (BTR-80)","SHGPUCIM----", AIRFIELD.offset_m(  100,  -300)),
-        ("Enemy mech inf plt (BTR-80)","SHGPUCIM----", AIRFIELD.offset_m( -100,   400)),
-        ("Enemy mech inf plt (dismount)","SHGPUCIZ---", AIRFIELD.offset_m(  150,   200)),
-        ("Enemy tank plt (3× T-72)",  "SHGPUCAA----", HANGAR_NW.offset_m(   0,    100)),
-        ("Enemy 120 mm mortar sec",   "SHGPUCFHE---", AIRFIELD.offset_m( -350,  -800)),
-        ("Enemy ATGM team (Kornet)",  "SHGPUCAA---F", CONTROL_TOWER.offset_m( 80,   50)),
-        ("Enemy ATGM team (Kornet)",  "SHGPUCAA---F", AMMO_DUMP.offset_m(   60,  -120)),
-        ("Enemy MANPADS (Igla)",      "SHGPUCDS----", AIRFIELD.offset_m( -200,    50)),
-        ("Enemy AAA sec (ZU-23-2)",   "SHGPUCDH----", AIRFIELD.offset_m(  -50,  1_100)),
-        ("Enemy logistics / fuel",    "SHGPISS-----", AMMO_DUMP.offset_m(  150,    50)),
+        ("Enemy mech inf coy HQ", "SHGPUCI-----", CONTROL_TOWER.offset_m(100, -50)),
+        ("Enemy mech inf plt (BTR-80)", "SHGPUCIM----", AIRFIELD.offset_m(100, -300)),
+        ("Enemy mech inf plt (BTR-80)", "SHGPUCIM----", AIRFIELD.offset_m(-100, 400)),
+        ("Enemy mech inf plt (dismount)", "SHGPUCIZ---", AIRFIELD.offset_m(150, 200)),
+        ("Enemy tank plt (3× T-72)", "SHGPUCAA----", HANGAR_NW.offset_m(0, 100)),
+        ("Enemy 120 mm mortar sec", "SHGPUCFHE---", AIRFIELD.offset_m(-350, -800)),
+        ("Enemy ATGM team (Kornet)", "SHGPUCAA---F", CONTROL_TOWER.offset_m(80, 50)),
+        ("Enemy ATGM team (Kornet)", "SHGPUCAA---F", AMMO_DUMP.offset_m(60, -120)),
+        ("Enemy MANPADS (Igla)", "SHGPUCDS----", AIRFIELD.offset_m(-200, 50)),
+        ("Enemy AAA sec (ZU-23-2)", "SHGPUCDH----", AIRFIELD.offset_m(-50, 1_100)),
+        ("Enemy logistics / fuel", "SHGPISS-----", AMMO_DUMP.offset_m(150, 50)),
     ]
     for desc, sidc, ll in enemy:
-        items.append({"type": "ENEMY", "symbol_code": sidc,
-                      "latitude": ll.lat, "longitude": ll.lon,
-                      "affiliation": "ENEMY",
-                      "notes": f"EN inf coy · {desc} · EBFN",
-                      "echelon": "", "rotation": 0.0, "geometry": "",
-                      "visibility": "COMPANY"})
+        items.append(
+            {
+                "type": "ENEMY",
+                "symbol_code": sidc,
+                "latitude": ll.lat,
+                "longitude": ll.lon,
+                "affiliation": "ENEMY",
+                "notes": f"EN inf coy · {desc} · EBFN",
+                "echelon": "",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     # Enemy DEF_AREA polygon (hasty defence ring around the airfield)
-    en_def = [AIRFIELD.offset_m( 300, -1_200), AIRFIELD.offset_m( 300,  1_200),
-              AIRFIELD.offset_m(-300,  1_200), AIRFIELD.offset_m(-300, -1_200)]
-    items.append(poly("DEF_AREA", en_def,
-                      affiliation="ENEMY", echelon="COY", rotation=NORTH,
-                      notes="EN coy hasty defence — perimeter fence + revetments"))
+    en_def = [
+        AIRFIELD.offset_m(300, -1_200),
+        AIRFIELD.offset_m(300, 1_200),
+        AIRFIELD.offset_m(-300, 1_200),
+        AIRFIELD.offset_m(-300, -1_200),
+    ]
+    items.append(
+        poly(
+            "DEF_AREA",
+            en_def,
+            affiliation="ENEMY",
+            echelon="COY",
+            rotation=NORTH,
+            notes="EN coy hasty defence — perimeter fence + revetments",
+        )
+    )
 
     # ── 9. Friendly defensive perimeter we'll occupy after seizing ───────
     # 3 PL BPs around the airfield once cleared: north / west / east sectors
     def bp(lat_off, lon_off, name, sector):
         c = AIRFIELD.offset_m(lat_off, lon_off)
-        return tg("DEF_AREA", c.lat, c.lon, echelon="PL", rotation=NORTH,
-                  notes=f"BP {name} — {sector}")
+        return tg(
+            "DEF_AREA",
+            c.lat,
+            c.lon,
+            echelon="PL",
+            rotation=NORTH,
+            notes=f"BP {name} — {sector}",
+        )
 
-    items.append(bp( 400,    0,  "ALPHA", "1 PL — north sector (covers AA from N396)"))
-    items.append(bp(-200, -800,  "BRAVO", "2 PL — west sector (covers RWY 06 threshold)"))
-    items.append(bp(-200,  800,  "CHARLIE", "3 PL — east sector (covers RWY 24 threshold)"))
+    items.append(bp(400, 0, "ALPHA", "1 PL — north sector (covers AA from N396)"))
+    items.append(
+        bp(-200, -800, "BRAVO", "2 PL — west sector (covers RWY 06 threshold)")
+    )
+    items.append(
+        bp(-200, 800, "CHARLIE", "3 PL — east sector (covers RWY 24 threshold)")
+    )
 
     # CT-ATK reserve in centre (WPN det + CO HQ)
-    items.append(tg("COUNTERATTACK", *AIRFIELD.bearing_m(SOUTH, 150).as_pair(),
-                    echelon="SEC", rotation=NORTH,
-                    notes="WPN det + CO HQ — CT-ATK reserve in centre"))
+    items.append(
+        tg(
+            "COUNTERATTACK",
+            *AIRFIELD.bearing_m(SOUTH, 150).as_pair(),
+            echelon="SEC",
+            rotation=NORTH,
+            notes="WPN det + CO HQ — CT-ATK reserve in centre",
+        )
+    )
 
     # ── 10. Friendly POIs — Coy support nodes ────────────────────────────
     pois = [
-        ("RANGER-6 CO TAC",        "SFGPUH------", CONTROL_TOWER.offset_m(-200,    0)),
-        ("Coy CCP",                "SFGPIME-----", LZ_EAGLE.offset_m(   100,    0)),
-        ("BAS / Role 1 (medic)",   "SFGPIMS-----", LZ_EAGLE.offset_m(    50,   100)),
-        ("Ammo / resupply point",  "SFGPIRP-----", LZ_EAGLE.offset_m(   -50,  -100)),
-        ("60 mm mortar PA (WPN det)","SFGPUCFHE---", AIRFIELD.offset_m(-300,   200)),
-        ("Coy FO position",        "SFGPUUS-----", CONTROL_TOWER.offset_m( 50, -120)),
-        ("HLZ — MEDEVAC alternate","SFGPIBA-----", AIRFIELD.offset_m(   0,    800)),
+        ("RANGER-6 CO TAC", "SFGPUH------", CONTROL_TOWER.offset_m(-200, 0)),
+        ("Coy CCP", "SFGPIME-----", LZ_EAGLE.offset_m(100, 0)),
+        ("BAS / Role 1 (medic)", "SFGPIMS-----", LZ_EAGLE.offset_m(50, 100)),
+        ("Ammo / resupply point", "SFGPIRP-----", LZ_EAGLE.offset_m(-50, -100)),
+        ("60 mm mortar PA (WPN det)", "SFGPUCFHE---", AIRFIELD.offset_m(-300, 200)),
+        ("Coy FO position", "SFGPUUS-----", CONTROL_TOWER.offset_m(50, -120)),
+        ("HLZ — MEDEVAC alternate", "SFGPIBA-----", AIRFIELD.offset_m(0, 800)),
     ]
     for desc, sidc, ll in pois:
-        items.append({"type": "POI", "symbol_code": sidc,
-                      "latitude": ll.lat, "longitude": ll.lon,
-                      "affiliation": "FRIENDLY",
-                      "notes": f"Coy RANGER · {desc}",
-                      "echelon": "", "rotation": 0.0, "geometry": "",
-                      "visibility": "COMPANY"})
+        items.append(
+            {
+                "type": "POI",
+                "symbol_code": sidc,
+                "latitude": ll.lat,
+                "longitude": ll.lon,
+                "affiliation": "FRIENDLY",
+                "notes": f"Coy RANGER · {desc}",
+                "echelon": "",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     # ── 11. VIPER reinforcement assembly area + linkup route ─────────────
-    aa = [VIPER_AA.offset_m(  60, -120), VIPER_AA.offset_m(  60,  120),
-          VIPER_AA.offset_m( -60,  120), VIPER_AA.offset_m( -60, -120)]
-    items.append(poly("ZONE", aa, echelon="COY",
-                      notes="AA VIPER — Coy VIPER assembly area (M2A3 Bradley)"))
-    items.append({"type": "POI", "symbol_code": "SFGPIBA-----",
-                  "latitude": RP_RED.lat, "longitude": RP_RED.lon,
-                  "affiliation": "FRIENDLY",
-                  "notes": "RP RED — Coy VIPER ↔ Coy RANGER linkup point",
-                  "echelon": "", "rotation": 0.0, "geometry": "",
-                  "visibility": "COMPANY"})
-    items.append(line("BOUNDARY", [VIPER_AA, VIPER_AA.offset_m(2_000, 0),
-                                   RP_RED, AIRFIELD.bearing_m(SOUTH, 200)]))
+    aa = [
+        VIPER_AA.offset_m(60, -120),
+        VIPER_AA.offset_m(60, 120),
+        VIPER_AA.offset_m(-60, 120),
+        VIPER_AA.offset_m(-60, -120),
+    ]
+    items.append(
+        poly(
+            "ZONE",
+            aa,
+            echelon="COY",
+            notes="AA VIPER — Coy VIPER assembly area (M2A3 Bradley)",
+        )
+    )
+    items.append(
+        {
+            "type": "POI",
+            "symbol_code": "SFGPIBA-----",
+            "latitude": RP_RED.lat,
+            "longitude": RP_RED.lon,
+            "affiliation": "FRIENDLY",
+            "notes": "RP RED — Coy VIPER ↔ Coy RANGER linkup point",
+            "echelon": "",
+            "rotation": 0.0,
+            "geometry": "",
+            "visibility": "COMPANY",
+        }
+    )
+    items.append(
+        line(
+            "BOUNDARY",
+            [
+                VIPER_AA,
+                VIPER_AA.offset_m(2_000, 0),
+                RP_RED,
+                AIRFIELD.bearing_m(SOUTH, 200),
+            ],
+        )
+    )
     items[-1]["affiliation"] = "FRIENDLY"
-    items[-1]["echelon"]     = "COY"
-    items[-1]["notes"]       = "VIPER axis north — N396 → RP RED → airfield"
+    items[-1]["echelon"] = "COY"
+    items[-1]["notes"] = "VIPER axis north — N396 → RP RED → airfield"
 
     return items
 
@@ -667,10 +929,10 @@ def build_opord() -> dict:
                 "SITREP every 15 min from H-Hour to H+90, then every 30 min. "
                 "Phase-complete report on each PL/OBJ. Immediate CASEVAC/troop-loss."
             ),
-            "pace_primary":     "VHF SINCGARS — CO net 38.275 / FH-A",
-            "pace_alternate":   "MBITR PRC-148 secondary 38.300",
+            "pace_primary": "VHF SINCGARS — CO net 38.275 / FH-A",
+            "pace_alternate": "MBITR PRC-148 secondary 38.300",
             "pace_contingency": "SATCOM TACSAT CH 106 (TF RANGER) / CH 109 (CH-47)",
-            "pace_emergency":   "Pyro: red star = withdraw to LZ EAGLE; green smoke = LZ marked",
+            "pace_emergency": "Pyro: red star = withdraw to LZ EAGLE; green smoke = LZ marked",
             "callsigns": (
                 "BLACK 6 (CDR), RED (1 PL), WHITE (2 PL), BLUE (3 PL), "
                 "WPN (mortars), HAWK (FO), CHALK 1/2 (CH-47s), SHADOW 21 (MQ-9), "
@@ -685,31 +947,51 @@ def opord_snapshots() -> list[tuple[str, list[float], int, str]]:
     af = AIRFIELD
     out: list[tuple[str, list[float], int, str]] = []
     # Wide overview — airfield + LZ + FOB
-    out.append(("AO overview — FOB Lombardsijde → Koksijde EBFN",
-                [51.04, 2.55, 51.17, 2.78], 11,
-                "Air Route TURQUOISE NOE from FOB to LZ EAGLE; Coy VIPER ground "
-                "axis along N396 from south."))
-    out.append(("Airfield close-up — OBJ HAMMERHEAD",
-                [af.lat - 0.012, af.lon - 0.020, af.lat + 0.012, af.lon + 0.020], 14,
-                "Sub-objectives FALCON (control tower), HAWK (hangars / T-72), "
-                "EAGLE (ammo dump). LZ EAGLE 1.2 km SE."))
-    out.append(("LZ EAGLE detail",
-                [LZ_EAGLE.lat - 0.005, LZ_EAGLE.lon - 0.008,
-                 LZ_EAGLE.lat + 0.005, LZ_EAGLE.lon + 0.008], 15,
-                "PRI LZ for 2× CH-47F single-lift insertion. ALT = LZ FALCON NW."))
+    out.append(
+        (
+            "AO overview — FOB Lombardsijde → Koksijde EBFN",
+            [51.04, 2.55, 51.17, 2.78],
+            11,
+            "Air Route TURQUOISE NOE from FOB to LZ EAGLE; Coy VIPER ground "
+            "axis along N396 from south.",
+        )
+    )
+    out.append(
+        (
+            "Airfield close-up — OBJ HAMMERHEAD",
+            [af.lat - 0.012, af.lon - 0.020, af.lat + 0.012, af.lon + 0.020],
+            14,
+            "Sub-objectives FALCON (control tower), HAWK (hangars / T-72), "
+            "EAGLE (ammo dump). LZ EAGLE 1.2 km SE.",
+        )
+    )
+    out.append(
+        (
+            "LZ EAGLE detail",
+            [
+                LZ_EAGLE.lat - 0.005,
+                LZ_EAGLE.lon - 0.008,
+                LZ_EAGLE.lat + 0.005,
+                LZ_EAGLE.lon + 0.008,
+            ],
+            15,
+            "PRI LZ for 2× CH-47F single-lift insertion. ALT = LZ FALCON NW.",
+        )
+    )
     return out
 
 
 # ── Live operators ─────────────────────────────────────────────────────────
 SIM_PASSWORD = "Arrow2525!"
 
+
 @dataclass
 class SimOp:
     callsign: str
     rank: str
-    role: str               # ADMIN / BATTLE_CAPTAIN / OPERATOR
-    track: str              # which scripted track this op follows
-    seat: int = 0           # 0-N within the track (cluster spread)
+    role: str  # ADMIN / BATTLE_CAPTAIN / OPERATOR
+    track: str  # which scripted track this op follows
+    seat: int = 0  # 0-N within the track (cluster spread)
     token: str = ""
     op_id: int = 0
     lat: float = 0.0
@@ -720,35 +1002,35 @@ def _task_force() -> list[SimOp]:
     """All callsigns the simulator drives across the operation."""
     ops = [
         # Coy RANGER HQ
-        SimOp("RANGER-6", "OF-3", "ADMIN",          "CO",      seat=0),
-        SimOp("RANGER-5", "OF-2", "BATTLE_CAPTAIN", "CCP",     seat=0),
-        SimOp("RANGER-7", "OR-9", "BATTLE_CAPTAIN", "CCP",     seat=1),
-        SimOp("RANGER-FO","OR-7", "OPERATOR",       "FO",      seat=0),
+        SimOp("RANGER-6", "OF-3", "ADMIN", "CO", seat=0),
+        SimOp("RANGER-5", "OF-2", "BATTLE_CAPTAIN", "CCP", seat=0),
+        SimOp("RANGER-7", "OR-9", "BATTLE_CAPTAIN", "CCP", seat=1),
+        SimOp("RANGER-FO", "OR-7", "OPERATOR", "FO", seat=0),
         # 1 PL (ME) — OBJ FALCON
-        SimOp("RNG-1-6",  "OF-1", "BATTLE_CAPTAIN", "1PL",     seat=0),
-        SimOp("RNG-1-1",  "OR-6", "OPERATOR",       "1PL",     seat=1),
-        SimOp("RNG-1-2",  "OR-6", "OPERATOR",       "1PL",     seat=2),
-        SimOp("RNG-1-3",  "OR-5", "OPERATOR",       "1PL",     seat=3),
+        SimOp("RNG-1-6", "OF-1", "BATTLE_CAPTAIN", "1PL", seat=0),
+        SimOp("RNG-1-1", "OR-6", "OPERATOR", "1PL", seat=1),
+        SimOp("RNG-1-2", "OR-6", "OPERATOR", "1PL", seat=2),
+        SimOp("RNG-1-3", "OR-5", "OPERATOR", "1PL", seat=3),
         # 2 PL — OBJ HAWK
-        SimOp("RNG-2-6",  "OF-1", "BATTLE_CAPTAIN", "2PL",     seat=0),
-        SimOp("RNG-2-1",  "OR-6", "OPERATOR",       "2PL",     seat=1),
-        SimOp("RNG-2-2",  "OR-6", "OPERATOR",       "2PL",     seat=2),
-        SimOp("RNG-2-3",  "OR-5", "OPERATOR",       "2PL",     seat=3),
+        SimOp("RNG-2-6", "OF-1", "BATTLE_CAPTAIN", "2PL", seat=0),
+        SimOp("RNG-2-1", "OR-6", "OPERATOR", "2PL", seat=1),
+        SimOp("RNG-2-2", "OR-6", "OPERATOR", "2PL", seat=2),
+        SimOp("RNG-2-3", "OR-5", "OPERATOR", "2PL", seat=3),
         # 3 PL (SE) — OBJ EAGLE
-        SimOp("RNG-3-6",  "OF-1", "BATTLE_CAPTAIN", "3PL",     seat=0),
-        SimOp("RNG-3-1",  "OR-6", "OPERATOR",       "3PL",     seat=1),
-        SimOp("RNG-3-2",  "OR-5", "OPERATOR",       "3PL",     seat=2),
+        SimOp("RNG-3-6", "OF-1", "BATTLE_CAPTAIN", "3PL", seat=0),
+        SimOp("RNG-3-1", "OR-6", "OPERATOR", "3PL", seat=1),
+        SimOp("RNG-3-2", "OR-5", "OPERATOR", "3PL", seat=2),
         # WPN det
-        SimOp("RNG-W6",   "OR-7", "OPERATOR",       "WPN",     seat=0),
-        SimOp("RNG-W1",   "OR-5", "OPERATOR",       "WPN",     seat=1),
+        SimOp("RNG-W6", "OR-7", "OPERATOR", "WPN", seat=0),
+        SimOp("RNG-W1", "OR-5", "OPERATOR", "WPN", seat=1),
         # CH-47 lift
-        SimOp("CHALK-1",  "OF-2", "BATTLE_CAPTAIN", "CH47-1",  seat=0),
-        SimOp("CHALK-2",  "OF-2", "BATTLE_CAPTAIN", "CH47-2",  seat=0),
+        SimOp("CHALK-1", "OF-2", "BATTLE_CAPTAIN", "CH47-1", seat=0),
+        SimOp("CHALK-2", "OF-2", "BATTLE_CAPTAIN", "CH47-2", seat=0),
         # Reinforcement Coy VIPER
-        SimOp("VIPER-6",  "OF-3", "BATTLE_CAPTAIN", "VIPER",   seat=0),
-        SimOp("VPR-1-6",  "OF-1", "BATTLE_CAPTAIN", "VIPER",   seat=1),
-        SimOp("VPR-2-6",  "OF-1", "BATTLE_CAPTAIN", "VIPER",   seat=2),
-        SimOp("VPR-3-6",  "OF-1", "BATTLE_CAPTAIN", "VIPER",   seat=3),
+        SimOp("VIPER-6", "OF-3", "BATTLE_CAPTAIN", "VIPER", seat=0),
+        SimOp("VPR-1-6", "OF-1", "BATTLE_CAPTAIN", "VIPER", seat=1),
+        SimOp("VPR-2-6", "OF-1", "BATTLE_CAPTAIN", "VIPER", seat=2),
+        SimOp("VPR-3-6", "OF-1", "BATTLE_CAPTAIN", "VIPER", seat=3),
     ]
     return ops
 
@@ -767,78 +1049,113 @@ def waypoint_for(op: SimOp, phase_idx: int) -> LatLon:
     seat_e = (op.seat // 4) * 12 - 18
 
     def at(p: LatLon) -> LatLon:
-        return p.offset_m(seat_n + random.uniform(-8, 8),
-                          seat_e + random.uniform(-8, 8))
+        return p.offset_m(
+            seat_n + random.uniform(-8, 8), seat_e + random.uniform(-8, 8)
+        )
 
     # CH-47s have their own flight track
     if op.track == "CH47-1":
-        if phase_idx <= 0: return at(FOB_LAUNCH)
-        if phase_idx == 1: return at(FOB_LAUNCH.offset_m(-2_500, -3_000))   # NOE waypoint
-        if phase_idx == 2: return at(LZ_EAGLE.offset_m(60, -60))
+        if phase_idx <= 0:
+            return at(FOB_LAUNCH)
+        if phase_idx == 1:
+            return at(FOB_LAUNCH.offset_m(-2_500, -3_000))  # NOE waypoint
+        if phase_idx == 2:
+            return at(LZ_EAGLE.offset_m(60, -60))
         # After insertion CH-47s exfil empty back to FOB
-        if phase_idx <= 7: return at(LZ_EAGLE.offset_m(60, -60))
+        if phase_idx <= 7:
+            return at(LZ_EAGLE.offset_m(60, -60))
         return at(FOB_LAUNCH)
 
     if op.track == "CH47-2":
-        if phase_idx <= 0: return at(FOB_LAUNCH.offset_m(0, 100))
-        if phase_idx == 1: return at(FOB_LAUNCH.offset_m(-2_500, -3_100))
-        if phase_idx == 2: return at(LZ_EAGLE.offset_m(60, 60))
-        if phase_idx <= 7: return at(LZ_EAGLE.offset_m(60, 60))
+        if phase_idx <= 0:
+            return at(FOB_LAUNCH.offset_m(0, 100))
+        if phase_idx == 1:
+            return at(FOB_LAUNCH.offset_m(-2_500, -3_100))
+        if phase_idx == 2:
+            return at(LZ_EAGLE.offset_m(60, 60))
+        if phase_idx <= 7:
+            return at(LZ_EAGLE.offset_m(60, 60))
         return at(FOB_LAUNCH.offset_m(0, 100))
 
     # Coy VIPER — sit in AA, then move via RP RED to airfield south perimeter
     if op.track == "VIPER":
-        if phase_idx <= 6: return at(VIPER_AA)
-        if phase_idx == 7: return at(VIPER_AA.offset_m(600, 100))     # SP from AA
-        if phase_idx == 8: return at(RP_RED)
-        return at(AIRFIELD.bearing_m(180.0, 250))                      # join perimeter
+        if phase_idx <= 6:
+            return at(VIPER_AA)
+        if phase_idx == 7:
+            return at(VIPER_AA.offset_m(600, 100))  # SP from AA
+        if phase_idx == 8:
+            return at(RP_RED)
+        return at(AIRFIELD.bearing_m(180.0, 250))  # join perimeter
 
     # All Ranger tracks (CO/CCP/FO/1PL/2PL/3PL/WPN) — at FOB pre-launch,
     # in flight aboard CH-47s during Φ1, at LZ EAGLE Φ2, then their own OBJ.
-    if phase_idx <= 0: return at(FOB_LAUNCH.offset_m(-30, 30))      # pre-loaded near rotors
-    if phase_idx == 1: return at(FOB_LAUNCH.offset_m(-2_500, -3_050))  # mid-flight
-    if phase_idx == 2: return at(LZ_EAGLE)
+    if phase_idx <= 0:
+        return at(FOB_LAUNCH.offset_m(-30, 30))  # pre-loaded near rotors
+    if phase_idx == 1:
+        return at(FOB_LAUNCH.offset_m(-2_500, -3_050))  # mid-flight
+    if phase_idx == 2:
+        return at(LZ_EAGLE)
     if phase_idx == 3:
-        return at(AIRFIELD.bearing_m(180.0, 700))                      # crossing PL HAMMER
+        return at(AIRFIELD.bearing_m(180.0, 700))  # crossing PL HAMMER
 
     # By phase the platoons head to their objectives
     if op.track == "1PL":
-        if phase_idx == 4: return at(CONTROL_TOWER)
-        if phase_idx >= 5: return at(AIRFIELD.offset_m(400, 0))         # BP ALPHA (north)
+        if phase_idx == 4:
+            return at(CONTROL_TOWER)
+        if phase_idx >= 5:
+            return at(AIRFIELD.offset_m(400, 0))  # BP ALPHA (north)
     if op.track == "2PL":
-        if phase_idx == 4: return at(AIRFIELD.bearing_m(180.0, 400))    # holding south of HAWK
-        if phase_idx == 5: return at(HANGAR_NW)
-        if phase_idx >= 6: return at(AIRFIELD.offset_m(-200, -800))     # BP BRAVO (west)
+        if phase_idx == 4:
+            return at(AIRFIELD.bearing_m(180.0, 400))  # holding south of HAWK
+        if phase_idx == 5:
+            return at(HANGAR_NW)
+        if phase_idx >= 6:
+            return at(AIRFIELD.offset_m(-200, -800))  # BP BRAVO (west)
     if op.track == "3PL":
-        if phase_idx <= 5: return at(AIRFIELD.bearing_m(180.0, 200))    # SE reserve
-        if phase_idx == 6: return at(AMMO_DUMP)
-        return at(AIRFIELD.offset_m(-200, 800))                          # BP CHARLIE (east)
+        if phase_idx <= 5:
+            return at(AIRFIELD.bearing_m(180.0, 200))  # SE reserve
+        if phase_idx == 6:
+            return at(AMMO_DUMP)
+        return at(AIRFIELD.offset_m(-200, 800))  # BP CHARLIE (east)
     if op.track == "CO":
-        if phase_idx <= 3: return at(LZ_EAGLE.offset_m(40, 0))
-        if phase_idx == 4: return at(CONTROL_TOWER.offset_m(-100, 0))   # with ME at FALCON
-        return at(CONTROL_TOWER.offset_m(-200, 0))                       # Coy TAC
+        if phase_idx <= 3:
+            return at(LZ_EAGLE.offset_m(40, 0))
+        if phase_idx == 4:
+            return at(CONTROL_TOWER.offset_m(-100, 0))  # with ME at FALCON
+        return at(CONTROL_TOWER.offset_m(-200, 0))  # Coy TAC
     if op.track == "CCP":
-        return at(LZ_EAGLE.offset_m(80, 0))                              # CCP stays at LZ
+        return at(LZ_EAGLE.offset_m(80, 0))  # CCP stays at LZ
     if op.track == "FO":
-        if phase_idx <= 2: return at(LZ_EAGLE.offset_m(50, 50))
-        return at(CONTROL_TOWER.offset_m(60, -100))                       # FO at tower top once held
+        if phase_idx <= 2:
+            return at(LZ_EAGLE.offset_m(50, 50))
+        return at(CONTROL_TOWER.offset_m(60, -100))  # FO at tower top once held
     if op.track == "WPN":
-        if phase_idx <= 2: return at(LZ_EAGLE.offset_m(-30, 0))
-        return at(AIRFIELD.offset_m(-300, 200))                           # mortar PA
+        if phase_idx <= 2:
+            return at(LZ_EAGLE.offset_m(-30, 0))
+        return at(AIRFIELD.offset_m(-300, 200))  # mortar PA
 
     return at(LZ_EAGLE)
 
 
-async def register_or_login(client: httpx.AsyncClient, admin_token: str,
-                             op: SimOp) -> None:
+async def register_or_login(
+    client: httpx.AsyncClient, admin_token: str, op: SimOp
+) -> None:
     tok = await login(client, op.callsign, SIM_PASSWORD)
     if tok:
         op.token = tok
         return
-    r = await api(client, "POST", "/auth/register/admin", token=admin_token, json={
-        "callsign": op.callsign, "password": SIM_PASSWORD,
-        "rank": op.rank, "role": op.role,
-    })
+    r = await api(
+        client,
+        "POST",
+        "/auth/register/admin",
+        token=admin_token,
+        json={
+            "callsign": op.callsign,
+            "password": SIM_PASSWORD,
+            "rank": op.rank,
+            "role": op.role,
+        },
+    )
     if r and r.get("access_token"):
         op.token = r["access_token"]
         log.info("  registered %-10s (%s, track %s)", op.callsign, op.role, op.track)
@@ -853,15 +1170,16 @@ def _speed_ms(op: SimOp, phase_idx: int) -> float:
     if op.track.startswith("CH47"):
         return 60.0 if phase_idx in (1, 8, 9) else 8.0
     if op.track == "VIPER":
-        return 12.0    # 43 km/h M2A3 cross-country
-    return 2.0         # 7 km/h dismount
+        return 12.0  # 43 km/h M2A3 cross-country
+    return 2.0  # 7 km/h dismount
 
 
 TICK_SECONDS = 1.5
 
 
-async def drive_operator(client: httpx.AsyncClient, op: SimOp,
-                         phase_state: dict, speed: float) -> None:
+async def drive_operator(
+    client: httpx.AsyncClient, op: SimOp, phase_state: dict, speed: float
+) -> None:
     if not op.token:
         return
     # Seed at the operator's Φ0 waypoint
@@ -872,13 +1190,22 @@ async def drive_operator(client: httpx.AsyncClient, op: SimOp,
         idx = max(0, min(len(PHASES) - 1, phase_state["idx"]))
         target = waypoint_for(op, idx)
         sim_dt = real_tick * speed
-        op.lat, op.lon = step_towards(op.lat, op.lon, target.lat, target.lon,
-                                      _speed_ms(op, idx), sim_dt)
+        op.lat, op.lon = step_towards(
+            op.lat, op.lon, target.lat, target.lon, _speed_ms(op, idx), sim_dt
+        )
         # CH-47s fly at altitude; ground tracks at sea level
         alt = 18.0 if op.track.startswith("CH47") and idx in (1,) else 4.0
-        await api(client, "POST", "/tracking/position", token=op.token, json={
-            "latitude": op.lat, "longitude": op.lon, "altitude": alt,
-        })
+        await api(
+            client,
+            "POST",
+            "/tracking/position",
+            token=op.token,
+            json={
+                "latitude": op.lat,
+                "longitude": op.lon,
+                "altitude": alt,
+            },
+        )
         await asyncio.sleep(real_tick)
 
 
@@ -903,26 +1230,30 @@ async def advance_phase_clock(phase_state: dict, speed: float, loop: bool) -> No
 
 # ── Live event injectors ────────────────────────────────────────────────────
 CONTACT_TEMPLATES = [
-    ("Enemy mech inf section in hangar",   "ENEMY", "SHGPUCIM----"),
-    ("Enemy T-72 spotted in revetment",    "ENEMY", "SHGPUCAA----"),
-    ("Enemy ATGM team (Kornet)",           "ENEMY", "SHGPUCAA---F"),
-    ("Enemy MANPADS launch detected",      "ENEMY", "SHGPUCDS----"),
-    ("Enemy mortar fire received",         "ENEMY", "SHGPUCFHE---"),
-    ("EN sniper IVO control tower",        "ENEMY", "SHGPUCIS----"),
-    ("Civilian on perimeter — challenged", "POI",   "SNGPI-------"),
-    ("Captured EN comms equipment",        "POI",   "SFGPUUS-----"),
-    ("LZ marked — green smoke",            "POI",   "SFGPIBA-----"),
+    ("Enemy mech inf section in hangar", "ENEMY", "SHGPUCIM----"),
+    ("Enemy T-72 spotted in revetment", "ENEMY", "SHGPUCAA----"),
+    ("Enemy ATGM team (Kornet)", "ENEMY", "SHGPUCAA---F"),
+    ("Enemy MANPADS launch detected", "ENEMY", "SHGPUCDS----"),
+    ("Enemy mortar fire received", "ENEMY", "SHGPUCFHE---"),
+    ("EN sniper IVO control tower", "ENEMY", "SHGPUCIS----"),
+    ("Civilian on perimeter — challenged", "POI", "SNGPI-------"),
+    ("Captured EN comms equipment", "POI", "SFGPUUS-----"),
+    ("LZ marked — green smoke", "POI", "SFGPIBA-----"),
 ]
 
 
 def _live_actor(ops: list[SimOp]) -> Optional[SimOp]:
     # Prefer forward Rangers (1/2/3 PL); fall back to anyone with a token
-    fwd = [o for o in ops if o.track in {"1PL","2PL","3PL","FO"} and o.token and o.lat]
+    fwd = [
+        o for o in ops if o.track in {"1PL", "2PL", "3PL", "FO"} and o.token and o.lat
+    ]
     live = [o for o in ops if o.token and o.lat]
     return random.choice(fwd) if fwd else (random.choice(live) if live else None)
 
 
-async def inject_contacts(client: httpx.AsyncClient, ops: list[SimOp], speed: float) -> None:
+async def inject_contacts(
+    client: httpx.AsyncClient, ops: list[SimOp], speed: float
+) -> None:
     interval = max(2.0, 10.0 / speed)
     await asyncio.sleep(interval * 0.4)
     n = 0
@@ -935,24 +1266,42 @@ async def inject_contacts(client: httpx.AsyncClient, ops: list[SimOp], speed: fl
         spread = random.uniform(120, 400)
         clat = op.lat + spread * LAT_DEG_PER_M
         clon = op.lon + random.uniform(-100, 100) * lon_deg_per_m(op.lat)
-        r = await api(client, "POST", "/tactical-objects", token=op.token, json={
-            "type": type_, "symbol_code": sidc,
-            "latitude": round(clat, 6), "longitude": round(clon, 6),
-            "affiliation": "ENEMY" if type_ == "ENEMY" else "FRIENDLY",
-            "notes": f"{desc} · {op.callsign}",
-            "echelon": "", "rotation": 0.0, "geometry": "",
-            "visibility": "COMPANY",
-        })
+        r = await api(
+            client,
+            "POST",
+            "/tactical-objects",
+            token=op.token,
+            json={
+                "type": type_,
+                "symbol_code": sidc,
+                "latitude": round(clat, 6),
+                "longitude": round(clon, 6),
+                "affiliation": "ENEMY" if type_ == "ENEMY" else "FRIENDLY",
+                "notes": f"{desc} · {op.callsign}",
+                "echelon": "",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            },
+        )
         if r:
             n += 1
             log.info("⚠️  %s marks: %s (#%d)", op.callsign, desc, n)
-        await api(client, "POST", "/messages", token=op.token, json={
-            "content": f"CONTACT — {desc} @ {clat:.4f},{clon:.4f}",
-            "message_type": "BROADCAST",
-        })
+        await api(
+            client,
+            "POST",
+            "/messages",
+            token=op.token,
+            json={
+                "content": f"CONTACT — {desc} @ {clat:.4f},{clon:.4f}",
+                "message_type": "BROADCAST",
+            },
+        )
 
 
-async def inject_spot_reports(client: httpx.AsyncClient, ops: list[SimOp], speed: float) -> None:
+async def inject_spot_reports(
+    client: httpx.AsyncClient, ops: list[SimOp], speed: float
+) -> None:
     interval = max(3.0, 18.0 / speed)
     await asyncio.sleep(interval * 0.6)
     while True:
@@ -961,61 +1310,90 @@ async def inject_spot_reports(client: httpx.AsyncClient, ops: list[SimOp], speed
         if not op:
             continue
         payload = {
-            "size":     random.choice(["squad", "section", "platoon"]),
-            "activity": random.choice([
-                "DEFENDING from prepared positions",
-                "WITHDRAWING under fire",
-                "REINFORCING from hangar dispersal",
-                "MORTAR-FIRING from south revetment",
-            ]),
-            "location":  f"{op.lat:.4f},{op.lon:.4f}",
-            "unit":      "EN inf coy",
-            "time":      "current",
-            "equipment": random.choice(["BTR-80", "T-72", "Kornet ATGM", "Igla MANPADS", "ZU-23-2"]),
+            "size": random.choice(["squad", "section", "platoon"]),
+            "activity": random.choice(
+                [
+                    "DEFENDING from prepared positions",
+                    "WITHDRAWING under fire",
+                    "REINFORCING from hangar dispersal",
+                    "MORTAR-FIRING from south revetment",
+                ]
+            ),
+            "location": f"{op.lat:.4f},{op.lon:.4f}",
+            "unit": "EN inf coy",
+            "time": "current",
+            "equipment": random.choice(
+                ["BTR-80", "T-72", "Kornet ATGM", "Igla MANPADS", "ZU-23-2"]
+            ),
             "direction": random.choice(["N", "NE", "E", "SE", "S", "SW", "W", "NW"]),
-            "distance":  random.choice([100, 200, 400, 600, 800]),
+            "distance": random.choice([100, 200, 400, 600, 800]),
             "description": f"Spot report from {op.callsign} during OP HAMMERHEAD",
         }
-        r = await api(client, "POST", "/reports", token=op.token,
-                      json={"type": "SPOT", "payload": payload})
+        r = await api(
+            client,
+            "POST",
+            "/reports",
+            token=op.token,
+            json={"type": "SPOT", "payload": payload},
+        )
         if r:
-            log.info("📋 %s SPOT %s %s @ %.4f,%.4f",
-                     op.callsign, payload["size"], payload["equipment"], op.lat, op.lon)
+            log.info(
+                "📋 %s SPOT %s %s @ %.4f,%.4f",
+                op.callsign,
+                payload["size"],
+                payload["equipment"],
+                op.lat,
+                op.lon,
+            )
 
 
-async def inject_fire_missions(client: httpx.AsyncClient, ops: list[SimOp], speed: float) -> None:
+async def inject_fire_missions(
+    client: httpx.AsyncClient, ops: list[SimOp], speed: float
+) -> None:
     interval = max(4.0, 22.0 / speed)
     await asyncio.sleep(interval * 0.5)
     n = 0
     while True:
         await asyncio.sleep(interval)
         # FO calls for fire if available; otherwise any forward
-        fo  = next((o for o in ops if o.callsign == "RANGER-FO" and o.token and o.lat), None)
-        op  = fo or _live_actor(ops)
+        fo = next(
+            (o for o in ops if o.callsign == "RANGER-FO" and o.token and o.lat), None
+        )
+        op = fo or _live_actor(ops)
         if not op:
             continue
         dist = random.uniform(300, 800)
-        brg  = random.uniform(340, 20)
+        brg = random.uniform(340, 20)
         tlat = op.lat + dist * math.cos(math.radians(brg)) * LAT_DEG_PER_M
         tlon = op.lon + dist * math.sin(math.radians(brg)) * lon_deg_per_m(op.lat)
         payload = {
-            "latitude": round(tlat, 6), "longitude": round(tlon, 6),
-            "altitude": 0.0, "direction": round(brg, 1),
-            "mission_type": random.choice(["ADJUST_FIRE", "FIRE_FOR_EFFECT",
-                                           "SUPPRESSION", "ILLUMINATION"]),
-            "ammunition":   random.choice(["HE", "SMOKE", "ILLUM"]),
-            "quantity":     random.choice([1, 2, 4, 6]),
-            "description":  f"{op.callsign} — CFF on enemy element @ OBJ HAMMERHEAD",
+            "latitude": round(tlat, 6),
+            "longitude": round(tlon, 6),
+            "altitude": 0.0,
+            "direction": round(brg, 1),
+            "mission_type": random.choice(
+                ["ADJUST_FIRE", "FIRE_FOR_EFFECT", "SUPPRESSION", "ILLUMINATION"]
+            ),
+            "ammunition": random.choice(["HE", "SMOKE", "ILLUM"]),
+            "quantity": random.choice([1, 2, 4, 6]),
+            "description": f"{op.callsign} — CFF on enemy element @ OBJ HAMMERHEAD",
         }
         r = await api(client, "POST", "/fire-missions", token=op.token, json=payload)
         if r:
             n += 1
-            log.info("🎯 %s CFF %s × %d %s (#%d)",
-                     op.callsign, payload["ammunition"], payload["quantity"],
-                     payload["mission_type"], n)
+            log.info(
+                "🎯 %s CFF %s × %d %s (#%d)",
+                op.callsign,
+                payload["ammunition"],
+                payload["quantity"],
+                payload["mission_type"],
+                n,
+            )
 
 
-async def inject_tic_alerts(client: httpx.AsyncClient, ops: list[SimOp], speed: float) -> None:
+async def inject_tic_alerts(
+    client: httpx.AsyncClient, ops: list[SimOp], speed: float
+) -> None:
     interval = max(8.0, 45.0 / speed)
     await asyncio.sleep(interval * 0.8)
     n = 0
@@ -1025,47 +1403,67 @@ async def inject_tic_alerts(client: httpx.AsyncClient, ops: list[SimOp], speed: 
         if not op:
             continue
         type_ = random.choices(
-            ["TIC", "MEDICAL", "EVAC", "LOST_COMMS"],
-            weights=[6, 2, 1, 1])[0]
-        r = await api(client, "POST", "/alerts", token=op.token, json={
-            "type": type_,
-            "latitude":  round(op.lat, 6),
-            "longitude": round(op.lon, 6),
-        })
+            ["TIC", "MEDICAL", "EVAC", "LOST_COMMS"], weights=[6, 2, 1, 1]
+        )[0]
+        r = await api(
+            client,
+            "POST",
+            "/alerts",
+            token=op.token,
+            json={
+                "type": type_,
+                "latitude": round(op.lat, 6),
+                "longitude": round(op.lon, 6),
+            },
+        )
         if r:
             n += 1
-            log.info("🚨 %s ALERT %s @ %.4f,%.4f (#%d)",
-                     op.callsign, type_, op.lat, op.lon, n)
+            log.info(
+                "🚨 %s ALERT %s @ %.4f,%.4f (#%d)",
+                op.callsign,
+                type_,
+                op.lat,
+                op.lon,
+                n,
+            )
 
 
 # ── Reset & main ────────────────────────────────────────────────────────────
-async def reset_world(client: httpx.AsyncClient,
-                      admin_token: str) -> tuple[int, int, int, int]:
+async def reset_world(
+    client: httpx.AsyncClient, admin_token: str
+) -> tuple[int, int, int, int]:
     n_obj = 0
-    for o in (await api(client, "GET", "/tactical-objects", token=admin_token) or []):
+    for o in await api(client, "GET", "/tactical-objects", token=admin_token) or []:
         if isinstance(o, dict) and o.get("type") in (ALL_TG_TYPES | NON_TG_TYPES):
-            r = await api(client, "DELETE", f"/tactical-objects/{o['id']}", token=admin_token)
+            r = await api(
+                client, "DELETE", f"/tactical-objects/{o['id']}", token=admin_token
+            )
             if r is not None:
                 n_obj += 1
     n_op = 0
-    for o in (await api(client, "GET", "/opords", token=admin_token) or []):
+    for o in await api(client, "GET", "/opords", token=admin_token) or []:
         title = o.get("title") if isinstance(o, dict) else None
         opnum = o.get("opord_number") if isinstance(o, dict) else None
-        if (title and "HAMMERHEAD" in title) or (opnum and opnum.startswith("OPORD 26-HH")):
+        if (title and "HAMMERHEAD" in title) or (
+            opnum and opnum.startswith("OPORD 26-HH")
+        ):
             r = await api(client, "DELETE", f"/opords/{o['id']}", token=admin_token)
             if r is not None:
                 n_op += 1
     n_ov = 0
-    for ov in (await api(client, "GET", "/overlays", token=admin_token) or []):
+    for ov in await api(client, "GET", "/overlays", token=admin_token) or []:
         if isinstance(ov, dict) and "id" in ov:
             r = await api(client, "DELETE", f"/overlays/{ov['id']}", token=admin_token)
             if r is not None:
                 n_ov += 1
     sim_callsigns = {o.callsign for o in _task_force()}
     n_users = 0
-    for op in (await api(client, "GET", "/operators", token=admin_token) or []):
-        if (isinstance(op, dict) and op.get("callsign") in sim_callsigns
-                and op.get("callsign") != ARGS.admin):
+    for op in await api(client, "GET", "/operators", token=admin_token) or []:
+        if (
+            isinstance(op, dict)
+            and op.get("callsign") in sim_callsigns
+            and op.get("callsign") != ARGS.admin
+        ):
             r = await api(client, "DELETE", f"/operators/{op['id']}", token=admin_token)
             if r is not None:
                 n_users += 1
@@ -1078,35 +1476,56 @@ async def amain() -> None:
         log.info("Logging in as seed admin %s …", ARGS.admin)
         admin_token = await login(client, ARGS.admin, ARGS.password)
         if not admin_token:
-            sys.exit(f"login failed for {ARGS.admin}. Provide --admin / --password "
-                     "for a non-MFA ADMIN account on the backend.")
+            sys.exit(
+                f"login failed for {ARGS.admin}. Provide --admin / --password "
+                "for a non-MFA ADMIN account on the backend."
+            )
         sim_utils.save_backend(ARGS.backend)
         log.info("Authenticated.")
         _CTX.mission_id = await sim_utils.create_mission_async(
-            client, _CTX.base, admin_token, ARGS.mission_name,
-            map_center_lat=51.0900, map_center_lng=2.6531, map_zoom=14)
+            client,
+            _CTX.base,
+            admin_token,
+            ARGS.mission_name,
+            map_center_lat=51.0900,
+            map_center_lng=2.6531,
+            map_zoom=14,
+        )
 
         if ARGS.reset:
             n_obj, n_op, n_ov, n_users = await reset_world(client, admin_token)
-            log.info("Reset: %d tactical objects · %d OPORDs · %d overlays · %d sim operators.",
-                     n_obj, n_op, n_ov, n_users)
+            log.info(
+                "Reset: %d tactical objects · %d OPORDs · %d overlays · %d sim operators.",
+                n_obj,
+                n_op,
+                n_ov,
+                n_users,
+            )
 
         # ── Static plant ────────────────────────────────────────────────
         items = build_tactical_objects()
-        log.info("── Planting %d tactical objects (airfield, LZs, axes, "
-                 "enemy ORBAT, friendly POIs, defence perimeter) ──", len(items))
+        log.info(
+            "── Planting %d tactical objects (airfield, LZs, axes, "
+            "enemy ORBAT, friendly POIs, defence perimeter) ──",
+            len(items),
+        )
         sem = asyncio.Semaphore(8)
+
         async def _post(item):
             async with sem:
-                return await api(client, "POST", "/tactical-objects",
-                                 token=admin_token, json=item)
+                return await api(
+                    client, "POST", "/tactical-objects", token=admin_token, json=item
+                )
+
         results = await asyncio.gather(*[_post(it) for it in items])
         ok = sum(1 for r in results if r)
         log.info("   %d / %d planted", ok, len(items))
 
         # OPORD
         op_payload = build_opord()
-        op_resp = await api(client, "POST", "/opords", token=admin_token, json=op_payload)
+        op_resp = await api(
+            client, "POST", "/opords", token=admin_token, json=op_payload
+        )
         op_id = op_resp.get("id", -1) if op_resp else -1
         if op_id < 0:
             log.warning("OPORD creation failed — see warnings above.")
@@ -1114,28 +1533,44 @@ async def amain() -> None:
             log.info("✓ OPORD created: id=%d  %s", op_id, op_payload["title"])
             if not ARGS.skip_snapshots:
                 for label, bbox, zoom, ann in opord_snapshots():
-                    r = await api(client, "POST",
-                                  f"/opords/{op_id}/snapshots/render",
-                                  token=admin_token, json={
-                                      "label": label, "bbox": bbox,
-                                      "zoom": zoom, "annotations": ann,
-                                  })
+                    r = await api(
+                        client,
+                        "POST",
+                        f"/opords/{op_id}/snapshots/render",
+                        token=admin_token,
+                        json={
+                            "label": label,
+                            "bbox": bbox,
+                            "zoom": zoom,
+                            "annotations": ann,
+                        },
+                    )
                     log.info("   %s snapshot: %s", "✓" if r else "·", label)
 
         # Verification
-        check_objs = await api(client, "GET", "/tactical-objects", token=admin_token) or []
-        check_ops  = await api(client, "GET", "/opords",            token=admin_token) or []
+        check_objs = (
+            await api(client, "GET", "/tactical-objects", token=admin_token) or []
+        )
+        check_ops = await api(client, "GET", "/opords", token=admin_token) or []
         from collections import Counter as _C
+
         by_type = _C(o.get("type") for o in check_objs if isinstance(o, dict))
-        by_aff  = _C(o.get("affiliation") for o in check_objs if isinstance(o, dict))
+        by_aff = _C(o.get("affiliation") for o in check_objs if isinstance(o, dict))
         log.info("── Verify ─────────────────────────────────────────────")
         log.info("   tactical objects on server : %d", len(check_objs))
         log.info("   by affiliation             : %s", dict(by_aff))
-        log.info("   types present              : %s",
-                 ", ".join(f"{k}={v}" for k, v in sorted(by_type.items())))
-        log.info("   HAMMERHEAD OPORDs          : %d",
-                 sum(1 for o in check_ops if isinstance(o, dict)
-                     and "HAMMERHEAD" in (o.get("title") or "")))
+        log.info(
+            "   types present              : %s",
+            ", ".join(f"{k}={v}" for k, v in sorted(by_type.items())),
+        )
+        log.info(
+            "   HAMMERHEAD OPORDs          : %d",
+            sum(
+                1
+                for o in check_ops
+                if isinstance(o, dict) and "HAMMERHEAD" in (o.get("title") or "")
+            ),
+        )
 
         if ARGS.no_live:
             log.info("--no-live: exiting without driving operators.")
@@ -1158,10 +1593,9 @@ async def amain() -> None:
                 inject_spot_reports(client, active, ARGS.speed),
                 inject_fire_missions(client, active, ARGS.speed),
                 inject_tic_alerts(client, active, ARGS.speed),
-                *[drive_operator(client, op, phase_state, ARGS.speed)
-                  for op in active],
+                *[drive_operator(client, op, phase_state, ARGS.speed) for op in active],
             )
-        except (KeyboardInterrupt, asyncio.CancelledError):
+        except KeyboardInterrupt, asyncio.CancelledError:
             log.info("Interrupted — task force frozen at last position.")
 
 
@@ -1174,9 +1608,7 @@ def main() -> None:
             ARGS.speed = 2.0  # default
 
     timeout: float | None = (
-        ARGS.steps * ARGS.dt
-        if ARGS.steps is not None and ARGS.dt is not None
-        else None
+        ARGS.steps * ARGS.dt if ARGS.steps is not None and ARGS.dt is not None else None
     )
 
     async def _run() -> None:

@@ -26,7 +26,9 @@ class ConnectionManager:
             self._connections.add(websocket)
             n = len(self._connections)
         client = getattr(websocket, "client", None)
-        log.info("WS connect: %s  (total=%d)", getattr(client, "host", "?"), n, extra=_CONN)
+        log.info(
+            "WS connect: %s  (total=%d)", getattr(client, "host", "?"), n, extra=_CONN
+        )
 
     async def disconnect(self, websocket: WebSocket) -> None:
         async with self._lock:

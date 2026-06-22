@@ -60,18 +60,22 @@ class RingBufferHandler(logging.Handler):
             msg = str(getattr(record, "msg", ""))
         if record.exc_info:
             try:
-                msg += "\n" + self.formatException(record.exc_info)
+                msg += "\n" + logging.Formatter().formatException(record.exc_info)
             except Exception:
                 pass
-        ts = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created))
-              + f".{int(record.msecs):03d}")
-        _append({
-            "ts": ts,
-            "level": record.levelname,
-            "logger": record.name,
-            "category": category_for(record.name, getattr(record, "cat", None)),
-            "message": msg,
-        })
+        ts = (
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created))
+            + f".{int(record.msecs):03d}"
+        )
+        _append(
+            {
+                "ts": ts,
+                "level": record.levelname,
+                "logger": record.name,
+                "category": category_for(record.name, getattr(record, "cat", None)),
+                "message": msg,
+            }
+        )
 
 
 def install(level: int = logging.DEBUG) -> RingBufferHandler:
@@ -92,19 +96,26 @@ def ingest(records: list[dict]) -> int:
     for r in records or []:
         if not isinstance(r, dict):
             continue
-        _append({
-            "ts":       str(r.get("ts", "")),
-            "level":    str(r.get("level", "INFO")).upper(),
-            "logger":   str(r.get("logger", "web")),
-            "category": str(r.get("category", "web")),
-            "message":  str(r.get("message", "")),
-        })
+        _append(
+            {
+                "ts": str(r.get("ts", "")),
+                "level": str(r.get("level", "INFO")).upper(),
+                "logger": str(r.get("logger", "web")),
+                "category": str(r.get("category", "web")),
+                "message": str(r.get("message", "")),
+            }
+        )
         n += 1
     return n
 
 
-def query(category: str | None = None, level: str | None = None,
-          q: str | None = None, since: int = 0, limit: int = 500) -> dict:
+def query(
+    category: str | None = None,
+    level: str | None = None,
+    q: str | None = None,
+    since: int = 0,
+    limit: int = 500,
+) -> dict:
     """Filtered slice of the buffer. ``since`` is the last seen record id."""
     minlvl = _LEVELS.get((level or "").upper(), 0)
     ql = (q or "").lower()

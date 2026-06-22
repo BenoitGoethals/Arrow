@@ -1,4 +1,5 @@
 """Voice alert player — TTS speech + synthesised alarm tone played in parallel."""
+
 from __future__ import annotations
 
 import threading
@@ -13,22 +14,22 @@ from PyQt6.QtTextToSpeech import QTextToSpeech
 log = logging.getLogger(__name__)
 
 _SAMPLE_RATE = 44_100
-_TONE_SECS   = 3.0
-_TONE_DELAY  = 1.2   # seconds after speech starts before tone kicks in
+_TONE_SECS = 3.0
+_TONE_DELAY = 1.2  # seconds after speech starts before tone kicks in
 
 # alert_type → (spoken text, tone freq Hz, waveform)
 _VOICES: dict[str, tuple[str, float, str]] = {
-    "TIC":          ("Contact, contact, contact",           1200, "square"),
-    "DRONE_SPOTTED":("Drone spotted, drone spotted",         540, "drone"),
-    "MEDICAL":      ("Medical emergency, medical emergency",  880, "sawtooth"),
-    "EVAC":         ("Evacuation, evacuation",                660, "sine"),
-    "LOST_COMMS":   ("Lost comms, lost comms",                440, "sine"),
+    "TIC": ("Contact, contact, contact", 1200, "square"),
+    "DRONE_SPOTTED": ("Drone spotted, drone spotted", 540, "drone"),
+    "MEDICAL": ("Medical emergency, medical emergency", 880, "sawtooth"),
+    "EVAC": ("Evacuation, evacuation", 660, "sine"),
+    "LOST_COMMS": ("Lost comms, lost comms", 440, "sine"),
 }
 
 
 def _build_tone(freq: float, waveform: str, duration: float) -> np.ndarray:
-    n   = int(_SAMPLE_RATE * duration)
-    t   = np.linspace(0, duration, n, endpoint=False)
+    n = int(_SAMPLE_RATE * duration)
+    t = np.linspace(0, duration, n, endpoint=False)
 
     if waveform == "square":
         raw = np.sign(np.sin(2 * np.pi * freq * t)).astype(np.float32)
@@ -36,15 +37,15 @@ def _build_tone(freq: float, waveform: str, duration: float) -> np.ndarray:
         raw = (2 * (t * freq - np.floor(t * freq + 0.5))).astype(np.float32)
     elif waveform == "drone":
         carrier = np.sin(2 * np.pi * freq * t)
-        lfo     = np.sign(np.sin(2 * np.pi * 12 * t))
-        raw     = (carrier * (0.5 + 0.5 * lfo)).astype(np.float32)
+        lfo = np.sign(np.sin(2 * np.pi * 12 * t))
+        raw = (carrier * (0.5 + 0.5 * lfo)).astype(np.float32)
     else:
         raw = np.sin(2 * np.pi * freq * t).astype(np.float32)
 
     # 0.3 s on / 0.2 s off pulsing envelope
     period = int(_SAMPLE_RATE * 0.5)
     on_len = int(_SAMPLE_RATE * 0.3)
-    mask   = np.zeros(n, dtype=np.float32)
+    mask = np.zeros(n, dtype=np.float32)
     for i in range(0, n, period):
         mask[i : i + on_len] = 1.0
     raw *= mask * 0.55
@@ -57,6 +58,7 @@ def _build_tone(freq: float, waveform: str, duration: float) -> np.ndarray:
 
 def _play_tone_after(freq: float, waveform: str, delay: float):
     """Background thread: wait `delay` seconds then play the alarm tone."""
+
     def _run():
         try:
             if delay > 0:
@@ -65,6 +67,7 @@ def _play_tone_after(freq: float, waveform: str, delay: float):
             sd.play(tone, samplerate=_SAMPLE_RATE, blocking=True)
         except Exception as exc:
             log.debug("Voice alert tone error: %s", exc)
+
     threading.Thread(target=_run, daemon=True).start()
 
 

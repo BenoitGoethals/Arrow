@@ -8,8 +8,17 @@ import wx.lib.buttons as wxbtn
 from typing import Callable
 
 from .theme import (
-    C_PANEL, C_ACCENT, C_TS, C_OK, C_ERR, C_WARN, C_XML, C_WS, C_DIM,
-    bold, mono,
+    C_PANEL,
+    C_ACCENT,
+    C_TS,
+    C_OK,
+    C_ERR,
+    C_WARN,
+    C_XML,
+    C_WS,
+    C_DIM,
+    bold,
+    mono,
 )
 
 
@@ -39,28 +48,30 @@ def make_btn(
     b.Bind(wx.EVT_BUTTON, handler)
     return b
 
+
 # ── Style slot indices ────────────────────────────────────────────────────────
 
 ST_DEFAULT = 0
-ST_TS      = 1
-ST_OK      = 2
-ST_ERR     = 3
-ST_WARN    = 4
-ST_XML     = 5
-ST_DATA    = 6
+ST_TS = 1
+ST_OK = 2
+ST_ERR = 3
+ST_WARN = 4
+ST_XML = 5
+ST_DATA = 6
 ST_CHANNEL = 7
-ST_SYS     = 8
+ST_SYS = 8
 
 # Maps the ``style`` string used in WsMonitor._log() to a slot index.
 LOG_STYLE_MAP: dict[str, int] = {
-    "sys":  ST_SYS,
-    "err":  ST_ERR,
-    "ok":   ST_OK,
+    "sys": ST_SYS,
+    "err": ST_ERR,
+    "ok": ST_OK,
     "warn": ST_WARN,
 }
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
+
 
 def make_log(parent: wx.Window, fg_default: wx.Colour) -> stc.StyledTextCtrl:
     """Create a read-only styled text log control parented to *parent*."""
@@ -79,9 +90,15 @@ def make_log(parent: wx.Window, fg_default: wx.Colour) -> stc.StyledTextCtrl:
     _sty(stc.STC_STYLE_DEFAULT, fg_default)
     ctrl.StyleClearAll()
     for idx, colour in [
-        (ST_DEFAULT, fg_default), (ST_TS,      C_TS),   (ST_OK,  C_OK),
-        (ST_ERR,     C_ERR),      (ST_WARN,    C_WARN),  (ST_XML, C_XML),
-        (ST_DATA,    C_WS),       (ST_CHANNEL, C_WARN),  (ST_SYS, C_DIM),
+        (ST_DEFAULT, fg_default),
+        (ST_TS, C_TS),
+        (ST_OK, C_OK),
+        (ST_ERR, C_ERR),
+        (ST_WARN, C_WARN),
+        (ST_XML, C_XML),
+        (ST_DATA, C_WS),
+        (ST_CHANNEL, C_WARN),
+        (ST_SYS, C_DIM),
     ]:
         _sty(idx, colour)
 
@@ -91,8 +108,7 @@ def make_log(parent: wx.Window, fg_default: wx.Colour) -> stc.StyledTextCtrl:
     return ctrl
 
 
-def log_append(ctrl: stc.StyledTextCtrl,
-               text: str, style: int = ST_DEFAULT) -> None:
+def log_append(ctrl: stc.StyledTextCtrl, text: str, style: int = ST_DEFAULT) -> None:
     """Append *text* to *ctrl* with the given style slot, then scroll to end."""
     ctrl.SetReadOnly(False)
     pos = ctrl.GetLength()

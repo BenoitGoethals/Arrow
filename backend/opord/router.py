@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 import uuid
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -58,19 +57,19 @@ def _to_out(o: Opord, db: Session) -> dict[str, Any]:
 
 
 def _apply(o: Opord, payload: OpordCreate | OpordUpdate) -> None:
-    o.title             = payload.title
-    o.opord_number      = payload.opord_number
-    o.dtg               = payload.dtg
-    o.time_zone         = payload.time_zone
-    o.classification    = payload.classification
-    o.references        = payload.references
+    o.title = payload.title
+    o.opord_number = payload.opord_number
+    o.dtg = payload.dtg
+    o.time_zone = payload.time_zone
+    o.classification = payload.classification
+    o.references = payload.references
     o.task_organization = payload.task_organization
-    o.situation         = json.dumps(payload.situation)
-    o.mission           = payload.mission
-    o.execution         = json.dumps(payload.execution)
-    o.sustainment       = json.dumps(payload.sustainment)
-    o.command_signal    = json.dumps(payload.command_signal)
-    o.battle_id         = payload.battle_id
+    o.situation = json.dumps(payload.situation)
+    o.mission = payload.mission
+    o.execution = json.dumps(payload.execution)
+    o.sustainment = json.dumps(payload.sustainment)
+    o.command_signal = json.dumps(payload.command_signal)
+    o.battle_id = payload.battle_id
 
 
 @router.get("", response_model=list[OpordOut])
@@ -102,9 +101,16 @@ def create_opord(
 ):
     o = Opord(author_id=current.id, status="DRAFT")
     _apply(o, payload)
-    db.add(o); db.commit(); db.refresh(o)
-    log_event(db, "OPORD_CREATE", operator_id=current.id, resource=f"opord:{o.id}",
-              detail=o.title[:80])
+    db.add(o)
+    db.commit()
+    db.refresh(o)
+    log_event(
+        db,
+        "OPORD_CREATE",
+        operator_id=current.id,
+        resource=f"opord:{o.id}",
+        detail=o.title[:80],
+    )
     return _to_out(o, db)
 
 
@@ -119,7 +125,8 @@ def update_opord(
     if not o:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     _apply(o, payload)
-    db.commit(); db.refresh(o)
+    db.commit()
+    db.refresh(o)
     return _to_out(o, db)
 
 
@@ -132,7 +139,8 @@ def delete_opord(
     o = db.get(Opord, opord_id)
     if not o:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    db.delete(o); db.commit()
+    db.delete(o)
+    db.commit()
     log_event(db, "OPORD_DELETE", operator_id=current.id, resource=f"opord:{opord_id}")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -150,36 +158,47 @@ def add_snapshot(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
     raw_b64 = payload.image_b64
-    if "," in raw_b64:                                # tolerate data URL prefix
+    if "," in raw_b64:  # tolerate data URL prefix
         raw_b64 = raw_b64.split(",", 1)[1]
     try:
         png = base64.b64decode(raw_b64, validate=False)
     except Exception:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid image_b64")
     if len(png) > 8 * 1024 * 1024:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Snapshot too large")
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Snapshot too large"
+        )
 
     PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"opord_{o.id}_{uuid.uuid4().hex}.png"
     (PHOTO_DIR / filename).write_bytes(png)
 
-    photo = Photo(filename=filename, original_name=f"{payload.label or 'snapshot'}.png",
-                  mime_type="image/png", uploaded_by=current.id)
-    db.add(photo); db.commit(); db.refresh(photo)
+    photo = Photo(
+        filename=filename,
+        original_name=f"{payload.label or 'snapshot'}.png",
+        mime_type="image/png",
+        uploaded_by=current.id,
+    )
+    db.add(photo)
+    db.commit()
+    db.refresh(photo)
 
     snaps = json.loads(o.map_snapshots or "[]")
     next_id = (max((s.get("id", 0) for s in snaps), default=0)) + 1
-    snaps.append({
-        "id": next_id,
-        "label": payload.label,
-        "bbox": payload.bbox,
-        "center": payload.center,
-        "zoom": payload.zoom,
-        "photo_id": photo.id,
-        "annotations": payload.annotations,
-    })
+    snaps.append(
+        {
+            "id": next_id,
+            "label": payload.label,
+            "bbox": payload.bbox,
+            "center": payload.center,
+            "zoom": payload.zoom,
+            "photo_id": photo.id,
+            "annotations": payload.annotations,
+        }
+    )
     o.map_snapshots = json.dumps(snaps)
-    db.commit(); db.refresh(o)
+    db.commit()
+    db.refresh(o)
     return _to_out(o, db)
 
 
@@ -202,24 +221,33 @@ def render_snapshot(
     PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"opord_{o.id}_{uuid.uuid4().hex}.png"
     (PHOTO_DIR / filename).write_bytes(png)
-    photo = Photo(filename=filename, original_name=f"{payload.label or 'snapshot'}.png",
-                  mime_type="image/png", uploaded_by=current.id)
-    db.add(photo); db.commit(); db.refresh(photo)
+    photo = Photo(
+        filename=filename,
+        original_name=f"{payload.label or 'snapshot'}.png",
+        mime_type="image/png",
+        uploaded_by=current.id,
+    )
+    db.add(photo)
+    db.commit()
+    db.refresh(photo)
 
     snaps = json.loads(o.map_snapshots or "[]")
     next_id = (max((s.get("id", 0) for s in snaps), default=0)) + 1
     s, w, n, e = payload.bbox
-    snaps.append({
-        "id": next_id,
-        "label": payload.label,
-        "bbox": payload.bbox,
-        "center": [(s + n) / 2, (w + e) / 2],
-        "zoom": payload.zoom,
-        "photo_id": photo.id,
-        "annotations": payload.annotations,
-    })
+    snaps.append(
+        {
+            "id": next_id,
+            "label": payload.label,
+            "bbox": payload.bbox,
+            "center": [(s + n) / 2, (w + e) / 2],
+            "zoom": payload.zoom,
+            "photo_id": photo.id,
+            "annotations": payload.annotations,
+        }
+    )
     o.map_snapshots = json.dumps(snaps)
-    db.commit(); db.refresh(o)
+    db.commit()
+    db.refresh(o)
     return _to_out(o, db)
 
 
@@ -235,7 +263,8 @@ def delete_snapshot(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     snaps = [s for s in json.loads(o.map_snapshots or "[]") if s.get("id") != snap_id]
     o.map_snapshots = json.dumps(snaps)
-    db.commit(); db.refresh(o)
+    db.commit()
+    db.refresh(o)
     return _to_out(o, db)
 
 
@@ -249,12 +278,20 @@ async def publish_opord(
     if not o:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     o.status = "PUBLISHED"
-    db.commit(); db.refresh(o)
-    await broadcaster.broadcast({
-        "channel": "opord", "event": "published",
-        "data": {"id": o.id, "title": o.title, "author_id": o.author_id,
-                 "recipient_ids": json.loads(o.recipient_ids or "[]")},
-    })
+    db.commit()
+    db.refresh(o)
+    await broadcaster.broadcast(
+        {
+            "channel": "opord",
+            "event": "published",
+            "data": {
+                "id": o.id,
+                "title": o.title,
+                "author_id": o.author_id,
+                "recipient_ids": json.loads(o.recipient_ids or "[]"),
+            },
+        }
+    )
     log_event(db, "OPORD_PUBLISH", operator_id=current.id, resource=f"opord:{o.id}")
     return _to_out(o, db)
 
@@ -275,15 +312,28 @@ async def send_opord(
     o.recipient_ids = json.dumps(sorted(existing))
     if o.status != "PUBLISHED":
         o.status = "PUBLISHED"
-    db.commit(); db.refresh(o)
-    await broadcaster.broadcast({
-        "channel": "opord", "event": "sent",
-        "data": {"id": o.id, "title": o.title, "author_id": o.author_id,
-                 "recipient_ids": payload.operator_ids,
-                 "from": current.callsign},
-    })
-    log_event(db, "OPORD_SEND", operator_id=current.id, resource=f"opord:{o.id}",
-              detail=f"to:{payload.operator_ids}")
+    db.commit()
+    db.refresh(o)
+    await broadcaster.broadcast(
+        {
+            "channel": "opord",
+            "event": "sent",
+            "data": {
+                "id": o.id,
+                "title": o.title,
+                "author_id": o.author_id,
+                "recipient_ids": payload.operator_ids,
+                "from": current.callsign,
+            },
+        }
+    )
+    log_event(
+        db,
+        "OPORD_SEND",
+        operator_id=current.id,
+        resource=f"opord:{o.id}",
+        detail=f"to:{payload.operator_ids}",
+    )
     return _to_out(o, db)
 
 
@@ -303,7 +353,9 @@ def export_pdf(
         for p in db.query(Photo).filter(Photo.id.in_(photo_ids)).all():
             photos[p.id] = p
     pdf_bytes = render_opord_pdf(o, photos)
-    safe_title = "".join(c if c.isalnum() or c in "-_" else "_" for c in o.title)[:60] or "opord"
+    safe_title = (
+        "".join(c if c.isalnum() or c in "-_" else "_" for c in o.title)[:60] or "opord"
+    )
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

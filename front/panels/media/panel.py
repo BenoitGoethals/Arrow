@@ -1,15 +1,21 @@
 """Media Gallery Panel — browse all photos and videos stored on the server."""
+
 from __future__ import annotations
-import mimetypes
-from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QScrollArea, QGridLayout, QDialog, QFileDialog, QFrame,
-    QSizePolicy,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QScrollArea,
+    QGridLayout,
+    QDialog,
+    QFileDialog,
+    QFrame,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
-from PyQt6.QtGui import QPixmap, QImage, QFont
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap, QFont
 import urllib.request
 
 
@@ -49,6 +55,7 @@ class _ThumbThread(QThread):
                 headers={"Authorization": f"Bearer {self._token}"},
             )
             from front.utils.ssl_utils import NO_VERIFY_CTX
+
             with urllib.request.urlopen(req, timeout=10, context=NO_VERIFY_CTX) as resp:
                 data = resp.read()
             self.loaded.emit(self._photo_id, data)
@@ -281,7 +288,8 @@ class MediaPanel(QWidget):
             px.loadFromData(data)
             if not px.isNull():
                 px = px.scaled(
-                    120, 120,
+                    120,
+                    120,
                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                     Qt.TransformationMode.SmoothTransformation,
                 )
@@ -299,10 +307,12 @@ class MediaPanel(QWidget):
 
         if mime.startswith("video/"):
             from PyQt6.QtWidgets import QMessageBox
+
             QMessageBox.information(
-                self, "Video",
+                self,
+                "Video",
                 f"Video: {name}\n\nURL:\n{url}\n\n"
-                "Open this URL in a media player to play the video."
+                "Open this URL in a media player to play the video.",
             )
         else:
             viewer = _ImageViewer(url, self._token, name, parent=self)
@@ -312,8 +322,10 @@ class MediaPanel(QWidget):
         if self._client is None:
             return
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select Photos or Videos", "",
-            "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)"
+            self,
+            "Select Photos or Videos",
+            "",
+            "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)",
         )
         if not paths:
             return

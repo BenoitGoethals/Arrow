@@ -1,23 +1,30 @@
 """Toast notification manager — slide-in alerts in the bottom-right corner."""
+
 from __future__ import annotations
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QMainWindow
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, QObject, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QMainWindow,
+)
+from PyQt6.QtCore import Qt, QTimer, QRect, QObject, pyqtSignal
 
 SEVERITY = {
-    "tic":     ("#f85149", "⚡"),
-    "alert":   ("#f85149", "⚠"),
+    "tic": ("#f85149", "⚡"),
+    "alert": ("#f85149", "⚠"),
     "medevac": ("#ff9e64", "🚁"),
-    "drone":   ("#d2a8ff", "🛸"),
-    "report":  ("#d29922", "📋"),
+    "drone": ("#d2a8ff", "🛸"),
+    "report": ("#d29922", "📋"),
     "message": ("#79c0ff", "◎"),
-    "info":    ("#3fb950", "●"),
+    "info": ("#3fb950", "●"),
     "mission": ("#1f6feb", "◈"),
-    "cbrn":    ("#ff4400", "☢"),
+    "cbrn": ("#ff4400", "☢"),
 }
 
-_W = 340   # toast width
-_GAP = 6   # gap between toasts
+_W = 340  # toast width
+_GAP = 6  # gap between toasts
 
 
 class _Toast(QFrame):
@@ -102,7 +109,7 @@ class ToastManager(QObject):
 
     def __init__(self, window: QMainWindow):
         super().__init__(window)
-        self._window  = window
+        self._window = window
         self._toasts: list[_Toast] = []
 
     # ---- Public API -------------------------------------------------------
@@ -118,10 +125,10 @@ class ToastManager(QObject):
 
     def alert(self, alert_type: str, operator: str = "", location: str = ""):
         kind_map = {
-            "TIC":           "tic",
-            "MEDICAL":       "medevac",
-            "EVAC":          "alert",
-            "LOST_COMMS":    "alert",
+            "TIC": "tic",
+            "MEDICAL": "medevac",
+            "EVAC": "alert",
+            "LOST_COMMS": "alert",
             "DRONE_SPOTTED": "drone",
         }
         kind = kind_map.get(alert_type, "alert")
@@ -142,8 +149,8 @@ class ToastManager(QObject):
         self._restack()
 
     def _restack(self):
-        w   = self._window
-        sb  = w.statusBar().height() if w.statusBar() else 24
+        w = self._window
+        sb = w.statusBar().height() if w.statusBar() else 24
         pad = 10
         bottom = w.height() - sb - pad
         for i, t in enumerate(reversed(self._toasts)):

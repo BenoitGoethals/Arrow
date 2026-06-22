@@ -4,6 +4,7 @@ Two tabs:
   LOCAL LAYERS — list loaded overlays, toggle visibility, remove
   FROM SERVER  — browse server sources, download with progress
 """
+
 from __future__ import annotations
 
 import threading
@@ -12,9 +13,16 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal, QThread, QObject
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QWidget, QFrame, QTabWidget, QProgressBar,
-    QSizePolicy,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QWidget,
+    QFrame,
+    QTabWidget,
+    QProgressBar,
 )
 
 _DOWNLOAD_DIR = Path.home() / ".arrow_front" / "maps"
@@ -22,10 +30,12 @@ _DOWNLOAD_DIR = Path.home() / ".arrow_front" / "maps"
 
 # ── Background workers ────────────────────────────────────────────────────────
 
+
 class _FetchWorker(QObject):
     """Fetches source list from server in a thread."""
-    finished = pyqtSignal(list)   # list[dict]
-    error    = pyqtSignal(str)
+
+    finished = pyqtSignal(list)  # list[dict]
+    error = pyqtSignal(str)
 
     def __init__(self, client):
         super().__init__()
@@ -41,16 +51,17 @@ class _FetchWorker(QObject):
 
 class _DownloadWorker(QObject):
     """Streams one MBTiles file from the server to disk."""
-    progress  = pyqtSignal(int, int)   # done_bytes, total_bytes
-    finished  = pyqtSignal(str)        # dest_path
-    error     = pyqtSignal(str)
+
+    progress = pyqtSignal(int, int)  # done_bytes, total_bytes
+    finished = pyqtSignal(str)  # dest_path
+    error = pyqtSignal(str)
 
     def __init__(self, client, name: str, dest_path: str):
         super().__init__()
-        self._client    = client
-        self._name      = name
+        self._client = client
+        self._name = name
         self._dest_path = dest_path
-        self._stop      = threading.Event()
+        self._stop = threading.Event()
 
     def cancel(self):
         self._stop.set()
@@ -58,7 +69,8 @@ class _DownloadWorker(QObject):
     def run(self):
         try:
             self._client.download_mbtiles(
-                self._name, self._dest_path,
+                self._name,
+                self._dest_path,
                 on_progress=lambda d, t: self.progress.emit(d, t),
                 stop_event=self._stop,
             )
@@ -71,6 +83,7 @@ class _DownloadWorker(QObject):
 
 
 # ── Main dialog ───────────────────────────────────────────────────────────────
+
 
 class MBTilesDialog(QDialog):
     """Floating manager for MBTiles overlays.
@@ -85,8 +98,8 @@ class MBTilesDialog(QDialog):
     toggle_requested(mbt_id, on) — change overlay visibility
     """
 
-    add_requested    = pyqtSignal(str)        # file path
-    remove_requested = pyqtSignal(str)        # mbt_id
+    add_requested = pyqtSignal(str)  # file path
+    remove_requested = pyqtSignal(str)  # mbt_id
     toggle_requested = pyqtSignal(str, bool)  # mbt_id, visible
 
     def __init__(self, parent=None):
@@ -94,15 +107,13 @@ class MBTilesDialog(QDialog):
         self.setWindowTitle("MBTiles Layers")
         self.setMinimumSize(500, 340)
         self.setMaximumWidth(620)
-        self.setWindowFlags(
-            Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint
-        )
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         self._layers: dict[str, dict] = {}
         self._client = None
         self._server_sources: list[dict] = []
-        self._dl_thread: QThread | None  = None
+        self._dl_thread: QThread | None = None
         self._dl_worker: _DownloadWorker | None = None
-        self._dl_name   = ""
+        self._dl_name = ""
         self._build()
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -137,7 +148,7 @@ class MBTilesDialog(QDialog):
         # Tabs
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
-        self._tabs.addTab(self._build_local_tab(),  "LOCAL LAYERS")
+        self._tabs.addTab(self._build_local_tab(), "LOCAL LAYERS")
         self._tabs.addTab(self._build_server_tab(), "FROM SERVER")
         root.addWidget(self._tabs, 1)
 
@@ -218,13 +229,15 @@ class MBTilesDialog(QDialog):
             "QPushButton{background:transparent;border:none;font-size:14px;}"
             "QPushButton:hover{background:#21262d;border-radius:4px;}"
         )
-        eye_btn.clicked.connect(lambda checked, mid=mbt_id: self.toggle_requested.emit(mid, checked))
+        eye_btn.clicked.connect(
+            lambda checked, mid=mbt_id: self.toggle_requested.emit(mid, checked)
+        )
         rl.addWidget(eye_btn)
 
-        name    = info.get("name", mbt_id)
-        z_min   = info.get("min_zoom", 0)
-        z_max   = info.get("max_zoom", 18)
-        fname   = Path(info.get("path", "")).name
+        name = info.get("name", mbt_id)
+        z_min = info.get("min_zoom", 0)
+        z_max = info.get("max_zoom", 18)
+        fname = Path(info.get("path", "")).name
         col = QVBoxLayout()
         col.setSpacing(1)
         name_lbl = QLabel(name)
@@ -250,6 +263,7 @@ class MBTilesDialog(QDialog):
 
     def _pick_file(self):
         from PyQt6.QtWidgets import QFileDialog
+
         path, _ = QFileDialog.getOpenFileName(
             self, "Open MBTiles", "", "MBTiles files (*.mbtiles *.mb)"
         )
@@ -338,7 +352,9 @@ class MBTilesDialog(QDialog):
     def _on_sources_fetched(self, sources: list):
         self._server_sources = sources
         count = len(sources)
-        self._srv_status.setText(f"{count} downloadable source{'s' if count != 1 else ''}")
+        self._srv_status.setText(
+            f"{count} downloadable source{'s' if count != 1 else ''}"
+        )
         self._rebuild_server_list()
 
     def _rebuild_server_list(self):
@@ -379,7 +395,7 @@ class MBTilesDialog(QDialog):
         title_lbl.setStyleSheet("color:#e6edf3;font-size:11px;font-weight:600;")
         z_min = src.get("min_zoom", 0)
         z_max = src.get("max_zoom", 18)
-        size  = src.get("size_bytes") or 0
+        size = src.get("size_bytes") or 0
         size_str = _fmt_size(size)
         meta_lbl = QLabel(f"z{z_min}–{z_max}  ·  {size_str}")
         meta_lbl.setStyleSheet("color:#484f58;font-size:9px;")
@@ -441,9 +457,7 @@ class MBTilesDialog(QDialog):
     def _on_progress(self, done: int, total: int):
         pct = int(done * 100 / total) if total > 0 else 0
         self._progress_bar.setValue(pct)
-        self._progress_lbl.setText(
-            f"{_fmt_size(done)} / {_fmt_size(total)}  ({pct}%)"
-        )
+        self._progress_lbl.setText(f"{_fmt_size(done)} / {_fmt_size(total)}  ({pct}%)")
 
     def _on_dl_finished(self, path: str, btn: QPushButton):
         self._dl_thread = None
@@ -468,13 +482,14 @@ class MBTilesDialog(QDialog):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _fmt_size(b: int) -> str:
     if b <= 0:
         return "?"
     if b < 1024:
         return f"{b} B"
-    if b < 1024 ** 2:
+    if b < 1024**2:
         return f"{b / 1024:.1f} KB"
-    if b < 1024 ** 3:
+    if b < 1024**3:
         return f"{b / 1024 ** 2:.1f} MB"
     return f"{b / 1024 ** 3:.2f} GB"

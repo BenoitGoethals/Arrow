@@ -1,64 +1,71 @@
 """Tactical Graphics Panel — matches Frontline screenshot 2.
 Pick a graphic type, then draw it on the map.
 """
+
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QPushButton, QLabel, QFrame, QScrollArea, QButtonGroup,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QPushButton,
+    QLabel,
+    QFrame,
+    QScrollArea,
+    QButtonGroup,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QColor
 
 # (display_name, graphic_type_key, affiliation F/H, icon_char)
 # Canonical tactical-graphic type vocabulary — SHARED with web + android.
 # affiliation is a SEPARATE field (FRIENDLY/HOSTILE), NOT baked into the type.
 FRIENDLY_GRAPHICS = [
-    ("Attack",         "ATK_AXIS",      "F", "▶"),
-    ("Counterattack",  "COUNTERATTACK", "F", "↺"),
-    ("Defense",        "DEF_AREA",      "F", "⊢"),
-    ("Ambush",         "AMBUSH",        "F", "∨"),
-    ("Block",          "BLOCK",         "F", "⊥"),
-    ("Bypass",         "BYPASS",        "F", "↗"),
-    ("Withdraw",       "WITHDRAW",      "F", "↩"),
-    ("Objective area", "OBJ_AREA",      "F", "⊡"),
-    ("Boundary",       "BOUNDARY",      "F", "+"),
-    ("FLOT",           "FLOT",          "F", "—"),
-    ("FLET",           "FLET",          "F", "—"),
-    ("Phase line",     "PHASE_LINE",    "F", "—"),
+    ("Attack", "ATK_AXIS", "F", "▶"),
+    ("Counterattack", "COUNTERATTACK", "F", "↺"),
+    ("Defense", "DEF_AREA", "F", "⊢"),
+    ("Ambush", "AMBUSH", "F", "∨"),
+    ("Block", "BLOCK", "F", "⊥"),
+    ("Bypass", "BYPASS", "F", "↗"),
+    ("Withdraw", "WITHDRAW", "F", "↩"),
+    ("Objective area", "OBJ_AREA", "F", "⊡"),
+    ("Boundary", "BOUNDARY", "F", "+"),
+    ("FLOT", "FLOT", "F", "—"),
+    ("FLET", "FLET", "F", "—"),
+    ("Phase line", "PHASE_LINE", "F", "—"),
 ]
 
 ENEMY_GRAPHICS = [
-    ("Attack",         "ATK_AXIS",      "H", "▶"),
-    ("Counterattack",  "COUNTERATTACK", "H", "↺"),
-    ("Defense",        "DEF_AREA",      "H", "⊢"),
-    ("Ambush",         "AMBUSH",        "H", "∨"),
-    ("Block",          "BLOCK",         "H", "⊥"),
-    ("Bypass",         "BYPASS",        "H", "↗"),
-    ("Withdraw",       "WITHDRAW",      "H", "↩"),
-    ("Objective area", "OBJ_AREA",      "H", "⊡"),
-    ("Boundary",       "BOUNDARY",      "H", "+"),
-    ("FLOT",           "FLOT",          "H", "—"),
-    ("FLET",           "FLET",          "H", "—"),
-    ("Phase line",     "PHASE_LINE",    "H", "—"),
+    ("Attack", "ATK_AXIS", "H", "▶"),
+    ("Counterattack", "COUNTERATTACK", "H", "↺"),
+    ("Defense", "DEF_AREA", "H", "⊢"),
+    ("Ambush", "AMBUSH", "H", "∨"),
+    ("Block", "BLOCK", "H", "⊥"),
+    ("Bypass", "BYPASS", "H", "↗"),
+    ("Withdraw", "WITHDRAW", "H", "↩"),
+    ("Objective area", "OBJ_AREA", "H", "⊡"),
+    ("Boundary", "BOUNDARY", "H", "+"),
+    ("FLOT", "FLOT", "H", "—"),
+    ("FLET", "FLET", "H", "—"),
+    ("Phase line", "PHASE_LINE", "H", "—"),
 ]
 
 CONTROL_GRAPHICS = [
-    ("FSCL",            "FSCL",            "F", "—"),
-    ("CFL",             "CFL",             "F", "—"),
-    ("No-Fire Line",    "NFL",             "F", "—"),
-    ("No-Fire Area",    "NFA",             "H", "□"),
-    ("Free-Fire Area",  "FFA",             "F", "□"),
+    ("FSCL", "FSCL", "F", "—"),
+    ("CFL", "CFL", "F", "—"),
+    ("No-Fire Line", "NFL", "F", "—"),
+    ("No-Fire Area", "NFA", "H", "□"),
+    ("Free-Fire Area", "FFA", "F", "□"),
     ("Engagement Area", "ENGAGEMENT_AREA", "H", "□"),
-    ("NAI",             "NAI",             "F", "□"),
-    ("TAI",             "TAI",             "H", "□"),
-    ("Axis of Advance", "AXIS",            "F", "→"),
-    ("Route",           "ROUTE",           "F", "—"),
+    ("NAI", "NAI", "F", "□"),
+    ("TAI", "TAI", "H", "□"),
+    ("Axis of Advance", "AXIS", "F", "→"),
+    ("Route", "ROUTE", "F", "—"),
 ]
 
 ECHELON_LABELS = [("—", "--"), ("TM", "A-"), ("SEC", "D-"), ("PL", "E-"), ("COY", "F-")]
 
-_BLUE  = "#3b82f6"
-_RED   = "#ef4444"
+_BLUE = "#3b82f6"
+_RED = "#ef4444"
 _AMBER = "#f59e0b"
 
 
@@ -78,21 +85,23 @@ _FD_THICK = [1, 2, 3, 5, 8]
 class DrawPanel(QWidget):
     """Replicates the Frontline tactical graphics selection panel."""
 
-    draw_mode_changed = pyqtSignal(str)        # type_key passed to map
-    draw_graphic      = pyqtSignal(str, str)   # type_key, affiliation (F/H)
-    free_draw_changed = pyqtSignal(str, str, int)  # tool ('pen'|'text'|'none'), color, thickness
-    free_draw_undo    = pyqtSignal()
-    free_draw_clear   = pyqtSignal()
-    delete_all_graphics = pyqtSignal()   # wipe every tactical object/graphic
+    draw_mode_changed = pyqtSignal(str)  # type_key passed to map
+    draw_graphic = pyqtSignal(str, str)  # type_key, affiliation (F/H)
+    free_draw_changed = pyqtSignal(
+        str, str, int
+    )  # tool ('pen'|'text'|'none'), color, thickness
+    free_draw_undo = pyqtSignal()
+    free_draw_clear = pyqtSignal()
+    delete_all_graphics = pyqtSignal()  # wipe every tactical object/graphic
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._active_type: str | None = None
-        self._active_aff:  str = "F"
+        self._active_aff: str = "F"
         self._echelon: str = "--"
         self._fd_color: str = "#f85149"
         self._fd_thick: int = 2
-        self._fd_tool:  str = "none"
+        self._fd_tool: str = "none"
         self._build_ui()
 
     def _build_ui(self):
@@ -102,14 +111,21 @@ class DrawPanel(QWidget):
 
         # Instruction header
         hdr = QLabel("  Pick a graphic, then click on the map.")
-        hdr.setStyleSheet("color:#8b949e;font-size:13px;padding:6px 8px;background:#161b22;border-bottom:1px solid #21262d;")
+        hdr.setStyleSheet(
+            "color:#8b949e;font-size:13px;padding:6px 8px;background:#161b22;border-bottom:1px solid #21262d;"
+        )
         outer.addWidget(hdr)
 
         # Echelon row
         ech_row = QHBoxLayout()
         ech_row.setContentsMargins(8, 6, 8, 4)
         ech_row.setSpacing(4)
-        ech_row.addWidget(QLabel("ECHELON", styleSheet="color:#6e7681;font-size:12px;font-weight:700;letter-spacing:1.5px;"))
+        ech_row.addWidget(
+            QLabel(
+                "ECHELON",
+                styleSheet="color:#6e7681;font-size:12px;font-weight:700;letter-spacing:1.5px;",
+            )
+        )
         self._ech_group = QButtonGroup(self)
         for label, code in ECHELON_LABELS:
             btn = QPushButton(label)
@@ -123,7 +139,9 @@ class DrawPanel(QWidget):
         ech_row.addStretch()
         outer.addLayout(ech_row)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine); sep.setFixedHeight(1)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFixedHeight(1)
         outer.addWidget(sep)
 
         # Scrollable graphic list
@@ -141,7 +159,9 @@ class DrawPanel(QWidget):
         layout.addWidget(self._section_header("FREE DRAW", "#8b949e"))
         self._build_free_draw_section(layout)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine); sep2.setFixedHeight(1)
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setFixedHeight(1)
         layout.addWidget(sep2)
 
         # Friendly section
@@ -153,7 +173,9 @@ class DrawPanel(QWidget):
         self._enemy_btns = self._graphic_grid(layout, ENEMY_GRAPHICS, _RED)
 
         # Fire Support / Control section
-        layout.addWidget(self._section_header("FIRE SUPPORT / CONTROL MEASURES", _AMBER))
+        layout.addWidget(
+            self._section_header("FIRE SUPPORT / CONTROL MEASURES", _AMBER)
+        )
         self._control_btns = self._graphic_grid(layout, CONTROL_GRAPHICS, _AMBER)
 
         layout.addStretch()
@@ -209,7 +231,9 @@ class DrawPanel(QWidget):
         # Thickness row
         thick_row = QHBoxLayout()
         thick_row.setSpacing(4)
-        thick_row.addWidget(QLabel("PX", styleSheet="color:#6e7681;font-size:12px;font-weight:700;"))
+        thick_row.addWidget(
+            QLabel("PX", styleSheet="color:#6e7681;font-size:12px;font-weight:700;")
+        )
         self._fd_thick_btns: list[QPushButton] = []
         for t in _FD_THICK:
             btn = QPushButton(str(t))
@@ -325,20 +349,28 @@ class DrawPanel(QWidget):
     @staticmethod
     def _fd_thick_style(active: bool) -> str:
         if active:
-            return ("QPushButton{background:#1c2d3f;border:1px solid #1f6feb;"
-                    "color:#79c0ff;font-size:13px;font-weight:700;}")
-        return ("QPushButton{background:#21262d;border:1px solid #30363d;"
-                "color:#8b949e;font-size:13px;}"
-                "QPushButton:hover{background:#30363d;color:#c9d1d9;}")
+            return (
+                "QPushButton{background:#1c2d3f;border:1px solid #1f6feb;"
+                "color:#79c0ff;font-size:13px;font-weight:700;}"
+            )
+        return (
+            "QPushButton{background:#21262d;border:1px solid #30363d;"
+            "color:#8b949e;font-size:13px;}"
+            "QPushButton:hover{background:#30363d;color:#c9d1d9;}"
+        )
 
     @staticmethod
     def _fd_tool_style(active: bool) -> str:
         if active:
-            return ("QPushButton{background:#1c2d3f;border:1px solid #388bfd;"
-                    "color:#79c0ff;font-size:13px;font-weight:600;padding:0 6px;}")
-        return ("QPushButton{background:#21262d;border:1px solid #30363d;"
-                "color:#8b949e;font-size:13px;padding:0 6px;}"
-                "QPushButton:hover{background:#30363d;color:#c9d1d9;}")
+            return (
+                "QPushButton{background:#1c2d3f;border:1px solid #388bfd;"
+                "color:#79c0ff;font-size:13px;font-weight:600;padding:0 6px;}"
+            )
+        return (
+            "QPushButton{background:#21262d;border:1px solid #30363d;"
+            "color:#8b949e;font-size:13px;padding:0 6px;}"
+            "QPushButton:hover{background:#30363d;color:#c9d1d9;}"
+        )
 
     # ---- Builders --------------------------------------------------------
 
@@ -386,12 +418,12 @@ class DrawPanel(QWidget):
                 b.setStyleSheet(self._gfx_btn_style(b.property("color"), False))
 
         gtype = btn.property("gtype")
-        aff   = btn.property("aff")
+        aff = btn.property("aff")
         color = btn.property("color")
 
         if btn.isChecked():
             self._active_type = gtype
-            self._active_aff  = aff
+            self._active_aff = aff
             btn.setStyleSheet(self._gfx_btn_style(color, True))
             self._cancel_btn.setEnabled(True)
             self.draw_graphic.emit(gtype, aff)
@@ -423,8 +455,12 @@ class DrawPanel(QWidget):
     @staticmethod
     def _gfx_btn_style(color: str, active: bool) -> str:
         if active:
-            return (f"QPushButton{{background:{color}22;border:1px solid {color};"
-                    f"color:{color};font-size:13px;text-align:left;padding:0 6px;font-weight:600;}}")
-        return (f"QPushButton{{background:#161b22;border:1px solid #30363d;"
-                f"color:#8b949e;font-size:13px;text-align:left;padding:0 6px;}}"
-                f"QPushButton:hover{{background:{color}15;border-color:{color};color:{color};}}")
+            return (
+                f"QPushButton{{background:{color}22;border:1px solid {color};"
+                f"color:{color};font-size:13px;text-align:left;padding:0 6px;font-weight:600;}}"
+            )
+        return (
+            f"QPushButton{{background:#161b22;border:1px solid #30363d;"
+            f"color:#8b949e;font-size:13px;text-align:left;padding:0 6px;}}"
+            f"QPushButton:hover{{background:{color}15;border-color:{color};color:{color};}}"
+        )

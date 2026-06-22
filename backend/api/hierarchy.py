@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, selectinload
@@ -55,8 +56,11 @@ def get_hierarchy(
     companies = (
         db.query(Company)
         .options(
-            selectinload(Company.platoons)
-            .selectinload(__import__("backend.storage.models", fromlist=["Platoon"]).Platoon.sections)
+            selectinload(Company.platoons).selectinload(
+                __import__(
+                    "backend.storage.models", fromlist=["Platoon"]
+                ).Platoon.sections
+            )
         )
         .all()
     )
@@ -79,18 +83,32 @@ def get_hierarchy(
 
     tree: list[dict] = []
     for company in companies:
-        c_node = {"id": company.id, "name": company.name, "platoons": []}
+        c_node: dict[str, Any] = {
+            "id": company.id,
+            "name": company.name,
+            "platoons": [],
+        }
         for platoon in company.platoons:
-            p_node = {"id": platoon.id, "name": platoon.name, "sections": []}
+            p_node: dict[str, Any] = {
+                "id": platoon.id,
+                "name": platoon.name,
+                "sections": [],
+            }
             for section in platoon.sections:
-                s_node = {"id": section.id, "name": section.name, "teams": []}
+                s_node: dict[str, Any] = {
+                    "id": section.id,
+                    "name": section.name,
+                    "teams": [],
+                }
                 for team in section.teams:
                     members = by_team.get(team.id, [])
                     s_node["teams"].append(
                         {
                             "id": team.id,
                             "name": team.name,
-                            "operators": [_operator_dict(o, _is_online(o, now)) for o in members],
+                            "operators": [
+                                _operator_dict(o, _is_online(o, now)) for o in members
+                            ],
                         }
                     )
                 p_node["sections"].append(s_node)
@@ -99,6 +117,8 @@ def get_hierarchy(
 
     return {
         "companies": tree,
-        "unassigned_operators": [_operator_dict(o, _is_online(o, now)) for o in unassigned],
+        "unassigned_operators": [
+            _operator_dict(o, _is_online(o, now)) for o in unassigned
+        ],
         "online_window_seconds": ONLINE_WINDOW_SECONDS,
     }

@@ -1,32 +1,41 @@
 """Strike Package panel — list, select, load map overlay, open planner."""
+
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QPushButton, QFrame, QScrollArea, QGridLayout,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QScrollArea,
+    QGridLayout,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont
 
 STATUS_COLOR = {
     "PLANNING": "#d29922",
-    "ACTIVE":   "#3fb950",
+    "ACTIVE": "#3fb950",
     "COMPLETE": "#6e7681",
-    "ABORTED":  "#f85149",
+    "ABORTED": "#f85149",
 }
 STATUS_ICON = {
     "PLANNING": "○",
-    "ACTIVE":   "●",
+    "ACTIVE": "●",
     "COMPLETE": "✓",
-    "ABORTED":  "✕",
+    "ABORTED": "✕",
 }
 
 
 class StrikePackagePanel(QWidget):
-    package_selected     = pyqtSignal(dict)      # full bundle
-    package_cleared      = pyqtSignal()
-    overlay_requested    = pyqtSignal(dict)      # load tact objects on map
-    planner_requested    = pyqtSignal(dict)      # open planning window
-    refresh_requested    = pyqtSignal()
+    package_selected = pyqtSignal(dict)  # full bundle
+    package_cleared = pyqtSignal()
+    overlay_requested = pyqtSignal(dict)  # load tact objects on map
+    planner_requested = pyqtSignal(dict)  # open planning window
+    refresh_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -44,8 +53,12 @@ class StrikePackagePanel(QWidget):
         # Header
         hdr = QHBoxLayout()
         hdr.setContentsMargins(8, 6, 8, 4)
-        hdr.addWidget(QLabel("STRIKE PACKAGES",
-            styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;"))
+        hdr.addWidget(
+            QLabel(
+                "STRIKE PACKAGES",
+                styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;",
+            )
+        )
         hdr.addStretch()
 
         refresh_btn = QPushButton("⟳")
@@ -60,13 +73,16 @@ class StrikePackagePanel(QWidget):
         hdr.addWidget(refresh_btn)
 
         clear_btn = QPushButton("CLEAR")
-        clear_btn.setFixedHeight(24); clear_btn.setFixedWidth(52)
+        clear_btn.setFixedHeight(24)
+        clear_btn.setFixedWidth(52)
         clear_btn.setStyleSheet("font-size:12px;padding:0 4px;")
         clear_btn.clicked.connect(self._clear)
         hdr.addWidget(clear_btn)
         root.addLayout(hdr)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine); sep.setFixedHeight(1)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFixedHeight(1)
         root.addWidget(sep)
 
         # Package list
@@ -77,7 +93,9 @@ class StrikePackagePanel(QWidget):
         self._list.itemClicked.connect(self._on_select)
         root.addWidget(self._list)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine); sep2.setFixedHeight(1)
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setFixedHeight(1)
         root.addWidget(sep2)
 
         # Detail pane
@@ -89,9 +107,11 @@ class StrikePackagePanel(QWidget):
         self._detail_layout.setContentsMargins(8, 8, 8, 8)
         self._detail_layout.setSpacing(6)
         self._detail_layout.addWidget(
-            QLabel("Select a strike package",
-                   styleSheet="color:#484f58;font-size:13px;font-family:'Courier New',monospace;"),
-            alignment=Qt.AlignmentFlag.AlignCenter
+            QLabel(
+                "Select a strike package",
+                styleSheet="color:#484f58;font-size:13px;font-family:'Courier New',monospace;",
+            ),
+            alignment=Qt.AlignmentFlag.AlignCenter,
         )
         scroll.setWidget(self._detail_widget)
         root.addWidget(scroll, 1)
@@ -145,10 +165,12 @@ class StrikePackagePanel(QWidget):
             return
         for p in packages:
             status = p.get("status", "PLANNING")
-            icon   = STATUS_ICON.get(status, "?")
-            color  = STATUS_COLOR.get(status, "#8b949e")
-            op_c   = len(p.get("operator_ids", []))
-            item   = QListWidgetItem(f"  {icon}  {p.get('name','?')}   [{status}]  ·  {op_c} ops")
+            icon = STATUS_ICON.get(status, "?")
+            color = STATUS_COLOR.get(status, "#8b949e")
+            op_c = len(p.get("operator_ids", []))
+            item = QListWidgetItem(
+                f"  {icon}  {p.get('name','?')}   [{status}]  ·  {op_c} ops"
+            )
             item.setForeground(QBrush(QColor(color)))
             item.setData(Qt.ItemDataRole.UserRole, p)
             self._list.addItem(item)
@@ -166,7 +188,8 @@ class StrikePackagePanel(QWidget):
         if not isinstance(pkg, dict):
             return
         if pkg.get("id") == self._active_id:
-            self._clear(); return
+            self._clear()
+            return
         self._active_id = pkg.get("id")
         self._overlay_btn.setEnabled(True)
         self._planner_btn.setEnabled(True)
@@ -181,37 +204,46 @@ class StrikePackagePanel(QWidget):
                     child.widget().deleteLater()
                 elif child.layout():
                     _clear_layout(child.layout())
+
         _clear_layout(self._detail_layout)
 
-        name    = bundle.get("name", "?")
-        status  = bundle.get("status", "PLANNING")
-        color   = STATUS_COLOR.get(status, "#8b949e")
-        tdesc   = bundle.get("target_description", "")
-        tlat    = bundle.get("target_lat")
-        tlon    = bundle.get("target_lon")
+        name = bundle.get("name", "?")
+        status = bundle.get("status", "PLANNING")
+        color = STATUS_COLOR.get(status, "#8b949e")
+        tdesc = bundle.get("target_description", "")
+        tlat = bundle.get("target_lat")
+        tlon = bundle.get("target_lon")
         # Bundle endpoint returns expanded lists; list endpoint returns id lists
-        ops   = bundle.get("operators")   or bundle.get("operator_ids",         [])
+        ops = bundle.get("operators") or bundle.get("operator_ids", [])
         tobjs = bundle.get("tactical_objects") or bundle.get("tactical_object_ids", [])
-        fms   = bundle.get("fire_missions")    or bundle.get("fire_mission_ids",    [])
-        assets  = bundle.get("assets", {})
+        fms = bundle.get("fire_missions") or bundle.get("fire_mission_ids", [])
+        assets = bundle.get("assets", {})
 
         def _lbl(txt, style="color:#8b949e;font-size:12px;"):
-            l = QLabel(txt); l.setStyleSheet(style); return l
+            l = QLabel(txt)
+            l.setStyleSheet(style)
+            return l
 
         def _val(txt):
             l = QLabel(txt)
-            l.setStyleSheet("color:#c9d1d9;font-size:13px;font-family:'Courier New',monospace;")
+            l.setStyleSheet(
+                "color:#c9d1d9;font-size:13px;font-family:'Courier New',monospace;"
+            )
             l.setWordWrap(True)
             return l
 
         # Name / status
         name_lbl = QLabel(f"  {STATUS_ICON.get(status,'?')}  {name}")
-        name_lbl.setStyleSheet(f"color:{color};font-size:13px;font-weight:700;"
-                               f"font-family:'Courier New',monospace;")
+        name_lbl.setStyleSheet(
+            f"color:{color};font-size:13px;font-weight:700;"
+            f"font-family:'Courier New',monospace;"
+        )
         self._detail_layout.addWidget(name_lbl)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background:#21262d;"); sep.setFixedHeight(1)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("background:#21262d;")
+        sep.setFixedHeight(1)
         self._detail_layout.addWidget(sep)
 
         # Target
@@ -222,21 +254,24 @@ class StrikePackagePanel(QWidget):
         if tlat and tlon:
             self._detail_layout.addWidget(_lbl("GRID"))
             from front.utils.mgrs_util import to_mgrs
+
             self._detail_layout.addWidget(_val(to_mgrs(tlat, tlon)))
 
         # Stats grid
-        grid = QGridLayout(); grid.setSpacing(4)
+        grid = QGridLayout()
+        grid.setSpacing(4)
         stats = [
-            ("OPERATORS",  str(len(ops))),
+            ("OPERATORS", str(len(ops))),
             ("MAP OBJECTS", str(len(tobjs))),
-            ("FIRE MSNS",  str(len(fms))),
-            ("DRONES",     str(len(assets.get("drones", [])))),
-            ("AIR SUPP",   str(len(assets.get("air_support", [])))),
-            ("SNIPERS",    str(len(assets.get("sniper_overwatch", [])))),
+            ("FIRE MSNS", str(len(fms))),
+            ("DRONES", str(len(assets.get("drones", [])))),
+            ("AIR SUPP", str(len(assets.get("air_support", [])))),
+            ("SNIPERS", str(len(assets.get("sniper_overwatch", [])))),
         ]
         for i, (k, v) in enumerate(stats):
             grid.addWidget(_lbl(k), i // 2, (i % 2) * 2)
-            vl = _val(v); vl.setStyleSheet("color:#79c0ff;font-size:13px;font-weight:700;")
+            vl = _val(v)
+            vl.setStyleSheet("color:#79c0ff;font-size:13px;font-weight:700;")
             grid.addWidget(vl, i // 2, (i % 2) * 2 + 1)
         self._detail_layout.addLayout(grid)
         self._detail_layout.addStretch()
@@ -247,11 +282,13 @@ class StrikePackagePanel(QWidget):
         self._planner_btn.setEnabled(False)
         while self._detail_layout.count():
             c = self._detail_layout.takeAt(0)
-            if c.widget(): c.widget().deleteLater()
+            if c.widget():
+                c.widget().deleteLater()
         self._detail_layout.addWidget(
-            QLabel("Select a strike package",
-                   styleSheet="color:#484f58;font-size:13px;"),
-            alignment=Qt.AlignmentFlag.AlignCenter
+            QLabel(
+                "Select a strike package", styleSheet="color:#484f58;font-size:13px;"
+            ),
+            alignment=Qt.AlignmentFlag.AlignCenter,
         )
         self.package_cleared.emit()
 

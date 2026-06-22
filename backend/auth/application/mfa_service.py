@@ -48,7 +48,11 @@ def disable(db: Session, *, current: Operator, code: str) -> None:
 
 
 def verify_second_step(
-    db: Session, *, mfa_session: str, code: str, ip: str | None,
+    db: Session,
+    *,
+    mfa_session: str,
+    code: str,
+    ip: str | None,
 ) -> AuthResult:
     try:
         data = token_service.decode_token(mfa_session)
@@ -70,4 +74,6 @@ def verify_second_step(
     op.session_jti = jti
     db.commit()
     log_event(db, "LOGIN_SUCCESS", operator_id=op.id, ip_address=ip, detail="via MFA")
-    return AuthResult(token_service.create_access_token(op.callsign, op.role, jti=jti), op.role)
+    return AuthResult(
+        token_service.create_access_token(op.callsign, op.role, jti=jti), op.role
+    )

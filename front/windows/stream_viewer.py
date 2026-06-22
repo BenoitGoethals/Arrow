@@ -1,16 +1,16 @@
 """Stream Viewer Window — renders Android WS, MJPEG, HLS, and recordings."""
+
 from __future__ import annotations
 import json
-from typing import Optional
 
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QMainWindow
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QUrl, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 
-
 # ── Viewer HTML ────────────────────────────────────────────────────────────────
+
 
 def _build_html(cfg: dict) -> str:
     """Return a complete HTML page for the given stream config dict."""
@@ -232,15 +232,15 @@ function playVideo(url) {{
 
 # ── Viewer Window ──────────────────────────────────────────────────────────────
 
+
 class StreamViewerWindow(QMainWindow):
     """Opens a stream in a QWebEngineView-backed window."""
 
     def __init__(self, cfg: dict, backend_url: str, parent=None):
         super().__init__(parent)
-        self._cfg     = cfg
+        self._cfg = cfg
         self._backend = backend_url.rstrip("/")
 
-        from PyQt6.QtCore import Qt
         title = cfg.get("callsign") or cfg.get("name") or "Stream"
         self.setWindowTitle(f"📡  {title}")
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
@@ -250,7 +250,9 @@ class StreamViewerWindow(QMainWindow):
         # Allow cross-origin WebSocket & fetch from local/remote HTML
         view = QWebEngineView(self)
         s = view.page().settings()
-        s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        s.setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True
+        )
         s.setAttribute(QWebEngineSettings.WebAttribute.AutoLoadImages, True)
 
         html = _build_html(cfg)
@@ -261,22 +263,24 @@ class StreamViewerWindow(QMainWindow):
         QShortcut(QKeySequence("Escape"), self).activated.connect(self.close)
 
     @classmethod
-    def open_android(cls, stream: dict, backend_url: str, token: str,
-                     parent=None) -> "StreamViewerWindow":
+    def open_android(
+        cls, stream: dict, backend_url: str, token: str, parent=None
+    ) -> "StreamViewerWindow":
         ws_base = backend_url.replace("http://", "ws://").replace("https://", "wss://")
         sid = stream.get("id", "")
         cfg = {
-            "type":      "ws_jpeg",
-            "callsign":  stream.get("callsign", sid),
-            "ws_url":    f"{ws_base}/streams/{sid}/consume?token={token}",
+            "type": "ws_jpeg",
+            "callsign": stream.get("callsign", sid),
+            "ws_url": f"{ws_base}/streams/{sid}/consume?token={token}",
         }
         return cls(cfg, backend_url, parent)
 
     @classmethod
-    def open_external(cls, stream: dict, backend_url: str, token: str,
-                      parent=None) -> "StreamViewerWindow":
+    def open_external(
+        cls, stream: dict, backend_url: str, token: str, parent=None
+    ) -> "StreamViewerWindow":
         stype = (stream.get("stream_type") or "video").lower()
-        url   = stream.get("url", "")
+        url = stream.get("url", "")
         if stype in ("hls",):
             t = "hls"
         elif stype in ("mjpeg", "motion-jpeg"):
@@ -286,13 +290,14 @@ class StreamViewerWindow(QMainWindow):
         cfg = {
             "type": t,
             "name": stream.get("name", "External stream"),
-            "url":  url,
+            "url": url,
         }
         return cls(cfg, backend_url, parent)
 
     @classmethod
-    def open_octopus(cls, stream: dict, backend_url: str, token: str,
-                     parent=None) -> "StreamViewerWindow":
+    def open_octopus(
+        cls, stream: dict, backend_url: str, token: str, parent=None
+    ) -> "StreamViewerWindow":
         # Octopus streams are typically HLS — route via Arrow's /octopus/hls/ proxy
         stream_id = stream.get("id") or stream.get("stream_id", "")
         # Try to get HLS URL from stream object, else build proxy URL
@@ -302,18 +307,19 @@ class StreamViewerWindow(QMainWindow):
         cfg = {
             "type": "hls",
             "name": stream.get("name") or stream.get("callsign") or stream_id,
-            "url":  hls_url,
+            "url": hls_url,
         }
         return cls(cfg, backend_url, parent)
 
     @classmethod
-    def open_recording(cls, rec: dict, backend_url: str, token: str,
-                       parent=None) -> "StreamViewerWindow":
+    def open_recording(
+        cls, rec: dict, backend_url: str, token: str, parent=None
+    ) -> "StreamViewerWindow":
         rec_id = rec.get("id", "")
         cfg = {
-            "type":        "recording",
-            "callsign":    f"REC — {rec.get('callsign', rec_id)}",
-            "url":         f"{backend_url}/streams/recordings/{rec_id}/playback",
+            "type": "recording",
+            "callsign": f"REC — {rec.get('callsign', rec_id)}",
+            "url": f"{backend_url}/streams/recordings/{rec_id}/playback",
             "auth_header": f"Bearer {token}",
         }
         return cls(cfg, backend_url, parent)

@@ -1,4 +1,5 @@
 """MainWindow — full Arrow Front COP layout."""
+
 from __future__ import annotations
 import json
 import logging
@@ -8,50 +9,69 @@ import sys
 
 log = logging.getLogger(__name__)
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QSplitter, QMessageBox,
+    QMainWindow,
+    QSplitter,
+    QMessageBox,
 )
 from front.app.activity_panel import ActivityPanel
 from PyQt6.QtCore import Qt, QTimer, QSettings
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction
 
-from front.map.view       import MapView
-from front.map.symbology  import SIDC
-from front.app.toolbar    import MainToolbar
-from front.app.statusbar  import StatusBar
-from front.panels.orbat.panel     import ORBATPanel
-from front.panels.reports.panel   import ReportsPanel
-from front.panels.messages.panel  import MessagesPanel
+from front.map.view import MapView
+from front.map.symbology import SIDC
+from front.app.toolbar import MainToolbar
+from front.app.statusbar import StatusBar
+from front.panels.orbat.panel import ORBATPanel
+from front.panels.reports.panel import ReportsPanel
+from front.panels.messages.panel import MessagesPanel
 from front.panels.messages.room_manager import RoomManagerDialog
-from front.panels.alerts.panel    import AlertsPanel
-from front.panels.draw.panel      import DrawPanel
-from front.panels.log.panel       import LogPanel
-from front.mumble.panel           import MumblePanel
-from front.panels.missions.panel  import MissionsPanel
-from front.panels.strike.panel    import StrikePackagePanel
-from front.panels.opord.panel     import OpordPanel
-from front.panels.streams.panel   import StreamsPanel
-from front.panels.media.panel     import MediaPanel
+from front.panels.alerts.panel import AlertsPanel
+from front.panels.draw.panel import DrawPanel
+from front.panels.log.panel import LogPanel
+from front.mumble.panel import MumblePanel
+from front.panels.missions.panel import MissionsPanel
+from front.panels.strike.panel import StrikePackagePanel
+from front.panels.opord.panel import OpordPanel
+from front.panels.streams.panel import StreamsPanel
+from front.panels.media.panel import MediaPanel
 from front.windows.strike_planner import StrikePlannerWindow
-from front.windows.opord_window   import OpordWindow
-from front.windows.stream_viewer  import StreamViewerWindow
+from front.windows.opord_window import OpordWindow
+from front.windows.stream_viewer import StreamViewerWindow
 from front.windows.medevac_window import MedevacWindow
-from front.client.arrow_client    import ArrowClient
-from front.client.ws_listener    import WSListener
-from front.map.tile_server       import MBTilesServer
-from front.app.toast_manager      import ToastManager
-from front.app.settings_dialog    import ConfigDialog, read_gps_config, load as _settings_load, _bool as _settings_bool
-from front.app.voice_alerts       import VoiceAlertPlayer
-from front.utils.location_provider import LocationProvider, is_supported as _native_loc_supported
-from front.panels.mbtiles.dialog  import MBTilesDialog
-from front.panels.routes.panel    import RoutesPanel, RoutePropertiesDialog
+from front.client.arrow_client import ArrowClient
+from front.client.ws_listener import WSListener
+from front.map.tile_server import MBTilesServer
+from front.app.toast_manager import ToastManager
+from front.app.settings_dialog import (
+    ConfigDialog,
+    read_gps_config,
+    load as _settings_load,
+    _bool as _settings_bool,
+)
+from front.app.voice_alerts import VoiceAlertPlayer
+from front.utils.location_provider import (
+    LocationProvider,
+    is_supported as _native_loc_supported,
+)
+from front.panels.mbtiles.dialog import MBTilesDialog
+from front.panels.routes.panel import RoutesPanel, RoutePropertiesDialog
 
-CBRN_TYPES = {"CBRN_1","CBRN_2","CBRN_3","CBRN_4","CBRN_5","CBRN_6"}
+CBRN_TYPES = {"CBRN_1", "CBRN_2", "CBRN_3", "CBRN_4", "CBRN_5", "CBRN_6"}
 
 _SIDC_ECH_MAP = {
-    "A-": "TM", "B-": "CREW", "C-": "SQD", "D-": "SEC",
-    "E-": "PLT", "F-": "COY", "G-": "BN",  "H-": "RGT",
-    "I-": "BDE", "J-": "DIV", "K-": "CORPS",
+    "A-": "TM",
+    "B-": "CREW",
+    "C-": "SQD",
+    "D-": "SEC",
+    "E-": "PLT",
+    "F-": "COY",
+    "G-": "BN",
+    "H-": "RGT",
+    "I-": "BDE",
+    "J-": "DIV",
+    "K-": "CORPS",
 }
+
 
 def _sidc_echelon(sidc: str) -> str:
     """Extract echelon label from a 15-char SIDC (positions 10-11)."""
@@ -64,15 +84,17 @@ class MainWindow(QMainWindow):
     def __init__(self, server_url: str, token: str, callsign: str):
         super().__init__()
         self._server_url = server_url
-        self._token      = token
-        self._callsign   = callsign
-        self._client     = ArrowClient(server_url, token)
-        self._role       = "OPERATOR"
+        self._token = token
+        self._callsign = callsign
+        self._client = ArrowClient(server_url, token)
+        self._role = "OPERATOR"
         self._ws: Optional[WSListener] = None
-        self._toasts     = ToastManager(self)
+        self._toasts = ToastManager(self)
         self._suppress_toasts = False
-        self._voice      = VoiceAlertPlayer(self)
-        self._voice.enabled = _settings_bool(_settings_load("display_voice_alerts"), True)
+        self._voice = VoiceAlertPlayer(self)
+        self._voice.enabled = _settings_bool(
+            _settings_load("display_voice_alerts"), True
+        )
 
         # Native OS location (macOS Core Location). QtWebEngine's
         # navigator.geolocation does not resolve a fix on macOS, so on darwin we
@@ -112,6 +134,7 @@ class MainWindow(QMainWindow):
 
         from pathlib import Path
         from PyQt6.QtGui import QIcon
+
         icon_path = Path(__file__).parent.parent / "resources" / "arrow_icon.png"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
@@ -121,39 +144,39 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self._toolbar)
 
         # ---- Panels ---------------------------------------------------
-        self._orbat_panel    = ORBATPanel()
-        self._reports_panel  = ReportsPanel()
+        self._orbat_panel = ORBATPanel()
+        self._reports_panel = ReportsPanel()
         self._messages_panel = MessagesPanel()
-        self._alerts_panel   = AlertsPanel()
-        self._draw_panel     = DrawPanel()
+        self._alerts_panel = AlertsPanel()
+        self._draw_panel = DrawPanel()
         self._missions_panel = MissionsPanel()
-        self._strike_panel   = StrikePackagePanel()
-        self._opord_panel    = OpordPanel()
-        self._streams_panel  = StreamsPanel()
-        self._media_panel    = MediaPanel()
-        self._mumble_panel   = MumblePanel()
-        self._log_panel      = LogPanel()
-        self._routes_panel   = RoutesPanel()
+        self._strike_panel = StrikePackagePanel()
+        self._opord_panel = OpordPanel()
+        self._streams_panel = StreamsPanel()
+        self._media_panel = MediaPanel()
+        self._mumble_panel = MumblePanel()
+        self._log_panel = LogPanel()
+        self._routes_panel = RoutesPanel()
         self._planner_windows: list[StrikePlannerWindow] = []
-        self._opord_windows:   list[OpordWindow]         = []
-        self._stream_viewers:  list[StreamViewerWindow]  = []
-        self._medevac_windows: list[MedevacWindow]       = []
+        self._opord_windows: list[OpordWindow] = []
+        self._stream_viewers: list[StreamViewerWindow] = []
+        self._medevac_windows: list[MedevacWindow] = []
 
         # Right: vertical activity bar — feature panels open in the right window.
         self._right_panel = ActivityPanel(side="right", default_width=360)
         self._info = self._right_panel
-        self._info.add_panel("missions", "◈",  "MISS",   self._missions_panel, "1")
-        self._info.add_panel("strike",   "◆",  "STRK",   self._strike_panel,   "2")
-        self._info.add_panel("opord",    "📋", "OPORD",  self._opord_panel,    "3")
-        self._info.add_panel("streams",  "📡", "STRMS",  self._streams_panel,  "4")
-        self._info.add_panel("reports",  "≡",  "RPTS",   self._reports_panel,  "5")
-        self._info.add_panel("messages", "◎",  "MSG",    self._messages_panel, "6")
-        self._info.add_panel("alerts",   "⚡", "ALRT",   self._alerts_panel,   "7")
-        self._info.add_panel("draw",     "✚",  "DRAW",   self._draw_panel,     "8")
-        self._info.add_panel("media",    "🖼",  "MEDIA",  self._media_panel,    "9")
-        self._info.add_panel("mumble",   "🎙",  "VOICE",  self._mumble_panel,   "0")
-        self._info.add_panel("log",      "📋",  "LOG",    self._log_panel,      "L")
-        self._info.add_panel("routes",   "🗺",  "ROUTE",  self._routes_panel,   "N")
+        self._info.add_panel("missions", "◈", "MISS", self._missions_panel, "1")
+        self._info.add_panel("strike", "◆", "STRK", self._strike_panel, "2")
+        self._info.add_panel("opord", "📋", "OPORD", self._opord_panel, "3")
+        self._info.add_panel("streams", "📡", "STRMS", self._streams_panel, "4")
+        self._info.add_panel("reports", "≡", "RPTS", self._reports_panel, "5")
+        self._info.add_panel("messages", "◎", "MSG", self._messages_panel, "6")
+        self._info.add_panel("alerts", "⚡", "ALRT", self._alerts_panel, "7")
+        self._info.add_panel("draw", "✚", "DRAW", self._draw_panel, "8")
+        self._info.add_panel("media", "🖼", "MEDIA", self._media_panel, "9")
+        self._info.add_panel("mumble", "🎙", "VOICE", self._mumble_panel, "0")
+        self._info.add_panel("log", "📋", "LOG", self._log_panel, "L")
+        self._info.add_panel("routes", "🗺", "ROUTE", self._routes_panel, "N")
 
         # ---- Map ------------------------------------------------------
         self._map = MapView(self)
@@ -204,11 +227,11 @@ class MainWindow(QMainWindow):
         self._build_menu()
 
         # ---- Keyboard shortcuts [ = toggle left,  ] = toggle right ---
-        QShortcut(QKeySequence("["),    self).activated.connect(self._left_panel.toggle)
-        QShortcut(QKeySequence("]"),    self).activated.connect(self._right_panel.toggle)
-        QShortcut(QKeySequence("F1"),   self).activated.connect(self._left_panel.toggle)
-        QShortcut(QKeySequence("F2"),   self).activated.connect(self._right_panel.toggle)
-        QShortcut(QKeySequence("F10"),  self).activated.connect(self._take_screenshot)
+        QShortcut(QKeySequence("["), self).activated.connect(self._left_panel.toggle)
+        QShortcut(QKeySequence("]"), self).activated.connect(self._right_panel.toggle)
+        QShortcut(QKeySequence("F1"), self).activated.connect(self._left_panel.toggle)
+        QShortcut(QKeySequence("F2"), self).activated.connect(self._right_panel.toggle)
+        QShortcut(QKeySequence("F10"), self).activated.connect(self._take_screenshot)
         QShortcut(QKeySequence("Ctrl+,"), self).activated.connect(self._open_settings)
 
     # ================================================================
@@ -260,11 +283,15 @@ class MainWindow(QMainWindow):
         self._map.bridge.tactical_object_action.connect(self._on_tactical_object_action)
         self._map.bridge.tactical_object_move.connect(self._on_tactical_object_move)
         self._map.bridge.route_drawn.connect(self._on_route_drawn)
-        self._map.bridge.route_draw_cancelled.connect(self._on_route_draw_cancelled_from_map)
+        self._map.bridge.route_draw_cancelled.connect(
+            self._on_route_draw_cancelled_from_map
+        )
         self._map.file_dropped.connect(self._on_file_dropped_on_map)
 
         self._routes_panel.route_draw_requested.connect(self._on_route_draw_requested)
-        self._routes_panel.route_draw_cancelled.connect(lambda: self._map.cancel_route_drawing())
+        self._routes_panel.route_draw_cancelled.connect(
+            lambda: self._map.cancel_route_drawing()
+        )
         self._routes_panel.route_deleted.connect(self._on_route_deleted)
         self._routes_panel.route_visibility_changed.connect(self._map.set_route_visible)
         self._routes_panel.route_focus_requested.connect(self._map.center_on_route)
@@ -297,10 +324,11 @@ class MainWindow(QMainWindow):
     def _start_ws(self):
         if not self._token:
             return
-        ws_base = (self._server_url
-                   .replace("http://", "ws://")
-                   .replace("https://", "wss://")
-                   .rstrip("/"))
+        ws_base = (
+            self._server_url.replace("http://", "ws://")
+            .replace("https://", "wss://")
+            .rstrip("/")
+        )
         # Strip /api suffix — WS endpoint is at /ws, not /api/ws
         if ws_base.endswith("/api"):
             ws_base = ws_base[:-4]
@@ -413,14 +441,14 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
 
         for name, panel in [
-            ("Missions",         "missions"),
-            ("Strike Packages",  "strike"),
-            ("OPORDs",           "opord"),
-            ("Reports",          "reports"),
-            ("Messages",         "messages"),
-            ("Alerts",           "alerts"),
-            ("Draw",             "draw"),
-            ("Media Gallery",    "media"),
+            ("Missions", "missions"),
+            ("Strike Packages", "strike"),
+            ("OPORDs", "opord"),
+            ("Reports", "reports"),
+            ("Messages", "messages"),
+            ("Alerts", "alerts"),
+            ("Draw", "draw"),
+            ("Media Gallery", "media"),
         ]:
             act = QAction(name, self)
             act.triggered.connect(
@@ -430,15 +458,19 @@ class MainWindow(QMainWindow):
 
         # ── Admin ───────────────────────────────────────────────────
         self._admin_menu = mb.addMenu("Admin")
-        self._admin_menu.setEnabled(False)   # unlocked after role resolved
+        self._admin_menu.setEnabled(False)  # unlocked after role resolved
 
         act_del_missions = QAction("Delete All Missions…", self)
-        act_del_missions.setStatusTip("Permanently delete every mission from the server (ADMIN only)")
+        act_del_missions.setStatusTip(
+            "Permanently delete every mission from the server (ADMIN only)"
+        )
         act_del_missions.triggered.connect(self._confirm_delete_all_missions)
         self._admin_menu.addAction(act_del_missions)
 
         act_del_packages = QAction("Delete All Strike Packages…", self)
-        act_del_packages.setStatusTip("Permanently delete all strike packages (ADMIN only)")
+        act_del_packages.setStatusTip(
+            "Permanently delete all strike packages (ADMIN only)"
+        )
         act_del_packages.triggered.connect(self._confirm_delete_all_packages)
         self._admin_menu.addAction(act_del_packages)
 
@@ -462,7 +494,9 @@ class MainWindow(QMainWindow):
 
     def _confirm_exit(self):
         ans = QMessageBox.question(
-            self, "Exit", "Exit Arrow Front?",
+            self,
+            "Exit",
+            "Exit Arrow Front?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
         if ans == QMessageBox.StandardButton.Yes:
@@ -496,7 +530,9 @@ class MainWindow(QMainWindow):
             pass
         n = len(pkgs)
         if n == 0:
-            QMessageBox.information(self, "Delete Strike Packages", "No packages on server.")
+            QMessageBox.information(
+                self, "Delete Strike Packages", "No packages on server."
+            )
             return
         ans = QMessageBox.question(
             self,
@@ -510,6 +546,7 @@ class MainWindow(QMainWindow):
             for p in pkgs:
                 try:
                     import httpx
+
                     httpx.delete(
                         f"{self._server_url}/strike-packages/{p['id']}",
                         headers={"Authorization": f"Bearer {self._token}"},
@@ -520,7 +557,8 @@ class MainWindow(QMainWindow):
             self._load_strike_packages()
             if failed:
                 self.statusBar().showMessage(
-                    f"Deleted {n-failed}/{n} packages — {failed} failed", 5000)
+                    f"Deleted {n-failed}/{n} packages — {failed} failed", 5000
+                )
             else:
                 self._toasts.show("info", "PACKAGES DELETED", f"{n} removed")
 
@@ -547,9 +585,7 @@ class MainWindow(QMainWindow):
         dlg = ConfigDialog(self)
         dlg.gps_config_changed.connect(self._on_gps_config)
         dlg.base_layer_changed.connect(self._map.set_base_layer)
-        dlg.trails_changed.connect(
-            lambda on: self._map.toggle_layer("operTrails", on)
-        )
+        dlg.trails_changed.connect(lambda on: self._map.toggle_layer("operTrails", on))
         dlg.voice_alerts_changed.connect(lambda on: setattr(self._voice, "enabled", on))
         dlg.exec()
 
@@ -578,15 +614,16 @@ class MainWindow(QMainWindow):
         self._map.set_gps_config(enabled, high_acc, max_age, center, show_acc)
         self._apply_native_location(enabled, high_acc)
 
-    def _on_gps_config(self, enabled: bool, high_acc: bool,
-                        max_age: int, center: bool, show_acc: bool):
+    def _on_gps_config(
+        self, enabled: bool, high_acc: bool, max_age: int, center: bool, show_acc: bool
+    ):
         self._map.set_gps_config(enabled, high_acc, max_age, center, show_acc)
         self._apply_native_location(enabled, high_acc)
 
     def _resolve_role(self):
         try:
             me = self._client.me()
-            self._role     = me.get("role", "OPERATOR")
+            self._role = me.get("role", "OPERATOR")
             self._callsign = me.get("callsign", self._callsign)
             log.info("Authenticated: callsign=%s role=%s", self._callsign, self._role)
             self._messages_panel.set_my_callsign(self._callsign)
@@ -605,13 +642,21 @@ class MainWindow(QMainWindow):
         try:
             data = self._client.hierarchy()
             import sys
-            print(f"[ORBAT] keys={list(data.keys()) if isinstance(data,dict) else type(data)}", file=sys.stderr)
+
+            print(
+                f"[ORBAT] keys={list(data.keys()) if isinstance(data,dict) else type(data)}",
+                file=sys.stderr,
+            )
             companies = data.get("companies", []) if isinstance(data, dict) else []
-            print(f"[ORBAT] companies={len(companies)}, "
-                  f"unassigned={len(data.get('unassigned_operators',[]))}", file=sys.stderr)
+            print(
+                f"[ORBAT] companies={len(companies)}, "
+                f"unassigned={len(data.get('unassigned_operators',[]))}",
+                file=sys.stderr,
+            )
             self._orbat_panel.load_hierarchy(data)
         except Exception as e:
             import sys
+
             print(f"[ORBAT] error: {e}", file=sys.stderr)
 
     def _load_live_operators(self):
@@ -620,18 +665,20 @@ class MainWindow(QMainWindow):
             self._messages_panel.set_operators(ops)
             for op in ops:
                 if op.get("latitude") and op.get("longitude"):
-                    self._push_track({
-                        "id":        op.get("operator_id") or op.get("id"),
-                        "callsign":  op.get("callsign", "?"),
-                        "lat":       op["latitude"],
-                        "lon":       op["longitude"],
-                        "heading":   op.get("heading"),
-                        "speed":     op.get("speed"),
-                        "unit":      op.get("team", ""),
-                        "online":    True,
-                        "last_seen": op.get("recorded_at", ""),
-                        "position_source": op.get("position_source"),
-                    })
+                    self._push_track(
+                        {
+                            "id": op.get("operator_id") or op.get("id"),
+                            "callsign": op.get("callsign", "?"),
+                            "lat": op["latitude"],
+                            "lon": op["longitude"],
+                            "heading": op.get("heading"),
+                            "speed": op.get("speed"),
+                            "unit": op.get("team", ""),
+                            "online": True,
+                            "last_seen": op.get("recorded_at", ""),
+                            "position_source": op.get("position_source"),
+                        }
+                    )
         except Exception:
             pass
 
@@ -643,7 +690,7 @@ class MainWindow(QMainWindow):
             pass
 
     def _load_vehicles(self):
-        self._vehicles = {}      # id -> vehicle dto; position follows assigned operator
+        self._vehicles = {}  # id -> vehicle dto; position follows assigned operator
         try:
             for v in self._client.vehicles():
                 self._vehicles[v["id"]] = v
@@ -727,11 +774,15 @@ class MainWindow(QMainWindow):
         try:
             missions = self._client.missions()
             import sys
-            print(f"[MISSIONS] role={self._role} count={len(missions)}", file=sys.stderr)
+
+            print(
+                f"[MISSIONS] role={self._role} count={len(missions)}", file=sys.stderr
+            )
             self._missions_panel.load_missions(missions, self._role)
             self._messages_panel.set_missions(missions)
         except Exception as e:
             import sys
+
             print(f"[MISSIONS] error: {e}", file=sys.stderr)
             self._missions_panel.load_missions([], self._role)
 
@@ -739,8 +790,13 @@ class MainWindow(QMainWindow):
     # WS EVENT HANDLERS
     # ================================================================
     def _on_track(self, data: dict):
-        log.debug("TRACK  %s  lat=%.5f lon=%.5f hdg=%s",
-                  data.get("callsign"), data.get("lat",0), data.get("lon",0), data.get("heading"))
+        log.debug(
+            "TRACK  %s  lat=%.5f lon=%.5f hdg=%s",
+            data.get("callsign"),
+            data.get("lat", 0),
+            data.get("lon", 0),
+            data.get("heading"),
+        )
         self._push_track(data)
         self._orbat_panel.update_from_tracking(data)
         # Vehicles assigned to this operator inherit its position.
@@ -763,7 +819,11 @@ class MainWindow(QMainWindow):
             self._map.update_cot_track(data)
 
     def _on_alert(self, data: dict):
-        log.warning("ALERT  type=%s  operator=%s", data.get("type"), data.get("operator") or data.get("callsign"))
+        log.warning(
+            "ALERT  type=%s  operator=%s",
+            data.get("type"),
+            data.get("operator") or data.get("callsign"),
+        )
         self._alerts_panel.add_alert(data)
         lat = data.get("latitude") or data.get("lat")
         lon = data.get("longitude") or data.get("lon")
@@ -771,7 +831,7 @@ class MainWindow(QMainWindow):
             self._map.add_alert_marker({**data, "lat": lat, "lon": lon})
         self._info.inc_badge("alerts")
         alert_type = data.get("type", "ALERT")
-        operator   = data.get("operator") or data.get("callsign") or ""
+        operator = data.get("operator") or data.get("callsign") or ""
         if not self._suppress_toasts:
             self._toasts.alert(alert_type, operator)
             self._voice.play(alert_type)
@@ -782,7 +842,7 @@ class MainWindow(QMainWindow):
     def _on_report(self, data: dict):
         self._reports_panel.add_report(data)
         self._info.inc_badge("reports")
-        rtype  = data.get("type", "REPORT")
+        rtype = data.get("type", "REPORT")
         sender = data.get("sender") or data.get("callsign") or ""
         if not self._suppress_toasts:
             self._toasts.report(rtype, sender)
@@ -852,6 +912,7 @@ class MainWindow(QMainWindow):
                 self._info.set_badge("strike", active)
         except Exception as e:
             import sys
+
             print(f"[STRIKE] error: {e}", file=sys.stderr)
 
     def _on_strike_selected(self, pkg: dict):
@@ -871,7 +932,9 @@ class MainWindow(QMainWindow):
             bundle = self._client.strike_package_bundle(pkg["id"])
         except Exception:
             bundle = pkg
-        tact_objs = bundle.get("tactical_objects") or bundle.get("_tactical_objects_expanded", [])
+        tact_objs = bundle.get("tactical_objects") or bundle.get(
+            "_tactical_objects_expanded", []
+        )
         for obj in tact_objs:
             self._map.add_tactical_object(obj)
         # Center map on target if available
@@ -880,7 +943,7 @@ class MainWindow(QMainWindow):
         if tlat and tlon:
             self._map.center_on(float(tlat), float(tlon), zoom=13)
         name = bundle.get("name", "package")
-        self._toasts.show("mission", f"OVERLAY LOADED", name.upper())
+        self._toasts.show("mission", "OVERLAY LOADED", name.upper())
 
     def _on_strike_planner(self, pkg: dict):
         """Open the Strike Package planning window."""
@@ -896,7 +959,7 @@ class MainWindow(QMainWindow):
     def _on_strike_ws(self, data: dict):
         self._load_strike_packages()
         event = data.get("event", "")
-        name  = data.get("name", "Strike package")
+        name = data.get("name", "Strike package")
         if event in ("activated",):
             self._toasts.show("mission", "STRIKE PKG ACTIVATED", name.upper())
         elif event in ("created",):
@@ -906,7 +969,9 @@ class MainWindow(QMainWindow):
         try:
             self._opord_panel.load_opords(self._client.opords())
         except Exception as e:
-            import sys; print(f"[OPORD] error: {e}", file=sys.stderr)
+            import sys
+
+            print(f"[OPORD] error: {e}", file=sys.stderr)
 
     def _open_opord(self, opord_data: dict):
         """Open existing OPORD in editor window."""
@@ -914,8 +979,9 @@ class MainWindow(QMainWindow):
             full = self._client.opord(opord_data["id"])
         except Exception:
             full = opord_data
-        win = OpordWindow(self._client, full,
-                          map_capture_fn=lambda: self._map.grab(), parent=self)
+        win = OpordWindow(
+            self._client, full, map_capture_fn=lambda: self._map.grab(), parent=self
+        )
         win.saved.connect(lambda _: self._load_opords())
         win.published.connect(lambda _: self._load_opords())
         win.show()
@@ -923,8 +989,9 @@ class MainWindow(QMainWindow):
 
     def _new_opord(self):
         """Open blank OPORD editor."""
-        win = OpordWindow(self._client, None,
-                          map_capture_fn=lambda: self._map.grab(), parent=self)
+        win = OpordWindow(
+            self._client, None, map_capture_fn=lambda: self._map.grab(), parent=self
+        )
         win.saved.connect(lambda _: self._load_opords())
         win.show()
         self._opord_windows.append(win)
@@ -954,21 +1021,26 @@ class MainWindow(QMainWindow):
     def _open_stream(self, stream: dict, stream_type: str):
         if stream_type in ("ws_jpeg", "android", "live"):
             win = StreamViewerWindow.open_android(
-                stream, self._server_url, self._token, parent=self)
+                stream, self._server_url, self._token, parent=self
+            )
         elif stream_type == "hls":
             win = StreamViewerWindow.open_octopus(
-                stream, self._server_url, self._token, parent=self)
+                stream, self._server_url, self._token, parent=self
+            )
         else:
             win = StreamViewerWindow.open_external(
-                stream, self._server_url, self._token, parent=self)
+                stream, self._server_url, self._token, parent=self
+            )
         win.show()
         self._stream_viewers.append(win)
-        self._toasts.show("info", "STREAM OPENED",
-                          stream.get("callsign") or stream.get("name", ""))
+        self._toasts.show(
+            "info", "STREAM OPENED", stream.get("callsign") or stream.get("name", "")
+        )
 
     def _open_recording(self, rec: dict):
         win = StreamViewerWindow.open_recording(
-            rec, self._server_url, self._token, parent=self)
+            rec, self._server_url, self._token, parent=self
+        )
         win.show()
         self._stream_viewers.append(win)
 
@@ -987,7 +1059,7 @@ class MainWindow(QMainWindow):
         self._load_missions()
 
     def _on_presence(self, data: dict):
-        op_id  = data.get("operator_id")
+        op_id = data.get("operator_id")
         online = data.get("online", False)
         if op_id is not None:
             self._orbat_panel.update_operator_presence(int(op_id), online)
@@ -1021,21 +1093,39 @@ class MainWindow(QMainWindow):
         if failed:
             self.statusBar().showMessage(
                 f"Deleted {len(missions)-failed}/{len(missions)} missions"
-                f" — {failed} failed (ADMIN required)", 6000
+                f" — {failed} failed (ADMIN required)",
+                6000,
             )
         else:
-            self._toasts.show("info", "ALL MISSIONS DELETED",
-                              f"{len(missions)} mission{'s' if len(missions)!=1 else ''} removed")
+            self._toasts.show(
+                "info",
+                "ALL MISSIONS DELETED",
+                f"{len(missions)} mission{'s' if len(missions)!=1 else ''} removed",
+            )
 
     def _on_mission_cleared(self):
         mode = "READ-ONLY" if not self._token else "COP"
         self.setWindowTitle(f"ARROW FRONT  —  {self._callsign.upper()}  —  {mode}")
 
-
     def _on_symbol_placed(self, sidc: str, designation: str, lat: float, lon: float):
         """User placed a symbol via the picker — save to server as tactical object."""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QDialogButtonBox, QFileDialog, QLabel, QPushButton
-        aff_map = {"F": "FRIENDLY", "H": "HOSTILE", "N": "NEUTRAL", "U": "UNKNOWN", "A": "FRIENDLY"}
+        from PyQt6.QtWidgets import (
+            QDialog,
+            QVBoxLayout,
+            QHBoxLayout,
+            QDialogButtonBox,
+            QFileDialog,
+            QLabel,
+            QPushButton,
+        )
+
+        aff_map = {
+            "F": "FRIENDLY",
+            "H": "HOSTILE",
+            "N": "NEUTRAL",
+            "U": "UNKNOWN",
+            "A": "FRIENDLY",
+        }
         affiliation = aff_map.get(sidc[1] if len(sidc) > 1 else "U", "UNKNOWN")
         obj_type = "ENEMY" if affiliation == "HOSTILE" else "MARKER"
         echelon = _sidc_echelon(sidc)
@@ -1046,20 +1136,27 @@ class MainWindow(QMainWindow):
         dlg.setWindowTitle("Attach Photo/Video?")
         dlg.setMinimumWidth(300)
         layout = QVBoxLayout(dlg)
-        layout.addWidget(QLabel(f"Symbol: {designation or sidc}\nAttach a photo or video? (optional)"))
+        layout.addWidget(
+            QLabel(
+                f"Symbol: {designation or sidc}\nAttach a photo or video? (optional)"
+            )
+        )
         file_label = QLabel("None selected")
         file_label.setStyleSheet("color:#8b949e;font-size:9px;")
         file_path: list[str] = []
 
         def pick():
             path, _ = QFileDialog.getOpenFileName(
-                dlg, "Attach Photo or Video", "",
-                "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)"
+                dlg,
+                "Attach Photo or Video",
+                "",
+                "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)",
             )
             if path:
                 file_path.clear()
                 file_path.append(path)
                 from pathlib import Path
+
                 file_label.setText(f"📎 {Path(path).name}")
 
         row = QHBoxLayout()
@@ -1094,15 +1191,18 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             self.statusBar().showMessage(f"Symbol not saved: {e}", 3000)
-        self._map.add_tactical_object({
-            "id": f"local_{id(sidc)}",
-            "type": obj_type,
-            "symbol_code": sidc,
-            "latitude": lat, "longitude": lon,
-            "affiliation": affiliation,
-            "notes": designation,
-            "echelon": echelon,
-        })
+        self._map.add_tactical_object(
+            {
+                "id": f"local_{id(sidc)}",
+                "type": obj_type,
+                "symbol_code": sidc,
+                "latitude": lat,
+                "longitude": lon,
+                "affiliation": affiliation,
+                "notes": designation,
+                "echelon": echelon,
+            }
+        )
 
     def _on_mode_from_toolbar(self, mode: str):
         """Route toolbar mode changes — handle measure modes separately."""
@@ -1120,10 +1220,14 @@ class MainWindow(QMainWindow):
     def _on_radial_action(self, action: str, lat: float, lon: float):
         if action == "tic":
             self._send_alert("TIC", lat=lat, lon=lon)
-            self._place_radial_marker("HOSTILE", lat, lon, notes="TIC", affiliation="HOSTILE")
+            self._place_radial_marker(
+                "HOSTILE", lat, lon, notes="TIC", affiliation="HOSTILE"
+            )
         elif action == "drone":
             self._send_alert("DRONE_SPOTTED", lat=lat, lon=lon)
-            self._place_radial_marker("DRONE", lat, lon, notes="DRONE", affiliation="HOSTILE")
+            self._place_radial_marker(
+                "DRONE", lat, lon, notes="DRONE", affiliation="HOSTILE"
+            )
             self._right_panel.expand()
             self._info.activate("alerts")
         elif action in ("enemy", "hostile"):
@@ -1146,6 +1250,7 @@ class MainWindow(QMainWindow):
         # Convert lat/lon to MGRS for Line 1 pre-fill
         try:
             from front.utils.mgrs_util import to_mgrs
+
             mgrs = to_mgrs(lat, lon)
         except Exception:
             mgrs = f"{lat:.5f}, {lon:.5f}"
@@ -1166,13 +1271,13 @@ class MainWindow(QMainWindow):
         """Place a red-cross MEDEVAC marker on the map at the given position."""
         sidc = MedevacWindow.MEDEVAC_SIDC
         obj = {
-            "id":          f"medevac_{lat:.5f}_{lon:.5f}",
-            "type":        "MARKER",
+            "id": f"medevac_{lat:.5f}_{lon:.5f}",
+            "type": "MARKER",
             "symbol_code": sidc,
-            "latitude":    lat,
-            "longitude":   lon,
+            "latitude": lat,
+            "longitude": lon,
             "affiliation": "FRIENDLY",
-            "notes":       "MEDEVAC",
+            "notes": "MEDEVAC",
         }
         self._map.add_tactical_object(obj)
         # Also persist to backend so it shows on the web map
@@ -1190,10 +1295,18 @@ class MainWindow(QMainWindow):
     def _on_file_dropped_on_map(self, file_path: str, lat: float, lon: float):
         self._place_poi_with_photo(lat, lon, preset_file=file_path)
 
-    def _place_poi_with_photo(self, lat: float, lon: float, preset_file: str | None = None):
+    def _place_poi_with_photo(
+        self, lat: float, lon: float, preset_file: str | None = None
+    ):
         from PyQt6.QtWidgets import (
-            QDialog, QVBoxLayout, QHBoxLayout, QDialogButtonBox,
-            QLineEdit, QFileDialog, QLabel, QPushButton,
+            QDialog,
+            QVBoxLayout,
+            QHBoxLayout,
+            QDialogButtonBox,
+            QLineEdit,
+            QFileDialog,
+            QLabel,
+            QPushButton,
         )
         from pathlib import Path
 
@@ -1217,8 +1330,10 @@ class MainWindow(QMainWindow):
 
         def pick():
             path, _ = QFileDialog.getOpenFileName(
-                dlg, "Attach Photo or Video", "",
-                "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)"
+                dlg,
+                "Attach Photo or Video",
+                "",
+                "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)",
             )
             if path:
                 file_path.clear()
@@ -1258,37 +1373,55 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self.statusBar().showMessage(f"Upload failed: {e}", 4000)
 
-        self._place_radial_marker("POI", lat, lon, notes=notes,
-                                  affiliation="NEUTRAL", photo_id=photo_id)
+        self._place_radial_marker(
+            "POI", lat, lon, notes=notes, affiliation="NEUTRAL", photo_id=photo_id
+        )
 
-    def _place_radial_marker(self, obj_type: str, lat: float, lon: float,
-                             notes: str = "", affiliation: str = "UNKNOWN",
-                             photo_id: Optional[int] = None):
+    def _place_radial_marker(
+        self,
+        obj_type: str,
+        lat: float,
+        lon: float,
+        notes: str = "",
+        affiliation: str = "UNKNOWN",
+        photo_id: Optional[int] = None,
+    ):
         from front.map.symbology import build as build_sidc
-        aff_sidc = {"FRIENDLY": "F", "HOSTILE": "H", "NEUTRAL": "N"}.get(affiliation, "U")
+
+        aff_sidc = {"FRIENDLY": "F", "HOSTILE": "H", "NEUTRAL": "N"}.get(
+            affiliation, "U"
+        )
         type_func = {
-            "HOSTILE": "infantry", "ENEMY": "infantry",
-            "MARKER": "unit", "POI": "location",
+            "HOSTILE": "infantry",
+            "ENEMY": "infantry",
+            "MARKER": "unit",
+            "POI": "location",
             "DRONE": "drone",
         }.get(obj_type, "unit")
         dim = "A" if obj_type == "DRONE" else "G"
         sidc = build_sidc(aff_sidc, type_func, "none", dim=dim)
         try:
             self._client.post_tactical_object(
-                obj_type, {"type": "point", "coords": [[lat, lon]]},
-                notes=notes, affiliation=affiliation,
-                symbol_code=sidc, photo_id=photo_id,
+                obj_type,
+                {"type": "point", "coords": [[lat, lon]]},
+                notes=notes,
+                affiliation=affiliation,
+                symbol_code=sidc,
+                photo_id=photo_id,
             )
         except Exception:
             pass
-        self._map.add_tactical_object({
-            "id": f"radial_{notes}_{lat:.4f}_{lon:.4f}",
-            "type": obj_type,
-            "symbol_code": sidc,
-            "latitude": lat, "longitude": lon,
-            "affiliation": affiliation,
-            "notes": notes,
-        })
+        self._map.add_tactical_object(
+            {
+                "id": f"radial_{notes}_{lat:.4f}_{lon:.4f}",
+                "type": obj_type,
+                "symbol_code": sidc,
+                "latitude": lat,
+                "longitude": lon,
+                "affiliation": affiliation,
+                "notes": notes,
+            }
+        )
 
     # ================================================================
     # TOOLBAR HANDLERS
@@ -1304,7 +1437,9 @@ class MainWindow(QMainWindow):
         to keep the UI responsive. No-op in read-only mode (no token)."""
         if not self._token:
             return
-        import time, threading
+        import time
+        import threading
+
         now = time.monotonic()
         if now - self._last_pos_push < 5.0:
             return
@@ -1315,29 +1450,40 @@ class MainWindow(QMainWindow):
                 self._client.push_position(lat, lon)
             except Exception as e:
                 import sys
+
                 print(f"[tracking] position push failed: {e}", file=sys.stderr)
 
         threading.Thread(target=_work, daemon=True, name="push-position").start()
 
-    def _send_alert(self, alert_type: str,
-                    lat: Optional[float] = None, lon: Optional[float] = None):
+    def _send_alert(
+        self, alert_type: str, lat: Optional[float] = None, lon: Optional[float] = None
+    ):
         try:
             self._client.send_alert(alert_type, lat=lat, lon=lon)
         except Exception as e:
             self.statusBar().showMessage(f"Alert failed: {e}", 3000)
 
-    def _send_message_scoped(self, content: str, scope: str,
-                             receiver_id: object, mission_id: object,
-                             file_path: object = None):
+    def _send_message_scoped(
+        self,
+        content: str,
+        scope: str,
+        receiver_id: object,
+        mission_id: object,
+        file_path: object = None,
+    ):
         try:
             photo_id: Optional[int] = None
             if file_path:
                 photo_id = self._client.upload_media(str(file_path))
             if scope == "DIRECT" and receiver_id is not None:
-                self._client.send_message(content, receiver_id=int(receiver_id), photo_id=photo_id)
+                self._client.send_message(
+                    content, receiver_id=int(receiver_id), photo_id=photo_id
+                )
             elif scope == "ROOM" and mission_id is not None:
                 # `mission_id` slot carries the chatroom_id for ROOM scope.
-                self._client.send_message_room(content, chatroom_id=int(mission_id), photo_id=photo_id)
+                self._client.send_message_room(
+                    content, chatroom_id=int(mission_id), photo_id=photo_id
+                )
             else:
                 self._client.send_message(content, photo_id=photo_id)
         except Exception as e:
@@ -1350,8 +1496,10 @@ class MainWindow(QMainWindow):
     def _open_mbtiles_manager(self):
         dlg = self._mbtiles_dlg
         for sig in (dlg.add_requested, dlg.remove_requested, dlg.toggle_requested):
-            try: sig.disconnect()
-            except Exception: pass
+            try:
+                sig.disconnect()
+            except Exception:
+                pass
         dlg.add_requested.connect(self._mbtiles_add)
         dlg.remove_requested.connect(self._mbtiles_remove)
         dlg.toggle_requested.connect(self._mbtiles_toggle)
@@ -1367,13 +1515,18 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"MBTiles load failed: {exc}", 4000)
             return
         self._mbtiles[mbt_id] = {
-            "path": path, "name": name,
-            "min_zoom": min_z, "max_zoom": max_z, "visible": True,
+            "path": path,
+            "name": name,
+            "min_zoom": min_z,
+            "max_zoom": max_z,
+            "visible": True,
         }
         self._map.add_mbtiles_layer(mbt_id, tile_url, min_z, max_z, name)
         self._save_mbtiles_settings()
         self._mbtiles_dlg.refresh(self._mbtiles)
-        self.statusBar().showMessage(f"MBTiles loaded: {name}  (z{min_z}–{max_z})", 3000)
+        self.statusBar().showMessage(
+            f"MBTiles loaded: {name}  (z{min_z}–{max_z})", 3000
+        )
 
     def _mbtiles_remove(self, mbt_id: str):
         if mbt_id not in self._mbtiles:
@@ -1416,7 +1569,8 @@ class MainWindow(QMainWindow):
             if not geom.get("coords"):
                 return
             self._client.post_tactical_object(
-                obj_type, geom,
+                obj_type,
+                geom,
                 notes=notes_json,
                 affiliation="NEUTRAL",
             )
@@ -1456,10 +1610,14 @@ class MainWindow(QMainWindow):
 
         threading.Thread(target=_work, daemon=True, name="del-all-graphics").start()
 
-    def _on_tactical_object_move(self, obj_id: int, lat: float, lon: float, geometry_json: str = ""):
+    def _on_tactical_object_move(
+        self, obj_id: int, lat: float, lon: float, geometry_json: str = ""
+    ):
         if obj_id > 0:
             try:
-                self._client.patch_tactical_object(obj_id, lat, lon, geometry_json or None)
+                self._client.patch_tactical_object(
+                    obj_id, lat, lon, geometry_json or None
+                )
             except Exception as e:
                 self.statusBar().showMessage(f"Move failed: {e}", 3000)
 
@@ -1472,7 +1630,7 @@ class MainWindow(QMainWindow):
         if not route:
             return
         self._map.start_navigation(route)
-        self._right_panel.collapse()   # maximize map space while navigating
+        self._right_panel.collapse()  # maximize map space while navigating
 
     def _on_nav_completed(self, route_id: str):
         name = self._routes_panel._routes.get(route_id, {}).get("name", "Route")
@@ -1486,17 +1644,21 @@ class MainWindow(QMainWindow):
 
     def _on_route_drawn(self, route_id: str, wps_json: str):
         from PyQt6.QtWidgets import QDialog
+
         try:
             wps = json.loads(wps_json)
         except Exception:
             wps = []
-        self._routes_panel.on_draw_cancelled_from_map()   # clear banner
+        self._routes_panel.on_draw_cancelled_from_map()  # clear banner
 
         color = self._pending_route_colors.pop(route_id, "#3fb950")
         route = {
-            "id": route_id, "name": "Route",
-            "color": color, "speed_kmh": 30.0,
-            "waypoints": wps, "visible": True,
+            "id": route_id,
+            "name": "Route",
+            "color": color,
+            "speed_kmh": 30.0,
+            "waypoints": wps,
+            "visible": True,
         }
         dlg = RoutePropertiesDialog(route, parent=self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
@@ -1541,7 +1703,9 @@ class MainWindow(QMainWindow):
         for r in routes:
             self._map.add_route(r)
 
-    def _on_graphic_drawn(self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY"):
+    def _on_graphic_drawn(
+        self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY"
+    ):
         """Persist a drawn tactical graphic to the backend (synced to web + android).
 
         Uses the SHARED canonical type vocabulary + separate affiliation field,
@@ -1553,7 +1717,8 @@ class MainWindow(QMainWindow):
             if not (geom.get("coords") or []):
                 return
             self._client.post_tactical_object(
-                gtype, geom,
+                gtype,
+                geom,
                 notes="",
                 affiliation=affiliation or "FRIENDLY",
             )
@@ -1580,8 +1745,10 @@ class MainWindow(QMainWindow):
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_name = f"arrow_map_{ts}.png"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save Map Screenshot", default_name,
-            "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)"
+            self,
+            "Save Map Screenshot",
+            default_name,
+            "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg)",
         )
         if not path:
             return
@@ -1596,29 +1763,34 @@ class MainWindow(QMainWindow):
     # HELPERS
     # ================================================================
     def _push_track(self, data: dict):
-        op_id    = data.get("operator_id") or data.get("id")
+        op_id = data.get("operator_id") or data.get("id")
         callsign = data.get("callsign") or data.get("name") or str(op_id)
-        lat      = data.get("lat") or data.get("latitude")
-        lon      = data.get("lon") or data.get("longitude")
+        lat = data.get("lat") or data.get("latitude")
+        lon = data.get("lon") or data.get("longitude")
         if not lat or not lon:
             return
-        role  = data.get("role", "OPERATOR")
-        sidc  = SIDC.from_operator_role(role)
-        unit  = next((data.get(k) for k in ("team", "team_name", "section_name") if data.get(k)), "")
-        self._map.update_track({
-            "id":        str(op_id),
-            "callsign":  callsign,
-            "lat":       float(lat),
-            "lon":       float(lon),
-            "heading":   data.get("heading") or data.get("course"),
-            "speed":     data.get("speed"),
-            "sidc":      sidc,
-            "unit":      unit,
-            "online":    data.get("online", True),
-            "last_seen": data.get("last_seen") or data.get("recorded_at", ""),
-            "affiliation": "FRIENDLY",
-            "position_source": data.get("position_source"),
-        })
+        role = data.get("role", "OPERATOR")
+        sidc = SIDC.from_operator_role(role)
+        unit = next(
+            (data.get(k) for k in ("team", "team_name", "section_name") if data.get(k)),
+            "",
+        )
+        self._map.update_track(
+            {
+                "id": str(op_id),
+                "callsign": callsign,
+                "lat": float(lat),
+                "lon": float(lon),
+                "heading": data.get("heading") or data.get("course"),
+                "speed": data.get("speed"),
+                "sidc": sidc,
+                "unit": unit,
+                "online": data.get("online", True),
+                "last_seen": data.get("last_seen") or data.get("recorded_at", ""),
+                "affiliation": "FRIENDLY",
+                "position_source": data.get("position_source"),
+            }
+        )
 
     # ================================================================
     # CLOSE

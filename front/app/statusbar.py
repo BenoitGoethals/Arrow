@@ -1,9 +1,10 @@
 """Status bar — MGRS coordinates, Zulu time, server connection LED."""
+
 from __future__ import annotations
 from datetime import datetime, timezone
 
 from PyQt6.QtWidgets import QStatusBar, QLabel
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QFont
 
 

@@ -1,4 +1,5 @@
 """Arrow Front — entry point."""
+
 import sys
 import os
 
@@ -23,7 +24,8 @@ from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QFont, QIcon
 
 from front.utils.log_setup import setup_logging
-setup_logging()   # must be before any other front.* import
+
+setup_logging()  # must be before any other front.* import
 
 from front.app.theme import TACTICAL_DARK
 from front.app.login_dialog import LoginDialog
@@ -34,12 +36,13 @@ from front.map.setup_libs import ensure_libs
 def _try_auto_connect() -> tuple[str, str, str] | None:
     """Return (server_url, token, callsign) from keyring if still valid, else None."""
     settings = QSettings("Arrow", "ArrowFront")
-    url      = settings.value("server_url", "")
+    url = settings.value("server_url", "")
     callsign = settings.value("last_callsign", "")
     if not url or not callsign:
         return None
     from front.client import auth as keyring_auth
     from front.client.arrow_client import ArrowClient
+
     token = keyring_auth.load_token(url)
     if not token:
         return None

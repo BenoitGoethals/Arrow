@@ -17,27 +17,34 @@ Usage:
 The collapse/expand logic resizes the bound splitter so the map reclaims the
 space the content area gives up.
 """
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFrame,
-    QStackedWidget, QPushButton, QSizePolicy, QSplitter,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFrame,
+    QStackedWidget,
+    QPushButton,
+    QSizePolicy,
+    QSplitter,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetrics
 
-
 # ── Vertical nav button ──────────────────────────────────────────────────────
+
 
 class _VertNavBtn(QPushButton):
     """A single activity-bar button — icon char over a small label, + badge."""
 
     def __init__(self, icon: str, label: str, shortcut: str = "", side: str = "left"):
         super().__init__()
-        self._icon  = icon
-        self._lbl   = label
+        self._icon = icon
+        self._lbl = label
         self._badge = 0
-        self._sc    = shortcut
+        self._sc = shortcut
         self.setCheckable(True)
         self.setFixedHeight(50)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -116,10 +123,10 @@ class _VertNavBtn(QPushButton):
             badge_font = QFont("Courier New", 7, QFont.Weight.Bold)
             p.setFont(badge_font)
             fm3 = QFontMetrics(badge_font)
-            bw  = max(fm3.horizontalAdvance(txt) + 6, 14)
-            bh  = 13
-            bx  = self.width() - bw - 3
-            by  = 3
+            bw = max(fm3.horizontalAdvance(txt) + 6, 14)
+            bh = 13
+            bx = self.width() - bw - 3
+            by = 3
             p.setBrush(QColor("#f85149"))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(bx, by, bw, bh, bh // 2, bh // 2)
@@ -131,11 +138,12 @@ class _VertNavBtn(QPushButton):
 
 # ── Activity panel ───────────────────────────────────────────────────────────
 
+
 class ActivityPanel(QWidget):
     """Vertical icon bar + collapsible stacked content for a window edge."""
 
     panel_changed = pyqtSignal(str)
-    toggled       = pyqtSignal(bool)   # True = content collapsed
+    toggled = pyqtSignal(bool)  # True = content collapsed
 
     BAR_WIDTH = 46
 
@@ -143,10 +151,10 @@ class ActivityPanel(QWidget):
         super().__init__(parent)
         self._side = "right" if side == "right" else "left"
         self._panels: dict[str, tuple[QWidget, _VertNavBtn]] = {}
-        self._order:  list[str] = []
+        self._order: list[str] = []
         self._current: str | None = None
         self._collapsed = False
-        self._default_w = default_width          # width of the CONTENT area
+        self._default_w = default_width  # width of the CONTENT area
         self._splitter: QSplitter | None = None
         self._splitter_idx = 0
         self._fallback: list[int] | None = None
@@ -164,13 +172,12 @@ class ActivityPanel(QWidget):
         self._bar.setFixedWidth(self.BAR_WIDTH)
         sep_edge = "left" if self._side == "right" else "right"
         self._bar.setStyleSheet(
-            "background:#161b22;"
-            f"border-{sep_edge}:1px solid #21262d;"
+            "background:#161b22;" f"border-{sep_edge}:1px solid #21262d;"
         )
         self._bar_layout = QVBoxLayout(self._bar)
         self._bar_layout.setContentsMargins(0, 0, 0, 0)
         self._bar_layout.setSpacing(0)
-        self._bar_layout.addStretch(1)           # buttons stack at the top
+        self._bar_layout.addStretch(1)  # buttons stack at the top
 
         # Collapsible content area
         self._content = QWidget()
@@ -192,8 +199,9 @@ class ActivityPanel(QWidget):
 
     # ---- public API -------------------------------------------------------
 
-    def add_panel(self, name: str, icon: str, label: str,
-                  widget: QWidget, shortcut: str = "") -> _VertNavBtn:
+    def add_panel(
+        self, name: str, icon: str, label: str, widget: QWidget, shortcut: str = ""
+    ) -> _VertNavBtn:
         btn = _VertNavBtn(icon, label, shortcut, side=self._side)
         btn.clicked.connect(lambda _checked, n=name: self.toggle_panel(n))
         # Insert above the trailing stretch so buttons stay top-aligned.
@@ -273,11 +281,12 @@ class ActivityPanel(QWidget):
 
     # ---- splitter integration --------------------------------------------
 
-    def bind_splitter(self, splitter: QSplitter, index: int,
-                      fallback: list[int] | None = None):
-        self._splitter     = splitter
+    def bind_splitter(
+        self, splitter: QSplitter, index: int, fallback: list[int] | None = None
+    ):
+        self._splitter = splitter
         self._splitter_idx = index
-        self._fallback     = fallback
+        self._fallback = fallback
 
     def _expanded_width(self) -> int:
         return self.BAR_WIDTH + self._default_w

@@ -23,6 +23,7 @@ dependencies = [
     "python-json-logger>=3.2",
     "cryptography>=43",
     "reportlab>=4.2",
+    "psycopg[binary]>=3.2",
     "smbprotocol>=1.16.1",
     "pyqt6-sip>=13.11.1",
     "pyqt6>=6.11.0",
@@ -42,6 +43,9 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "playwright>=1.45",
+    "pytest-playwright>=0.5",
+    "pillow>=10.0",
 ]
 # CoT simulator GUI (tools/cot_simulator.py). wxPython only ships a pre-built
 # wheel for Ubuntu 24.04 cp314 linux_x86_64; install on Linux only.
@@ -81,6 +85,29 @@ build-backend = "hatchling.build"
 packages = ["backend", "web", "tools", "front"]
 include = ["run.py", "simulate_battlefield.py"]
 
+[tool.ruff.lint]
+
+[tool.ruff.lint.per-file-ignores]
+# E402: Qt entry-points must import after QApplication; sim scripts set globals first.
+# E701/E702: compact one-liners tolerated in Qt GUI and simulate scripts.
+# E741: 'l' common for QLabel in Qt code.
+# F841: intentional sentinel assignments in simulate scripts.
+# F821: undefined name in simulate_pl_arrow uses a dynamic monkeypatch pattern.
+"front/**/*.py"                       = ["E402", "E701", "E702", "E741", "F841"]
+"front/main.py"                       = ["E402"]
+"simulate*.py"                        = ["E701", "E702", "F841"]
+"sim_utils.py"                        = ["E402", "E701", "E702"]
+"simulate_pl_arrow.py"                = ["F821"]
+"tools/**/*.py"                       = ["E402"]
+"generate_arrow_doc.py"               = ["F841"]
+"tak_bridge/**/*.py"                  = ["F841"]
+"tests/conftest.py"                   = ["E402"]
+"tests/**/*.py"                       = ["E702"]
+"tests/unit/test_map_alert_js.py"     = ["E701"]
+"tests/integration/test_streams.py"   = ["E702"]
+"backend/mumble/monitor.py"           = ["E402"]
+"backend/octopus/router.py"           = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
@@ -89,3 +116,8 @@ asyncio_mode = "auto"
 dev = [
     "pytest>=9.0.3",
 ]
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_return_any = false
+check_untyped_defs = false

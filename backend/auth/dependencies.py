@@ -42,7 +42,9 @@ def get_current_operator(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Operator not found")
 
     if op.session_jti is None or jti != op.session_jti:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session superseded — please log in again")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "Session superseded — please log in again"
+        )
 
     return op
 

@@ -1,4 +1,5 @@
 """Hierarchy export endpoint."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -30,13 +31,15 @@ def export_hierarchy(
                 for team in sec.teams:
                     team_data: dict = {"name": team.name, "operators": []}
                     for op in team.operators:
-                        team_data["operators"].append({
-                            "callsign": op.callsign,
-                            "rank": op.rank,
-                            "role": op.role,
-                            "team_role": op.team_role,
-                            "password": "changeme",
-                        })
+                        team_data["operators"].append(
+                            {
+                                "callsign": op.callsign,
+                                "rank": op.rank,
+                                "role": op.role,
+                                "team_role": op.team_role,
+                                "password": "changeme",
+                            }
+                        )
                     sec_data["teams"].append(team_data)
                 plt_data["sections"].append(sec_data)
             co_data["platoons"].append(plt_data)

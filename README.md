@@ -37,7 +37,7 @@ The system consists of:
    * WebSocket realtime communication
    * REST APIs
    * CoT (Cursor on Target) messaging
-   * SQLite storage (persisted under `/app/data/arrow.db` in Docker; overridable via `ARROW_DATABASE_URL`)
+   * PostgreSQL + PostGIS storage (Docker volume `postgres-data`; connection via `ARROW_DATABASE_URL`)
 
 ---
 
@@ -548,7 +548,7 @@ FastAPI
 ### Database
 
 ```text
-SQLite
+PostgreSQL 16 + PostGIS 3.4
 ```
 
 ### Realtime
@@ -807,7 +807,8 @@ Format:
 
 * FastAPI
 * SQLAlchemy
-* SQLite
+* PostgreSQL 16 + PostGIS 3.4
+* MapServer (OGC WMS/WFS)
 * WebSockets
 * Pydantic
 

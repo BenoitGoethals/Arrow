@@ -23,11 +23,12 @@ from starlette.websockets import WebSocketDisconnect
 
 from tests.conftest import auth, register
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _wait_for_stream(client: TestClient, token: str, sid: str, timeout: float = 2.0) -> None:
+def _wait_for_stream(
+    client: TestClient, token: str, sid: str, timeout: float = 2.0
+) -> None:
     """Block until /streams reports `sid` is active (producer fully registered)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -38,7 +39,9 @@ def _wait_for_stream(client: TestClient, token: str, sid: str, timeout: float = 
     raise AssertionError(f"stream {sid} never appeared in /streams within {timeout}s")
 
 
-def _wait_for_stream_gone(client: TestClient, token: str, sid: str, timeout: float = 2.0) -> None:
+def _wait_for_stream_gone(
+    client: TestClient, token: str, sid: str, timeout: float = 2.0
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         r = client.get("/streams", headers=auth(token))
@@ -102,14 +105,14 @@ def test_produce_registers_stream_in_listing(client) -> None:
         r = client.get("/streams", headers=auth(tok))
         entry = next(s for s in r.json() if s["id"] == sid)
         assert entry["viewers"] == 0
-        assert entry["callsign"]   # set from JWT 'sub'
+        assert entry["callsign"]  # set from JWT 'sub'
 
     # After context exit, producer disconnected → stream evicted
     _wait_for_stream_gone(client, tok, sid)
 
 
 def test_started_event_broadcast_to_ws_subscribers(client) -> None:
-    _, prod_tok, _    = register(client)
+    _, prod_tok, _ = register(client)
     _, watcher_tok, _ = register(client)
     sid = "test-broadcast-started"
 
@@ -122,7 +125,7 @@ def test_started_event_broadcast_to_ws_subscribers(client) -> None:
 
 
 def test_ended_event_broadcast_when_producer_disconnects(client) -> None:
-    _, prod_tok, _    = register(client)
+    _, prod_tok, _ = register(client)
     _, watcher_tok, _ = register(client)
     sid = "test-broadcast-ended"
 
@@ -146,7 +149,9 @@ def test_frame_relay_from_producer_to_single_consumer(client) -> None:
     with client.websocket_connect(f"/streams/{sid}/produce?token={prod_tok}") as prod:
         _wait_for_stream(client, prod_tok, sid)
 
-        with client.websocket_connect(f"/streams/{sid}/consume?token={cons_tok}") as cons:
+        with client.websocket_connect(
+            f"/streams/{sid}/consume?token={cons_tok}"
+        ) as cons:
             # Give the backend a moment to add cons to stream.consumers
             time.sleep(0.05)
 
@@ -158,7 +163,7 @@ def test_frame_relay_from_producer_to_single_consumer(client) -> None:
 
 
 def test_frame_relay_to_multiple_consumers(client) -> None:
-    _, prod_tok, _  = register(client)
+    _, prod_tok, _ = register(client)
     _, cons1_tok, _ = register(client)
     _, cons2_tok, _ = register(client)
     sid = "test-frame-relay-multi"
@@ -166,8 +171,10 @@ def test_frame_relay_to_multiple_consumers(client) -> None:
     with client.websocket_connect(f"/streams/{sid}/produce?token={prod_tok}") as prod:
         _wait_for_stream(client, prod_tok, sid)
 
-        with client.websocket_connect(f"/streams/{sid}/consume?token={cons1_tok}") as c1, \
-             client.websocket_connect(f"/streams/{sid}/consume?token={cons2_tok}") as c2:
+        with (
+            client.websocket_connect(f"/streams/{sid}/consume?token={cons1_tok}") as c1,
+            client.websocket_connect(f"/streams/{sid}/consume?token={cons2_tok}") as c2,
+        ):
             time.sleep(0.05)
 
             r = client.get("/streams", headers=auth(prod_tok))
@@ -189,7 +196,7 @@ def test_producer_creates_recording_with_frames(client) -> None:
         _wait_for_stream(client, prod_tok, sid)
         prod.send_bytes(b"\xff\xd8\xff\xe0FRAME-1\xff\xd9")
         prod.send_bytes(b"\xff\xd8\xff\xe0FRAME-2\xff\xd9")
-        time.sleep(0.10)   # let the producer task flush both frames to disk
+        time.sleep(0.10)  # let the producer task flush both frames to disk
 
     # After the WS closes, the recording should be sealed
     deadline = time.monotonic() + 2.0
@@ -202,7 +209,7 @@ def test_producer_creates_recording_with_frames(client) -> None:
     assert match, "recording was never registered for the stream"
     rec = match[0]
     assert rec["frame_count"] == 2
-    assert rec["byte_size"]   > 0
+    assert rec["byte_size"] > 0
     assert rec["live"] is False
     assert rec["ended_at"]
     rec_id = rec["id"]
@@ -234,16 +241,25 @@ def test_recording_delete_requires_admin_or_bc(client) -> None:
         rows = client.get("/streams/recordings", headers=auth(admin_tok)).json()
         match = [r for r in rows if r["stream_id"] == sid]
         if match and not match[0]["live"]:
-            rec_id = match[0]["id"]; break
+            rec_id = match[0]["id"]
+            break
         time.sleep(0.05)
     assert rec_id
 
     # Operator may not delete
-    assert client.delete(f"/streams/recordings/{rec_id}",
-                         headers=auth(prod_tok)).status_code == 403
+    assert (
+        client.delete(
+            f"/streams/recordings/{rec_id}", headers=auth(prod_tok)
+        ).status_code
+        == 403
+    )
     # Admin can
-    assert client.delete(f"/streams/recordings/{rec_id}",
-                         headers=auth(admin_tok)).status_code == 204
+    assert (
+        client.delete(
+            f"/streams/recordings/{rec_id}", headers=auth(admin_tok)
+        ).status_code
+        == 204
+    )
     # And after delete the row is gone
     rows = client.get("/streams/recordings", headers=auth(admin_tok)).json()
     assert not any(r["id"] == rec_id for r in rows)
@@ -258,7 +274,9 @@ def test_consumer_disconnect_does_not_affect_producer(client) -> None:
     with client.websocket_connect(f"/streams/{sid}/produce?token={prod_tok}") as prod:
         _wait_for_stream(client, prod_tok, sid)
 
-        with client.websocket_connect(f"/streams/{sid}/consume?token={cons_tok}") as cons:
+        with client.websocket_connect(
+            f"/streams/{sid}/consume?token={cons_tok}"
+        ) as cons:
             time.sleep(0.05)
             prod.send_bytes(b"first")
             assert cons.receive_bytes() == b"first"

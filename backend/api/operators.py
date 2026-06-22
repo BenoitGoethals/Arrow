@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from backend.audit import log_event
-from backend.api.schemas import OperatorOut, OperatorUpdate, OpsStatusUpdate, PasswordReset
+from backend.api.schemas import (
+    OperatorOut,
+    OperatorUpdate,
+    OpsStatusUpdate,
+    PasswordReset,
+)
 from backend.auth.jwt_auth import get_current_operator, hash_password, require_role
 from backend.storage.database import get_db
 from backend.storage.models import Operator
@@ -48,8 +53,13 @@ def update_operator(
         setattr(op, field, value)
     db.commit()
     db.refresh(op)
-    log_event(db, "OPERATOR_UPDATE", operator_id=current.id,
-              resource=f"operator:{operator_id}", detail=str(changes))
+    log_event(
+        db,
+        "OPERATOR_UPDATE",
+        operator_id=current.id,
+        resource=f"operator:{operator_id}",
+        detail=str(changes),
+    )
     return op
 
 
@@ -62,21 +72,34 @@ async def set_ops_status(
 ) -> Operator:
     value = payload.ops_status.upper()
     if value not in VALID_OPS_STATUS:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"ops_status must be one of {sorted(VALID_OPS_STATUS)}")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"ops_status must be one of {sorted(VALID_OPS_STATUS)}",
+        )
     op = db.get(Operator, operator_id)
     if not op:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     op.ops_status = value
     db.commit()
     db.refresh(op)
-    log_event(db, "OPERATOR_OPS_STATUS", operator_id=current.id,
-              resource=f"operator:{operator_id}", detail=value)
-    await broadcaster.broadcast({
-        "channel": "presence",
-        "event": "ops_status",
-        "data": {"operator_id": op.id, "callsign": op.callsign, "ops_status": value},
-    })
+    log_event(
+        db,
+        "OPERATOR_OPS_STATUS",
+        operator_id=current.id,
+        resource=f"operator:{operator_id}",
+        detail=value,
+    )
+    await broadcaster.broadcast(
+        {
+            "channel": "presence",
+            "event": "ops_status",
+            "data": {
+                "operator_id": op.id,
+                "callsign": op.callsign,
+                "ops_status": value,
+            },
+        }
+    )
     return op
 
 
@@ -90,12 +113,13 @@ def set_password(
     op = db.get(Operator, operator_id)
     if not op:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    op.password_hash      = hash_password(payload.password)
+    op.password_hash = hash_password(payload.password)
     op.failed_login_count = 0
-    op.locked_until       = None
+    op.locked_until = None
     db.commit()
-    log_event(db, "PASSWORD_RESET", operator_id=current.id,
-              resource=f"operator:{operator_id}")
+    log_event(
+        db, "PASSWORD_RESET", operator_id=current.id, resource=f"operator:{operator_id}"
+    )
 
 
 @router.delete("/{operator_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -110,5 +134,10 @@ def delete_operator(
     callsign = op.callsign
     db.delete(op)
     db.commit()
-    log_event(db, "OPERATOR_DELETE", operator_id=current.id,
-              resource=f"operator:{operator_id}", detail=f"callsign:{callsign}")
+    log_event(
+        db,
+        "OPERATOR_DELETE",
+        operator_id=current.id,
+        resource=f"operator:{operator_id}",
+        detail=f"callsign:{callsign}",
+    )

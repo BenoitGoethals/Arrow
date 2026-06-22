@@ -23,7 +23,7 @@ class MsgLoginErr:
 @dataclasses.dataclass
 class MsgSendOk:
     status: int
-    body:   str
+    body: str
 
 
 @dataclasses.dataclass
@@ -44,24 +44,32 @@ class MsgAutoStopped:
 @dataclasses.dataclass
 class MsgWsStatus:
     """WebSocket connection state change. text: "ON" | "OFF" | "ERR" | "CONNECTING"."""
+
     text: str
 
 
 @dataclasses.dataclass
 class MsgWsBtn:
     """Request to update the WS connect/disconnect button label."""
+
     label: str
 
 
 @dataclasses.dataclass
 class MsgWsRaw:
     """Raw JSON string received from the WebSocket (or a ``__log__`` sentinel)."""
+
     raw: str
 
 
 QueueMsg = (
-    MsgLoginOk | MsgLoginErr
-    | MsgSendOk | MsgSendErr
-    | MsgAutoTrigger | MsgAutoStopped
-    | MsgWsStatus | MsgWsBtn | MsgWsRaw
+    MsgLoginOk
+    | MsgLoginErr
+    | MsgSendOk
+    | MsgSendErr
+    | MsgAutoTrigger
+    | MsgAutoStopped
+    | MsgWsStatus
+    | MsgWsBtn
+    | MsgWsRaw
 )

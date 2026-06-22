@@ -17,7 +17,7 @@ class ServerConfig:
 
 @dataclass(slots=True)
 class DatabaseConfig:
-    url: str = "sqlite:///./arrow.db"
+    url: str = "postgresql+psycopg://arrow:arrow_dev@localhost:5432/arrow"
 
 
 @dataclass(slots=True)
@@ -36,7 +36,7 @@ class OperatorConfig:
 @dataclass(slots=True)
 class MapsConfig:
     offline: bool = True
-    owm_api_key: str = ""   # OpenWeatherMap API key — optional, enables weather layers
+    owm_api_key: str = ""  # OpenWeatherMap API key — optional, enables weather layers
 
 
 @dataclass(slots=True)
@@ -47,8 +47,8 @@ class CotConfig:
 
 @dataclass(slots=True)
 class OctopusConfig:
-    url: str = ""           # e.g. http://192.168.0.240:8080
-    api_key: str = ""       # override with ARROW_OCTOPUS_API_KEY env var
+    url: str = ""  # e.g. http://192.168.0.240:8080
+    api_key: str = ""  # override with ARROW_OCTOPUS_API_KEY env var
 
 
 @dataclass(slots=True)
@@ -74,7 +74,10 @@ def load_config(path: Path | str | None = None) -> AppConfig:
         return AppConfig(
             server=ServerConfig(),
             database=DatabaseConfig(
-                url=os.environ.get("ARROW_DATABASE_URL", "sqlite:///./arrow.db"),
+                url=os.environ.get(
+                    "ARROW_DATABASE_URL",
+                    "postgresql+psycopg://arrow:arrow_dev@localhost:5432/arrow",
+                ),
             ),
             auth=AuthConfig(),
             operator=OperatorConfig(),
@@ -97,7 +100,11 @@ def load_config(path: Path | str | None = None) -> AppConfig:
             # Env var wins so Docker can point at the persisted /app/data path
             # without forcing local-dev to change config.xml.
             url=os.environ.get("ARROW_DATABASE_URL")
-                or _text(root, "database/url", "sqlite:///./arrow.db"),
+            or _text(
+                root,
+                "database/url",
+                "postgresql+psycopg://arrow:arrow_dev@localhost:5432/arrow",
+            ),
         ),
         auth=AuthConfig(
             secret=_text(root, "auth/secret", "change-me-in-production"),
@@ -111,7 +118,7 @@ def load_config(path: Path | str | None = None) -> AppConfig:
         maps=MapsConfig(
             offline=_text(root, "maps/offline", "true").lower() == "true",
             owm_api_key=os.environ.get("ARROW_OWM_API_KEY")
-                        or _text(root, "openweathermap/api_key", ""),
+            or _text(root, "openweathermap/api_key", ""),
         ),
         cot=CotConfig(
             multicast_group=_text(root, "cot/multicast_group", "239.2.3.1"),
@@ -120,6 +127,6 @@ def load_config(path: Path | str | None = None) -> AppConfig:
         octopus=OctopusConfig(
             url=_text(root, "octopus/url", ""),
             api_key=os.environ.get("ARROW_OCTOPUS_API_KEY")
-                    or _text(root, "octopus/api_key", ""),
+            or _text(root, "octopus/api_key", ""),
         ),
     )

@@ -11,13 +11,21 @@ from sqlalchemy.orm import Session
 from backend.api.schemas import OperatorOut, TacticalObjectOut
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.missions.schemas import (
-    AssignOperatorsIn, MissionCreate, MissionOut, MissionSnapshotOut,
+    AssignOperatorsIn,
+    MissionCreate,
+    MissionOut,
+    MissionSnapshotOut,
     MissionUpdate,
 )
 from backend.storage.database import get_db
 from backend.storage.models import (
-    Alert, FireMission, Message, Mission, Operator,
-    Report, TacticalObject,
+    Alert,
+    FireMission,
+    Message,
+    Mission,
+    Operator,
+    Report,
+    TacticalObject,
 )
 from backend.websocket.manager import broadcaster
 
@@ -30,18 +38,19 @@ def _utcnow() -> datetime:
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _snapshot_mission(db: Session, mission: Mission) -> str:
     """Serialise all current tactical objects in this mission to a JSON string."""
-    objects = db.query(TacticalObject).filter(
-        TacticalObject.mission_id == mission.id
-    ).all()
-    return json.dumps([
-        TacticalObjectOut.model_validate(o).model_dump(mode="json")
-        for o in objects
-    ])
+    objects = (
+        db.query(TacticalObject).filter(TacticalObject.mission_id == mission.id).all()
+    )
+    return json.dumps(
+        [TacticalObjectOut.model_validate(o).model_dump(mode="json") for o in objects]
+    )
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
+
 
 @router.get("", response_model=list[MissionOut])
 def list_missions(
@@ -74,8 +83,13 @@ async def create_mission(
     db.add(m)
     db.commit()
     db.refresh(m)
-    await broadcaster.broadcast({"channel": "mission", "event": "created",
-                                  "data": MissionOut.model_validate(m).model_dump(mode="json")})
+    await broadcaster.broadcast(
+        {
+            "channel": "mission",
+            "event": "created",
+            "data": MissionOut.model_validate(m).model_dump(mode="json"),
+        }
+    )
     return m
 
 
@@ -113,8 +127,13 @@ async def update_mission(
         m.map_zoom = payload.map_zoom
     db.commit()
     db.refresh(m)
-    await broadcaster.broadcast({"channel": "mission", "event": "updated",
-                                  "data": MissionOut.model_validate(m).model_dump(mode="json")})
+    await broadcaster.broadcast(
+        {
+            "channel": "mission",
+            "event": "updated",
+            "data": MissionOut.model_validate(m).model_dump(mode="json"),
+        }
+    )
     return m
 
 
@@ -128,15 +147,18 @@ async def delete_mission(
     if not m:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if m.status == "ACTIVE":
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            "Cannot delete an ACTIVE mission — end it first")
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Cannot delete an ACTIVE mission — end it first"
+        )
     db.delete(m)
     db.commit()
-    await broadcaster.broadcast({"channel": "mission", "event": "deleted",
-                                  "data": {"id": mission_id}})
+    await broadcaster.broadcast(
+        {"channel": "mission", "event": "deleted", "data": {"id": mission_id}}
+    )
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
+
 
 @router.post("/{mission_id}/start", response_model=MissionOut)
 async def start_mission(
@@ -155,8 +177,13 @@ async def start_mission(
     m.started_at = _utcnow()
     db.commit()
     db.refresh(m)
-    await broadcaster.broadcast({"channel": "mission", "event": "started",
-                                  "data": MissionOut.model_validate(m).model_dump(mode="json")})
+    await broadcaster.broadcast(
+        {
+            "channel": "mission",
+            "event": "started",
+            "data": MissionOut.model_validate(m).model_dump(mode="json"),
+        }
+    )
     return m
 
 
@@ -173,14 +200,19 @@ async def end_mission(
         return m
 
     # Save full snapshot before ending
-    m.snapshot    = _snapshot_mission(db, m)
+    m.snapshot = _snapshot_mission(db, m)
     m.snapshot_at = _utcnow()
-    m.status      = "ENDED"
-    m.ended_at    = _utcnow()
+    m.status = "ENDED"
+    m.ended_at = _utcnow()
     db.commit()
     db.refresh(m)
-    await broadcaster.broadcast({"channel": "mission", "event": "ended",
-                                  "data": MissionOut.model_validate(m).model_dump(mode="json")})
+    await broadcaster.broadcast(
+        {
+            "channel": "mission",
+            "event": "ended",
+            "data": MissionOut.model_validate(m).model_dump(mode="json"),
+        }
+    )
     return m
 
 
@@ -201,21 +233,26 @@ async def reset_mission(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
     # Snapshot before wipe
-    m.snapshot    = _snapshot_mission(db, m)
+    m.snapshot = _snapshot_mission(db, m)
     m.snapshot_at = _utcnow()
     db.commit()
 
     # Wipe mission data (keep operators assigned)
     for cls in (TacticalObject, Alert, FireMission, Message, Report):
-        db.query(cls).filter(cls.mission_id == mission_id).delete(synchronize_session=False)
+        db.query(cls).filter(cls.mission_id == mission_id).delete(
+            synchronize_session=False
+        )
     db.commit()
     db.refresh(m)
 
-    await broadcaster.broadcast({
-        "channel": "mission", "event": "reset",
-        "mission_id": mission_id,
-        "data": MissionOut.model_validate(m).model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "mission",
+            "event": "reset",
+            "mission_id": mission_id,
+            "data": MissionOut.model_validate(m).model_dump(mode="json"),
+        }
+    )
     return m
 
 
@@ -234,6 +271,7 @@ def get_snapshot(
 
 
 # ── Operator assignment ───────────────────────────────────────────────────────
+
 
 @router.get("/{mission_id}/operators", response_model=list[OperatorOut])
 def list_mission_operators(
@@ -261,11 +299,13 @@ async def assign_operators(
         op = db.get(Operator, op_id)
         if op and op.mission_id is not None and op.mission_id != mission_id:
             other = db.get(Mission, op.mission_id)
-            conflicts.append({
-                "callsign": op.callsign,
-                "mission_id": op.mission_id,
-                "mission_name": other.name if other else f"#{op.mission_id}",
-            })
+            conflicts.append(
+                {
+                    "callsign": op.callsign,
+                    "mission_id": op.mission_id,
+                    "mission_name": other.name if other else f"#{op.mission_id}",
+                }
+            )
     if conflicts:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -280,15 +320,19 @@ async def assign_operators(
         if op:
             op.mission_id = mission_id
     db.commit()
-    await broadcaster.broadcast({
-        "channel": "mission", "event": "operators-updated",
-        "mission_id": mission_id,
-        "data": {"operator_ids": payload.operator_ids},
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "mission",
+            "event": "operators-updated",
+            "mission_id": mission_id,
+            "data": {"operator_ids": payload.operator_ids},
+        }
+    )
 
 
-@router.delete("/{mission_id}/operators/{operator_id}",
-               status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{mission_id}/operators/{operator_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def remove_operator(
     mission_id: int,
     operator_id: int,

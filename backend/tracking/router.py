@@ -20,49 +20,51 @@ async def update_position(
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
 ) -> Operator:
-    current.latitude  = payload.latitude
+    current.latitude = payload.latitude
     current.longitude = payload.longitude
-    current.altitude  = payload.altitude
+    current.altitude = payload.altitude
     current.last_seen = datetime.now(timezone.utc)
-    current.status    = "ONLINE"
-    current.position_source = "APP"   # fix arrived from the mobile/web app GPS
+    current.status = "ONLINE"
+    current.position_source = "APP"  # fix arrived from the mobile/web app GPS
 
     # Persist every fix for track history and behaviour analytics.
-    db.add(OperatorPosition(
-        operator_id=current.id,
-        latitude=payload.latitude,
-        longitude=payload.longitude,
-        altitude=payload.altitude,
-        recorded_at=current.last_seen,
-    ))
+    db.add(
+        OperatorPosition(
+            operator_id=current.id,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            altitude=payload.altitude,
+            recorded_at=current.last_seen,
+        )
+    )
     db.commit()
     db.refresh(current)
 
     cot_type = role_to_cot_type(current.role)
-    cot_xml  = CotEvent(
-        uid      = f"ARROW.{current.callsign}",
-        cot_type = cot_type,
-        lat      = current.latitude,
-        lon      = current.longitude,
-        hae      = current.altitude or 0.0,
-        callsign = current.callsign,
-        role     = current.role,
+    cot_xml = CotEvent(
+        uid=f"ARROW.{current.callsign}",
+        cot_type=cot_type,
+        lat=current.latitude,
+        lon=current.longitude,
+        hae=current.altitude or 0.0,
+        callsign=current.callsign,
+        role=current.role,
     ).to_xml_str()
 
     await broadcaster.broadcast(
         {
-            "channel":  "tracking",
-            "event":    "position",
-            "cot_xml":  cot_xml,
+            "channel": "tracking",
+            "event": "position",
+            "cot_xml": cot_xml,
             "data": {
                 "operator_id": current.id,
-                "callsign":    current.callsign,
-                "latitude":    current.latitude,
-                "longitude":   current.longitude,
-                "altitude":    current.altitude,
-                "team_id":     current.team_id,
-                "mission_id":  current.mission_id,
-                "cot_type":    cot_type,
+                "callsign": current.callsign,
+                "latitude": current.latitude,
+                "longitude": current.longitude,
+                "altitude": current.altitude,
+                "team_id": current.team_id,
+                "mission_id": current.mission_id,
+                "cot_type": cot_type,
                 "position_source": "APP",
             },
         }
@@ -70,6 +72,7 @@ async def update_position(
 
     # Push live position to all connected ATAK devices over TCP CoT
     from backend.cot.tcp_server import broadcast_operator_cot
+
     await broadcast_operator_cot(current)
 
     return current
@@ -92,16 +95,17 @@ def live_operators(
 @router.get("/{operator_id}/history", response_model=list[PositionHistoryOut])
 def operator_history(
     operator_id: int,
-    since: datetime | None = Query(default=None, description="ISO-8601 start time (inclusive)"),
-    until: datetime | None = Query(default=None, description="ISO-8601 end time (inclusive)"),
+    since: datetime | None = Query(
+        default=None, description="ISO-8601 start time (inclusive)"
+    ),
+    until: datetime | None = Query(
+        default=None, description="ISO-8601 end time (inclusive)"
+    ),
     limit: int = Query(default=5000, le=20000),
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
 ) -> list[OperatorPosition]:
-    q = (
-        db.query(OperatorPosition)
-        .filter(OperatorPosition.operator_id == operator_id)
-    )
+    q = db.query(OperatorPosition).filter(OperatorPosition.operator_id == operator_id)
     if since:
         q = q.filter(OperatorPosition.recorded_at >= since)
     if until:

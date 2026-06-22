@@ -1,8 +1,8 @@
 """TAK Bridge core — asyncio manager that wires together:
 
-  • CoT TCP server  (ATAK devices → bridge → Arrow)
-  • TAK server client (TAK server ↔ bridge ↔ Arrow)
-  • Arrow sync loop  (Arrow operators/objects → TAK)
+• CoT TCP server  (ATAK devices → bridge → Arrow)
+• TAK server client (TAK server ↔ bridge ↔ Arrow)
+• Arrow sync loop  (Arrow operators/objects → TAK)
 """
 
 from __future__ import annotations
@@ -11,15 +11,15 @@ import asyncio
 import logging
 import ssl
 import time
-from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Coroutine
 
 from tak_bridge.arrow import ArrowClient
 from tak_bridge.config import TakBridgeConfig
 from tak_bridge.cot_stream import (
-    CotEvent, CotFrameBuffer,
-    operator_to_cot, tacobj_to_cot,
+    CotEvent,
+    CotFrameBuffer,
+    operator_to_cot,
+    tacobj_to_cot,
 )
 
 log = logging.getLogger("tak_bridge.bridge")
@@ -27,33 +27,35 @@ log = logging.getLogger("tak_bridge.bridge")
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class BridgeStats:
     started_at: float = field(default_factory=time.time)
-    cot_received:   int = 0
-    cot_sent:       int = 0
-    arrow_pushed:   int = 0
-    arrow_pulled:   int = 0
-    tak_connected:  bool = False
-    atak_clients:   int = 0
-    last_sync_at:   float = 0.0
-    errors:         int = 0
+    cot_received: int = 0
+    cot_sent: int = 0
+    arrow_pushed: int = 0
+    arrow_pulled: int = 0
+    tak_connected: bool = False
+    atak_clients: int = 0
+    last_sync_at: float = 0.0
+    errors: int = 0
 
     def to_dict(self) -> dict:
         return {
-            "uptime_s":       int(time.time() - self.started_at),
-            "cot_received":   self.cot_received,
-            "cot_sent":       self.cot_sent,
-            "arrow_pushed":   self.arrow_pushed,
-            "arrow_pulled":   self.arrow_pulled,
-            "tak_connected":  self.tak_connected,
-            "atak_clients":   self.atak_clients,
-            "last_sync_at":   self.last_sync_at,
-            "errors":         self.errors,
+            "uptime_s": int(time.time() - self.started_at),
+            "cot_received": self.cot_received,
+            "cot_sent": self.cot_sent,
+            "arrow_pushed": self.arrow_pushed,
+            "arrow_pulled": self.arrow_pulled,
+            "tak_connected": self.tak_connected,
+            "atak_clients": self.atak_clients,
+            "last_sync_at": self.last_sync_at,
+            "errors": self.errors,
         }
 
 
 # ── Connection manager (tracks all connected ATAK clients) ────────────────────
+
 
 class ConnectionPool:
     def __init__(self) -> None:
@@ -90,19 +92,20 @@ class ConnectionPool:
 
 # ── Bridge manager ────────────────────────────────────────────────────────────
 
+
 class BridgeManager:
     """Orchestrates the TCP server, TAK client, and Arrow sync loop."""
 
     def __init__(self, cfg: TakBridgeConfig) -> None:
-        self.cfg   = cfg
+        self.cfg = cfg
         self.stats = BridgeStats()
         self._pool = ConnectionPool()
         self._arrow = ArrowClient(cfg.arrow_url, cfg.arrow_callsign, cfg.arrow_password)
 
-        self._server:    asyncio.Server | None = None
-        self._tak_task:  asyncio.Task | None   = None
-        self._sync_task: asyncio.Task | None   = None
-        self._running    = False
+        self._server: asyncio.Server | None = None
+        self._tak_task: asyncio.Task | None = None
+        self._sync_task: asyncio.Task | None = None
+        self._running = False
 
         # UIDs that originated from TAK — don't echo back to TAK
         self._tak_origin_uids: set[str] = set()
@@ -121,15 +124,20 @@ class BridgeManager:
             self.cfg.cot_server_host,
             self.cfg.cot_server_port,
         )
-        log.info("CoT TCP server listening on %s:%d",
-                 self.cfg.cot_server_host, self.cfg.cot_server_port)
+        log.info(
+            "CoT TCP server listening on %s:%d",
+            self.cfg.cot_server_host,
+            self.cfg.cot_server_port,
+        )
 
         # Start Arrow → TAK sync loop
         self._sync_task = asyncio.create_task(self._sync_loop(), name="arrow-sync")
 
         # Connect to TAK server if configured
         if self.cfg.tak_host:
-            self._tak_task = asyncio.create_task(self._tak_client_loop(), name="tak-client")
+            self._tak_task = asyncio.create_task(
+                self._tak_client_loop(), name="tak-client"
+            )
 
         log.info("TAK bridge started")
 
@@ -148,10 +156,10 @@ class BridgeManager:
     def reconfigure(self, cfg: TakBridgeConfig) -> None:
         """Apply new configuration (takes effect on next loop iteration)."""
         self.cfg = cfg
-        self._arrow._base      = cfg.arrow_url.rstrip("/")
-        self._arrow._callsign  = cfg.arrow_callsign
-        self._arrow._password  = cfg.arrow_password
-        self._arrow._token     = ""   # force re-login
+        self._arrow._base = cfg.arrow_url.rstrip("/")
+        self._arrow._callsign = cfg.arrow_callsign
+        self._arrow._password = cfg.arrow_password
+        self._arrow._token = ""  # force re-login
 
     # ── ATAK client handler ───────────────────────────────────────────────────
 
@@ -209,7 +217,9 @@ class BridgeManager:
             except Exception as exc:
                 self.stats.tak_connected = False
                 self.stats.errors += 1
-                log.warning("TAK server connection lost (%s) — retry in %ds", exc, backoff)
+                log.warning(
+                    "TAK server connection lost (%s) — retry in %ds", exc, backoff
+                )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 120)
 
@@ -222,9 +232,11 @@ class BridgeManager:
         if self.cfg.tak_ssl:
             ssl_ctx = ssl.create_default_context()
             ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode    = ssl.CERT_NONE
+            ssl_ctx.verify_mode = ssl.CERT_NONE
 
-        log.info("Connecting to TAK server %s:%d (ssl=%s)", host, port, self.cfg.tak_ssl)
+        log.info(
+            "Connecting to TAK server %s:%d (ssl=%s)", host, port, self.cfg.tak_ssl
+        )
         reader, writer = await asyncio.open_connection(host, port, ssl=ssl_ctx)
         self.stats.tak_connected = True
         log.info("Connected to TAK server %s:%d", host, port)
@@ -233,7 +245,8 @@ class BridgeManager:
         presence = CotEvent(
             uid=f"ARROW-BRIDGE-{self.cfg.tak_callsign}",
             cot_type="a-f-G-U-C",
-            lat=0.0, lon=0.0,
+            lat=0.0,
+            lon=0.0,
             callsign=self.cfg.tak_callsign,
             platform="ARROW-BRIDGE",
         )
@@ -327,9 +340,16 @@ class BridgeManager:
 
     def _parse_and_log(self, frame: bytes, source: str) -> CotEvent | None:
         from tak_bridge.cot_stream import parse_cot
+
         evt = parse_cot(frame)
         if evt:
             self.stats.cot_received += 1
-            log.debug("CoT from %s: uid=%s type=%s lat=%.4f lon=%.4f",
-                      source, evt.uid, evt.cot_type, evt.lat, evt.lon)
+            log.debug(
+                "CoT from %s: uid=%s type=%s lat=%.4f lon=%.4f",
+                source,
+                evt.uid,
+                evt.cot_type,
+                evt.lat,
+                evt.lon,
+            )
         return evt

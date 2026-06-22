@@ -22,44 +22,50 @@ from typing import Any
 # Different CBRN message types reuse codes for different purposes; we capture
 # the common cases and store everything else by code.
 _LINE_CODES = {
-    "ALFA":     "strike_serial",
-    "BRAVO":    "observer_position",
-    "CHARLIE":  "direction_observer_to_event",
-    "DELTA":    "dtg_event",
-    "ECHO":     "illumination",
-    "FOXTROT":  "event_position",
-    "GOLF":     "delivery",
-    "HOTEL":    "agent_type",        # C / B / R / N (and details)
-    "INDIA":    "terrain_weather",
-    "JULIETT":  "downwind_direction",
-    "KILO":     "downwind_speed",
-    "LIMA":    "stability_category",
-    "MIKE":     "release_height",
-    "NOVEMBER": "yield",             # nuclear (kT)
-    "OSCAR":    "predicted_zone_i",
-    "PAPA":     "predicted_zone_ii",
-    "QUEBEC":   "location_of_reading",
-    "ROMEO":    "dose_rate",
-    "SIERRA":   "dtg_reading",
-    "TANGO":    "type_of_attack",
-    "UNIFORM":  "actual_contour",
-    "VICTOR":   "wind_speed_surface",
-    "WHISKEY":  "wind_direction_surface",
-    "XRAY":     "remarks",
-    "YANKEE":   "downwind_hazard",
-    "ZULU":     "weather_actual",
+    "ALFA": "strike_serial",
+    "BRAVO": "observer_position",
+    "CHARLIE": "direction_observer_to_event",
+    "DELTA": "dtg_event",
+    "ECHO": "illumination",
+    "FOXTROT": "event_position",
+    "GOLF": "delivery",
+    "HOTEL": "agent_type",  # C / B / R / N (and details)
+    "INDIA": "terrain_weather",
+    "JULIETT": "downwind_direction",
+    "KILO": "downwind_speed",
+    "LIMA": "stability_category",
+    "MIKE": "release_height",
+    "NOVEMBER": "yield",  # nuclear (kT)
+    "OSCAR": "predicted_zone_i",
+    "PAPA": "predicted_zone_ii",
+    "QUEBEC": "location_of_reading",
+    "ROMEO": "dose_rate",
+    "SIERRA": "dtg_reading",
+    "TANGO": "type_of_attack",
+    "UNIFORM": "actual_contour",
+    "VICTOR": "wind_speed_surface",
+    "WHISKEY": "wind_direction_surface",
+    "XRAY": "remarks",
+    "YANKEE": "downwind_hazard",
+    "ZULU": "weather_actual",
 }
 
 _AGENT_TO_CATEGORY = {
-    "CHEM": "C", "CHEMICAL": "C",
-    "BIO":  "B", "BIOLOGICAL": "B",
-    "RAD":  "R", "RADIOLOGICAL": "R",
-    "NUC":  "N", "NUCLEAR": "N",
+    "CHEM": "C",
+    "CHEMICAL": "C",
+    "BIO": "B",
+    "BIOLOGICAL": "B",
+    "RAD": "R",
+    "RADIOLOGICAL": "R",
+    "NUC": "N",
+    "NUCLEAR": "N",
 }
 
-_LATLON_RE = re.compile(r"LATLON\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)", re.I)
-_MGRS_RE   = re.compile(r"MGRS\s*[:=]\s*([0-9]{1,2}[A-Z][A-Z]{2}\s*[0-9]{4,10})", re.I)
-_NUM_RE    = re.compile(r"-?\d+(?:\.\d+)?")
+_LATLON_RE = re.compile(
+    r"LATLON\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)", re.I
+)
+_MGRS_RE = re.compile(r"MGRS\s*[:=]\s*([0-9]{1,2}[A-Z][A-Z]{2}\s*[0-9]{4,10})", re.I)
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 class CbrnParseError(ValueError):
@@ -110,7 +116,7 @@ def parse_cbrn(text: str) -> dict[str, Any]:
         if code in payload["lines"]:
             lat, lon = _extract_latlon(payload["lines"][code])
             if lat is not None:
-                payload["latitude"]  = lat
+                payload["latitude"] = lat
                 payload["longitude"] = lon
                 break
 
@@ -120,21 +126,34 @@ def parse_cbrn(text: str) -> dict[str, Any]:
     payload["agent"] = payload["lines"].get("HOTEL", "").strip()
 
     # Wind / met
-    payload["wind_direction"] = _first_number(payload["lines"].get("WHISKEY")
-                                              or payload["lines"].get("JULIETT"))
-    payload["wind_speed"]     = _first_number(payload["lines"].get("VICTOR")
-                                              or payload["lines"].get("KILO"))
+    payload["wind_direction"] = _first_number(
+        payload["lines"].get("WHISKEY") or payload["lines"].get("JULIETT")
+    )
+    payload["wind_speed"] = _first_number(
+        payload["lines"].get("VICTOR") or payload["lines"].get("KILO")
+    )
 
     # Zone parameters — explicit if given (OSCAR/PAPA), otherwise sensible defaults
-    zone_inner    = _first_number(payload["lines"].get("OSCAR"))
-    zone_downwind = _first_number(payload["lines"].get("PAPA")
-                                  or payload["lines"].get("YANKEE"))
-    payload["zone_inner_m"]    = int(zone_inner * 1000) if (zone_inner and zone_inner < 50) else int(zone_inner or _default_inner(payload))
-    payload["zone_downwind_m"] = int(zone_downwind * 1000) if (zone_downwind and zone_downwind < 100) else int(zone_downwind or _default_downwind(payload))
+    zone_inner = _first_number(payload["lines"].get("OSCAR"))
+    zone_downwind = _first_number(
+        payload["lines"].get("PAPA") or payload["lines"].get("YANKEE")
+    )
+    payload["zone_inner_m"] = (
+        int(zone_inner * 1000)
+        if (zone_inner and zone_inner < 50)
+        else int(zone_inner or _default_inner(payload))
+    )
+    payload["zone_downwind_m"] = (
+        int(zone_downwind * 1000)
+        if (zone_downwind and zone_downwind < 100)
+        else int(zone_downwind or _default_downwind(payload))
+    )
     payload["zone_downwind_angle_deg"] = 30  # ATP-45 simplified: ±30° sector
 
     # DTG of event
-    payload["dtg"] = payload["lines"].get("DELTA") or payload["lines"].get("SIERRA") or ""
+    payload["dtg"] = (
+        payload["lines"].get("DELTA") or payload["lines"].get("SIERRA") or ""
+    )
     payload["serial"] = payload["lines"].get("ALFA", "")
     payload["delivery"] = payload["lines"].get("GOLF", "")
 
@@ -180,10 +199,10 @@ def _first_number(s: str | None) -> float | None:
 def _default_inner(payload: dict) -> int:
     """Default Zone I radius (m) by agent category."""
     return {
-        "C": 1000,   # 1 km
+        "C": 1000,  # 1 km
         "B": 2000,
         "R": 500,
-        "N": 3000,   # severe damage radius — placeholder
+        "N": 3000,  # severe damage radius — placeholder
     }.get(payload.get("agent_category") or "", 1000)
 
 

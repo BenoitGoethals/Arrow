@@ -43,6 +43,7 @@ Redistribution caveat (only matters when shipping to *other* Macs):
   * The bundle is ad-hoc signed. Gatekeeper will block it on other machines
     until it is signed with a Developer ID and notarised.
 """
+
 import os
 import sysconfig
 import tempfile
@@ -100,7 +101,10 @@ if os.path.exists(_libmgrs):
 # py2app. Ship the Homebrew dylib at Contents/Resources/lib so voice works on
 # machines without Homebrew; front/mumble/opus_fix.py searches that path when
 # frozen. It depends only on libSystem, so the single file is self-contained.
-for _opus_src in ("/opt/homebrew/lib/libopus.0.dylib", "/usr/local/lib/libopus.0.dylib"):
+for _opus_src in (
+    "/opt/homebrew/lib/libopus.0.dylib",
+    "/usr/local/lib/libopus.0.dylib",
+):
     if os.path.exists(_opus_src):
         DATA_FILES.append(("lib", [os.path.realpath(_opus_src)]))
         break
@@ -135,10 +139,8 @@ OPTIONS = {
         "NSHighResolutionCapable": True,
         # The reason for bundling: lets Core Location prompt for and then deliver
         # GPS / Wi-Fi fixes. Both keys provided for older/newer macOS.
-        "NSLocationWhenInUseUsageDescription":
-            "Arrow shows your own position on the tactical map.",
-        "NSLocationUsageDescription":
-            "Arrow shows your own position on the tactical map.",
+        "NSLocationWhenInUseUsageDescription": "Arrow shows your own position on the tactical map.",
+        "NSLocationUsageDescription": "Arrow shows your own position on the tactical map.",
     },
 }
 

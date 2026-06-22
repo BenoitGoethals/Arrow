@@ -12,22 +12,54 @@ from typing import Callable
 import wx
 import wx.stc as stc
 
-from .builder   import CotXmlBuilder
-from .client    import BackendClient, WsMonitor
-from .domain    import CotEntry
-from .messages  import (
-    MsgAutoStopped, MsgAutoTrigger, MsgLoginErr, MsgLoginOk,
-    MsgSendErr, MsgSendOk, MsgWsBtn, MsgWsRaw, MsgWsStatus, QueueMsg,
+from .builder import CotXmlBuilder
+from .client import BackendClient, WsMonitor
+from .domain import CotEntry
+from .messages import (
+    MsgAutoStopped,
+    MsgAutoTrigger,
+    MsgLoginErr,
+    MsgLoginOk,
+    MsgSendErr,
+    MsgSendOk,
+    MsgWsBtn,
+    MsgWsRaw,
+    MsgWsStatus,
+    QueueMsg,
 )
-from .registry  import registry
+from .registry import registry
 from .strategies import AutoSend, BurstSend, OnceSend
-from .theme     import (
-    C_ACCENT, C_BG, C_CARD, C_DIM, C_ERR, C_FG, C_INFO, C_OK, C_PANEL, C_WARN,
-    C_XML, CAT_COLOUR, WS_STATUS_COLOUR, apply_default_font, bold, mono, ts,
+from .theme import (
+    C_ACCENT,
+    C_BG,
+    C_CARD,
+    C_DIM,
+    C_ERR,
+    C_FG,
+    C_INFO,
+    C_OK,
+    C_PANEL,
+    C_WARN,
+    C_XML,
+    CAT_COLOUR,
+    WS_STATUS_COLOUR,
+    apply_default_font,
+    bold,
+    mono,
+    ts,
 )
-from .widgets   import (
-    LOG_STYLE_MAP, ST_CHANNEL, ST_DATA, ST_ERR, ST_OK, ST_SYS, ST_TS, ST_XML,
-    log_append, make_btn, make_log,
+from .widgets import (
+    LOG_STYLE_MAP,
+    ST_CHANNEL,
+    ST_DATA,
+    ST_ERR,
+    ST_OK,
+    ST_SYS,
+    ST_TS,
+    ST_XML,
+    log_append,
+    make_btn,
+    make_log,
 )
 
 
@@ -42,14 +74,17 @@ class SimFrame(wx.Frame):
     """
 
     def __init__(self, backend_url: str) -> None:
-        super().__init__(None, title="Arrow CoT Simulator",
-                         size=(1380, 860),
-                         style=wx.DEFAULT_FRAME_STYLE)
-        self._default_url  = backend_url.rstrip("/")
-        self._builder      = CotXmlBuilder()
-        self._token: str | None          = None
-        self._selected: CotEntry | None  = None
-        self._visible: list[CotEntry]    = []
+        super().__init__(
+            None,
+            title="Arrow CoT Simulator",
+            size=(1380, 860),
+            style=wx.DEFAULT_FRAME_STYLE,
+        )
+        self._default_url = backend_url.rstrip("/")
+        self._builder = CotXmlBuilder()
+        self._token: str | None = None
+        self._selected: CotEntry | None = None
+        self._visible: list[CotEntry] = []
         self._auto_send: AutoSend | None = None
         self._ws_monitor: WsMonitor | None = None
         self._msg_q: queue.Queue[QueueMsg] = queue.Queue()
@@ -57,7 +92,7 @@ class SimFrame(wx.Frame):
 
         self.SetBackgroundColour(C_BG)
         self._build_ui()
-        apply_default_font(self)             # bump every child font for legibility
+        apply_default_font(self)  # bump every child font for legibility
         self.Layout()
         self._setup_handlers()
 
@@ -72,24 +107,26 @@ class SimFrame(wx.Frame):
 
     def _setup_handlers(self) -> None:
         self._handlers: dict[type, Callable] = {
-            MsgLoginOk:     self._h_login_ok,
-            MsgLoginErr:    self._h_login_err,
-            MsgSendOk:      self._h_send_ok,
-            MsgSendErr:     self._h_send_err,
+            MsgLoginOk: self._h_login_ok,
+            MsgLoginErr: self._h_login_err,
+            MsgSendOk: self._h_send_ok,
+            MsgSendErr: self._h_send_err,
             MsgAutoTrigger: self._h_auto_trigger,
             MsgAutoStopped: self._h_auto_stopped,
-            MsgWsStatus:    self._h_ws_status,
-            MsgWsBtn:       self._h_ws_btn,
-            MsgWsRaw:       self._h_ws_raw,
+            MsgWsStatus: self._h_ws_status,
+            MsgWsBtn: self._h_ws_btn,
+            MsgWsRaw: self._h_ws_raw,
         }
 
     # ── UI construction ───────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
         root = wx.BoxSizer(wx.VERTICAL)
-        root.Add(self._build_topbar(),    0, wx.EXPAND | wx.ALL, 4)
-        root.Add(self._build_main(),      1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 4)
-        root.Add(self._build_statusbar(), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 2)
+        root.Add(self._build_topbar(), 0, wx.EXPAND | wx.ALL, 4)
+        root.Add(self._build_main(), 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 4)
+        root.Add(
+            self._build_statusbar(), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 2
+        )
         self.SetSizer(root)
 
     # ── Top bar ───────────────────────────────────────────────────────────────
@@ -107,49 +144,66 @@ class SimFrame(wx.Frame):
             return w
 
         def entry(val: str, width: int = 160, password: bool = False) -> wx.TextCtrl:
-            style = (wx.TE_PASSWORD | wx.BORDER_SIMPLE) if password else wx.BORDER_SIMPLE
+            style = (
+                (wx.TE_PASSWORD | wx.BORDER_SIMPLE) if password else wx.BORDER_SIMPLE
+            )
             w = wx.TextCtrl(bar, value=val, style=style, size=(width, -1))
             w.SetBackgroundColour(C_CARD)
             w.SetForegroundColour(C_FG)
             w.SetFont(mono(9))
             return w
 
-        def btn(text: str, handler: Callable,
-                bg: wx.Colour = C_ACCENT):
+        def btn(text: str, handler: Callable, bg: wx.Colour = C_ACCENT):
             return make_btn(bar, text, handler, bg=bg)
 
-        h.Add(lbl("▶ ARROW CoT SIMULATOR", C_ACCENT, b=True), 0,
-              wx.ALIGN_CENTER_VERTICAL | wx.LEFT | wx.RIGHT, 8)
-        h.Add(wx.StaticLine(bar, style=wx.LI_VERTICAL), 0,
-              wx.EXPAND | wx.TOP | wx.BOTTOM, 4)
+        h.Add(
+            lbl("▶ ARROW CoT SIMULATOR", C_ACCENT, b=True),
+            0,
+            wx.ALIGN_CENTER_VERTICAL | wx.LEFT | wx.RIGHT,
+            8,
+        )
+        h.Add(
+            wx.StaticLine(bar, style=wx.LI_VERTICAL),
+            0,
+            wx.EXPAND | wx.TOP | wx.BOTTOM,
+            4,
+        )
 
-        h.Add(lbl("Backend:"),   0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 8)
+        h.Add(lbl("Backend:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 8)
         self._url_ctrl = entry(self._default_url, 200)
-        h.Add(self._url_ctrl,    0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
+        h.Add(self._url_ctrl, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
 
-        h.Add(lbl("Callsign:"),  0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 12)
+        h.Add(lbl("Callsign:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 12)
         self._cs_ctrl = entry("benoit", 90)
-        h.Add(self._cs_ctrl,     0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
+        h.Add(self._cs_ctrl, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
 
-        h.Add(lbl("Password:"),  0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 12)
+        h.Add(lbl("Password:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 12)
         self._pw_ctrl = entry("ranger14", 90, password=True)
-        h.Add(self._pw_ctrl,     0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
+        h.Add(self._pw_ctrl, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 4)
 
-        h.Add(btn("LOGIN", self._on_login, C_INFO),
-              0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 8)
-        h.Add(wx.StaticLine(bar, style=wx.LI_VERTICAL), 0,
-              wx.EXPAND | wx.TOP | wx.BOTTOM | wx.LEFT | wx.RIGHT, 6)
+        h.Add(
+            btn("LOGIN", self._on_login, C_INFO),
+            0,
+            wx.ALIGN_CENTER_VERTICAL | wx.LEFT,
+            8,
+        )
+        h.Add(
+            wx.StaticLine(bar, style=wx.LI_VERTICAL),
+            0,
+            wx.EXPAND | wx.TOP | wx.BOTTOM | wx.LEFT | wx.RIGHT,
+            6,
+        )
 
-        h.Add(lbl("Token:"),     0, wx.ALIGN_CENTER_VERTICAL)
+        h.Add(lbl("Token:"), 0, wx.ALIGN_CENTER_VERTICAL)
         self._token_lbl = lbl("— not authenticated —", C_WARN)
-        h.Add(self._token_lbl,   0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 6)
+        h.Add(self._token_lbl, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 6)
 
         h.AddStretchSpacer()
 
         self._ws_status_lbl = lbl("WS: OFF", C_ERR, b=True)
         h.Add(self._ws_status_lbl, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         self._ws_btn = btn("WS CONNECT", self._on_toggle_ws, wx.Colour(136, 102, 34))
-        h.Add(self._ws_btn,        0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+        h.Add(self._ws_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
 
         bar.SetSizer(h)
         bar.SetMinSize((-1, 44))
@@ -171,7 +225,7 @@ class SimFrame(wx.Frame):
         panel = wx.Panel(parent)
         panel.SetBackgroundColour(C_BG)
         v = wx.BoxSizer(wx.VERTICAL)
-        v.Add(self._build_library(panel),       1, wx.EXPAND | wx.BOTTOM, 4)
+        v.Add(self._build_library(panel), 1, wx.EXPAND | wx.BOTTOM, 4)
         v.Add(self._build_send_controls(panel), 0, wx.EXPAND)
         panel.SetSizer(v)
         return panel
@@ -229,14 +283,15 @@ class SimFrame(wx.Frame):
         v.Add(hdr, 0, wx.EXPAND | wx.ALL, 4)
         v.Add(wx.StaticLine(panel), 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 2)
 
-        def btn(label: str, handler: Callable,
-                bg: wx.Colour = C_ACCENT):
+        def btn(label: str, handler: Callable, bg: wx.Colour = C_ACCENT):
             return make_btn(panel, label, handler, bg=bg)
 
         # Once / Burst row
         row1 = wx.BoxSizer(wx.HORIZONTAL)
         row1.Add(btn("SEND ONCE", self._on_send_once), 0, wx.RIGHT, 4)
-        row1.Add(btn("BURST", self._on_send_burst, wx.Colour(136, 102, 34)), 0, wx.RIGHT, 4)
+        row1.Add(
+            btn("BURST", self._on_send_burst, wx.Colour(136, 102, 34)), 0, wx.RIGHT, 4
+        )
         self._burst_spin = wx.SpinCtrl(panel, value="5", min=1, max=100, size=(54, -1))
         self._burst_spin.SetFont(mono(9))
         row1.Add(self._burst_spin, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 2)
@@ -254,7 +309,8 @@ class SimFrame(wx.Frame):
         row2.Add(btn("AUTO START", self._on_start_auto), 0, wx.RIGHT, 4)
         row2.Add(btn("STOP", self._on_stop_auto, C_ERR), 0, wx.RIGHT, 6)
         self._auto_interval = wx.SpinCtrlDouble(
-            panel, value="3.0", min=0.5, max=60.0, inc=0.5, size=(62, -1))
+            panel, value="3.0", min=0.5, max=60.0, inc=0.5, size=(62, -1)
+        )
         self._auto_interval.SetFont(mono(9))
         row2.Add(self._auto_interval, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 2)
         s_lbl = wx.StaticText(panel, label="s")
@@ -271,8 +327,12 @@ class SimFrame(wx.Frame):
         v.Add(self._auto_lbl, 0, wx.LEFT | wx.BOTTOM, 6)
 
         v.Add(wx.StaticLine(panel), 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 4)
-        v.Add(btn("RANDOMISE POSITION", self._on_randomise,
-                  wx.Colour(136, 102, 34)), 0, wx.EXPAND | wx.ALL, 4)
+        v.Add(
+            btn("RANDOMISE POSITION", self._on_randomise, wx.Colour(136, 102, 34)),
+            0,
+            wx.EXPAND | wx.ALL,
+            4,
+        )
 
         panel.SetSizer(v)
         return panel
@@ -284,7 +344,7 @@ class SimFrame(wx.Frame):
         panel.SetBackgroundColour(C_BG)
         v = wx.BoxSizer(wx.VERTICAL)
         v.Add(self._build_edit_pane(panel), 0, wx.EXPAND | wx.BOTTOM, 4)
-        v.Add(self._build_io_panes(panel),  1, wx.EXPAND)
+        v.Add(self._build_io_panes(panel), 1, wx.EXPAND)
         panel.SetSizer(v)
         return panel
 
@@ -324,20 +384,24 @@ class SimFrame(wx.Frame):
             return e
 
         for ll, la, rl, ra in [
-            ("UID",       "_e_uid",      "CoT Type",  "_e_type"),
-            ("Callsign",  "_e_callsign", "Team",      "_e_team"),
-            ("Latitude",  "_e_lat",      "Longitude", "_e_lon"),
-            ("HAE (m)",   "_e_hae",      "Role",      "_e_role"),
-            ("Speed m/s", "_e_speed",    "Course °",  "_e_course"),
+            ("UID", "_e_uid", "CoT Type", "_e_type"),
+            ("Callsign", "_e_callsign", "Team", "_e_team"),
+            ("Latitude", "_e_lat", "Longitude", "_e_lon"),
+            ("HAE (m)", "_e_hae", "Role", "_e_role"),
+            ("Speed m/s", "_e_speed", "Course °", "_e_course"),
         ]:
             grid.Add(dim_lbl(ll), 0, wx.ALIGN_CENTER_VERTICAL)
-            grid.Add(field(la),   1, wx.EXPAND)
+            grid.Add(field(la), 1, wx.EXPAND)
             grid.Add(dim_lbl(rl), 0, wx.ALIGN_CENTER_VERTICAL)
-            grid.Add(field(ra),   1, wx.EXPAND)
+            grid.Add(field(ra), 1, wx.EXPAND)
 
         h.Add(grid, 0, wx.ALL, 6)
-        h.Add(wx.StaticLine(panel, style=wx.LI_VERTICAL), 0,
-              wx.EXPAND | wx.TOP | wx.BOTTOM, 4)
+        h.Add(
+            wx.StaticLine(panel, style=wx.LI_VERTICAL),
+            0,
+            wx.EXPAND | wx.TOP | wx.BOTTOM,
+            4,
+        )
 
         # XML preview
         pv = wx.BoxSizer(wx.VERTICAL)
@@ -347,8 +411,7 @@ class SimFrame(wx.Frame):
         pv_lbl.SetBackgroundColour(C_PANEL)
         pv.Add(pv_lbl, 0, wx.BOTTOM | wx.LEFT, 2)
 
-        self._preview = stc.StyledTextCtrl(panel, size=(-1, 138),
-                                           style=wx.BORDER_NONE)
+        self._preview = stc.StyledTextCtrl(panel, size=(-1, 138), style=wx.BORDER_NONE)
         self._preview.SetReadOnly(True)
         self._preview.SetMarginWidth(0, 0)
         self._preview.SetMarginWidth(1, 0)
@@ -367,21 +430,25 @@ class SimFrame(wx.Frame):
     def _build_io_panes(self, parent: wx.Window) -> wx.SplitterWindow:
         sp = wx.SplitterWindow(parent, style=wx.SP_LIVE_UPDATE | wx.SP_3DSASH)
         sp.SetBackgroundColour(C_BG)
-        sp.SplitVertically(self._build_log_pane(sp, "out"),
-                           self._build_log_pane(sp, "in"))
+        sp.SplitVertically(
+            self._build_log_pane(sp, "out"), self._build_log_pane(sp, "in")
+        )
         sp.SetSashGravity(0.5)
         sp.SetMinimumPaneSize(200)
         return sp
 
     def _build_log_pane(self, parent: wx.Window, side: str) -> wx.Panel:
-        is_out  = side == "out"
+        is_out = side == "out"
         log_attr = "_out_log" if is_out else "_in_log"
-        panel   = wx.Panel(parent)
+        panel = wx.Panel(parent)
         panel.SetBackgroundColour(C_PANEL)
         v = wx.BoxSizer(wx.VERTICAL)
 
-        title = ("◄ OUTGOING  (sent CoT + HTTP responses)"
-                 if is_out else "► INCOMING  (WebSocket / WH feed)")
+        title = (
+            "◄ OUTGOING  (sent CoT + HTTP responses)"
+            if is_out
+            else "► INCOMING  (WebSocket / WH feed)"
+        )
         hdr = wx.BoxSizer(wx.HORIZONTAL)
         ttl = wx.StaticText(panel, label=f" {title}")
         ttl.SetForegroundColour(C_ACCENT)
@@ -393,13 +460,12 @@ class SimFrame(wx.Frame):
         clr.SetBackgroundColour(C_ERR)
         clr.SetForegroundColour(wx.WHITE)
         clr.SetFont(bold(8))
-        clr.Bind(wx.EVT_BUTTON,
-                 lambda _e: self._clear_log(getattr(self, log_attr)))
+        clr.Bind(wx.EVT_BUTTON, lambda _e: self._clear_log(getattr(self, log_attr)))
         hdr.Add(clr, 0, wx.ALL, 2)
         v.Add(hdr, 0, wx.EXPAND | wx.TOP, 2)
         v.Add(wx.StaticLine(panel), 0, wx.EXPAND)
 
-        fg  = wx.Colour(136, 220, 136) if is_out else wx.Colour(136, 136, 255)
+        fg = wx.Colour(136, 220, 136) if is_out else wx.Colour(136, 136, 255)
         log = make_log(panel, fg)
         setattr(self, log_attr, log)
         v.Add(log, 1, wx.EXPAND)
@@ -413,7 +479,8 @@ class SimFrame(wx.Frame):
         h = wx.BoxSizer(wx.HORIZONTAL)
 
         self._status_lbl = wx.StaticText(
-            panel, label="Ready — login then select a message from the library.")
+            panel, label="Ready — login then select a message from the library."
+        )
         self._status_lbl.SetForegroundColour(C_DIM)
         self._status_lbl.SetFont(mono(9))
         self._status_lbl.SetBackgroundColour(C_PANEL)
@@ -449,7 +516,8 @@ class SimFrame(wx.Frame):
         for i, entry in enumerate(self._visible):
             lc.InsertItem(i, entry.label)
             lc.SetItemTextColour(
-                i, wx.Colour(*CAT_COLOUR.get(entry.category, (200, 216, 200))))
+                i, wx.Colour(*CAT_COLOUR.get(entry.category, (200, 216, 200)))
+            )
 
     def _on_filter_change(self, _event) -> None:
         self._refresh_library()
@@ -491,16 +559,16 @@ class SimFrame(wx.Frame):
 
         return dataclasses.replace(
             self._selected,
-            uid      = self._e_uid.GetValue().strip(),
-            cot_type = self._e_type.GetValue().strip(),
-            callsign = self._e_callsign.GetValue().strip(),
-            lat      = _f(self._e_lat),
-            lon      = _f(self._e_lon),
-            hae      = _f(self._e_hae),
-            speed    = _f(self._e_speed),
-            course   = _f(self._e_course),
-            team     = self._e_team.GetValue().strip(),
-            role     = self._e_role.GetValue().strip(),
+            uid=self._e_uid.GetValue().strip(),
+            cot_type=self._e_type.GetValue().strip(),
+            callsign=self._e_callsign.GetValue().strip(),
+            lat=_f(self._e_lat),
+            lon=_f(self._e_lon),
+            hae=_f(self._e_hae),
+            speed=_f(self._e_speed),
+            course=_f(self._e_course),
+            team=self._e_team.GetValue().strip(),
+            role=self._e_role.GetValue().strip(),
         )
 
     def _on_edit_change(self, _event) -> None:
@@ -535,8 +603,8 @@ class SimFrame(wx.Frame):
 
     def _on_login(self, _event) -> None:
         url = self._url_ctrl.GetValue().rstrip("/")
-        cs  = self._cs_ctrl.GetValue().strip()
-        pw  = self._pw_ctrl.GetValue()
+        cs = self._cs_ctrl.GetValue().strip()
+        pw = self._pw_ctrl.GetValue()
         self._set_status(f"Logging in as {cs} …")
 
         def _task() -> None:
@@ -544,14 +612,17 @@ class SimFrame(wx.Frame):
                 code, body = BackendClient(url).login(cs, pw)
                 if code == 200:
                     if body.get("mfa_required"):
-                        self._msg_q.put(MsgLoginErr(
-                            "MFA required — disable for simulator use"))
+                        self._msg_q.put(
+                            MsgLoginErr("MFA required — disable for simulator use")
+                        )
                     else:
-                        self._msg_q.put(MsgLoginOk(
-                            token=body.get("access_token", "")))
+                        self._msg_q.put(MsgLoginOk(token=body.get("access_token", "")))
                 else:
-                    self._msg_q.put(MsgLoginErr(
-                        f"HTTP {code}: {body.get('detail', str(body))[:120]}"))
+                    self._msg_q.put(
+                        MsgLoginErr(
+                            f"HTTP {code}: {body.get('detail', str(body))[:120]}"
+                        )
+                    )
             except Exception as exc:
                 self._msg_q.put(MsgLoginErr(str(exc)))
 
@@ -561,8 +632,11 @@ class SimFrame(wx.Frame):
 
     def _guard(self) -> bool:
         if not self._selected:
-            wx.MessageBox("Select a CoT message from the library first.",
-                          "No selection", wx.ICON_WARNING)
+            wx.MessageBox(
+                "Select a CoT message from the library first.",
+                "No selection",
+                wx.ICON_WARNING,
+            )
             return False
         if not self._token:
             wx.MessageBox("Login first.", "Not authenticated", wx.ICON_WARNING)
@@ -584,7 +658,7 @@ class SimFrame(wx.Frame):
         self._auto_send = AutoSend(interval)
         self._auto_send.start(
             trigger_fn=lambda: self._msg_q.put(MsgAutoTrigger()),
-            on_done   =lambda: self._msg_q.put(MsgAutoStopped()),
+            on_done=lambda: self._msg_q.put(MsgAutoStopped()),
         )
         self._auto_lbl.SetLabel(f"Auto: ON ({interval:.1f}s)")
         self._auto_lbl.SetForegroundColour(C_OK)
@@ -610,7 +684,7 @@ class SimFrame(wx.Frame):
             self._update_counters()
             return
 
-        url   = self._url_ctrl.GetValue().rstrip("/")
+        url = self._url_ctrl.GetValue().rstrip("/")
         token = self._token
         log_append(self._out_log, f"\n[{ts()}] → POST {url}/cot\n", ST_TS)
         log_append(self._out_log, xml, ST_XML)
@@ -636,10 +710,10 @@ class SimFrame(wx.Frame):
             return
         token = self._token
         self._ws_monitor = WsMonitor(
-            get_url   =lambda: self._url_ctrl.GetValue().rstrip("/"),
-            get_token =lambda: token,
+            get_url=lambda: self._url_ctrl.GetValue().rstrip("/"),
+            get_token=lambda: token,
             on_message=lambda raw: self._msg_q.put(MsgWsRaw(raw=raw)),
-            on_status =lambda s:   self._msg_q.put(MsgWsStatus(text=s)),
+            on_status=lambda s: self._msg_q.put(MsgWsStatus(text=s)),
         )
         self._ws_monitor.start()
         self._msg_q.put(MsgWsBtn("WS DISCONNECT"))
@@ -701,8 +775,7 @@ class SimFrame(wx.Frame):
 
     def _h_ws_status(self, msg: MsgWsStatus) -> None:
         self._ws_status_lbl.SetLabel(f"WS: {msg.text}")
-        self._ws_status_lbl.SetForegroundColour(
-            WS_STATUS_COLOUR.get(msg.text, C_DIM))
+        self._ws_status_lbl.SetForegroundColour(WS_STATUS_COLOUR.get(msg.text, C_DIM))
         if msg.text in ("OFF", "ERR"):
             self._ws_btn.SetLabel("WS CONNECT")
 
@@ -724,8 +797,8 @@ class SimFrame(wx.Frame):
         self._rx += 1
         self._update_counters()
         channel = obj.get("channel", "?")
-        event   = obj.get("event",   "?")
-        log_append(self._in_log, f"[{ts()}] ",          ST_TS)
+        event = obj.get("event", "?")
+        log_append(self._in_log, f"[{ts()}] ", ST_TS)
         log_append(self._in_log, f"[{channel}/{event}] ", ST_CHANNEL)
         if cot_xml := obj.get("cot_xml"):
             log_append(self._in_log, "\n" + cot_xml + "\n", ST_XML)
@@ -746,4 +819,5 @@ class SimFrame(wx.Frame):
 
     def _update_counters(self) -> None:
         self._counter_lbl.SetLabel(
-            f"Sent: {self._sent}  Rx: {self._rx}  Errors: {self._errs}")
+            f"Sent: {self._sent}  Rx: {self._rx}  Errors: {self._errs}"
+        )

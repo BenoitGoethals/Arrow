@@ -17,7 +17,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import PhotoOut
@@ -29,17 +29,29 @@ PHOTO_DIR = Path("data/photos")
 PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_MIME = {
-    "image/jpeg", "image/png", "image/gif", "image/webp", "image/heic",
-    "video/mp4", "video/webm", "video/ogg", "video/quicktime",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/heic",
+    "video/mp4",
+    "video/webm",
+    "video/ogg",
+    "video/quicktime",
 }
 MIME_TO_EXT = {
-    "image/jpeg": "jpg",  "image/png": "png",  "image/gif": "gif",
-    "image/webp": "webp", "image/heic": "heic",
-    "video/mp4": "mp4",   "video/webm": "webm", "video/ogg": "ogv",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/heic": "heic",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/ogg": "ogv",
     "video/quicktime": "mov",
 }
 _MAX_BYTES = {
-    "image": 10 * 1024 * 1024,   # 10 MB
+    "image": 10 * 1024 * 1024,  # 10 MB
     "video": 200 * 1024 * 1024,  # 200 MB
 }
 
@@ -52,6 +64,7 @@ def _get_aesgcm():
     if len(raw) != 64:
         return None
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     return AESGCM(bytes.fromhex(raw))
 
 
@@ -76,21 +89,28 @@ def _decrypt(data: bytes) -> bytes:
 # ── Shared binary store (used by /photos upload, the Marti sync API and the
 #    ATAK CoT bridge) — one place that writes the encrypted file + Photo row. ──
 
-def store_photo_bytes(db: Session, raw: bytes, mime: str, uploaded_by: int,
-                      original_name: str = "photo") -> Photo:
+
+def store_photo_bytes(
+    db: Session, raw: bytes, mime: str, uploaded_by: int, original_name: str = "photo"
+) -> Photo:
     """Persist binary image/video bytes to disk + a Photo row (with SHA-256).
 
     Records the plaintext SHA-256 so the file is retrievable by hash via the TAK
     Marti API. Inbound ATAK paths de-dupe via ``find_photo_by_hash`` before
     calling this; the regular upload endpoint always creates a distinct Photo.
     """
-    sha   = hashlib.sha256(raw).hexdigest()
-    ext   = MIME_TO_EXT.get(mime, "jpg")
+    sha = hashlib.sha256(raw).hexdigest()
+    ext = MIME_TO_EXT.get(mime, "jpg")
     fname = f"{uuid.uuid4().hex}.{ext}" + (".enc" if _get_aesgcm() is not None else "")
     (PHOTO_DIR / fname).write_bytes(_encrypt(raw))
 
-    photo = Photo(filename=fname, original_name=original_name or "photo",
-                  mime_type=mime, uploaded_by=uploaded_by, sha256=sha)
+    photo = Photo(
+        filename=fname,
+        original_name=original_name or "photo",
+        mime_type=mime,
+        uploaded_by=uploaded_by,
+        sha256=sha,
+    )
     db.add(photo)
     db.commit()
     db.refresh(photo)
@@ -138,29 +158,34 @@ def list_photos(
     the History → Photos browser can deep-link back into context.
     """
     from backend.storage.models import Message, Report, TacticalObject
+
     rows = db.query(Photo).order_by(Photo.timestamp.desc()).all()
     photos: list[dict] = []
     for p in rows:
-        msg_id   = db.query(Message.id).filter(Message.photo_id == p.id).first()
-        to_id    = db.query(TacticalObject.id).filter(TacticalObject.photo_id == p.id).first()
+        msg_id = db.query(Message.id).filter(Message.photo_id == p.id).first()
+        to_id = (
+            db.query(TacticalObject.id).filter(TacticalObject.photo_id == p.id).first()
+        )
         # Reports stash photo_id inside their JSON payload — index by id substring
         rep_id = None
-        like   = f'%"photo_id": {p.id}%'
+        like = f'%"photo_id": {p.id}%'
         rep_row = db.query(Report.id).filter(Report.payload.like(like)).first()
         if rep_row:
             rep_id = rep_row[0]
-        photos.append({
-            "id":            p.id,
-            "filename":      p.filename,
-            "original_name": p.original_name,
-            "mime_type":     p.mime_type,
-            "uploaded_by":   p.uploaded_by,
-            "timestamp":     p.timestamp.isoformat() if p.timestamp else None,
-            "url":           f"/photos/{p.id}",
-            "message_id":    msg_id[0] if msg_id else None,
-            "tactical_object_id": to_id[0] if to_id else None,
-            "report_id":     rep_id,
-        })
+        photos.append(
+            {
+                "id": p.id,
+                "filename": p.filename,
+                "original_name": p.original_name,
+                "mime_type": p.mime_type,
+                "uploaded_by": p.uploaded_by,
+                "timestamp": p.timestamp.isoformat() if p.timestamp else None,
+                "url": f"/photos/{p.id}",
+                "message_id": msg_id[0] if msg_id else None,
+                "tactical_object_id": to_id[0] if to_id else None,
+                "report_id": rep_id,
+            }
+        )
     return photos
 
 
@@ -172,18 +197,22 @@ async def upload_photo(
 ) -> PhotoOut:
     mime = (file.content_type or "").split(";")[0].strip()
     if mime not in ALLOWED_MIME:
-        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                            f"Unsupported media type: {mime}")
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, f"Unsupported media type: {mime}"
+        )
 
-    raw  = await file.read()
+    raw = await file.read()
     media_cat = mime.split("/")[0]
     limit = _MAX_BYTES.get(media_cat, 10 * 1024 * 1024)
     if len(raw) > limit:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            f"File too large (max {limit // (1024 * 1024)} MB for {media_cat})")
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"File too large (max {limit // (1024 * 1024)} MB for {media_cat})",
+        )
 
-    photo = store_photo_bytes(db, raw, mime, uploaded_by=current.id,
-                              original_name=file.filename or "photo")
+    photo = store_photo_bytes(
+        db, raw, mime, uploaded_by=current.id, original_name=file.filename or "photo"
+    )
     return PhotoOut(id=photo.id, url=f"/photos/{photo.id}")
 
 
@@ -196,7 +225,10 @@ def delete_photo(
     photo = db.get(Photo, photo_id)
     if not photo:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    if photo.uploaded_by != current.id and current.role not in ("ADMIN", "BATTLE_CAPTAIN"):
+    if photo.uploaded_by != current.id and current.role not in (
+        "ADMIN",
+        "BATTLE_CAPTAIN",
+    ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your photo")
     path = PHOTO_DIR / photo.filename
     if path.exists():

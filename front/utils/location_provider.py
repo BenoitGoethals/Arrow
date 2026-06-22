@@ -25,6 +25,7 @@ No-op everywhere except macOS — ``is_supported()`` returns ``False`` and
 ``start()`` returns ``False`` so callers transparently keep the in-page JS
 geolocation path on Linux/Windows.
 """
+
 from __future__ import annotations
 
 import sys
@@ -57,7 +58,10 @@ def _inject_usage_description() -> None:
         if not info.get(_USAGE_KEY):
             info[_USAGE_KEY] = _USAGE_TEXT
     except Exception as exc:  # pragma: no cover - defensive
-        print(f"[LocationProvider] usage-description inject failed: {exc}", file=sys.stderr)
+        print(
+            f"[LocationProvider] usage-description inject failed: {exc}",
+            file=sys.stderr,
+        )
 
 
 class LocationProvider(QObject):
@@ -84,7 +88,9 @@ class LocationProvider(QObject):
                 kCLLocationAccuracyHundredMeters,
             )
         except Exception as exc:  # pyobjc-framework-CoreLocation not installed
-            print(f"[LocationProvider] Core Location unavailable: {exc}", file=sys.stderr)
+            print(
+                f"[LocationProvider] Core Location unavailable: {exc}", file=sys.stderr
+            )
             self.status_changed.emit("NO CORELOC")
             return False
 
@@ -106,7 +112,9 @@ class LocationProvider(QObject):
         mgr = CLLocationManager.alloc().init()
         mgr.setDelegate_(self._delegate)
         mgr.setDesiredAccuracy_(
-            kCLLocationAccuracyBest if high_accuracy else kCLLocationAccuracyHundredMeters
+            kCLLocationAccuracyBest
+            if high_accuracy
+            else kCLLocationAccuracyHundredMeters
         )
         mgr.setDistanceFilter_(5.0)  # metres of movement before a fresh callback
         # Best-effort authorisation prompt. An unbundled Python process may not be
@@ -128,8 +136,9 @@ class LocationProvider(QObject):
         self._delegate = None
 
     # -- called by the Obj-C delegate (already on the Qt main thread) ----------
-    def _emit_position(self, lat: float, lon: float, acc: float,
-                       heading: float, source: str):
+    def _emit_position(
+        self, lat: float, lon: float, acc: float, heading: float, source: str
+    ):
         self.position_changed.emit(lat, lon, acc, heading, source)
 
     def _emit_status(self, text: str):
@@ -188,6 +197,7 @@ if is_supported():
                 # 0 notDetermined, 1 restricted, 2 denied, 3 always, 4 whenInUse
                 if status in (1, 2):
                     self._owner._emit_status("DENIED")
+
     except Exception as exc:  # pragma: no cover - defensive
         print(f"[LocationProvider] delegate init failed: {exc}", file=sys.stderr)
         _Delegate = None

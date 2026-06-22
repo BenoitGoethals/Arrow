@@ -38,50 +38,60 @@ def js_source() -> str:
 
 # ── 1. Required functions exist ──────────────────────────────────────────────
 
+
 class TestFunctionsDefined:
 
-    @pytest.mark.parametrize("name", [
-        "_playAlertTone",
-        "_speakAlert",
-        "showAlertToast",
-        "handleAlertTriggered",
-        "loadMapAlerts",
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "_playAlertTone",
+            "_speakAlert",
+            "showAlertToast",
+            "handleAlertTriggered",
+            "loadMapAlerts",
+        ],
+    )
     def test_function_declared(self, js_source, name):
         """Each function the alert chain depends on must be declared."""
         # Match `function NAME(` — the canonical declaration form
         pattern = rf"function\s+{re.escape(name)}\s*\("
-        assert re.search(pattern, js_source), \
-            f"function {name}() is not declared in map.html"
+        assert re.search(
+            pattern, js_source
+        ), f"function {name}() is not declared in map.html"
 
 
 # ── 2. WebSocket → handleAlertTriggered wiring ───────────────────────────────
+
 
 class TestWebSocketWiring:
 
     def test_alert_channel_branch_exists(self, js_source):
         """The WS onmessage handler must have an `if msg.channel === 'alert'` branch."""
         # Allow single or double quotes
-        assert re.search(r"msg\.channel\s*===?\s*['\"]alert['\"]", js_source), \
-            "WS handler missing branch for channel === 'alert'"
+        assert re.search(
+            r"msg\.channel\s*===?\s*['\"]alert['\"]", js_source
+        ), "WS handler missing branch for channel === 'alert'"
 
     def test_triggered_event_calls_handler(self, js_source):
         """The 'triggered' branch must call handleAlertTriggered."""
         # Look for the specific call pattern
         assert re.search(
             r"msg\.event\s*===?\s*['\"]triggered['\"][^{]*handleAlertTriggered",
-            js_source, re.DOTALL
+            js_source,
+            re.DOTALL,
         ), "msg.event === 'triggered' branch does not call handleAlertTriggered()"
 
     def test_ack_event_removes_layer(self, js_source):
         """The 'ack' branch should call removeAlertLayer to clear the map marker."""
         assert re.search(
             r"msg\.event\s*===?\s*['\"]ack['\"][^{]*removeAlertLayer",
-            js_source, re.DOTALL
+            js_source,
+            re.DOTALL,
         ), "msg.event === 'ack' branch does not call removeAlertLayer()"
 
 
 # ── 3. handleAlertTriggered → toast + zoom ───────────────────────────────────
+
 
 class TestHandleAlertTriggered:
 
@@ -93,32 +103,37 @@ class TestHandleAlertTriggered:
         depth = 1
         i = start
         while i < len(js_source) and depth > 0:
-            if js_source[i] == "{": depth += 1
-            elif js_source[i] == "}": depth -= 1
+            if js_source[i] == "{":
+                depth += 1
+            elif js_source[i] == "}":
+                depth -= 1
             i += 1
-        return js_source[start:i - 1]
+        return js_source[start : i - 1]
 
     def test_calls_show_alert_toast(self, js_source):
         body = self._body(js_source)
-        assert "showAlertToast" in body, \
-            "handleAlertTriggered() does not call showAlertToast()"
+        assert (
+            "showAlertToast" in body
+        ), "handleAlertTriggered() does not call showAlertToast()"
 
     def test_zooms_to_position(self, js_source):
         body = self._body(js_source)
-        assert "map.setView" in body or "map.flyTo" in body, \
-            "handleAlertTriggered() does not zoom the map"
+        assert (
+            "map.setView" in body or "map.flyTo" in body
+        ), "handleAlertTriggered() does not zoom the map"
 
     def test_skips_zero_zero_position(self, js_source):
         """The hasPos check must reject 0,0 — that's the no-GPS-fix fallback."""
         body = self._body(js_source)
         # Look for any check that excludes lat===0 && lon===0
-        assert re.search(r"latitude\s*===?\s*0\s*&&\s*.*longitude\s*===?\s*0",
-                         body), \
-            "handleAlertTriggered() does not filter out the 0,0 position " \
+        assert re.search(r"latitude\s*===?\s*0\s*&&\s*.*longitude\s*===?\s*0", body), (
+            "handleAlertTriggered() does not filter out the 0,0 position "
             "(would zoom the map to null island for ATAK devices without GPS)"
+        )
 
 
 # ── 4. showAlertToast → sound + voice ────────────────────────────────────────
+
 
 class TestShowAlertToast:
 
@@ -129,31 +144,36 @@ class TestShowAlertToast:
         depth = 1
         i = start
         while i < len(js_source) and depth > 0:
-            if js_source[i] == "{": depth += 1
-            elif js_source[i] == "}": depth -= 1
+            if js_source[i] == "{":
+                depth += 1
+            elif js_source[i] == "}":
+                depth -= 1
             i += 1
-        return js_source[start:i - 1]
+        return js_source[start : i - 1]
 
     def test_plays_alert_tone(self, js_source):
         body = self._body(js_source)
-        assert "_playAlertTone" in body, \
-            "showAlertToast() does not call _playAlertTone() → no beep on alert"
+        assert (
+            "_playAlertTone" in body
+        ), "showAlertToast() does not call _playAlertTone() → no beep on alert"
 
     def test_speaks_alert(self, js_source):
         body = self._body(js_source)
-        assert "_speakAlert" in body, \
-            "showAlertToast() does not call _speakAlert() → no voice announcement"
+        assert (
+            "_speakAlert" in body
+        ), "showAlertToast() does not call _speakAlert() → no voice announcement"
 
     def test_renders_toast_card(self, js_source):
         body = self._body(js_source)
         # Toast must create a DOM element and append it
-        assert "createElement" in body, \
-            "showAlertToast() does not create a DOM element"
-        assert "appendChild" in body or "prepend" in body, \
-            "showAlertToast() never inserts the card into the DOM"
+        assert "createElement" in body, "showAlertToast() does not create a DOM element"
+        assert (
+            "appendChild" in body or "prepend" in body
+        ), "showAlertToast() never inserts the card into the DOM"
 
 
 # ── 5. ATAK_EMERGENCY has dedicated styling ──────────────────────────────────
+
 
 class TestAtakEmergencyStyling:
 
@@ -162,27 +182,32 @@ class TestAtakEmergencyStyling:
         # Find the ALERT_COLOURS object
         m = re.search(r"const\s+ALERT_COLOURS\s*=\s*\{([^}]*)\}", js_source)
         assert m, "ALERT_COLOURS constant not found"
-        assert "ATAK_EMERGENCY" in m.group(1), \
-            "ATAK_EMERGENCY missing from ALERT_COLOURS"
+        assert "ATAK_EMERGENCY" in m.group(
+            1
+        ), "ATAK_EMERGENCY missing from ALERT_COLOURS"
 
     def test_atak_emergency_in_icons(self, js_source):
         m = re.search(r"const\s+ALERT_ICONS\s*=\s*\{([^}]*)\}", js_source)
         assert m, "ALERT_ICONS constant not found"
-        assert "ATAK_EMERGENCY" in m.group(1), \
-            "ATAK_EMERGENCY missing from ALERT_ICONS"
+        assert "ATAK_EMERGENCY" in m.group(1), "ATAK_EMERGENCY missing from ALERT_ICONS"
 
     def test_atak_emergency_voice_phrase_defined(self, js_source):
         """_speakAlert must map ATAK_EMERGENCY to a human-friendly phrase."""
-        m = re.search(r"function\s+_speakAlert\s*\([^)]*\)\s*\{(.*?)\n    \}",
-                      js_source, re.DOTALL)
+        m = re.search(
+            r"function\s+_speakAlert\s*\([^)]*\)\s*\{(.*?)\n    \}",
+            js_source,
+            re.DOTALL,
+        )
         assert m, "_speakAlert body not found"
         body = m.group(1)
-        assert "ATAK_EMERGENCY" in body, \
-            "_speakAlert does not handle ATAK_EMERGENCY → voice would say " \
+        assert "ATAK_EMERGENCY" in body, (
+            "_speakAlert does not handle ATAK_EMERGENCY → voice would say "
             "'a t a k underscore emergency' instead of 'ATAK emergency beacon'"
+        )
 
 
 # ── 6. Audio APIs used correctly ─────────────────────────────────────────────
+
 
 class TestAudioApiUsage:
 
@@ -191,53 +216,62 @@ class TestAudioApiUsage:
         m = re.search(r"function\s+_playAlertTone[\s\S]*?\n    \}", js_source)
         assert m, "_playAlertTone body not found"
         body = m.group(0)
-        assert "AudioContext" in body, \
-            "_playAlertTone does not create an AudioContext"
-        assert "createOscillator" in body, \
-            "_playAlertTone does not call createOscillator"
+        assert "AudioContext" in body, "_playAlertTone does not create an AudioContext"
+        assert (
+            "createOscillator" in body
+        ), "_playAlertTone does not call createOscillator"
 
     def test_speech_synthesis_referenced(self, js_source):
         """_speakAlert must use the Web Speech API."""
         m = re.search(r"function\s+_speakAlert[\s\S]*?\n    \}", js_source)
         assert m, "_speakAlert body not found"
         body = m.group(0)
-        assert "speechSynthesis" in body, \
-            "_speakAlert does not use window.speechSynthesis"
-        assert "SpeechSynthesisUtterance" in body, \
-            "_speakAlert does not construct a SpeechSynthesisUtterance"
+        assert (
+            "speechSynthesis" in body
+        ), "_speakAlert does not use window.speechSynthesis"
+        assert (
+            "SpeechSynthesisUtterance" in body
+        ), "_speakAlert does not construct a SpeechSynthesisUtterance"
 
     def test_speech_synthesis_feature_detected(self, js_source):
         """_speakAlert must guard with a feature-detect so it doesn't crash on
         older browsers — otherwise an exception would break the whole toast."""
         m = re.search(r"function\s+_speakAlert[\s\S]*?\n    \}", js_source)
         body = m.group(0)
-        assert "'speechSynthesis' in window" in body \
-            or '"speechSynthesis" in window' in body, \
-            "_speakAlert missing feature-detect: would throw on browsers " \
+        assert (
+            "'speechSynthesis' in window" in body
+            or '"speechSynthesis" in window' in body
+        ), (
+            "_speakAlert missing feature-detect: would throw on browsers "
             "without Web Speech API"
+        )
 
 
 # ── 7. Brace balance (catches truncation / mid-edit save) ────────────────────
+
 
 class TestStructuralIntegrity:
 
     def test_braces_balanced(self, js_source):
         """Open and close braces must balance — catches an unfinished edit."""
-        opens  = js_source.count("{")
+        opens = js_source.count("{")
         closes = js_source.count("}")
-        assert opens == closes, \
-            f"Brace imbalance in <script> block: {opens} '{{' vs {closes} '}}'"
+        assert (
+            opens == closes
+        ), f"Brace imbalance in <script> block: {opens} '{{' vs {closes} '}}'"
 
     def test_parens_balanced(self, js_source):
-        opens  = js_source.count("(")
+        opens = js_source.count("(")
         closes = js_source.count(")")
-        assert opens == closes, \
-            f"Paren imbalance in <script> block: {opens} '(' vs {closes} ')'"
+        assert (
+            opens == closes
+        ), f"Paren imbalance in <script> block: {opens} '(' vs {closes} ')'"
 
     def test_no_unterminated_template_literals(self, js_source):
         """A `template literal` left unclosed would break everything after it."""
         # Strip everything inside template literals first (balanced backticks)
         # then assert no stray backticks remain by counting them.
         backticks = js_source.count("`")
-        assert backticks % 2 == 0, \
-            f"Odd number of backticks ({backticks}) — unterminated template literal"
+        assert (
+            backticks % 2 == 0
+        ), f"Odd number of backticks ({backticks}) — unterminated template literal"

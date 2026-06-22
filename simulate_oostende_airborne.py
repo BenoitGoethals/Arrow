@@ -49,19 +49,20 @@ log = logging.getLogger("seagull")
 
 # ── Operation constants ───────────────────────────────────────────────────────
 
-AIRPORT  = (51.1989, 2.8622)   # Oostende Airport (EBOS) reference point
-H_HOUR   = "262100ZMAY26"      # Night insertion
-OP_NAME  = "OPERATION SEAGULL"
-BN_NAME  = "1-75 RGR BN"
+AIRPORT = (51.1989, 2.8622)  # Oostende Airport (EBOS) reference point
+H_HOUR = "262100ZMAY26"  # Night insertion
+OP_NAME = "OPERATION SEAGULL"
+BN_NAME = "1-75 RGR BN"
 
 # Geographic reference points
-N33_BLOCK    = (51.1840, 3.0500)   # B COY blocking position — N33 at Oudenburg
-E40_BLOCK    = (51.1940, 3.1600)   # C COY blocking position — A10/E40 W of Brugge
-BRUGGE_AREA  = (51.2080, 3.2200)   # start area for B/C COY (vehicle-mounted)
-BN_TAC_CP    = (51.2130, 2.8622)   # BN TAC CP at DZ OSPREY / north dunes
+N33_BLOCK = (51.1840, 3.0500)  # B COY blocking position — N33 at Oudenburg
+E40_BLOCK = (51.1940, 3.1600)  # C COY blocking position — A10/E40 W of Brugge
+BRUGGE_AREA = (51.2080, 3.2200)  # start area for B/C COY (vehicle-mounted)
+BN_TAC_CP = (51.2130, 2.8622)  # BN TAC CP at DZ OSPREY / north dunes
 
 
 # ── Geometry helpers ──────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class LL:
@@ -70,14 +71,14 @@ class LL:
 
     def offset(self, north_m: float, east_m: float) -> "LL":
         d_lat = north_m / 111_320.0
-        d_lon = east_m  / (111_320.0 * math.cos(math.radians(self.lat)))
+        d_lon = east_m / (111_320.0 * math.cos(math.radians(self.lat)))
         return LL(self.lat + d_lat, self.lon + d_lon)
 
     def bearing(self, bearing_deg: float, distance_m: float) -> "LL":
         rad = math.radians(bearing_deg)
         return self.offset(
             north_m=distance_m * math.cos(rad),
-            east_m =distance_m * math.sin(rad),
+            east_m=distance_m * math.sin(rad),
         )
 
     def pair(self) -> list[float]:
@@ -98,80 +99,81 @@ Api = sim_utils.Api
 #   VEHICLE  — vehicle-mounted; start = BRUGGE_AREA
 #   BN_TAC   — remains at BN TAC CP throughout
 
+
 @dataclass
 class OpRoster:
-    callsign:  str
-    rank:      str
-    role:      str       # OPERATOR | BATTLE_CAPTAIN | ADMIN
-    company:   str       # company key for hierarchy builder
+    callsign: str
+    rank: str
+    role: str  # OPERATOR | BATTLE_CAPTAIN | ADMIN
+    company: str  # company key for hierarchy builder
     team_name: str
-    duty:      str
-    insert:    str       # OSPREY | FALCON | VEHICLE | BN_TAC
-    token:     str = ""
-    op_id:     int = 0
-    team_id:   int = 0
+    duty: str
+    insert: str  # OSPREY | FALCON | VEHICLE | BN_TAC
+    token: str = ""
+    op_id: int = 0
+    team_id: int = 0
 
 
 ROSTER: list[OpRoster] = [
     # ── BN HQ ─────────────────────────────────────────────────────────────────
-    OpRoster("BN-6",   "OF-5", "BATTLE_CAPTAIN", "BN_HQ", "BN-CMD",   "BN CO",      "BN_TAC"),
-    OpRoster("BN-5",   "OF-4", "BATTLE_CAPTAIN", "BN_HQ", "BN-CMD",   "BN XO",      "BN_TAC"),
-    OpRoster("BN-7",   "OR-9", "OPERATOR",       "BN_HQ", "BN-CMD",   "BN CSM",     "BN_TAC"),
-    OpRoster("BN-S2",  "OF-2", "OPERATOR",       "BN_HQ", "BN-STAFF", "S2 Intel",   "BN_TAC"),
-    OpRoster("BN-S3",  "OF-3", "OPERATOR",       "BN_HQ", "BN-STAFF", "S3 Ops",     "BN_TAC"),
-    OpRoster("BN-S4",  "OF-2", "OPERATOR",       "BN_HQ", "BN-STAFF", "S4 Log",     "BN_TAC"),
-    OpRoster("BN-S6",  "OF-2", "OPERATOR",       "BN_HQ", "BN-STAFF", "S6 Comms",   "BN_TAC"),
-    OpRoster("BN-FSO", "OF-2", "OPERATOR",       "BN_HQ", "BN-FSE",   "BN FSO",     "BN_TAC"),
-    OpRoster("BN-JTAC","OR-7", "OPERATOR",       "BN_HQ", "BN-FSE",   "BN JTAC",    "BN_TAC"),
-
+    OpRoster("BN-6", "OF-5", "BATTLE_CAPTAIN", "BN_HQ", "BN-CMD", "BN CO", "BN_TAC"),
+    OpRoster("BN-5", "OF-4", "BATTLE_CAPTAIN", "BN_HQ", "BN-CMD", "BN XO", "BN_TAC"),
+    OpRoster("BN-7", "OR-9", "OPERATOR", "BN_HQ", "BN-CMD", "BN CSM", "BN_TAC"),
+    OpRoster("BN-S2", "OF-2", "OPERATOR", "BN_HQ", "BN-STAFF", "S2 Intel", "BN_TAC"),
+    OpRoster("BN-S3", "OF-3", "OPERATOR", "BN_HQ", "BN-STAFF", "S3 Ops", "BN_TAC"),
+    OpRoster("BN-S4", "OF-2", "OPERATOR", "BN_HQ", "BN-STAFF", "S4 Log", "BN_TAC"),
+    OpRoster("BN-S6", "OF-2", "OPERATOR", "BN_HQ", "BN-STAFF", "S6 Comms", "BN_TAC"),
+    OpRoster("BN-FSO", "OF-2", "OPERATOR", "BN_HQ", "BN-FSE", "BN FSO", "BN_TAC"),
+    OpRoster("BN-JTAC", "OR-7", "OPERATOR", "BN_HQ", "BN-FSE", "BN JTAC", "BN_TAC"),
     # ── A COY — RANGER COY (main effort, airborne assault) ───────────────────
     # COY HQ → DZ OSPREY
-    OpRoster("RANGER-6",  "OF-3", "BATTLE_CAPTAIN", "A_COY", "HHC-CMD",   "CO",       "OSPREY"),
-    OpRoster("RANGER-5",  "OF-2", "BATTLE_CAPTAIN", "A_COY", "HHC-CMD",   "XO",       "OSPREY"),
-    OpRoster("RANGER-7",  "OR-8", "OPERATOR",       "A_COY", "HHC-CMD",   "1SG",      "OSPREY"),
-    OpRoster("RANGER-FO", "OF-1", "OPERATOR",       "A_COY", "HHC-FIRES", "FO/JTAC",  "OSPREY"),
+    OpRoster("RANGER-6", "OF-3", "BATTLE_CAPTAIN", "A_COY", "HHC-CMD", "CO", "OSPREY"),
+    OpRoster("RANGER-5", "OF-2", "BATTLE_CAPTAIN", "A_COY", "HHC-CMD", "XO", "OSPREY"),
+    OpRoster("RANGER-7", "OR-8", "OPERATOR", "A_COY", "HHC-CMD", "1SG", "OSPREY"),
+    OpRoster(
+        "RANGER-FO", "OF-1", "OPERATOR", "A_COY", "HHC-FIRES", "FO/JTAC", "OSPREY"
+    ),
     # 1 PLT → DZ OSPREY (supporting, north perimeter)
-    OpRoster("1-6",  "OF-1", "OPERATOR", "A_COY", "1PLT-HQ",  "PL",  "OSPREY"),
-    OpRoster("1-7",  "OR-7", "OPERATOR", "A_COY", "1PLT-HQ",  "PSG", "OSPREY"),
-    OpRoster("1-1",  "OR-6", "OPERATOR", "A_COY", "1PLT-SQ1", "SL",  "OSPREY"),
-    OpRoster("1-2",  "OR-6", "OPERATOR", "A_COY", "1PLT-SQ2", "SL",  "OSPREY"),
-    OpRoster("1-3",  "OR-6", "OPERATOR", "A_COY", "1PLT-SQ3", "SL",  "OSPREY"),
+    OpRoster("1-6", "OF-1", "OPERATOR", "A_COY", "1PLT-HQ", "PL", "OSPREY"),
+    OpRoster("1-7", "OR-7", "OPERATOR", "A_COY", "1PLT-HQ", "PSG", "OSPREY"),
+    OpRoster("1-1", "OR-6", "OPERATOR", "A_COY", "1PLT-SQ1", "SL", "OSPREY"),
+    OpRoster("1-2", "OR-6", "OPERATOR", "A_COY", "1PLT-SQ2", "SL", "OSPREY"),
+    OpRoster("1-3", "OR-6", "OPERATOR", "A_COY", "1PLT-SQ3", "SL", "OSPREY"),
     # 2 PLT → DZ FALCON (reserve, east threshold)
-    OpRoster("2-6",  "OF-1", "OPERATOR", "A_COY", "2PLT-HQ",  "PL",  "FALCON"),
-    OpRoster("2-7",  "OR-7", "OPERATOR", "A_COY", "2PLT-HQ",  "PSG", "FALCON"),
-    OpRoster("2-1",  "OR-6", "OPERATOR", "A_COY", "2PLT-SQ1", "SL",  "FALCON"),
-    OpRoster("2-2",  "OR-6", "OPERATOR", "A_COY", "2PLT-SQ2", "SL",  "FALCON"),
-    OpRoster("2-3",  "OR-6", "OPERATOR", "A_COY", "2PLT-SQ3", "SL",  "FALCON"),
+    OpRoster("2-6", "OF-1", "OPERATOR", "A_COY", "2PLT-HQ", "PL", "FALCON"),
+    OpRoster("2-7", "OR-7", "OPERATOR", "A_COY", "2PLT-HQ", "PSG", "FALCON"),
+    OpRoster("2-1", "OR-6", "OPERATOR", "A_COY", "2PLT-SQ1", "SL", "FALCON"),
+    OpRoster("2-2", "OR-6", "OPERATOR", "A_COY", "2PLT-SQ2", "SL", "FALCON"),
+    OpRoster("2-3", "OR-6", "OPERATOR", "A_COY", "2PLT-SQ3", "SL", "FALCON"),
     # 3 PLT → DZ FALCON (main effort, seize terminal from east)
-    OpRoster("3-6",  "OF-1", "OPERATOR", "A_COY", "3PLT-HQ",  "PL",  "FALCON"),
-    OpRoster("3-7",  "OR-7", "OPERATOR", "A_COY", "3PLT-HQ",  "PSG", "FALCON"),
-    OpRoster("3-1",  "OR-6", "OPERATOR", "A_COY", "3PLT-SQ1", "SL",  "FALCON"),
-    OpRoster("3-2",  "OR-6", "OPERATOR", "A_COY", "3PLT-SQ2", "SL",  "FALCON"),
-    OpRoster("3-3",  "OR-6", "OPERATOR", "A_COY", "3PLT-SQ3", "SL",  "FALCON"),
+    OpRoster("3-6", "OF-1", "OPERATOR", "A_COY", "3PLT-HQ", "PL", "FALCON"),
+    OpRoster("3-7", "OR-7", "OPERATOR", "A_COY", "3PLT-HQ", "PSG", "FALCON"),
+    OpRoster("3-1", "OR-6", "OPERATOR", "A_COY", "3PLT-SQ1", "SL", "FALCON"),
+    OpRoster("3-2", "OR-6", "OPERATOR", "A_COY", "3PLT-SQ2", "SL", "FALCON"),
+    OpRoster("3-3", "OR-6", "OPERATOR", "A_COY", "3PLT-SQ3", "SL", "FALCON"),
     # WPNS PLT → DZ OSPREY (mortar line + MMG overwatch)
-    OpRoster("W-6",    "OF-1", "OPERATOR", "A_COY", "WPLT-HQ",  "PL",      "OSPREY"),
-    OpRoster("W-MTR1", "OR-5", "OPERATOR", "A_COY", "WPLT-MTR", "Mortar 1","OSPREY"),
-    OpRoster("W-MTR2", "OR-5", "OPERATOR", "A_COY", "WPLT-MTR", "Mortar 2","OSPREY"),
-    OpRoster("W-MMG1", "OR-5", "OPERATOR", "A_COY", "WPLT-MMG", "MMG 1",   "OSPREY"),
-    OpRoster("W-MMG2", "OR-5", "OPERATOR", "A_COY", "WPLT-MMG", "MMG 2",   "OSPREY"),
-
+    OpRoster("W-6", "OF-1", "OPERATOR", "A_COY", "WPLT-HQ", "PL", "OSPREY"),
+    OpRoster("W-MTR1", "OR-5", "OPERATOR", "A_COY", "WPLT-MTR", "Mortar 1", "OSPREY"),
+    OpRoster("W-MTR2", "OR-5", "OPERATOR", "A_COY", "WPLT-MTR", "Mortar 2", "OSPREY"),
+    OpRoster("W-MMG1", "OR-5", "OPERATOR", "A_COY", "WPLT-MMG", "MMG 1", "OSPREY"),
+    OpRoster("W-MMG2", "OR-5", "OPERATOR", "A_COY", "WPLT-MMG", "MMG 2", "OSPREY"),
     # ── B COY — blocking N33 (Brugge approach, vehicle-mounted) ──────────────
-    OpRoster("B-6",  "OF-2", "BATTLE_CAPTAIN", "B_COY", "BPLT-HQ",  "PL",  "VEHICLE"),
-    OpRoster("B-7",  "OR-7", "OPERATOR",       "B_COY", "BPLT-HQ",  "PSG", "VEHICLE"),
-    OpRoster("B-1",  "OR-6", "OPERATOR",       "B_COY", "BPLT-SQ1", "SL",  "VEHICLE"),
-    OpRoster("B-2",  "OR-6", "OPERATOR",       "B_COY", "BPLT-SQ2", "SL",  "VEHICLE"),
-    OpRoster("B-3",  "OR-6", "OPERATOR",       "B_COY", "BPLT-SQ3", "SL",  "VEHICLE"),
-
+    OpRoster("B-6", "OF-2", "BATTLE_CAPTAIN", "B_COY", "BPLT-HQ", "PL", "VEHICLE"),
+    OpRoster("B-7", "OR-7", "OPERATOR", "B_COY", "BPLT-HQ", "PSG", "VEHICLE"),
+    OpRoster("B-1", "OR-6", "OPERATOR", "B_COY", "BPLT-SQ1", "SL", "VEHICLE"),
+    OpRoster("B-2", "OR-6", "OPERATOR", "B_COY", "BPLT-SQ2", "SL", "VEHICLE"),
+    OpRoster("B-3", "OR-6", "OPERATOR", "B_COY", "BPLT-SQ3", "SL", "VEHICLE"),
     # ── C COY — blocking A10/E40 west of Brugge (vehicle-mounted) ────────────
-    OpRoster("C-6",  "OF-2", "BATTLE_CAPTAIN", "C_COY", "CPLT-HQ",  "PL",  "VEHICLE"),
-    OpRoster("C-7",  "OR-7", "OPERATOR",       "C_COY", "CPLT-HQ",  "PSG", "VEHICLE"),
-    OpRoster("C-1",  "OR-6", "OPERATOR",       "C_COY", "CPLT-SQ1", "SL",  "VEHICLE"),
-    OpRoster("C-2",  "OR-6", "OPERATOR",       "C_COY", "CPLT-SQ2", "SL",  "VEHICLE"),
-    OpRoster("C-3",  "OR-6", "OPERATOR",       "C_COY", "CPLT-SQ3", "SL",  "VEHICLE"),
+    OpRoster("C-6", "OF-2", "BATTLE_CAPTAIN", "C_COY", "CPLT-HQ", "PL", "VEHICLE"),
+    OpRoster("C-7", "OR-7", "OPERATOR", "C_COY", "CPLT-HQ", "PSG", "VEHICLE"),
+    OpRoster("C-1", "OR-6", "OPERATOR", "C_COY", "CPLT-SQ1", "SL", "VEHICLE"),
+    OpRoster("C-2", "OR-6", "OPERATOR", "C_COY", "CPLT-SQ2", "SL", "VEHICLE"),
+    OpRoster("C-3", "OR-6", "OPERATOR", "C_COY", "CPLT-SQ3", "SL", "VEHICLE"),
 ]
 
 
 # ── Hierarchy ─────────────────────────────────────────────────────────────────
+
 
 def ensure_company(api: Api, tok: str, name: str) -> int:
     for c in api.get("/companies", tok):
@@ -206,7 +208,7 @@ def build_hierarchy(api: Api, admin_tok: str) -> dict[str, int]:
     teams: dict[str, int] = {}
 
     # ── BN HQ ─────────────────────────────────────────────────────────────────
-    bn_id  = ensure_company(api, admin_tok, "BN HQ COY")
+    bn_id = ensure_company(api, admin_tok, "BN HQ COY")
     bn_plt = ensure_platoon(api, admin_tok, "BN HQ PLT", bn_id)
     bn_sec = ensure_section(api, admin_tok, "BN-HQ-SEC", bn_plt)
     for team in ("BN-CMD", "BN-STAFF", "BN-FSE"):
@@ -215,33 +217,45 @@ def build_hierarchy(api: Api, admin_tok: str) -> dict[str, int]:
     # ── A COY (RANGER COY) ────────────────────────────────────────────────────
     a_id = ensure_company(api, admin_tok, "RANGER COY")
     plts = {
-        "HHC":  ensure_platoon(api, admin_tok, "HHC",      a_id),
-        "1PLT": ensure_platoon(api, admin_tok, "1 PLT",    a_id),
-        "2PLT": ensure_platoon(api, admin_tok, "2 PLT",    a_id),
-        "3PLT": ensure_platoon(api, admin_tok, "3 PLT",    a_id),
+        "HHC": ensure_platoon(api, admin_tok, "HHC", a_id),
+        "1PLT": ensure_platoon(api, admin_tok, "1 PLT", a_id),
+        "2PLT": ensure_platoon(api, admin_tok, "2 PLT", a_id),
+        "3PLT": ensure_platoon(api, admin_tok, "3 PLT", a_id),
         "WPLT": ensure_platoon(api, admin_tok, "WPNS PLT", a_id),
     }
     secs = {p: ensure_section(api, admin_tok, f"{p}-SEC", plts[p]) for p in plts}
     a_teams = [
-        ("HHC-CMD",   "HHC"), ("HHC-FIRES", "HHC"),
-        ("1PLT-HQ",  "1PLT"), ("1PLT-SQ1",  "1PLT"), ("1PLT-SQ2", "1PLT"), ("1PLT-SQ3", "1PLT"),
-        ("2PLT-HQ",  "2PLT"), ("2PLT-SQ1",  "2PLT"), ("2PLT-SQ2", "2PLT"), ("2PLT-SQ3", "2PLT"),
-        ("3PLT-HQ",  "3PLT"), ("3PLT-SQ1",  "3PLT"), ("3PLT-SQ2", "3PLT"), ("3PLT-SQ3", "3PLT"),
-        ("WPLT-HQ",  "WPLT"), ("WPLT-MTR",  "WPLT"), ("WPLT-MMG", "WPLT"),
+        ("HHC-CMD", "HHC"),
+        ("HHC-FIRES", "HHC"),
+        ("1PLT-HQ", "1PLT"),
+        ("1PLT-SQ1", "1PLT"),
+        ("1PLT-SQ2", "1PLT"),
+        ("1PLT-SQ3", "1PLT"),
+        ("2PLT-HQ", "2PLT"),
+        ("2PLT-SQ1", "2PLT"),
+        ("2PLT-SQ2", "2PLT"),
+        ("2PLT-SQ3", "2PLT"),
+        ("3PLT-HQ", "3PLT"),
+        ("3PLT-SQ1", "3PLT"),
+        ("3PLT-SQ2", "3PLT"),
+        ("3PLT-SQ3", "3PLT"),
+        ("WPLT-HQ", "WPLT"),
+        ("WPLT-MTR", "WPLT"),
+        ("WPLT-MMG", "WPLT"),
     ]
     for name, plt in a_teams:
         teams[name] = ensure_team(api, admin_tok, name, secs[plt])
 
     # ── B COY (blocking N33) ──────────────────────────────────────────────────
-    b_id  = ensure_company(api, admin_tok, "B COY")
-    b_plt = ensure_platoon(api, admin_tok, "B PLT",    b_id)
+    b_id = ensure_company(api, admin_tok, "B COY")
+    b_plt = ensure_platoon(api, admin_tok, "B PLT", b_id)
     b_sec = ensure_section(api, admin_tok, "BPLT-SEC", b_plt)
     for team in ("BPLT-HQ", "BPLT-SQ1", "BPLT-SQ2", "BPLT-SQ3"):
         teams[team] = ensure_team(api, admin_tok, team, b_sec)
 
     # ── C COY (blocking A10/E40) ──────────────────────────────────────────────
-    c_id  = ensure_company(api, admin_tok, "C COY")
-    c_plt = ensure_platoon(api, admin_tok, "C PLT",    c_id)
+    c_id = ensure_company(api, admin_tok, "C COY")
+    c_plt = ensure_platoon(api, admin_tok, "C PLT", c_id)
     c_sec = ensure_section(api, admin_tok, "CPLT-SEC", c_plt)
     for team in ("CPLT-HQ", "CPLT-SQ1", "CPLT-SQ2", "CPLT-SQ3"):
         teams[team] = ensure_team(api, admin_tok, team, c_sec)
@@ -252,6 +266,7 @@ def build_hierarchy(api: Api, admin_tok: str) -> dict[str, int]:
 
 # ── Operators ─────────────────────────────────────────────────────────────────
 
+
 def _find_operator_id(api: Api, admin_tok: str, callsign: str) -> int | None:
     for op in api.get("/operators", admin_tok):
         if op.get("callsign") == callsign:
@@ -259,17 +274,21 @@ def _find_operator_id(api: Api, admin_tok: str, callsign: str) -> int | None:
     return None
 
 
-def register_operators(api: Api, admin_tok: str, teams: dict[str, int],
-                       password: str) -> None:
+def register_operators(
+    api: Api, admin_tok: str, teams: dict[str, int], password: str
+) -> None:
     for r in ROSTER:
         r.team_id = teams[r.team_name]
         body = {
-            "callsign": r.callsign, "password": password,
-            "rank":     r.rank,     "role":     r.role,
-            "team_id":  r.team_id,
+            "callsign": r.callsign,
+            "password": password,
+            "rank": r.rank,
+            "role": r.role,
+            "team_id": r.team_id,
         }
         resp = api.c.post(
-            api._p("/auth/register/admin"), json=body,
+            api._p("/auth/register/admin"),
+            json=body,
             headers={"Authorization": f"Bearer {admin_tok}"},
         )
         if resp.status_code == 201:
@@ -283,7 +302,7 @@ def register_operators(api: Api, admin_tok: str, teams: dict[str, int],
                     json={"password": password},
                     headers={"Authorization": f"Bearer {admin_tok}"},
                 )
-            time.sleep(0.15)   # avoid bursting the /auth/login rate limit
+            time.sleep(0.15)  # avoid bursting the /auth/login rate limit
             r.token = api.login(r.callsign, password)
         me = api.get("/auth/me", r.token)
         r.op_id = me["id"]
@@ -292,12 +311,13 @@ def register_operators(api: Api, admin_tok: str, teams: dict[str, int],
 
 # ── OPORD ─────────────────────────────────────────────────────────────────────
 
+
 def build_opord() -> dict:
     return {
-        "title":          "OPORD 26-002 — OPERATION SEAGULL",
-        "opord_number":   "26-002",
-        "dtg":            H_HOUR,
-        "time_zone":      "ZULU",
+        "title": "OPORD 26-002 — OPERATION SEAGULL",
+        "opord_number": "26-002",
+        "dtg": H_HOUR,
+        "time_zone": "ZULU",
         "classification": "UNCLASSIFIED // FOUO",
         "references": (
             "(a) Map: NATO 1:25,000 Belgium Coast Sheet 11/1-2 OOSTENDE\n"
@@ -447,9 +467,9 @@ def build_opord() -> dict:
                     "Establish hasty defence on PL SURF (airport perimeter). "
                     "B/C COY hold until BDE follow-on forces through."
                 ),
-                "main_effort":        "A COY 3 PLT — seize OBJ TERMINAL from east",
-                "supporting_effort":  "A COY 1 PLT — isolate north perimeter",
-                "reserve":            "A COY 2 PLT at east threshold; BPT reinforce 3 PLT or block QRF",
+                "main_effort": "A COY 3 PLT — seize OBJ TERMINAL from east",
+                "supporting_effort": "A COY 1 PLT — isolate north perimeter",
+                "reserve": "A COY 2 PLT at east threshold; BPT reinforce 3 PLT or block QRF",
             },
             "tasks_to_subordinate_units": {
                 "A_COY": (
@@ -575,29 +595,44 @@ def build_opord() -> dict:
 
 # ── Tactical graphics ─────────────────────────────────────────────────────────
 
-def build_graphics() -> list[dict]:
-    apt         = LL(*AIRPORT)
-    terminal    = apt.offset(+180, -230)
-    tower       = apt.offset(+150, -300)
-    rwy_08      = apt.offset(   0, -900)
-    south_apron = apt.offset(-250, -200)
-    east_gate   = apt.offset(   0, +750)
-    north_gate  = apt.offset(+550, -100)
-    west_gate   = apt.offset(   0, -850)
-    dz_osprey   = apt.offset(+1350, +100)
-    dz_falcon   = apt.offset(+100,  +1500)
-    bn_tac      = LL(*BN_TAC_CP)
-    b_block     = LL(*N33_BLOCK)
-    c_block     = LL(*E40_BLOCK)
 
-    def tg(type_: str, ll: LL, *, affiliation: str = "FRIENDLY",
-           echelon: str = "", notes: str = "", rotation: float = 0.0,
-           geometry: str = "", symbol_code: str = "") -> dict:
+def build_graphics() -> list[dict]:
+    apt = LL(*AIRPORT)
+    terminal = apt.offset(+180, -230)
+    tower = apt.offset(+150, -300)
+    rwy_08 = apt.offset(0, -900)
+    south_apron = apt.offset(-250, -200)
+    east_gate = apt.offset(0, +750)
+    north_gate = apt.offset(+550, -100)
+    west_gate = apt.offset(0, -850)
+    dz_osprey = apt.offset(+1350, +100)
+    dz_falcon = apt.offset(+100, +1500)
+    bn_tac = LL(*BN_TAC_CP)
+    b_block = LL(*N33_BLOCK)
+    c_block = LL(*E40_BLOCK)
+
+    def tg(
+        type_: str,
+        ll: LL,
+        *,
+        affiliation: str = "FRIENDLY",
+        echelon: str = "",
+        notes: str = "",
+        rotation: float = 0.0,
+        geometry: str = "",
+        symbol_code: str = "",
+    ) -> dict:
         return {
-            "type": type_, "latitude": ll.lat, "longitude": ll.lon,
-            "affiliation": affiliation, "echelon": echelon, "notes": notes,
-            "rotation": rotation, "geometry": geometry,
-            "symbol_code": symbol_code, "visibility": "COMPANY",
+            "type": type_,
+            "latitude": ll.lat,
+            "longitude": ll.lon,
+            "affiliation": affiliation,
+            "echelon": echelon,
+            "notes": notes,
+            "rotation": rotation,
+            "geometry": geometry,
+            "symbol_code": symbol_code,
+            "visibility": "COMPANY",
         }
 
     def line(type_: str, pts: list[LL], **kw) -> dict:
@@ -611,221 +646,380 @@ def build_graphics() -> list[dict]:
     items: list[dict] = []
 
     # ── Objectives ────────────────────────────────────────────────────────────
-    items.append(poly("OBJ_AREA", [
-        terminal.offset(+120, -150), terminal.offset(+120, +250),
-        terminal.offset(-100, +250), terminal.offset(-100, -150),
-    ], echelon="COY", notes="OBJ TERMINAL — A COY main objective (terminal + tower)"))
+    items.append(
+        poly(
+            "OBJ_AREA",
+            [
+                terminal.offset(+120, -150),
+                terminal.offset(+120, +250),
+                terminal.offset(-100, +250),
+                terminal.offset(-100, -150),
+            ],
+            echelon="COY",
+            notes="OBJ TERMINAL — A COY main objective (terminal + tower)",
+        )
+    )
 
-    items.append(poly("OBJ_AREA", [
-        apt.offset(+60, -900), apt.offset(+60, +900),
-        apt.offset(-60, +900), apt.offset(-60, -900),
-    ], echelon="BN", notes="OBJ RUNWAY — secure runway 08/26 for CLP air-landing"))
+    items.append(
+        poly(
+            "OBJ_AREA",
+            [
+                apt.offset(+60, -900),
+                apt.offset(+60, +900),
+                apt.offset(-60, +900),
+                apt.offset(-60, -900),
+            ],
+            echelon="BN",
+            notes="OBJ RUNWAY — secure runway 08/26 for CLP air-landing",
+        )
+    )
 
     # ── Drop zones ────────────────────────────────────────────────────────────
-    items.append(poly("OBJ_AREA", [
-        dz_osprey.offset(+300, -400), dz_osprey.offset(+300, +400),
-        dz_osprey.offset(-300, +400), dz_osprey.offset(-300, -400),
-    ], echelon="PL", notes="DZ OSPREY — 1 PLT / WPNS PLT / A COY HQ / BN HQ (H-Hour)"))
+    items.append(
+        poly(
+            "OBJ_AREA",
+            [
+                dz_osprey.offset(+300, -400),
+                dz_osprey.offset(+300, +400),
+                dz_osprey.offset(-300, +400),
+                dz_osprey.offset(-300, -400),
+            ],
+            echelon="PL",
+            notes="DZ OSPREY — 1 PLT / WPNS PLT / A COY HQ / BN HQ (H-Hour)",
+        )
+    )
 
-    items.append(poly("OBJ_AREA", [
-        dz_falcon.offset(+350, -350), dz_falcon.offset(+350, +350),
-        dz_falcon.offset(-350, +350), dz_falcon.offset(-350, -350),
-    ], echelon="PL", notes="DZ FALCON — 2 PLT / 3 PLT (H-Hour, 2nd pass)"))
+    items.append(
+        poly(
+            "OBJ_AREA",
+            [
+                dz_falcon.offset(+350, -350),
+                dz_falcon.offset(+350, +350),
+                dz_falcon.offset(-350, +350),
+                dz_falcon.offset(-350, -350),
+            ],
+            echelon="PL",
+            notes="DZ FALCON — 2 PLT / 3 PLT (H-Hour, 2nd pass)",
+        )
+    )
 
     # ── Phase lines ───────────────────────────────────────────────────────────
-    items.append(line("PHASE_LINE",
-                      [apt.offset(+600, -1100), apt.offset(+600, +1100)],
-                      echelon="COY",
-                      notes="PL WAVE — assemble at DZ; begin movement to airport"))
-    items.append(line("PHASE_LINE",
-                      [apt.offset(+600, -1100), apt.offset(+600, +1100),
-                       apt.offset(+600, +1100), apt.offset(-500, +1100),
-                       apt.offset(-500, +1100), apt.offset(-500, -1100),
-                       apt.offset(-500, -1100), apt.offset(+600, -1100)],
-                      echelon="COY",
-                      notes="PL SURF — LOA: airport perimeter (A COY final consolidation)"))
+    items.append(
+        line(
+            "PHASE_LINE",
+            [apt.offset(+600, -1100), apt.offset(+600, +1100)],
+            echelon="COY",
+            notes="PL WAVE — assemble at DZ; begin movement to airport",
+        )
+    )
+    items.append(
+        line(
+            "PHASE_LINE",
+            [
+                apt.offset(+600, -1100),
+                apt.offset(+600, +1100),
+                apt.offset(+600, +1100),
+                apt.offset(-500, +1100),
+                apt.offset(-500, +1100),
+                apt.offset(-500, -1100),
+                apt.offset(-500, -1100),
+                apt.offset(+600, -1100),
+            ],
+            echelon="COY",
+            notes="PL SURF — LOA: airport perimeter (A COY final consolidation)",
+        )
+    )
 
     # ── BN boundaries ────────────────────────────────────────────────────────
-    items.append(line("BOUNDARY",
-                      [dz_osprey.offset(0, 0), b_block],
-                      echelon="BN",
-                      notes="BN eastern boundary — A COY (west) / B COY (east of EBOS)"))
-    items.append(line("BOUNDARY",
-                      [apt.offset(+1400, 0), apt.offset(-200, 0)],
-                      echelon="PL",
-                      notes="1 PLT / 3 PLT boundary — 1 PLT west, 3 PLT east"))
+    items.append(
+        line(
+            "BOUNDARY",
+            [dz_osprey.offset(0, 0), b_block],
+            echelon="BN",
+            notes="BN eastern boundary — A COY (west) / B COY (east of EBOS)",
+        )
+    )
+    items.append(
+        line(
+            "BOUNDARY",
+            [apt.offset(+1400, 0), apt.offset(-200, 0)],
+            echelon="PL",
+            notes="1 PLT / 3 PLT boundary — 1 PLT west, 3 PLT east",
+        )
+    )
 
     # ── Platoon attack axes ───────────────────────────────────────────────────
-    items.append(tg("ATK_AXIS", dz_osprey.bearing(180, 600),
-                    echelon="PL", rotation=180,
-                    notes="1 PLT axis — south from DZ OSPREY to north gate / terminal"))
-    items.append(tg("ATK_AXIS", dz_falcon.bearing(270, 800),
-                    echelon="PL", rotation=270,
-                    notes="3 PLT axis — MAIN EFFORT west from DZ FALCON to OBJ TERMINAL"))
-    items.append(tg("ATK_AXIS", dz_falcon.bearing(250, 600),
-                    echelon="PL", rotation=250,
-                    notes="2 PLT axis — RESERVE east threshold (RWY 26 end + N33 block)"))
+    items.append(
+        tg(
+            "ATK_AXIS",
+            dz_osprey.bearing(180, 600),
+            echelon="PL",
+            rotation=180,
+            notes="1 PLT axis — south from DZ OSPREY to north gate / terminal",
+        )
+    )
+    items.append(
+        tg(
+            "ATK_AXIS",
+            dz_falcon.bearing(270, 800),
+            echelon="PL",
+            rotation=270,
+            notes="3 PLT axis — MAIN EFFORT west from DZ FALCON to OBJ TERMINAL",
+        )
+    )
+    items.append(
+        tg(
+            "ATK_AXIS",
+            dz_falcon.bearing(250, 600),
+            echelon="PL",
+            rotation=250,
+            notes="2 PLT axis — RESERVE east threshold (RWY 26 end + N33 block)",
+        )
+    )
 
     # ── WPNS PLT fire position ────────────────────────────────────────────────
-    items.append(tg("DEF_AREA", apt.offset(+620, -100),
-                    echelon="PL", rotation=180,
-                    notes="WPNS PLT mortar line — 81mm + MMG overwatch from north dunes"))
+    items.append(
+        tg(
+            "DEF_AREA",
+            apt.offset(+620, -100),
+            echelon="PL",
+            rotation=180,
+            notes="WPNS PLT mortar line — 81mm + MMG overwatch from north dunes",
+        )
+    )
 
     # ── B COY blocking position ───────────────────────────────────────────────
-    items.append(poly("DEF_AREA", [
-        b_block.offset(+300, -500), b_block.offset(+300, +500),
-        b_block.offset(-300, +500), b_block.offset(-300, -500),
-    ], echelon="COY",
-    notes="B COY blocking position — N33 at Oudenburg (blocks Brugge QRF)"))
-    items.append(tg("ATK_AXIS", b_block.bearing(270, 800),
-                    echelon="COY", rotation=270,
-                    notes="B COY vehicle approach — east to N33 blocking position"))
+    items.append(
+        poly(
+            "DEF_AREA",
+            [
+                b_block.offset(+300, -500),
+                b_block.offset(+300, +500),
+                b_block.offset(-300, +500),
+                b_block.offset(-300, -500),
+            ],
+            echelon="COY",
+            notes="B COY blocking position — N33 at Oudenburg (blocks Brugge QRF)",
+        )
+    )
+    items.append(
+        tg(
+            "ATK_AXIS",
+            b_block.bearing(270, 800),
+            echelon="COY",
+            rotation=270,
+            notes="B COY vehicle approach — east to N33 blocking position",
+        )
+    )
 
     # ── C COY blocking position ───────────────────────────────────────────────
-    items.append(poly("DEF_AREA", [
-        c_block.offset(+300, -500), c_block.offset(+300, +500),
-        c_block.offset(-300, +500), c_block.offset(-300, -500),
-    ], echelon="COY",
-    notes="C COY blocking position — A10/E40 west of Brugge (depth block)"))
-    items.append(tg("ATK_AXIS", c_block.bearing(270, 1000),
-                    echelon="COY", rotation=270,
-                    notes="C COY vehicle approach — east to A10/E40 blocking position"))
+    items.append(
+        poly(
+            "DEF_AREA",
+            [
+                c_block.offset(+300, -500),
+                c_block.offset(+300, +500),
+                c_block.offset(-300, +500),
+                c_block.offset(-300, -500),
+            ],
+            echelon="COY",
+            notes="C COY blocking position — A10/E40 west of Brugge (depth block)",
+        )
+    )
+    items.append(
+        tg(
+            "ATK_AXIS",
+            c_block.bearing(270, 1000),
+            echelon="COY",
+            rotation=270,
+            notes="C COY vehicle approach — east to A10/E40 blocking position",
+        )
+    )
 
     # ── FLOT / FLET ──────────────────────────────────────────────────────────
-    items.append(line("FLOT",
-                      [apt.offset(+600, -1100), apt.offset(+600, +1100)],
-                      echelon="BN",
-                      notes="FLOT — TF SEAGULL (A COY, after DZ assembly, PL WAVE)"))
-    items.append(line("FLET",
-                      [apt.offset(+550, -1000), apt.offset(+550, +1000)],
-                      affiliation="ENEMY", echelon="BN",
-                      notes="FLET — enemy perimeter guard line (estimated)"))
+    items.append(
+        line(
+            "FLOT",
+            [apt.offset(+600, -1100), apt.offset(+600, +1100)],
+            echelon="BN",
+            notes="FLOT — TF SEAGULL (A COY, after DZ assembly, PL WAVE)",
+        )
+    )
+    items.append(
+        line(
+            "FLET",
+            [apt.offset(+550, -1000), apt.offset(+550, +1000)],
+            affiliation="ENEMY",
+            echelon="BN",
+            notes="FLET — enemy perimeter guard line (estimated)",
+        )
+    )
 
     # ── Enemy positions ───────────────────────────────────────────────────────
     enemies = [
-        ("Enemy observer — control tower",      "SHGPUCRVO---", tower),
-        ("Enemy motorised rifle platoon (-)",   "SHGPUCIZ----", apt.offset(+100, -50)),
-        ("Enemy technical (DShK) #1",           "SHGPEVAT----", south_apron.offset(0, +80)),
-        ("Enemy technical (DShK) #2",           "SHGPEVAT----", south_apron.offset(0, -80)),
-        ("Enemy MANPADS team (mobile)",          "SHGPUCDS----", apt.offset(+50, +200)),
-        ("Enemy perimeter post — west gate",     "SHGPUCIZ----", west_gate),
-        ("Enemy perimeter post — east gate",     "SHGPUCIZ----", east_gate),
-        ("Enemy perimeter post — south fence",   "SHGPUCIZ----", apt.offset(-500, 0)),
-        ("Enemy MMG bunker — north apron",       "SHGPUCFW----", apt.offset(+300, -400)),
-        ("Enemy QRF route — N33 (Brugge est.)",  "SHGPUCIZ----", b_block.offset(+200, +800)),
+        ("Enemy observer — control tower", "SHGPUCRVO---", tower),
+        ("Enemy motorised rifle platoon (-)", "SHGPUCIZ----", apt.offset(+100, -50)),
+        ("Enemy technical (DShK) #1", "SHGPEVAT----", south_apron.offset(0, +80)),
+        ("Enemy technical (DShK) #2", "SHGPEVAT----", south_apron.offset(0, -80)),
+        ("Enemy MANPADS team (mobile)", "SHGPUCDS----", apt.offset(+50, +200)),
+        ("Enemy perimeter post — west gate", "SHGPUCIZ----", west_gate),
+        ("Enemy perimeter post — east gate", "SHGPUCIZ----", east_gate),
+        ("Enemy perimeter post — south fence", "SHGPUCIZ----", apt.offset(-500, 0)),
+        ("Enemy MMG bunker — north apron", "SHGPUCFW----", apt.offset(+300, -400)),
+        (
+            "Enemy QRF route — N33 (Brugge est.)",
+            "SHGPUCIZ----",
+            b_block.offset(+200, +800),
+        ),
     ]
     for name, sidc, ll in enemies:
-        items.append({
-            "type": "ENEMY", "symbol_code": sidc,
-            "latitude": ll.lat, "longitude": ll.lon,
-            "affiliation": "ENEMY", "notes": name,
-            "echelon": "", "rotation": 0.0, "geometry": "",
-            "visibility": "COMPANY",
-        })
+        items.append(
+            {
+                "type": "ENEMY",
+                "symbol_code": sidc,
+                "latitude": ll.lat,
+                "longitude": ll.lon,
+                "affiliation": "ENEMY",
+                "notes": name,
+                "echelon": "",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     # ── Friendly POIs ────────────────────────────────────────────────────────
     pois = [
         # A COY / BN HQ area
-        ("BN TAC CP (DZ OSPREY area)",       "SFGPUH------", bn_tac),
-        ("CCP — DZ OSPREY (RANGER-7)",       "SFGPIME-----", dz_osprey.offset(-200, +100)),
-        ("BAS / Role 1",                     "SFGPIMS-----", dz_osprey.offset(-200, -200)),
-        ("LZ OSPREY (CASEVAC / ANGEL 21)",   "SFGPIBA-----", dz_osprey.offset(+150, 0)),
-        ("AMMO point",                       "SFGPIRP-----", dz_osprey.offset(-100, +300)),
+        ("BN TAC CP (DZ OSPREY area)", "SFGPUH------", bn_tac),
+        ("CCP — DZ OSPREY (RANGER-7)", "SFGPIME-----", dz_osprey.offset(-200, +100)),
+        ("BAS / Role 1", "SFGPIMS-----", dz_osprey.offset(-200, -200)),
+        ("LZ OSPREY (CASEVAC / ANGEL 21)", "SFGPIBA-----", dz_osprey.offset(+150, 0)),
+        ("AMMO point", "SFGPIRP-----", dz_osprey.offset(-100, +300)),
         # Objective area
-        ("TAC CP (with 3 PLT on OBJ)",       "SFGPUH------", terminal.offset(-50, +100)),
-        ("OBJ TERMINAL — HVT",               "SFGPIMG-----", terminal),
-        ("Control tower — key terrain",      "SFGPIBE-----", tower),
-        ("CLP pad — RWY 08 threshold",       "SFGPIBA-----", rwy_08),
-        ("Fuel farm — NO DIRECT FIRE",       "SFGPIMH-----", south_apron.offset(-100, +200)),
-        ("North gate — breach point",        "SFGPIBE-----", north_gate),
-        ("East gate — 2 PLT block",          "SFGPIBE-----", east_gate),
+        ("TAC CP (with 3 PLT on OBJ)", "SFGPUH------", terminal.offset(-50, +100)),
+        ("OBJ TERMINAL — HVT", "SFGPIMG-----", terminal),
+        ("Control tower — key terrain", "SFGPIBE-----", tower),
+        ("CLP pad — RWY 08 threshold", "SFGPIBA-----", rwy_08),
+        ("Fuel farm — NO DIRECT FIRE", "SFGPIMH-----", south_apron.offset(-100, +200)),
+        ("North gate — breach point", "SFGPIBE-----", north_gate),
+        ("East gate — 2 PLT block", "SFGPIBE-----", east_gate),
         # Blocking positions
-        ("B COY OP — N33 Oudenburg",         "SFGPUH------", b_block),
-        ("C COY OP — A10/E40 W Brugge",      "SFGPUH------", c_block),
-        ("Hospital — NO FIRE (Oostende)",    "SFGPIMH-----", LL(51.2108, 2.9067)),
+        ("B COY OP — N33 Oudenburg", "SFGPUH------", b_block),
+        ("C COY OP — A10/E40 W Brugge", "SFGPUH------", c_block),
+        ("Hospital — NO FIRE (Oostende)", "SFGPIMH-----", LL(51.2108, 2.9067)),
     ]
     for name, sidc, ll in pois:
-        items.append({
-            "type": "POI", "symbol_code": sidc,
-            "latitude": ll.lat, "longitude": ll.lon,
-            "affiliation": "FRIENDLY", "notes": name,
-            "echelon": "", "rotation": 0.0, "geometry": "",
-            "visibility": "COMPANY",
-        })
+        items.append(
+            {
+                "type": "POI",
+                "symbol_code": sidc,
+                "latitude": ll.lat,
+                "longitude": ll.lon,
+                "affiliation": "FRIENDLY",
+                "notes": name,
+                "echelon": "",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     return items
 
 
 # ── Fire plan ─────────────────────────────────────────────────────────────────
 
+
 def build_fire_plan() -> list[dict]:
-    apt     = LL(*AIRPORT)
-    tower   = apt.offset(+150, -300)
+    apt = LL(*AIRPORT)
+    tower = apt.offset(+150, -300)
     s_apron = apt.offset(-250, -200)
     e_fence = apt.offset(+100, +700)
-    n_gate  = apt.offset(+550, -100)
+    n_gate = apt.offset(+550, -100)
 
     return [
         {
-            "latitude":     tower.lat,  "longitude":    tower.lon,
-            "altitude":     10.0,       "direction":    180.0,
-            "mission_type": "SUPPRESSION",  "ammunition": "HE",  "quantity": 6,
-            "description":  "FM-001 TRP-001 — suppress enemy observer control tower (H-5 to H+0)",
+            "latitude": tower.lat,
+            "longitude": tower.lon,
+            "altitude": 10.0,
+            "direction": 180.0,
+            "mission_type": "SUPPRESSION",
+            "ammunition": "HE",
+            "quantity": 6,
+            "description": "FM-001 TRP-001 — suppress enemy observer control tower (H-5 to H+0)",
         },
         {
-            "latitude":     s_apron.lat, "longitude":   s_apron.lon,
-            "altitude":     5.0,         "direction":   180.0,
-            "mission_type": "FIRE_FOR_EFFECT", "ammunition": "HE", "quantity": 12,
-            "description":  "FM-002 TRP-002 — destroy enemy technical vehicles south apron (H-3)",
+            "latitude": s_apron.lat,
+            "longitude": s_apron.lon,
+            "altitude": 5.0,
+            "direction": 180.0,
+            "mission_type": "FIRE_FOR_EFFECT",
+            "ammunition": "HE",
+            "quantity": 12,
+            "description": "FM-002 TRP-002 — destroy enemy technical vehicles south apron (H-3)",
         },
         {
-            "latitude":     e_fence.lat, "longitude":   e_fence.lon,
-            "altitude":     5.0,         "direction":   270.0,
-            "mission_type": "SUPPRESSION", "ammunition": "MIXED", "quantity": 8,
-            "description":  "FM-003 TRP-003 — suppress east fence before 3 PLT breach (H+18)",
+            "latitude": e_fence.lat,
+            "longitude": e_fence.lon,
+            "altitude": 5.0,
+            "direction": 270.0,
+            "mission_type": "SUPPRESSION",
+            "ammunition": "MIXED",
+            "quantity": 8,
+            "description": "FM-003 TRP-003 — suppress east fence before 3 PLT breach (H+18)",
         },
         {
-            "latitude":     n_gate.lat, "longitude":    n_gate.lon,
-            "altitude":     5.0,        "direction":    180.0,
-            "mission_type": "ADJUST_FIRE", "ammunition": "SMOKE", "quantity": 4,
-            "description":  "FM-004 TRP-004 — SMOKE screen north gate for 1 PLT breach (H+15 to H+25)",
+            "latitude": n_gate.lat,
+            "longitude": n_gate.lon,
+            "altitude": 5.0,
+            "direction": 180.0,
+            "mission_type": "ADJUST_FIRE",
+            "ammunition": "SMOKE",
+            "quantity": 4,
+            "description": "FM-004 TRP-004 — SMOKE screen north gate for 1 PLT breach (H+15 to H+25)",
         },
     ]
 
 
 # ── Reports ───────────────────────────────────────────────────────────────────
 
+
 def submit_reports(api: Api, by_callsign: dict[str, OpRoster]) -> None:
     """File the three battle-phase reports: MEDEVAC, DRONE_SPOT, SPOT."""
-    apt     = LL(*AIRPORT)
-    e_fence = apt.offset(+100, +700)   # where 3-1 was hit
+    apt = LL(*AIRPORT)
+    e_fence = apt.offset(+100, +700)  # where 3-1 was hit
 
     # 1. MEDEVAC — 3-1 SL wounded during east fence breach ────────────────────
     r_31 = by_callsign.get("3-1")
     if r_31 and r_31.token:
         lz = LL(*BN_TAC_CP).offset(-200, 0)
-        api.post("/reports", r_31.token, {
-            "type": "MEDEVAC",
-            "payload": {
-                "line_1":  "LZ OSPREY — DZ OSPREY (secondary role)",
-                "line_2":  "ANGEL 21 — 282.800 MHz UHF",
-                "line_3":  "1x URGENT",
-                "line_4":  "None (no special equip req)",
-                "line_5":  f"{lz.lat:.4f}N {lz.lon:.4f}E",
-                "line_6":  "IR strobe (masked from east)",
-                "line_7":  "CDAG — no enemy aircraft at LZ",
-                "line_8":  "N — 1x LITTER",
-                "line_9":  "No CBRN. 1x E (enemy in area east perimeter).",
-                "patient":         "3-1 (SL, 3 PLT SQ1)",
-                "precedence":      "URGENT",
-                "injury":          "GSW left thigh during east fence breach — tourniquet applied T+03",
-                "status":          "Unconscious, breathing, pulse present",
-                "grid":            f"{e_fence.lat:.4f}N {e_fence.lon:.4f}E (pickup: LZ OSPREY)",
-                "blood_type":      "O+",
-                "reporting_unit":  "3 PLT / RANGER COY",
-                "dtg":             "262123ZMAY26",
+        api.post(
+            "/reports",
+            r_31.token,
+            {
+                "type": "MEDEVAC",
+                "payload": {
+                    "line_1": "LZ OSPREY — DZ OSPREY (secondary role)",
+                    "line_2": "ANGEL 21 — 282.800 MHz UHF",
+                    "line_3": "1x URGENT",
+                    "line_4": "None (no special equip req)",
+                    "line_5": f"{lz.lat:.4f}N {lz.lon:.4f}E",
+                    "line_6": "IR strobe (masked from east)",
+                    "line_7": "CDAG — no enemy aircraft at LZ",
+                    "line_8": "N — 1x LITTER",
+                    "line_9": "No CBRN. 1x E (enemy in area east perimeter).",
+                    "patient": "3-1 (SL, 3 PLT SQ1)",
+                    "precedence": "URGENT",
+                    "injury": "GSW left thigh during east fence breach — tourniquet applied T+03",
+                    "status": "Unconscious, breathing, pulse present",
+                    "grid": f"{e_fence.lat:.4f}N {e_fence.lon:.4f}E (pickup: LZ OSPREY)",
+                    "blood_type": "O+",
+                    "reporting_unit": "3 PLT / RANGER COY",
+                    "dtg": "262123ZMAY26",
+                },
             },
-        })
+        )
         log.info("MEDEVAC report filed by 3-1 (1x URGENT GSW east fence)")
 
     # 2. DRONE_SPOT — enemy ISR quadcopter over north fence (W-MTR1) ──────────
@@ -835,13 +1029,13 @@ def submit_reports(api: Api, by_callsign: dict[str, OpRoster]) -> None:
         resp = api.c.post(
             api._p("/reports/drone-spot"),
             json={
-                "latitude":      drone_pos.lat,
-                "longitude":     drone_pos.lon,
-                "drone_type":    "QUADCOPTER",
-                "altitude_m":    75.0,
+                "latitude": drone_pos.lat,
+                "longitude": drone_pos.lon,
+                "drone_type": "QUADCOPTER",
+                "altitude_m": 75.0,
                 "direction_deg": 270.0,
-                "speed_kts":     12.0,
-                "behavior":      "RECONNAISSANCE",
+                "speed_kts": 12.0,
+                "behavior": "RECONNAISSANCE",
                 "notes": (
                     "Small ISR quad, heading west over north fence line. "
                     "Approx 75m AGL. Suspect enemy surveillance of WPNS PLT "
@@ -859,34 +1053,39 @@ def submit_reports(api: Api, by_callsign: dict[str, OpRoster]) -> None:
     # 3. SPOT/SALUTE — B-1 observes enemy QRF vehicles on N33 ────────────────
     b_1 = by_callsign.get("B-1")
     if b_1 and b_1.token:
-        qrf_sighting = LL(*N33_BLOCK).offset(+200, +2500)   # ~2.5 km east of B COY pos
-        api.post("/reports", b_1.token, {
-            "type": "SPOT",
-            "payload": {
-                "S": "4x wheeled APC (BTR-80 est.); dismounts unknown",
-                "A": "N33, heading west toward Oostende Airport at approx 40 km/h",
-                "L": f"{qrf_sighting.lat:.4f}N {qrf_sighting.lon:.4f}E — OP KINGFISHER (B-1)",
-                "U": "Motorised rifle QRF, est. Brugge garrison — 30-40 dismounts",
-                "T": "262155ZMAY26",
-                "E": (
-                    "4x BTR-80, lights masked. Lead vehicle mounted HMG. "
-                    "ETA B COY blocking position est. 7 min. "
-                    "Request immediate CAS (WASP 11) and BN fires TRP-005."
-                ),
-                "observer":       "B-1 (SL, B COY BPLT-SQ1)",
-                "reporting_net":  "B COY NET 38.200 MHz → BN CMD NET 38.050 MHz",
-                "dtg":            "262155ZMAY26",
-                "grid_observer":  f"{LL(*N33_BLOCK).lat:.4f}N {LL(*N33_BLOCK).lon:.4f}E",
-                "grid_target":    f"{qrf_sighting.lat:.4f}N {qrf_sighting.lon:.4f}E",
-                "action_taken":   "B COY AT positions manned. B-6 requesting CAS.",
-                "latitude":       qrf_sighting.lat,
-                "longitude":      qrf_sighting.lon,
+        qrf_sighting = LL(*N33_BLOCK).offset(+200, +2500)  # ~2.5 km east of B COY pos
+        api.post(
+            "/reports",
+            b_1.token,
+            {
+                "type": "SPOT",
+                "payload": {
+                    "S": "4x wheeled APC (BTR-80 est.); dismounts unknown",
+                    "A": "N33, heading west toward Oostende Airport at approx 40 km/h",
+                    "L": f"{qrf_sighting.lat:.4f}N {qrf_sighting.lon:.4f}E — OP KINGFISHER (B-1)",
+                    "U": "Motorised rifle QRF, est. Brugge garrison — 30-40 dismounts",
+                    "T": "262155ZMAY26",
+                    "E": (
+                        "4x BTR-80, lights masked. Lead vehicle mounted HMG. "
+                        "ETA B COY blocking position est. 7 min. "
+                        "Request immediate CAS (WASP 11) and BN fires TRP-005."
+                    ),
+                    "observer": "B-1 (SL, B COY BPLT-SQ1)",
+                    "reporting_net": "B COY NET 38.200 MHz → BN CMD NET 38.050 MHz",
+                    "dtg": "262155ZMAY26",
+                    "grid_observer": f"{LL(*N33_BLOCK).lat:.4f}N {LL(*N33_BLOCK).lon:.4f}E",
+                    "grid_target": f"{qrf_sighting.lat:.4f}N {qrf_sighting.lon:.4f}E",
+                    "action_taken": "B COY AT positions manned. B-6 requesting CAS.",
+                    "latitude": qrf_sighting.lat,
+                    "longitude": qrf_sighting.lon,
+                },
             },
-        })
+        )
         log.info("SPOT report filed by B-1 (4x BTR-80 QRF inbound on N33)")
 
 
 # ── Movement ──────────────────────────────────────────────────────────────────
+
 
 def simulate_movement(api: Api, steps: int, dt: float) -> None:
     """Multi-company movement:
@@ -895,16 +1094,16 @@ def simulate_movement(api: Api, steps: int, dt: float) -> None:
     - C COY: vehicle-mount east → A10/E40 blocking position
     - BN HQ: holds at BN TAC CP (DZ OSPREY area)
     """
-    apt         = LL(*AIRPORT)
-    terminal    = apt.offset(+180, -230)
-    rwy_26      = apt.offset(0,    +900)
+    apt = LL(*AIRPORT)
+    terminal = apt.offset(+180, -230)
+    rwy_26 = apt.offset(0, +900)
     mortar_line = apt.offset(+620, -100)
-    dz_osprey   = apt.offset(+1350, +100)
-    dz_falcon   = apt.offset(+100, +1500)
-    bn_tac      = LL(*BN_TAC_CP)
-    b_end       = LL(*N33_BLOCK)
-    c_end       = LL(*E40_BLOCK)
-    brugge      = LL(*BRUGGE_AREA)
+    dz_osprey = apt.offset(+1350, +100)
+    dz_falcon = apt.offset(+100, +1500)
+    bn_tac = LL(*BN_TAC_CP)
+    b_end = LL(*N33_BLOCK)
+    c_end = LL(*E40_BLOCK)
+    brugge = LL(*BRUGGE_AREA)
 
     plan: dict[str, tuple[LL, LL]] = {}
     for r in ROSTER:
@@ -926,7 +1125,12 @@ def simulate_movement(api: Api, steps: int, dt: float) -> None:
         if r.insert == "BN_TAC":
             # BN HQ stays at TAC CP
             end = bn_tac.offset(ep // 2, fp // 2)
-        elif cs.startswith("1-") or cs in ("RANGER-6", "RANGER-5", "RANGER-7", "RANGER-FO"):
+        elif cs.startswith("1-") or cs in (
+            "RANGER-6",
+            "RANGER-5",
+            "RANGER-7",
+            "RANGER-FO",
+        ):
             end = terminal.offset(ep, fp)
         elif cs.startswith("3-"):
             end = terminal.offset(ep, fp)
@@ -943,18 +1147,24 @@ def simulate_movement(api: Api, steps: int, dt: float) -> None:
 
         plan[cs] = (start, end)
 
-    log.info("H-HOUR — BN movement: %d operators / %d steps × %.1fs", len(ROSTER), steps, dt)
+    log.info(
+        "H-HOUR — BN movement: %d operators / %d steps × %.1fs", len(ROSTER), steps, dt
+    )
     for i in range(steps + 1):
         t = i / steps
         for r in ROSTER:
             start, end = plan[r.callsign]
             here = lerp(start, end, t)
             try:
-                api.post("/tracking/position", r.token, {
-                    "latitude":  here.lat,
-                    "longitude": here.lon,
-                    "altitude":  5.0,
-                })
+                api.post(
+                    "/tracking/position",
+                    r.token,
+                    {
+                        "latitude": here.lat,
+                        "longitude": here.lon,
+                        "altitude": 5.0,
+                    },
+                )
             except Exception as exc:
                 log.warning("%s: %s", r.callsign, exc)
         if i % 10 == 0:
@@ -964,6 +1174,7 @@ def simulate_movement(api: Api, steps: int, dt: float) -> None:
 
 
 # ── Reset ─────────────────────────────────────────────────────────────────────
+
 
 def reset_objects(api: Api, admin_tok: str) -> int:
     objs = api.get("/tactical-objects", admin_tok)
@@ -977,43 +1188,67 @@ def reset_objects(api: Api, admin_tok: str) -> int:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=f"OPERATION SEAGULL — {BN_NAME} airborne assault on Oostende Airport")
-    parser.add_argument("--backend",
-                        default=os.environ.get("ARROW_BACKEND_URL", "https://78.21.255.210:6200/api"),
-                        help="Backend URL (default: ARROW_BACKEND_URL env, else production)")
-    parser.add_argument("--admin",        default="benoit",   help="ADMIN callsign")
-    parser.add_argument("--password",     default="ranger14", help="ADMIN password")
-    parser.add_argument("--op-password",  default="rangers!", help="Operator password")
-    parser.add_argument("--reset",        action="store_true", help="Delete all tactical objects first")
-    parser.add_argument("--no-move",      action="store_true", help="Plan-only — skip GPS simulation")
-    parser.add_argument("--no-reports",   action="store_true", help="Skip filing MEDEVAC / SPOT / DRONE reports")
-    parser.add_argument("--steps",        type=int,   default=80,  help="Movement steps")
-    parser.add_argument("--dt",           type=float, default=2.0, help="Seconds between steps")
-    parser.add_argument("--mission-name", default="Operation SEAGULL",
-                        help="Mission name to create or adopt")
+        description=f"OPERATION SEAGULL — {BN_NAME} airborne assault on Oostende Airport"
+    )
+    parser.add_argument(
+        "--backend",
+        default=os.environ.get("ARROW_BACKEND_URL", "https://78.21.255.210:6200/api"),
+        help="Backend URL (default: ARROW_BACKEND_URL env, else production)",
+    )
+    parser.add_argument("--admin", default="benoit", help="ADMIN callsign")
+    parser.add_argument("--password", default="ranger14", help="ADMIN password")
+    parser.add_argument("--op-password", default="rangers!", help="Operator password")
+    parser.add_argument(
+        "--reset", action="store_true", help="Delete all tactical objects first"
+    )
+    parser.add_argument(
+        "--no-move", action="store_true", help="Plan-only — skip GPS simulation"
+    )
+    parser.add_argument(
+        "--no-reports",
+        action="store_true",
+        help="Skip filing MEDEVAC / SPOT / DRONE reports",
+    )
+    parser.add_argument("--steps", type=int, default=80, help="Movement steps")
+    parser.add_argument("--dt", type=float, default=2.0, help="Seconds between steps")
+    parser.add_argument(
+        "--mission-name",
+        default="Operation SEAGULL",
+        help="Mission name to create or adopt",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s  %(levelname)-7s %(message)s",
-                        datefmt="%H:%M:%S")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-7s %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
     api = Api(args.backend)
 
-    log.info("OPERATION SEAGULL — %s airborne assault on OOSTENDE AIRPORT (EBOS)", BN_NAME)
+    log.info(
+        "OPERATION SEAGULL — %s airborne assault on OOSTENDE AIRPORT (EBOS)", BN_NAME
+    )
     log.info("backend=%s  admin=%s", args.backend, args.admin)
 
     admin_tok = api.login(args.admin, args.password)
 
     # 1. Mission
-    api.create_mission(admin_tok, args.mission_name,
-                       description=(
-                           f"{BN_NAME} airborne seizure of Oostende Airport (EBOS) "
-                           "to enable BDE CLP air-landing. A COY assaults via DZ OSPREY/FALCON; "
-                           "B/C COY block QRF routes N33 + A10/E40."
-                       ),
-                       map_center_lat=AIRPORT[0], map_center_lng=AIRPORT[1], map_zoom=13)
+    api.create_mission(
+        admin_tok,
+        args.mission_name,
+        description=(
+            f"{BN_NAME} airborne seizure of Oostende Airport (EBOS) "
+            "to enable BDE CLP air-landing. A COY assaults via DZ OSPREY/FALCON; "
+            "B/C COY block QRF routes N33 + A10/E40."
+        ),
+        map_center_lat=AIRPORT[0],
+        map_center_lng=AIRPORT[1],
+        map_zoom=13,
+    )
     log.info("mission ready (id=%s)", api.mission_id)
 
     if args.reset:
@@ -1031,8 +1266,11 @@ def main() -> None:
         opord = api.post("/opord", admin_tok, build_opord())
         log.info("OPORD %s posted (id=%s)", opord["opord_number"], opord["id"])
         api.post(f"/opord/{opord['id']}/publish", admin_tok, {})
-        api.post(f"/opord/{opord['id']}/send", admin_tok,
-                 {"operator_ids": [r.op_id for r in ROSTER]})
+        api.post(
+            f"/opord/{opord['id']}/send",
+            admin_tok,
+            {"operator_ids": [r.op_id for r in ROSTER]},
+        )
         log.info("OPORD published and sent to %d operators", len(ROSTER))
     except Exception as exc:
         log.warning("OPORD skipped: %s", exc)

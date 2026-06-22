@@ -31,8 +31,9 @@ class BackendClient:
 
     def login(self, callsign: str, password: str) -> tuple[int, dict]:
         with httpx.Client(base_url=self._base, timeout=10.0) as cli:
-            r = cli.post("/auth/login",
-                         data={"username": callsign, "password": password})
+            r = cli.post(
+                "/auth/login", data={"username": callsign, "password": password}
+            )
         try:
             body: dict = r.json()
         except Exception:
@@ -44,8 +45,10 @@ class BackendClient:
             r = cli.post(
                 "/cot",
                 content=xml.encode(),
-                headers={"Content-Type":  "application/xml",
-                         "Authorization": f"Bearer {token}"},
+                headers={
+                    "Content-Type": "application/xml",
+                    "Authorization": f"Bearer {token}",
+                },
             )
         return r.status_code, r.text
 
@@ -65,16 +68,16 @@ class WsMonitor:
 
     def __init__(
         self,
-        get_url:    Callable[[], str],
-        get_token:  Callable[[], str],
+        get_url: Callable[[], str],
+        get_token: Callable[[], str],
         on_message: Callable[[str], None],
-        on_status:  Callable[[str], None],
+        on_status: Callable[[str], None],
     ) -> None:
-        self._get_url   = get_url
+        self._get_url = get_url
         self._get_token = get_token
-        self._on_msg    = on_message
+        self._on_msg = on_message
         self._on_status = on_status
-        self._stop_ev   = threading.Event()
+        self._stop_ev = threading.Event()
         self._thread: threading.Thread | None = None
 
     @property

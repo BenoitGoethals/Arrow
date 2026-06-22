@@ -19,7 +19,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from lxml import etree
 
 from contextlib import contextmanager
@@ -37,8 +36,10 @@ def _tcp_db():
     handlers write into the same in-memory SQLite instance the test uses.
     """
     import backend.storage.database as _dbmod
+
     with patch("backend.cot.tcp_server.SessionLocal", _dbmod.SessionLocal):
         yield
+
 
 # ── XML builders ──────────────────────────────────────────────────────────────
 
@@ -48,41 +49,74 @@ _ST = "2026-06-13T10:30:00.000000Z"
 
 def _ev(cot_type: str, uid: str = "TEST", lat: float = 51.5, lon: float = 4.2) -> bytes:
     root = etree.Element(
-        "event", version="2.0", uid=uid, type=cot_type,
-        time=_TS, start=_TS, stale=_ST, how="h-g-i-g-o",
+        "event",
+        version="2.0",
+        uid=uid,
+        type=cot_type,
+        time=_TS,
+        start=_TS,
+        stale=_ST,
+        how="h-g-i-g-o",
     )
-    etree.SubElement(root, "point",
-                     lat=str(lat), lon=str(lon),
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        root,
+        "point",
+        lat=str(lat),
+        lon=str(lon),
+        hae="0.0",
+        ce="9999999.0",
+        le="9999999.0",
+    )
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
 
-def _emergency_xml(callsign: str = "OPS-1", active: bool = True,
-                   lat: float = 51.5, lon: float = 4.2) -> bytes:
+def _emergency_xml(
+    callsign: str = "OPS-1", active: bool = True, lat: float = 51.5, lon: float = 4.2
+) -> bytes:
     cot_type = "b-a-o-opn" if active else "b-a-o-can"
     root = etree.Element(
-        "event", version="2.0", uid=f"ATAK.{callsign}",
-        type=cot_type, time=_TS, start=_TS, stale=_ST, how="h-g-i-g-o",
+        "event",
+        version="2.0",
+        uid=f"ATAK.{callsign}",
+        type=cot_type,
+        time=_TS,
+        start=_TS,
+        stale=_ST,
+        how="h-g-i-g-o",
     )
-    etree.SubElement(root, "point",
-                     lat=str(lat), lon=str(lon),
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        root,
+        "point",
+        lat=str(lat),
+        lon=str(lon),
+        hae="0.0",
+        ce="9999999.0",
+        le="9999999.0",
+    )
     det = etree.SubElement(root, "detail")
     etree.SubElement(det, "contact", callsign=callsign)
     etree.SubElement(det, "emergency", type="911 Alert" if active else "Cancelled")
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
 
-def _spot_xml(callsign: str = "RECON-1",
-              remarks: str = "Enemy vehicle spotted",
-              cot_type: str = "b-r-f-h-s") -> bytes:
+def _spot_xml(
+    callsign: str = "RECON-1",
+    remarks: str = "Enemy vehicle spotted",
+    cot_type: str = "b-r-f-h-s",
+) -> bytes:
     root = etree.Element(
-        "event", version="2.0", uid=f"SPOT.{callsign}",
-        type=cot_type, time=_TS, start=_TS, stale=_ST, how="h-g-i-g-o",
+        "event",
+        version="2.0",
+        uid=f"SPOT.{callsign}",
+        type=cot_type,
+        time=_TS,
+        start=_TS,
+        stale=_ST,
+        how="h-g-i-g-o",
     )
-    etree.SubElement(root, "point",
-                     lat="50.9", lon="3.7",
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        root, "point", lat="50.9", lon="3.7", hae="0.0", ce="9999999.0", le="9999999.0"
+    )
     det = etree.SubElement(root, "detail")
     etree.SubElement(det, "contact", callsign=callsign)
     rem = etree.SubElement(det, "remarks")
@@ -90,48 +124,70 @@ def _spot_xml(callsign: str = "RECON-1",
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
 
-def _route_xml(uid: str = "ROUTE-001",
-               callsign: str = "BC-1",
-               pts: list[tuple[float, float]] | None = None) -> bytes:
+def _route_xml(
+    uid: str = "ROUTE-001",
+    callsign: str = "BC-1",
+    pts: list[tuple[float, float]] | None = None,
+) -> bytes:
     pts = pts or [(51.5, 4.2), (51.6, 4.3), (51.7, 4.4)]
     root = etree.Element(
-        "event", version="2.0", uid=uid,
-        type="b-m-r", time=_TS, start=_TS, stale=_ST, how="h-g-i-g-o",
+        "event",
+        version="2.0",
+        uid=uid,
+        type="b-m-r",
+        time=_TS,
+        start=_TS,
+        stale=_ST,
+        how="h-g-i-g-o",
     )
-    etree.SubElement(root, "point",
-                     lat="51.5", lon="4.2",
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        root, "point", lat="51.5", lon="4.2", hae="0.0", ce="9999999.0", le="9999999.0"
+    )
     det = etree.SubElement(root, "detail")
     etree.SubElement(det, "contact", callsign=callsign)
     rem = etree.SubElement(det, "remarks")
     rem.text = "Supply Route Alpha"
     for lat, lon in pts:
-        etree.SubElement(det, "link", lat=str(lat), lon=str(lon),
-                         type="b-m-p-w", uid=f"WP-{lat}")
+        etree.SubElement(
+            det, "link", lat=str(lat), lon=str(lon), type="b-m-p-w", uid=f"WP-{lat}"
+        )
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
 
-def _fileshare_xml(filename: str = "recon.jpg",
-                   sender: str = "OPS-2",
-                   url: str = "http://192.168.0.1:8080/Attachment/recon.jpg") -> bytes:
+def _fileshare_xml(
+    filename: str = "recon.jpg",
+    sender: str = "OPS-2",
+    url: str = "http://192.168.0.1:8080/Attachment/recon.jpg",
+) -> bytes:
     root = etree.Element(
-        "event", version="2.0", uid=f"FS.{sender}",
-        type="b-f-t-a", time=_TS, start=_TS, stale=_ST, how="h-g-i-g-o",
+        "event",
+        version="2.0",
+        uid=f"FS.{sender}",
+        type="b-f-t-a",
+        time=_TS,
+        start=_TS,
+        stale=_ST,
+        how="h-g-i-g-o",
     )
-    etree.SubElement(root, "point",
-                     lat="0.0", lon="0.0",
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        root, "point", lat="0.0", lon="0.0", hae="0.0", ce="9999999.0", le="9999999.0"
+    )
     det = etree.SubElement(root, "detail")
-    etree.SubElement(det, "fileshare",
-                     filename=filename, name=filename,
-                     senderCallsign=sender,
-                     sizeInBytes="4096", sha256hash="deadbeef")
-    etree.SubElement(det, "ackrequest",
-                     uid=f"ACK.{sender}", tag=filename, endpoint=url)
+    etree.SubElement(
+        det,
+        "fileshare",
+        filename=filename,
+        name=filename,
+        senderCallsign=sender,
+        sizeInBytes="4096",
+        sha256hash="deadbeef",
+    )
+    etree.SubElement(det, "ackrequest", uid=f"ACK.{sender}", tag=filename, endpoint=url)
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _recv_channel(ws, channel: str, max_msgs: int = 20) -> dict:
     for _ in range(max_msgs):
@@ -147,6 +203,7 @@ def _run(coro):
 
 
 # ── Feature 1: Emergency / panic button ──────────────────────────────────────
+
 
 class TestEmergencyAlert:
 
@@ -168,7 +225,7 @@ class TestEmergencyAlert:
         assert len(broadcasts) == 1
         msg = broadcasts[0]
         assert msg["channel"] == "alert"
-        assert msg["event"]   == "triggered"
+        assert msg["event"] == "triggered"
         assert msg["data"]["type"] == "ATAK_EMERGENCY"
         assert msg["data"]["status"] == "ACTIVE"
 
@@ -187,9 +244,7 @@ class TestEmergencyAlert:
             _run(_handle_emergency(emerg))
 
         with SessionLocal() as db:
-            a = db.query(Alert).filter(
-                Alert.type == "ATAK_EMERGENCY"
-            ).first()
+            a = db.query(Alert).filter(Alert.type == "ATAK_EMERGENCY").first()
         assert a is not None
         assert a.status == "ACTIVE"
 
@@ -204,12 +259,16 @@ class TestEmergencyAlert:
 
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml(callsign, active=True))
-            ))
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml(callsign, active=False))
-            ))
+            _run(
+                _handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, active=True))
+                )
+            )
+            _run(
+                _handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, active=False))
+                )
+            )
 
         with SessionLocal() as db:
             a = db.query(Alert).filter(Alert.type == "ATAK_EMERGENCY").first()
@@ -224,12 +283,16 @@ class TestEmergencyAlert:
         broadcasts = []
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock(side_effect=lambda d: broadcasts.append(d))
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml(callsign, active=True))
-            ))
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml(callsign, active=False))
-            ))
+            _run(
+                _handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, active=True))
+                )
+            )
+            _run(
+                _handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, active=False))
+                )
+            )
 
         events = [b["event"] for b in broadcasts]
         assert "triggered" in events
@@ -244,15 +307,16 @@ class TestEmergencyAlert:
 
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml(callsign, active=True))
-            ))
+            _run(
+                _handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, active=True))
+                )
+            )
 
         r = client.get("/alerts", headers=auth(token))
         assert r.status_code == 200
         types = [a["type"] for a in r.json()]
         assert "ATAK_EMERGENCY" in types
-
 
     # ── Contract: data shape the JS frontend depends on ─────────────────────
     # These tests verify the broadcast payload contains EVERY field that the
@@ -269,35 +333,41 @@ class TestEmergencyAlert:
         captured = []
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock(side_effect=lambda msg: captured.append(msg))
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml(callsign, lat=51.5, lon=4.2))
-            ))
+            _run(
+                _handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, lat=51.5, lon=4.2))
+                )
+            )
 
         assert len(captured) == 1
         msg = captured[0]
-        assert msg["channel"] == "alert",  "JS handler keys on channel==='alert'"
-        assert msg["event"]   == "triggered", \
-            "JS only calls handleAlertTriggered() when event==='triggered'"
+        assert msg["channel"] == "alert", "JS handler keys on channel==='alert'"
+        assert (
+            msg["event"] == "triggered"
+        ), "JS only calls handleAlertTriggered() when event==='triggered'"
 
         d = msg["data"]
         # JS field-by-field expectations
-        assert d["type"] == "ATAK_EMERGENCY", \
-            "JS looks up ALERT_COLOURS[d.type] / ALERT_ICONS[d.type]"
-        assert d["operator_id"] == op_id, \
-            "JS resolves the callsign via state.operators.get(d.operator_id)"
-        assert d["callsign"] == callsign, \
-            "JS falls back to d.callsign and the voice speaks it"
-        assert isinstance(d["latitude"], (int, float)), \
-            "JS checks d.latitude != null for the hasPos zoom decision"
-        assert isinstance(d["longitude"], (int, float)), \
-            "JS checks d.longitude != null for the hasPos zoom decision"
-        assert abs(d["latitude"]  - 51.5) < 1e-5
-        assert abs(d["longitude"] - 4.2)  < 1e-5
-        assert d["id"] is not None, \
-            "JS keys state.alertLayers by d.id to remove on ack"
+        assert (
+            d["type"] == "ATAK_EMERGENCY"
+        ), "JS looks up ALERT_COLOURS[d.type] / ALERT_ICONS[d.type]"
+        assert (
+            d["operator_id"] == op_id
+        ), "JS resolves the callsign via state.operators.get(d.operator_id)"
+        assert (
+            d["callsign"] == callsign
+        ), "JS falls back to d.callsign and the voice speaks it"
+        assert isinstance(
+            d["latitude"], (int, float)
+        ), "JS checks d.latitude != null for the hasPos zoom decision"
+        assert isinstance(
+            d["longitude"], (int, float)
+        ), "JS checks d.longitude != null for the hasPos zoom decision"
+        assert abs(d["latitude"] - 51.5) < 1e-5
+        assert abs(d["longitude"] - 4.2) < 1e-5
+        assert d["id"] is not None, "JS keys state.alertLayers by d.id to remove on ack"
         assert d["status"] == "ACTIVE"
-        assert d.get("timestamp") is not None, \
-            "Alert list UI shows the alert time"
+        assert d.get("timestamp") is not None, "Alert list UI shows the alert time"
 
     def test_emergency_broadcast_position_not_null_when_present(self, client):
         """JS uses `d.latitude != null` — values must be real floats, not None."""
@@ -309,13 +379,15 @@ class TestEmergencyAlert:
         captured = []
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock(side_effect=lambda msg: captured.append(msg))
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml(callsign, lat=52.0, lon=5.5))
-            ))
+            _run(
+                _handle_emergency(
+                    parse_emergency(_emergency_xml(callsign, lat=52.0, lon=5.5))
+                )
+            )
 
         d = captured[0]["data"]
         # Critical: None would make `d.latitude != null` false → no zoom
-        assert d["latitude"]  is not None
+        assert d["latitude"] is not None
         assert d["longitude"] is not None
 
     def test_emergency_reaches_websocket_subscriber(self, client):
@@ -330,9 +402,11 @@ class TestEmergencyAlert:
         # broadcast arrives — this is exactly the path the web map uses.
         with client.websocket_connect(f"/ws?token={token}") as ws:
             with _tcp_db():
-                _run(_handle_emergency(
-                    parse_emergency(_emergency_xml(callsign, lat=51.5, lon=4.2))
-                ))
+                _run(
+                    _handle_emergency(
+                        parse_emergency(_emergency_xml(callsign, lat=51.5, lon=4.2))
+                    )
+                )
 
             # Drain WS until alert/triggered arrives (presence msgs may precede)
             alert_msg = None
@@ -341,15 +415,16 @@ class TestEmergencyAlert:
                 if m.get("channel") == "alert" and m.get("event") == "triggered":
                     alert_msg = m
                     break
-            assert alert_msg is not None, \
-                "alert/triggered event did not reach the WebSocket subscriber"
+            assert (
+                alert_msg is not None
+            ), "alert/triggered event did not reach the WebSocket subscriber"
 
             d = alert_msg["data"]
-            assert d["type"]        == "ATAK_EMERGENCY"
-            assert d["callsign"]    == callsign
+            assert d["type"] == "ATAK_EMERGENCY"
+            assert d["callsign"] == callsign
             assert d["operator_id"] == op_id
-            assert abs(d["latitude"]  - 51.5) < 1e-5
-            assert abs(d["longitude"] - 4.2)  < 1e-5
+            assert abs(d["latitude"] - 51.5) < 1e-5
+            assert abs(d["longitude"] - 4.2) < 1e-5
 
     def test_emergency_cancel_reaches_websocket(self, client):
         """Cancel CoT → WS receives alert/ack so the map can clear the marker."""
@@ -360,12 +435,16 @@ class TestEmergencyAlert:
 
         with client.websocket_connect(f"/ws?token={token}") as ws:
             with _tcp_db():
-                _run(_handle_emergency(
-                    parse_emergency(_emergency_xml(callsign, active=True))
-                ))
-                _run(_handle_emergency(
-                    parse_emergency(_emergency_xml(callsign, active=False))
-                ))
+                _run(
+                    _handle_emergency(
+                        parse_emergency(_emergency_xml(callsign, active=True))
+                    )
+                )
+                _run(
+                    _handle_emergency(
+                        parse_emergency(_emergency_xml(callsign, active=False))
+                    )
+                )
 
             ack_msg = None
             for _ in range(40):
@@ -388,18 +467,20 @@ class TestEmergencyAlert:
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock(side_effect=lambda msg: captured.append(msg))
             # Unknown callsign — _resolve_operator_id falls back to lowest-id op
-            _run(_handle_emergency(
-                parse_emergency(_emergency_xml("UNKNOWN-ATAK-USER"))
-            ))
+            _run(
+                _handle_emergency(parse_emergency(_emergency_xml("UNKNOWN-ATAK-USER")))
+            )
 
         assert len(captured) == 1
         d = captured[0]["data"]
         # The original ATAK callsign must be preserved for voice/toast
-        assert d["callsign"] == "UNKNOWN-ATAK-USER", \
-            "Original ATAK callsign must reach the UI, not the fallback operator's"
+        assert (
+            d["callsign"] == "UNKNOWN-ATAK-USER"
+        ), "Original ATAK callsign must reach the UI, not the fallback operator's"
 
 
 # ── Feature 2: SA marker remarks stored on CotTrack ──────────────────────────
+
 
 class TestCotTrackRemarks:
 
@@ -410,19 +491,24 @@ class TestCotTrackRemarks:
         # Build a foreign CoT (uid != ARROW.*) with remarks
         uid = "SIM.CONTACT-1"
         root = etree.fromstring(
-            CotEvent(uid=uid, cot_type="a-h-G-U-C-I",
-                     lat=50.5, lon=3.9, callsign="CONTACT-1").to_xml()
+            CotEvent(
+                uid=uid, cot_type="a-h-G-U-C-I", lat=50.5, lon=3.9, callsign="CONTACT-1"
+            ).to_xml()
         )
         rem = etree.SubElement(root.find("detail"), "remarks")
         rem.text = "Observed in tree-line, 4 dismounts"
         xml = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
 
-        r = client.post("/cot", content=xml,
-                        headers={**auth(token), "Content-Type": "application/xml"})
+        r = client.post(
+            "/cot",
+            content=xml,
+            headers={**auth(token), "Content-Type": "application/xml"},
+        )
         assert r.status_code == 200
 
         from backend.storage.database import SessionLocal
         from backend.storage.models import CotTrack
+
         with SessionLocal() as db:
             track = db.query(CotTrack).filter(CotTrack.cot_uid == uid).first()
         assert track is not None
@@ -434,14 +520,18 @@ class TestCotTrackRemarks:
 
         uid = "SIM.RECON-99"
         root = etree.fromstring(
-            CotEvent(uid=uid, cot_type="a-h-G-U-C-R",
-                     lat=51.0, lon=4.0, callsign="RECON-99").to_xml()
+            CotEvent(
+                uid=uid, cot_type="a-h-G-U-C-R", lat=51.0, lon=4.0, callsign="RECON-99"
+            ).to_xml()
         )
         rem = etree.SubElement(root.find("detail"), "remarks")
         rem.text = "Vehicle headed NW"
         xml = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
-        client.post("/cot", content=xml,
-                    headers={**auth(token), "Content-Type": "application/xml"})
+        client.post(
+            "/cot",
+            content=xml,
+            headers={**auth(token), "Content-Type": "application/xml"},
+        )
 
         r = client.get("/cot/tracks", headers=auth(token))
         assert r.status_code == 200
@@ -454,10 +544,14 @@ class TestCotTrackRemarks:
         """Track without <remarks> has remarks=None or '' — not missing from response."""
         _, token, _ = register(client)
         uid = "SIM.BARE-TRACK"
-        xml = CotEvent(uid=uid, cot_type="a-h-G-U-C-I",
-                       lat=50.0, lon=4.0, callsign="BARE").to_xml()
-        client.post("/cot", content=xml,
-                    headers={**auth(token), "Content-Type": "application/xml"})
+        xml = CotEvent(
+            uid=uid, cot_type="a-h-G-U-C-I", lat=50.0, lon=4.0, callsign="BARE"
+        ).to_xml()
+        client.post(
+            "/cot",
+            content=xml,
+            headers={**auth(token), "Content-Type": "application/xml"},
+        )
 
         r = client.get("/cot/tracks", headers=auth(token))
         tracks = r.json()
@@ -467,6 +561,7 @@ class TestCotTrackRemarks:
 
 
 # ── Feature 3: ATAK shapes ────────────────────────────────────────────────────
+
 
 class TestAtakShapes:
 
@@ -487,7 +582,7 @@ class TestAtakShapes:
             s = db.query(AtakShape).filter(AtakShape.uid == "ROUTE-001").first()
         assert s is not None
         assert s.shape_type == "ROUTE"
-        assert s.callsign   == "BC-1"
+        assert s.callsign == "BC-1"
         geo = json.loads(s.geometry_json)
         assert geo["type"] == "LineString"
         assert len(geo["coordinates"]) == 3
@@ -501,15 +596,21 @@ class TestAtakShapes:
 
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
-            _run(_handle_atak_shape(parse_atak_shape(_route_xml(
-                pts=[(51.5, 4.2), (51.6, 4.3)]
-            ))))
-            _run(_handle_atak_shape(parse_atak_shape(_route_xml(
-                pts=[(51.5, 4.2), (51.6, 4.3), (51.7, 4.4)]
-            ))))
+            _run(
+                _handle_atak_shape(
+                    parse_atak_shape(_route_xml(pts=[(51.5, 4.2), (51.6, 4.3)]))
+                )
+            )
+            _run(
+                _handle_atak_shape(
+                    parse_atak_shape(
+                        _route_xml(pts=[(51.5, 4.2), (51.6, 4.3), (51.7, 4.4)])
+                    )
+                )
+            )
 
         with SessionLocal() as db:
-            count  = db.query(AtakShape).filter(AtakShape.uid == "ROUTE-001").count()
+            count = db.query(AtakShape).filter(AtakShape.uid == "ROUTE-001").count()
             latest = db.query(AtakShape).filter(AtakShape.uid == "ROUTE-001").first()
         assert count == 1
         assert len(json.loads(latest.geometry_json)["coordinates"]) == 3
@@ -546,19 +647,26 @@ class TestAtakShapes:
 
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
-            _run(_handle_atak_shape(parse_atak_shape(
-                _route_xml(uid="API-ROUTE", callsign="BC-1",
-                           pts=[(51.5, 4.2), (51.6, 4.3)])
-            )))
+            _run(
+                _handle_atak_shape(
+                    parse_atak_shape(
+                        _route_xml(
+                            uid="API-ROUTE",
+                            callsign="BC-1",
+                            pts=[(51.5, 4.2), (51.6, 4.3)],
+                        )
+                    )
+                )
+            )
 
         r = client.get("/cot/shapes", headers=auth(token))
         assert r.status_code == 200
         shapes = r.json()
         assert len(shapes) == 1
         s = shapes[0]
-        assert s["uid"]        == "API-ROUTE"
+        assert s["uid"] == "API-ROUTE"
         assert s["shape_type"] == "ROUTE"
-        assert s["callsign"]   == "BC-1"
+        assert s["callsign"] == "BC-1"
         assert "geometry_json" in s
         geo = json.loads(s["geometry_json"])
         assert geo["type"] == "LineString"
@@ -572,15 +680,20 @@ class TestAtakShapes:
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
             for uid in ("SHAPE-A", "SHAPE-B", "SHAPE-C"):
-                _run(_handle_atak_shape(parse_atak_shape(
-                    _route_xml(uid=uid, pts=[(51.0, 4.0), (51.1, 4.1)])
-                )))
+                _run(
+                    _handle_atak_shape(
+                        parse_atak_shape(
+                            _route_xml(uid=uid, pts=[(51.0, 4.0), (51.1, 4.1)])
+                        )
+                    )
+                )
 
         r = client.get("/cot/shapes", headers=auth(token))
         assert len(r.json()) == 3
 
 
 # ── Feature 4: Spot / contact reports ────────────────────────────────────────
+
 
 class TestSpotReport:
 
@@ -592,7 +705,9 @@ class TestSpotReport:
         from backend.storage.database import SessionLocal
         from backend.storage.models import Report
 
-        spot = parse_spot_report(_spot_xml(callsign, remarks="4 BTR seen at crossroads"))
+        spot = parse_spot_report(
+            _spot_xml(callsign, remarks="4 BTR seen at crossroads")
+        )
         assert spot is not None
 
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
@@ -614,13 +729,11 @@ class TestSpotReport:
         broadcasts = []
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock(side_effect=lambda d: broadcasts.append(d))
-            _run(_handle_spot_report(
-                parse_spot_report(_spot_xml(callsign))
-            ))
+            _run(_handle_spot_report(parse_spot_report(_spot_xml(callsign))))
 
         assert any(b["channel"] == "report" for b in broadcasts)
         msg = next(b for b in broadcasts if b["channel"] == "report")
-        assert msg["data"]["type"]   == "CONTACT_REPORT"
+        assert msg["data"]["type"] == "CONTACT_REPORT"
         assert msg["data"]["source"] == "ATAK"
 
     def test_spot_report_visible_via_api(self, client):
@@ -631,9 +744,11 @@ class TestSpotReport:
 
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
-            _run(_handle_spot_report(
-                parse_spot_report(_spot_xml(callsign, remarks="Contact report"))
-            ))
+            _run(
+                _handle_spot_report(
+                    parse_spot_report(_spot_xml(callsign, remarks="Contact report"))
+                )
+            )
 
         r = client.get("/reports", headers=auth(token))
         assert r.status_code == 200
@@ -651,18 +766,19 @@ class TestSpotReport:
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
             for cot_type in ("b-r-f-h-s", "b-r-f-h-i", "b-r-f-n"):
-                _run(_handle_spot_report(
-                    parse_spot_report(_spot_xml(callsign, cot_type=cot_type))
-                ))
+                _run(
+                    _handle_spot_report(
+                        parse_spot_report(_spot_xml(callsign, cot_type=cot_type))
+                    )
+                )
 
         with SessionLocal() as db:
-            count = db.query(Report).filter(
-                Report.type == "CONTACT_REPORT"
-            ).count()
+            count = db.query(Report).filter(Report.type == "CONTACT_REPORT").count()
         assert count == 3
 
 
 # ── Feature 5: File share / photo ─────────────────────────────────────────────
+
 
 class TestFileshare:
 
@@ -672,15 +788,15 @@ class TestFileshare:
         b"\xff\xd9"
     )
 
-    def _run_fileshare(self, callsign: str, fake_bytes: bytes = None):
+    def _run_fileshare(self, callsign: str, fake_bytes: bytes | None = None):
         """Run _handle_fileshare_announcement with mocked HTTP download."""
         from backend.cot.cot import parse_fileshare_announcement
         from backend.cot.tcp_server import _handle_fileshare_announcement
-        import io
 
         fs = parse_fileshare_announcement(
-            _fileshare_xml(sender=callsign,
-                           url="http://192.168.0.1:8080/Attachment/recon.jpg")
+            _fileshare_xml(
+                sender=callsign, url="http://192.168.0.1:8080/Attachment/recon.jpg"
+            )
         )
         assert fs is not None
 
@@ -690,9 +806,14 @@ class TestFileshare:
 
         # Patch urlopen so run_in_executor returns our fake bytes
         class _FakeResponse:
-            def read(self): return raw_bytes
-            def __enter__(self): return self
-            def __exit__(self, *_): pass
+            def read(self):
+                return raw_bytes
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
 
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock(side_effect=lambda d: broadcasts.append(d))
@@ -713,7 +834,7 @@ class TestFileshare:
             photo = db.query(Photo).first()
         assert photo is not None
         assert photo.original_name == "recon.jpg"
-        assert photo.mime_type     == "image/jpeg"
+        assert photo.mime_type == "image/jpeg"
 
     def test_fileshare_creates_message_with_photo_id(self, client):
         callsign, token, op_id = register(client)
@@ -725,9 +846,7 @@ class TestFileshare:
 
         with SessionLocal() as db:
             photo = db.query(Photo).first()
-            msg   = db.query(Message).filter(
-                Message.photo_id == photo.id
-            ).first()
+            msg = db.query(Message).filter(Message.photo_id == photo.id).first()
         assert msg is not None
         assert msg.message_type == "BROADCAST"
         assert callsign in msg.content or "ATAK" in msg.content
@@ -739,7 +858,7 @@ class TestFileshare:
         assert any(b.get("channel") == "chat" for b in broadcasts)
         msg = next(b for b in broadcasts if b.get("channel") == "chat")
         assert msg["data"]["photo_id"] is not None
-        assert msg["data"]["source"]   == "ATAK"
+        assert msg["data"]["source"] == "ATAK"
 
     def test_fileshare_message_visible_via_api(self, client):
         callsign, token, op_id = register(client)
@@ -756,15 +875,22 @@ class TestFileshare:
         from backend.cot.cot import parse_fileshare_announcement
 
         ev = etree.Element(
-            "event", version="2.0", uid="FS.NOURL",
-            type="b-f-t-a", time=_TS, start=_TS, stale=_ST, how="h-g-i-g-o",
+            "event",
+            version="2.0",
+            uid="FS.NOURL",
+            type="b-f-t-a",
+            time=_TS,
+            start=_TS,
+            stale=_ST,
+            how="h-g-i-g-o",
         )
-        etree.SubElement(ev, "point",
-                         lat="0.0", lon="0.0",
-                         hae="0.0", ce="9999999.0", le="9999999.0")
+        etree.SubElement(
+            ev, "point", lat="0.0", lon="0.0", hae="0.0", ce="9999999.0", le="9999999.0"
+        )
         det = etree.SubElement(ev, "detail")
-        etree.SubElement(det, "fileshare", filename="x.jpg",
-                         senderCallsign="OPS", sizeInBytes="1")
+        etree.SubElement(
+            det, "fileshare", filename="x.jpg", senderCallsign="OPS", sizeInBytes="1"
+        )
         xml = etree.tostring(ev, xml_declaration=True, encoding="UTF-8")
         assert parse_fileshare_announcement(xml) is None
 
@@ -778,15 +904,19 @@ class TestFileshare:
         from backend.storage.models import Photo
 
         fs = parse_fileshare_announcement(
-            _fileshare_xml(sender=callsign,
-                           url="http://192.168.0.1:8080/Attachment/recon.jpg")
+            _fileshare_xml(
+                sender=callsign, url="http://192.168.0.1:8080/Attachment/recon.jpg"
+            )
         )
 
         import urllib.error
+
         with _tcp_db(), patch("backend.cot.tcp_server.broadcaster") as mock_bc:
             mock_bc.broadcast = AsyncMock()
-            with patch("urllib.request.urlopen",
-                       side_effect=urllib.error.URLError("connection refused")):
+            with patch(
+                "urllib.request.urlopen",
+                side_effect=urllib.error.URLError("connection refused"),
+            ):
                 # Must complete without raising
                 _run(_handle_fileshare_announcement(fs, "192.168.0.1"))
 
@@ -796,12 +926,14 @@ class TestFileshare:
 
 # ── Startup: DB schema migration ──────────────────────────────────────────────
 
+
 class TestDbMigrations:
 
     def test_atak_shapes_table_exists(self, client):
         """The atak_shapes table was created by the migration."""
         from backend.storage.database import SessionLocal
         from backend.storage.models import AtakShape
+
         with SessionLocal() as db:
             count = db.query(AtakShape).count()
         assert count == 0  # empty but accessible
@@ -810,11 +942,17 @@ class TestDbMigrations:
         """The cot_tracks.remarks column was added by the migration."""
         from backend.storage.database import SessionLocal
         from backend.storage.models import CotTrack
+
         with SessionLocal() as db:
             # Create a row with remarks
-            t = CotTrack(cot_uid="TEST-REMARKS", cot_type="a-h-G-U-C-I",
-                         callsign="X", latitude=0.0, longitude=0.0,
-                         remarks="test note")
+            t = CotTrack(
+                cot_uid="TEST-REMARKS",
+                cot_type="a-h-G-U-C-I",
+                callsign="X",
+                latitude=0.0,
+                longitude=0.0,
+                remarks="test note",
+            )
             db.add(t)
             db.commit()
             db.refresh(t)

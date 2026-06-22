@@ -35,7 +35,7 @@ Any compromise of operator positions, enemy contact data, or fire mission reques
 | R-01 | Brute-force on `/auth/login` | High | High | None | Security Lead | **Open** |
 | R-02 | JWT token theft via XSS | Medium | Critical | localStorage (known gap) | Security Lead | **Open** |
 | R-03 | Token valid 60 min after compromise | High | High | None (no revocation) | Security Lead | **Open** |
-| R-04 | SQLite DB unencrypted at rest | Low | High | File-system access controls | Security Lead | **Open** |
+| R-04 | PostgreSQL DB unencrypted at rest | Low | High | File-system + Docker volume access controls | Security Lead | **Open** |
 | R-05 | Photos unencrypted at rest | Low | High | Auth required for access | Security Lead | **Open** |
 | R-06 | No account lockout | High | Medium | Password policy (8 chars min) | Security Lead | **Open** |
 | R-07 | Default JWT secret deployed | Low | Critical | Startup validation blocks it | Security Lead | **Mitigated** |

@@ -7,12 +7,20 @@ GET /hierarchy returns:
   "online_window_seconds": 90
 }
 """
+
 from __future__ import annotations
 from typing import Dict
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem,
-    QLabel, QLineEdit, QPushButton, QMenu, QSizePolicy,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont, QAction
@@ -20,7 +28,7 @@ from PyQt6.QtGui import QColor, QBrush, QFont, QAction
 
 class ORBATPanel(QWidget):
     operator_focus_requested = pyqtSignal(int)
-    message_requested        = pyqtSignal(int)
+    message_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -48,17 +56,20 @@ class ORBATPanel(QWidget):
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setColumnCount(2)
-        self._tree.setRootIsDecorated(False)   # no ▸ arrows on company rows
-        self._tree.setIndentation(14)           # compact indent for sub-levels
+        self._tree.setRootIsDecorated(False)  # no ▸ arrows on company rows
+        self._tree.setIndentation(14)  # compact indent for sub-levels
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._context_menu)
         self._tree.itemDoubleClicked.connect(self._on_double_click)
         self._tree.itemClicked.connect(self._on_click)
         self._tree.setAlternatingRowColors(True)
-        self._tree.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._tree.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
 
         # Column 0 stretches, column 1 (count) is fixed width
         from PyQt6.QtWidgets import QHeaderView
+
         self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self._tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         self._tree.setColumnWidth(1, 48)
@@ -88,17 +99,18 @@ class ORBATPanel(QWidget):
             companies = [data]
 
         total_online = 0
-        total_all    = 0
+        total_all = 0
 
         for company in companies:
             online_c, total_c = self._count(company)
             total_online += online_c
-            total_all    += total_c
+            total_all += total_c
 
             co_item = self._make_item(
                 f"◆  {company.get('name', 'COMPANY')}",
                 f"{online_c}/{total_c}",
-                bold=True, color="#c9d1d9",
+                bold=True,
+                color="#c9d1d9",
             )
             co_item.setExpanded(True)
 
@@ -111,7 +123,9 @@ class ORBATPanel(QWidget):
         # Unassigned operators
         unassigned = data.get("unassigned_operators", [])
         if unassigned:
-            ua_item = self._make_item("  ◇  Unassigned", f"{len(unassigned)}", color="#8b949e")
+            ua_item = self._make_item(
+                "  ◇  Unassigned", f"{len(unassigned)}", color="#8b949e"
+            )
             for op in unassigned:
                 ua_item.addChild(self._make_operator_item(op))
             ua_item.setExpanded(False)
@@ -125,7 +139,9 @@ class ORBATPanel(QWidget):
 
         self._summary.setText(f"■ {total_online} ONLINE  ·  {total_all} TOTAL")
 
-    def update_operator_presence(self, operator_id: int, online: bool, last_seen: str = ""):
+    def update_operator_presence(
+        self, operator_id: int, online: bool, last_seen: str = ""
+    ):
         item = self._operators.get(operator_id)
         if not item:
             return
@@ -142,15 +158,18 @@ class ORBATPanel(QWidget):
 
     def _make_platoon_item(self, plt: dict) -> QTreeWidgetItem:
         online, total = self._count_sections(plt.get("sections", []))
-        item = self._make_item(f"▸  {plt['name']}", f"{online}/{total}",
-                               bold=True, color="#79c0ff")
+        item = self._make_item(
+            f"▸  {plt['name']}", f"{online}/{total}", bold=True, color="#79c0ff"
+        )
         for sec in plt.get("sections", []):
             item.addChild(self._make_section_item(sec))
         return item
 
     def _make_section_item(self, sec: dict) -> QTreeWidgetItem:
         online, total = self._count_teams(sec.get("teams", []))
-        item = self._make_item(f"  ▸  {sec['name']}", f"{online}/{total}", color="#8b949e")
+        item = self._make_item(
+            f"  ▸  {sec['name']}", f"{online}/{total}", color="#8b949e"
+        )
         for tm in sec.get("teams", []):
             item.addChild(self._make_team_item(tm))
         return item
@@ -158,23 +177,37 @@ class ORBATPanel(QWidget):
     def _make_team_item(self, tm: dict) -> QTreeWidgetItem:
         ops = tm.get("operators", [])
         online = sum(1 for o in ops if o.get("online"))
-        item = self._make_item(f"    ▸  {tm['name']}", f"{online}/{len(ops)}", color="#8b949e")
+        item = self._make_item(
+            f"    ▸  {tm['name']}", f"{online}/{len(ops)}", color="#8b949e"
+        )
         for op in ops:
             item.addChild(self._make_operator_item(op))
         return item
 
     def _make_operator_item(self, op: dict) -> QTreeWidgetItem:
-        online  = op.get("online", False)
-        col_n   = "#c9d1d9" if online else "#6e7681"
+        online = op.get("online", False)
+        col_n = "#c9d1d9" if online else "#6e7681"
         col_led = "#3fb950" if online else "#6e7681"
-        rank    = op.get("rank", "")
-        ops_st  = (op.get("ops_status") or "OPS").upper()
-        suffix  = "" if ops_st == "OPS" else f"  [{ops_st}]"
-        label   = f"       {rank}  {op['callsign']}{suffix}" if rank else f"       {op['callsign']}{suffix}"
-        item    = self._make_item(label, "●" if online else "○", color=col_n)
+        rank = op.get("rank", "")
+        ops_st = (op.get("ops_status") or "OPS").upper()
+        suffix = "" if ops_st == "OPS" else f"  [{ops_st}]"
+        label = (
+            f"       {rank}  {op['callsign']}{suffix}"
+            if rank
+            else f"       {op['callsign']}{suffix}"
+        )
+        item = self._make_item(label, "●" if online else "○", color=col_n)
         if ops_st != "OPS":
-            item.setForeground(0, QBrush(QColor(
-                {"INOPS": "#d29922", "KIA": "#f85149", "MIA": "#ff9e64"}.get(ops_st, "#c9d1d9"))))
+            item.setForeground(
+                0,
+                QBrush(
+                    QColor(
+                        {"INOPS": "#d29922", "KIA": "#f85149", "MIA": "#ff9e64"}.get(
+                            ops_st, "#c9d1d9"
+                        )
+                    )
+                ),
+            )
         item.setForeground(1, QBrush(QColor(col_led)))
         item.setData(0, Qt.ItemDataRole.UserRole, op["id"])
         item.setToolTip(0, op.get("last_seen") or "")
@@ -182,12 +215,16 @@ class ORBATPanel(QWidget):
         return item
 
     @staticmethod
-    def _make_item(col0: str, col1: str, bold=False, color="#c9d1d9") -> QTreeWidgetItem:
+    def _make_item(
+        col0: str, col1: str, bold=False, color="#c9d1d9"
+    ) -> QTreeWidgetItem:
         item = QTreeWidgetItem([col0, col1])
         item.setForeground(0, QBrush(QColor(color)))
         item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
         if bold:
-            f = QFont(); f.setBold(True); item.setFont(0, f)
+            f = QFont()
+            f.setBold(True)
+            item.setFont(0, f)
         return item
 
     # ---- Count helpers ---------------------------------------------------
@@ -209,11 +246,13 @@ class ORBATPanel(QWidget):
 
     def _filter(self, text: str):
         text = text.lower()
+
         def visit(item: QTreeWidgetItem) -> bool:
             child_vis = any(visit(item.child(i)) for i in range(item.childCount()))
             visible = text in item.text(0).lower() or child_vis
             item.setHidden(not visible)
             return visible
+
         for i in range(self._tree.topLevelItemCount()):
             visit(self._tree.topLevelItem(i))
 
@@ -243,5 +282,6 @@ class ORBATPanel(QWidget):
         a2 = QAction("Send message", menu)
         a1.triggered.connect(lambda: self.operator_focus_requested.emit(op_id))
         a2.triggered.connect(lambda: self.message_requested.emit(op_id))
-        menu.addAction(a1); menu.addAction(a2)
+        menu.addAction(a1)
+        menu.addAction(a2)
         menu.exec(self._tree.viewport().mapToGlobal(pos))

@@ -49,7 +49,7 @@ def _to_out(row: Overlay) -> OverlayOut:
         if not isinstance(ids, list):
             ids = []
         ids = [int(x) for x in ids]
-    except (json.JSONDecodeError, ValueError, TypeError):
+    except json.JSONDecodeError, ValueError, TypeError:
         ids = []
     return OverlayOut(
         id=row.id,
@@ -115,10 +115,13 @@ async def create_overlay(
     db.commit()
     db.refresh(row)
     out = _to_out(row)
-    await broadcaster.broadcast({
-        "channel": "overlay", "event": "created",
-        "data": out.model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "overlay",
+            "event": "created",
+            "data": out.model_dump(mode="json"),
+        }
+    )
     return out
 
 
@@ -144,10 +147,13 @@ async def patch_overlay(
     db.commit()
     db.refresh(row)
     out = _to_out(row)
-    await broadcaster.broadcast({
-        "channel": "overlay", "event": "updated",
-        "data": out.model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "overlay",
+            "event": "updated",
+            "data": out.model_dump(mode="json"),
+        }
+    )
     return out
 
 
@@ -162,8 +168,11 @@ async def delete_overlay(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown overlay")
     db.delete(row)
     db.commit()
-    await broadcaster.broadcast({
-        "channel": "overlay", "event": "deleted",
-        "data": {"id": overlay_id},
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "overlay",
+            "event": "deleted",
+            "data": {"id": overlay_id},
+        }
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

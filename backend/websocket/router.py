@@ -19,9 +19,7 @@ def _touch_operator(callsign: str, online: bool) -> None:
     """Set status + last_seen (when online) for the operator in the DB."""
     try:
         with SessionLocal() as db:
-            op = db.query(Operator).filter(
-                Operator.callsign.ilike(callsign)
-            ).first()
+            op = db.query(Operator).filter(Operator.callsign.ilike(callsign)).first()
             if op:
                 op.status = "ONLINE" if online else "OFFLINE"
                 if online:
@@ -61,7 +59,12 @@ async def websocket_endpoint(
         while True:
             msg = await websocket.receive_json()
             await broadcaster.broadcast(
-                {"channel": msg.get("channel", "chat"), "event": "message", "data": msg, "from": callsign}
+                {
+                    "channel": msg.get("channel", "chat"),
+                    "event": "message",
+                    "data": msg,
+                    "from": callsign,
+                }
             )
     except WebSocketDisconnect:
         pass

@@ -15,9 +15,33 @@ from web.infrastructure.backend_client import BackendClient, HttpxBackendClient
 from web.infrastructure.template_renderer import FlaskTemplateRenderer, PageRenderer
 from web.presentation import proxy_routes, shell_routes
 from web.presentation.blueprints import (
-    admin, apk, cas, cbrn, cbrncop, cop, cop_hub, dashboard, fire_missions, firescop,
-    history, intcop, logcop, logrep, medcop, messaging, missions, objectives, opord,
-    organisation, reports, streams, strike_packages, taccop, tactical_map, tracks, weather,
+    admin,
+    apk,
+    cas,
+    cbrn,
+    cbrncop,
+    cop,
+    cop_hub,
+    dashboard,
+    fire_missions,
+    firescop,
+    history,
+    intcop,
+    logcop,
+    logrep,
+    medcop,
+    messaging,
+    missions,
+    objectives,
+    opord,
+    organisation,
+    reports,
+    streams,
+    strike_packages,
+    taccop,
+    tactical_map,
+    tracks,
+    weather,
 )
 
 
@@ -42,8 +66,10 @@ def create_app(
     import os as _os
     import time as _time
     from flask import g, request
+
     try:
         from web.log_shipper import install as _install_shipper
+
         _install_shipper(cfg.backend_url, token=_os.environ.get("ARROW_LOG_TOKEN", ""))
     except Exception:
         pass
@@ -57,21 +83,51 @@ def create_app(
     def _access_log(response: Response) -> Response:
         try:
             ms = (_time.monotonic() - getattr(g, "_t0", _time.monotonic())) * 1000
-            _web_log.info("%s %s → %d (%.0f ms)", request.method, request.path,
-                          response.status_code, ms)
+            _web_log.info(
+                "%s %s → %d (%.0f ms)",
+                request.method,
+                request.path,
+                response.status_code,
+                ms,
+            )
         except Exception:
             pass
         return response
 
     for module in (
-        dashboard, tactical_map, messaging, fire_missions, streams,
-        reports, history, objectives, opord, admin, apk, tracks, missions,
-        strike_packages, cas, organisation, cbrn, logrep,
-        cbrncop, cop_hub, taccop, logcop, medcop, intcop, firescop, cop, weather,
+        dashboard,
+        tactical_map,
+        messaging,
+        fire_missions,
+        streams,
+        reports,
+        history,
+        objectives,
+        opord,
+        admin,
+        apk,
+        tracks,
+        missions,
+        strike_packages,
+        cas,
+        organisation,
+        cbrn,
+        logrep,
+        cbrncop,
+        cop_hub,
+        taccop,
+        logcop,
+        medcop,
+        intcop,
+        firescop,
+        cop,
+        weather,
     ):
         app.register_blueprint(module.build_blueprint(service, renderer))
     shell_routes.register(app, service, renderer)
-    app.register_blueprint(proxy_routes.build_blueprint(backend_client, cfg.public_api_prefix))
+    app.register_blueprint(
+        proxy_routes.build_blueprint(backend_client, cfg.public_api_prefix)
+    )
 
     @app.after_request
     def _apply_security(response: Response) -> Response:
@@ -89,18 +145,25 @@ app = create_app()
 
 def run() -> None:
     import os
+
     cfg = WebConfig.from_env()
 
     ssl_context = None
     if os.environ.get("ARROW_WEB_HTTP", "0") != "1":
         try:
             from web.ssl_cert import ensure_cert
+
             cert, key = ensure_cert()
             ssl_context = (cert, key)
             print(f"[Arrow Web] HTTPS on :6002  (cert: {cert})", flush=True)
-            print("[Arrow Web] First visit: click 'Advanced → Proceed' to accept the cert", flush=True)
+            print(
+                "[Arrow Web] First visit: click 'Advanced → Proceed' to accept the cert",
+                flush=True,
+            )
         except Exception as exc:
-            print(f"[Arrow Web] TLS cert error ({exc}) — falling back to HTTP", flush=True)
+            print(
+                f"[Arrow Web] TLS cert error ({exc}) — falling back to HTTP", flush=True
+            )
     else:
         print("[Arrow Web] HTTP mode (ARROW_WEB_HTTP=1)", flush=True)
 

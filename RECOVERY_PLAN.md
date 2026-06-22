@@ -1,7 +1,7 @@
 # Arrow — Recovery Plan
 
 **CSF 2.0:** RC.RP, RC.CO, RC.IM  
-**Last reviewed:** 2026-05-08
+**Last reviewed:** 2026-06-22
 
 ---
 
@@ -20,11 +20,13 @@
 
 | Asset | Location | Backup Method | Frequency | Retention |
 |-------|----------|--------------|-----------|-----------|
-| `arrow.db` | Docker volume `arrow-data` | `sqlite3 .dump` → S3 | Daily | 30 days |
+| PostgreSQL `arrow` DB | Docker volume `postgres-data` | `pg_dump` → gzip → S3 | Daily | 30 days |
 | `/app/data/photos/` | Docker volume `arrow-data` | `tar.gz` → S3 | Daily | 7 days |
 | `config.xml` | Git repository | Git history | On change | 1 year |
-| `Caddyfile` | Git repository | Git history | On change | 1 year |
 | `docker-compose.yml` | Git repository | Git history | On change | 1 year |
+| `.env` (POSTGRES_PASSWORD etc.) | Secure vault | Manual copy | On change | 1 year |
+
+The automated `arrow-backup` container runs both tasks every 24 hours and writes to the `arrow-backups` Docker volume.  Use `./deploy.sh backup` to trigger an immediate dump.
 
 ---
 
@@ -37,11 +39,13 @@
 set -euo pipefail
 DATE=$(date +%Y-%m-%d)
 BACKUP_DIR="/opt/arrow-backups"
+source /opt/arrow/.env    # loads POSTGRES_PASSWORD
 
 mkdir -p "$BACKUP_DIR"
 
-# 1. Dump SQLite database
-docker exec arrow-backend sqlite3 /app/data/arrow.db ".dump" \
+# 1. Dump PostgreSQL database
+docker compose exec -T postgres \
+  sh -c "PGPASSWORD=\$POSTGRES_PASSWORD pg_dump -U arrow arrow" \
   | gzip > "$BACKUP_DIR/arrow-db-$DATE.sql.gz"
 
 # 2. Snapshot photo directory
@@ -65,11 +69,11 @@ echo "Backup complete: $DATE"
 
 ### Scenario 1: Database Corruption
 
-**Symptoms:** Backend returns 500 errors, SQLite errors in logs.
+**Symptoms:** Backend returns 500 errors, PostgreSQL errors in logs.
 
 ```bash
-# 1. Stop stack
-docker compose down
+# 1. Stop stack (keep postgres volume intact — do NOT docker compose down -v)
+docker compose stop backend web mapserver
 
 # 2. List available backups
 aws s3 ls s3://YOUR-BUCKET/arrow-backups/ | grep arrow-db
@@ -77,22 +81,23 @@ aws s3 ls s3://YOUR-BUCKET/arrow-backups/ | grep arrow-db
 # 3. Download latest good backup
 aws s3 cp s3://YOUR-BUCKET/arrow-backups/arrow-db-YYYY-MM-DD.sql.gz ./
 
-# 4. Decompress and restore
-gunzip arrow-db-YYYY-MM-DD.sql.gz
-docker run --rm \
-  -v arrow-data:/data \
-  -v "$(pwd)/arrow-db-YYYY-MM-DD.sql":/restore.sql \
-  alpine sh -c "sqlite3 /data/arrow.db < /restore.sql"
+# 4. Drop and recreate the database
+docker compose exec postgres psql -U arrow -c "DROP DATABASE arrow;"
+docker compose exec postgres psql -U arrow -c "CREATE DATABASE arrow;"
+docker compose exec postgres psql -U arrow -c "CREATE EXTENSION IF NOT EXISTS postgis;" arrow
 
-# 5. Verify integrity
-docker run --rm -v arrow-data:/data alpine \
-  sqlite3 /data/arrow.db "PRAGMA integrity_check;"
-# Expected output: "ok"
+# 5. Restore
+gunzip -c arrow-db-YYYY-MM-DD.sql.gz \
+  | docker compose exec -T postgres psql -U arrow arrow
 
-# 6. Restart
-docker compose up -d
+# 6. Verify row counts
+docker compose exec postgres psql -U arrow arrow \
+  -c "SELECT schemaname, tablename, n_live_tup FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 10;"
 
-# 7. Verify
+# 7. Restart application services
+docker compose start backend web mapserver
+
+# 8. Verify
 curl http://localhost:6200/health
 ```
 
@@ -110,30 +115,27 @@ curl -fsSL https://get.docker.com | sh
 git clone https://github.com/BenoitGoethals/Arrow.git
 cd Arrow
 
-# 3. Restore database from S3
-mkdir -p /opt/arrow-data
-aws s3 cp s3://YOUR-BUCKET/arrow-backups/arrow-db-YYYY-MM-DD.sql.gz ./
-gunzip arrow-db-YYYY-MM-DD.sql.gz
-docker run --rm \
-  -v arrow-data:/data \
-  -v "$(pwd)/arrow-db-YYYY-MM-DD.sql":/restore.sql \
-  alpine sh -c "mkdir -p /data && sqlite3 /data/arrow.db < /restore.sql"
+# 3. Restore .env (POSTGRES_PASSWORD must match the backup)
+cp /path/to/vault/.env .env
 
-# 4. Restore photos
+# 4. Start PostgreSQL only
+docker compose up -d postgres
+docker compose exec postgres sh -c "until pg_isready -U arrow; do sleep 1; done"
+
+# 5. Restore database from S3
+aws s3 cp s3://YOUR-BUCKET/arrow-backups/arrow-db-YYYY-MM-DD.sql.gz ./
+gunzip -c arrow-db-YYYY-MM-DD.sql.gz \
+  | docker compose exec -T postgres psql -U arrow arrow
+
+# 6. Restore photos
 aws s3 cp s3://YOUR-BUCKET/arrow-backups/arrow-photos-YYYY-MM-DD.tar.gz ./
 docker run --rm \
   -v arrow-data:/data \
   -v "$(pwd)/arrow-photos-YYYY-MM-DD.tar.gz":/photos.tar.gz \
   alpine tar xzf /photos.tar.gz -C /data/
 
-# 5. Set production config
-# Edit config.xml — set strong JWT secret, production DB URL
-vim config.xml
-
-# 6. Set ARROW_ALLOWED_ORIGINS in docker-compose.yml to production domain
-
-# 7. Start stack
-docker compose up -d
+# 7. Start full stack
+./deploy.sh up
 
 # 8. Verify
 curl http://localhost:6200/health
@@ -144,7 +146,7 @@ curl http://localhost:6200/health
 ### Scenario 3: Photo Loss
 
 ```bash
-# Download archive and extract
+# Download archive and extract into the arrow-data volume
 aws s3 cp s3://YOUR-BUCKET/arrow-backups/arrow-photos-YYYY-MM-DD.tar.gz ./
 docker run --rm \
   -v arrow-data:/data \
@@ -157,7 +159,6 @@ docker compose restart web
 
 ```bash
 # Roll back to previous image tag
-docker compose pull --quiet
 git log --oneline -5  # find last good commit
 git checkout <COMMIT>
 docker compose build
@@ -177,6 +178,7 @@ After any recovery, verify:
 - [ ] Photo upload and retrieval works
 - [ ] WebSocket connection established (check browser console)
 - [ ] Audit log accessible: `GET /admin/audit`
+- [ ] MapServer WMS responds: `GET /mapserver/?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities`
 
 ---
 
@@ -203,13 +205,16 @@ After each recovery event:
 
 **Backup test procedure (monthly):**
 ```bash
-# Restore to staging environment, not production
-docker volume create arrow-test-data
+# Restore to a temporary test database, not production
+source .env
+docker compose exec postgres psql -U arrow \
+  -c "CREATE DATABASE arrow_test;"
 aws s3 cp s3://YOUR-BUCKET/arrow-backups/arrow-db-$(date +%Y-%m-%d).sql.gz ./
-gunzip arrow-db-$(date +%Y-%m-%d).sql.gz
-docker run --rm -v arrow-test-data:/data -v "$(pwd)/arrow-db-$(date +%Y-%m-%d).sql":/r.sql \
-  alpine sh -c "sqlite3 /data/arrow.db < /r.sql"
-docker run --rm -v arrow-test-data:/data alpine sqlite3 /data/arrow.db "PRAGMA integrity_check;"
+gunzip -c arrow-db-$(date +%Y-%m-%d).sql.gz \
+  | docker compose exec -T postgres psql -U arrow arrow_test
+docker compose exec postgres psql -U arrow arrow_test \
+  -c "SELECT COUNT(*) FROM operators;"
+docker compose exec postgres psql -U arrow \
+  -c "DROP DATABASE arrow_test;"
 echo "Backup test passed: $(date)"
-docker volume rm arrow-test-data
 ```

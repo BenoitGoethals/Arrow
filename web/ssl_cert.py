@@ -9,6 +9,7 @@ ARROW_WEB_HTTP=1          Disable HTTPS, serve plain HTTP.
 ARROW_WEB_EXTRA_IPS       Comma-separated extra IPs/hostnames to add to the
                           cert SAN.  Example: ARROW_WEB_EXTRA_IPS=78.21.255.210
 """
+
 from __future__ import annotations
 
 import datetime
@@ -20,16 +21,18 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_SSL_DIR  = Path("data/ssl")
-_CERT     = _SSL_DIR / "web-cert.pem"
-_KEY      = _SSL_DIR / "web-key.pem"
+_SSL_DIR = Path("data/ssl")
+_CERT = _SSL_DIR / "web-cert.pem"
+_KEY = _SSL_DIR / "web-key.pem"
 _VALIDITY = datetime.timedelta(days=3650)
 
 
-def _collect_sans() -> tuple[list[str], list[ipaddress.IPv4Address | ipaddress.IPv6Address]]:
+def _collect_sans() -> (
+    tuple[list[str], list[ipaddress.IPv4Address | ipaddress.IPv6Address]]
+):
     """Return (dns_names, ip_addresses) for the SAN extension."""
-    dns: list[str]  = ["localhost"]
-    ips: list       = []
+    dns: list[str] = ["localhost"]
+    ips: list = []
 
     # Machine hostname
     try:
@@ -56,7 +59,7 @@ def _collect_sans() -> tuple[list[str], list[ipaddress.IPv4Address | ipaddress.I
         try:
             ips.append(ipaddress.ip_address(token))
         except ValueError:
-            dns.append(token)   # treat as DNS name
+            dns.append(token)  # treat as DNS name
 
     # Deduplicate
     dns = list(dict.fromkeys(dns))
@@ -68,8 +71,9 @@ def _cert_covers_current_ips(cert_path: Path) -> bool:
     """Return True if the existing cert's SAN includes all current IPs."""
     try:
         from cryptography import x509
+
         cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
-        san  = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
         cert_ips = {str(n.value) for n in san.value if isinstance(n, x509.IPAddress)}
         _, needed = _collect_sans()
         return all(str(ip) in cert_ips for ip in needed)
@@ -93,15 +97,19 @@ def ensure_cert() -> tuple[str, str]:
         log.info("Cert doesn't cover current IPs — regenerating")
 
     dns_names, ip_addrs = _collect_sans()
-    log.info("Generating TLS cert — SANs: %s + %s", dns_names, [str(i) for i in ip_addrs])
+    log.info(
+        "Generating TLS cert — SANs: %s + %s", dns_names, [str(i) for i in ip_addrs]
+    )
 
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
     hostname = socket.gethostname()
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, hostname),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Arrow"),
-    ])
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, hostname),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Arrow"),
+        ]
+    )
 
     now = datetime.datetime.now(datetime.timezone.utc)
 
@@ -133,5 +141,8 @@ def ensure_cert() -> tuple[str, str]:
     all_sans = dns_names + [str(i) for i in ip_addrs]
     log.info("TLS cert written — covers: %s", ", ".join(all_sans))
     print(f"[Arrow Web] TLS cert covers: {', '.join(all_sans)}", flush=True)
-    print("[Arrow Web] First visit: click Advanced → Proceed to accept the self-signed cert", flush=True)
+    print(
+        "[Arrow Web] First visit: click Advanced → Proceed to accept the self-signed cert",
+        flush=True,
+    )
     return str(_CERT), str(_KEY)

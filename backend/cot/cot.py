@@ -26,7 +26,7 @@ from __future__ import annotations
 import base64
 import json
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from lxml import etree
@@ -35,47 +35,47 @@ from lxml import etree
 
 SIDC_TO_COT: dict[str, str] = {
     # Friendly ground
-    "SFGPUC------": "a-f-G-U-C",      # friendly ground combat (generic)
-    "SFGPUCI-----": "a-f-G-U-C-I",    # friendly infantry
-    "SFGPUCI----E": "a-f-G-U-C-O",    # friendly infantry / commander
-    "SFGPUCA-----": "a-f-G-U-C-A",    # friendly armour
-    "SFGPUCR-----": "a-f-G-U-C-R",    # friendly recon
-    "SFGPUCIS----": "a-f-G-U-C-S",    # friendly sniper
+    "SFGPUC------": "a-f-G-U-C",  # friendly ground combat (generic)
+    "SFGPUCI-----": "a-f-G-U-C-I",  # friendly infantry
+    "SFGPUCI----E": "a-f-G-U-C-O",  # friendly infantry / commander
+    "SFGPUCA-----": "a-f-G-U-C-A",  # friendly armour
+    "SFGPUCR-----": "a-f-G-U-C-R",  # friendly recon
+    "SFGPUCIS----": "a-f-G-U-C-S",  # friendly sniper
     # Friendly ground equipment / support
-    "SFGPEW------": "a-f-G-E-W",      # friendly electronic warfare
+    "SFGPEW------": "a-f-G-E-W",  # friendly electronic warfare
     # Friendly air
-    "SFAPMH------": "a-f-A-M-H",      # friendly helicopter
-    "SFAPMFF-----": "a-f-A-M-F",      # friendly fixed-wing
-    "SFAPMFQ-----": "a-f-A-M-F-Q",    # friendly UAS fixed-wing (drone)
-    "SFAPMHQ-----": "a-f-A-M-H-Q",    # friendly UAS rotary-wing (drone)
+    "SFAPMH------": "a-f-A-M-H",  # friendly helicopter
+    "SFAPMFF-----": "a-f-A-M-F",  # friendly fixed-wing
+    "SFAPMFQ-----": "a-f-A-M-F-Q",  # friendly UAS fixed-wing (drone)
+    "SFAPMHQ-----": "a-f-A-M-H-Q",  # friendly UAS rotary-wing (drone)
     # Hostile ground
-    "SHGPUCI-----": "a-h-G-U-C-I",    # hostile infantry
-    "SHGPUCA-----": "a-h-G-U-C-A",    # hostile armour
+    "SHGPUCI-----": "a-h-G-U-C-I",  # hostile infantry
+    "SHGPUCA-----": "a-h-G-U-C-A",  # hostile armour
     "SHGPUCIZ----": "a-h-G-U-C-I-Z",  # hostile mechanised
-    "SHGPUCF-----": "a-h-G-U-C-F",    # hostile artillery
-    "SHGPUCD-----": "a-h-G-U-C-D",    # hostile air-defence
-    "SHGPUCR-----": "a-h-G-U-C-R",    # hostile recon
-    "SHGPEV------": "a-h-G-E-V",      # hostile vehicle
+    "SHGPUCF-----": "a-h-G-U-C-F",  # hostile artillery
+    "SHGPUCD-----": "a-h-G-U-C-D",  # hostile air-defence
+    "SHGPUCR-----": "a-h-G-U-C-R",  # hostile recon
+    "SHGPEV------": "a-h-G-E-V",  # hostile vehicle
     "SHGPUCIS----": "a-h-G-U-C-I-S",  # hostile sniper
     # Unknown / neutral
-    "SUGPU-------": "a-u-G",           # unknown ground
-    "SNGPI-------": "a-n-G-I-N",      # neutral POI
+    "SUGPU-------": "a-u-G",  # unknown ground
+    "SNGPI-------": "a-n-G-I-N",  # neutral POI
 }
 
 COT_TO_SIDC: dict[str, str] = {v: k for k, v in SIDC_TO_COT.items()}
 
 # CoT type for a friendly operator by role
 ROLE_TO_COT: dict[str, str] = {
-    "OPERATOR":       "a-f-G-U-C",
+    "OPERATOR": "a-f-G-U-C",
     "BATTLE_CAPTAIN": "a-f-G-U-C-O",
-    "ADMIN":          "a-f-G-U-C-O",
+    "ADMIN": "a-f-G-U-C-O",
 }
 
 # Stale seconds per entity class
 STALE_SECONDS = {
     "friendly": 90,
-    "hostile":  300,
-    "neutral":  600,
+    "hostile": 300,
+    "neutral": 600,
 }
 
 
@@ -95,7 +95,9 @@ def sidc_to_cot_type(sidc: str) -> str:
     s = (sidc or "").upper()
     if s in SIDC_TO_COT:
         return SIDC_TO_COT[s]
-    aff = {"F": "f", "H": "h", "N": "n", "U": "u", "A": "f"}.get(s[1] if len(s) > 1 else "U", "u")
+    aff = {"F": "f", "H": "h", "N": "n", "U": "u", "A": "f"}.get(
+        s[1] if len(s) > 1 else "U", "u"
+    )
     dim = s[2] if len(s) > 2 else "G"
     return f"a-{aff}-A" if dim == "A" else f"a-{aff}-G"
 
@@ -109,9 +111,9 @@ def cot_type_to_sidc(cot_type: str) -> str:
     """
     if cot_type in COT_TO_SIDC:
         return COT_TO_SIDC[cot_type]
-    parts  = cot_type.split("-")
-    aff    = (parts[1] if len(parts) > 1 else "u").upper()
-    dim    = (parts[2] if len(parts) > 2 else "G").upper()
+    parts = cot_type.split("-")
+    aff = (parts[1] if len(parts) > 1 else "u").upper()
+    dim = (parts[2] if len(parts) > 2 else "G").upper()
     sidc_aff = {"F": "F", "H": "H", "U": "U", "N": "N"}.get(aff, "U")
     if dim == "A":
         return f"S{sidc_aff}APMF------"
@@ -120,19 +122,20 @@ def cot_type_to_sidc(cot_type: str) -> str:
 
 # ── CotEvent dataclass ────────────────────────────────────────────────────────
 
+
 @dataclass(slots=True)
 class CotEvent:
     uid: str
-    cot_type: str           # e.g. "a-f-G-U-C"
+    cot_type: str  # e.g. "a-f-G-U-C"
     lat: float
     lon: float
-    hae: float = 0.0        # height above ellipsoid (metres)
-    ce: float = 9999999.0   # circular error (metres)
-    le: float = 9999999.0   # linear error (metres)
+    hae: float = 0.0  # height above ellipsoid (metres)
+    ce: float = 9999999.0  # circular error (metres)
+    le: float = 9999999.0  # linear error (metres)
     callsign: str = ""
     role: str = ""
-    speed: float = 0.0      # m/s
-    course: float = 0.0     # degrees true north
+    speed: float = 0.0  # m/s
+    course: float = 0.0  # degrees true north
     team: str = ""
     platform: str = "ARROW"
     remarks: str = ""
@@ -153,10 +156,10 @@ class CotEvent:
         return STALE_SECONDS["neutral"]
 
     def to_xml(self) -> bytes:
-        now   = self.time or datetime.now(timezone.utc)
+        now = self.time or datetime.now(timezone.utc)
         stale = now + timedelta(seconds=self.stale_seconds)
-        ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-        ss    = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+        ts = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+        ss = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
 
         event = etree.Element(
             "event",
@@ -169,7 +172,8 @@ class CotEvent:
             how="m-g",
         )
         etree.SubElement(
-            event, "point",
+            event,
+            "point",
             lat=f"{self.lat:.7f}",
             lon=f"{self.lon:.7f}",
             hae=f"{self.hae:.1f}",
@@ -178,18 +182,19 @@ class CotEvent:
         )
         detail = etree.SubElement(event, "detail")
         if self.callsign:
-            etree.SubElement(detail, "uid",     Droid=self.callsign)
+            etree.SubElement(detail, "uid", Droid=self.callsign)
             etree.SubElement(detail, "contact", callsign=self.callsign)
         if self.speed or self.course:
-            etree.SubElement(detail, "track",
-                             speed=f"{self.speed:.2f}",
-                             course=f"{self.course:.1f}")
+            etree.SubElement(
+                detail, "track", speed=f"{self.speed:.2f}", course=f"{self.course:.1f}"
+            )
         if self.team:
-            etree.SubElement(detail, "__group", role=self.role or "Team Member",
-                             name=self.team)
-        etree.SubElement(detail, "takv",
-                         os="0", version="1.0.0",
-                         device="", platform=self.platform)
+            etree.SubElement(
+                detail, "__group", role=self.role or "Team Member", name=self.team
+            )
+        etree.SubElement(
+            detail, "takv", os="0", version="1.0.0", device="", platform=self.platform
+        )
         return etree.tostring(event, xml_declaration=True, encoding="UTF-8")
 
     def to_xml_str(self) -> str:
@@ -202,13 +207,13 @@ _SAFE_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
 def parse_cot(xml: bytes | str) -> CotEvent:
     if isinstance(xml, str):
         xml = xml.encode("utf-8")
-    root    = etree.fromstring(xml, _SAFE_PARSER)
-    point   = root.find("point")
+    root = etree.fromstring(xml, _SAFE_PARSER)
+    point = root.find("point")
     contact = root.find("detail/contact")
-    uid_el  = root.find("detail/uid")
-    track   = root.find("detail/track")
-    group   = root.find("detail/__group")
-    takv    = root.find("detail/takv")
+    uid_el = root.find("detail/uid")
+    track = root.find("detail/track")
+    group = root.find("detail/__group")
+    takv = root.find("detail/takv")
     remarks_el = root.find("detail/remarks")
 
     callsign = ""
@@ -226,20 +231,20 @@ def parse_cot(xml: bytes | str) -> CotEvent:
     remarks = (remarks_el.text or "").strip() if remarks_el is not None else ""
 
     return CotEvent(
-        uid      = root.get("uid", ""),
-        cot_type = root.get("type", "a-u-G"),
-        lat      = _f(point.get("lat")) if point is not None else 0.0,
-        lon      = _f(point.get("lon")) if point is not None else 0.0,
-        hae      = _f(point.get("hae")) if point is not None else 0.0,
-        ce       = _f(point.get("ce"),  "9999999") if point is not None else 9999999.0,
-        le       = _f(point.get("le"),  "9999999") if point is not None else 9999999.0,
-        callsign = callsign,
-        speed    = _f(track.get("speed"))  if track is not None else 0.0,
-        course   = _f(track.get("course")) if track is not None else 0.0,
-        team     = group.get("name",  "") if group is not None else "",
-        role     = group.get("role",  "") if group is not None else "",
-        platform = takv.get("platform", "ARROW") if takv is not None else "ARROW",
-        remarks  = remarks,
+        uid=root.get("uid", ""),
+        cot_type=root.get("type", "a-u-G"),
+        lat=_f(point.get("lat")) if point is not None else 0.0,
+        lon=_f(point.get("lon")) if point is not None else 0.0,
+        hae=_f(point.get("hae")) if point is not None else 0.0,
+        ce=_f(point.get("ce"), "9999999") if point is not None else 9999999.0,
+        le=_f(point.get("le"), "9999999") if point is not None else 9999999.0,
+        callsign=callsign,
+        speed=_f(track.get("speed")) if track is not None else 0.0,
+        course=_f(track.get("course")) if track is not None else 0.0,
+        team=group.get("name", "") if group is not None else "",
+        role=group.get("role", "") if group is not None else "",
+        platform=takv.get("platform", "ARROW") if takv is not None else "ARROW",
+        remarks=remarks,
     )
 
 
@@ -256,8 +261,12 @@ _MEDEVAC_SECURITY = {
     "3": "Enemy troops in area (armed escort required)",
 }
 _MEDEVAC_MARK = {
-    "0": "None", "1": "Panels", "2": "Pyrotechnic signal",
-    "3": "Smoke signal", "4": "None/other", "5": "Other",
+    "0": "None",
+    "1": "Panels",
+    "2": "Pyrotechnic signal",
+    "3": "Smoke signal",
+    "4": "None/other",
+    "5": "Other",
 }
 
 
@@ -268,7 +277,7 @@ def _med_truthy(v: object) -> bool:
 def _med_count(v: object) -> int:
     try:
         return int(float(str(v)))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0
 
 
@@ -286,80 +295,132 @@ def parse_medevac(xml: bytes | str) -> dict | None:
     except Exception:
         return None
 
-    med      = root.find("detail/_medevac_")
+    med = root.find("detail/_medevac_")
     cot_type = root.get("type", "")
     if med is None and not cot_type.startswith("b-r-f-h-c"):
         return None
     attrs = dict(med.attrib) if med is not None else {}
 
     point = root.find("point")
+
     def _f(s: str | None) -> float:
         return float((s or "0").replace(",", "."))
+
     lat = _f(point.get("lat")) if point is not None else 0.0
     lon = _f(point.get("lon")) if point is not None else 0.0
 
-    contact  = root.find("detail/contact")
-    callsign = (contact.get("callsign") if contact is not None else None) \
-               or attrs.get("title") or root.get("uid", "ATAK")
+    contact = root.find("detail/contact")
+    callsign = (
+        (contact.get("callsign") if contact is not None else None)
+        or attrs.get("title")
+        or root.get("uid", "ATAK")
+    )
 
     is_casevac = _med_truthy(attrs.get("casevac"))
 
     # Line 3 — precedence (patient counts)
-    prec = [f"{lbl}: {_med_count(attrs.get(k))}"
-            for k, lbl in (("urgent", "Urgent"), ("urgent_surgical", "Urgent-Surgical"),
-                           ("priority", "Priority"), ("routine", "Routine"),
-                           ("convenience", "Convenience"))
-            if _med_count(attrs.get(k)) > 0]
+    prec = [
+        f"{lbl}: {_med_count(attrs.get(k))}"
+        for k, lbl in (
+            ("urgent", "Urgent"),
+            ("urgent_surgical", "Urgent-Surgical"),
+            ("priority", "Priority"),
+            ("routine", "Routine"),
+            ("convenience", "Convenience"),
+        )
+        if _med_count(attrs.get(k)) > 0
+    ]
     # Line 4 — special equipment
-    equip = [lbl for k, lbl in (("equipment_none", "None"), ("equipment_hoist", "Hoist"),
-             ("equipment_extraction", "Extraction equipment"),
-             ("equipment_ventilator", "Ventilator")) if _med_truthy(attrs.get(k))]
+    equip = [
+        lbl
+        for k, lbl in (
+            ("equipment_none", "None"),
+            ("equipment_hoist", "Hoist"),
+            ("equipment_extraction", "Extraction equipment"),
+            ("equipment_ventilator", "Ventilator"),
+        )
+        if _med_truthy(attrs.get(k))
+    ]
     for extra in ("equipment_other", "equipment_detail"):
         if attrs.get(extra):
             equip.append(str(attrs[extra]))
     # Line 5 — patients by type
     l5 = []
-    if _med_count(attrs.get("litter")):     l5.append(f"{_med_count(attrs['litter'])} litter")
-    if _med_count(attrs.get("ambulatory")): l5.append(f"{_med_count(attrs['ambulatory'])} ambulatory")
+    if _med_count(attrs.get("litter")):
+        l5.append(f"{_med_count(attrs['litter'])} litter")
+    if _med_count(attrs.get("ambulatory")):
+        l5.append(f"{_med_count(attrs['ambulatory'])} ambulatory")
     # Line 6 — security at PZ
-    sec = _MEDEVAC_SECURITY.get(str(attrs.get("security", "")).strip(), attrs.get("security", ""))
+    sec = _MEDEVAC_SECURITY.get(
+        str(attrs.get("security", "")).strip(), attrs.get("security", "")
+    )
     # Line 7 — marking method
-    mark = attrs.get("hlz_marking") or attrs.get("marked_by") or attrs.get("markedby") or ""
+    mark = (
+        attrs.get("hlz_marking")
+        or attrs.get("marked_by")
+        or attrs.get("markedby")
+        or ""
+    )
     mark = _MEDEVAC_MARK.get(str(mark).strip(), mark)
     # Line 8 — patient nationality / status
-    nat = [lbl for k, lbl in (("us_military", "US Military"), ("us_civilian", "US Civilian"),
-           ("nonus_military", "Non-US Military"), ("nonus_civilian", "Non-US Civilian"),
-           ("epw", "EPW"), ("child", "Child"))
-           if str(attrs.get(k, "")).strip() not in ("", "0", "false", "False")]
+    nat = [
+        lbl
+        for k, lbl in (
+            ("us_military", "US Military"),
+            ("us_civilian", "US Civilian"),
+            ("nonus_military", "Non-US Military"),
+            ("nonus_civilian", "Non-US Civilian"),
+            ("epw", "EPW"),
+            ("child", "Child"),
+        )
+        if str(attrs.get(k, "")).strip() not in ("", "0", "false", "False")
+    ]
     # Line 9 — terrain / NBC / obstacles
-    terr = [lbl for k, lbl in (("terrain_slope", "Slope"), ("terrain_loose", "Loose debris"),
-            ("terrain_rough", "Rough terrain")) if _med_truthy(attrs.get(k))]
+    terr = [
+        lbl
+        for k, lbl in (
+            ("terrain_slope", "Slope"),
+            ("terrain_loose", "Loose debris"),
+            ("terrain_rough", "Rough terrain"),
+        )
+        if _med_truthy(attrs.get(k))
+    ]
     for extra in ("terrain_other_detail", "obstacles"):
         if attrs.get(extra):
             terr.append(str(attrs[extra]))
 
-    freq  = attrs.get("freq") or attrs.get("frequency") or ""
+    freq = attrs.get("freq") or attrs.get("frequency") or ""
     title = attrs.get("title") or ""
 
     return {
-        "latitude": lat, "longitude": lon,
-        "source":   "ATAK",
+        "latitude": lat,
+        "longitude": lon,
+        "source": "ATAK",
         "callsign": callsign,
         # Arrow records every ATAK 9-liner — CASEVAC or MEDEVAC — as a MEDEVAC
         # report. The original ATAK form is preserved in `atak_form`.
-        "type":      "MEDEVAC",
+        "type": "MEDEVAC",
         "atak_form": "CASEVAC" if is_casevac else "MEDEVAC",
-        "line_1": f"{lat:.5f}, {lon:.5f}",                 "label_1": "Location (PZ)",
-        "line_2": " / ".join(x for x in (freq, callsign) if x), "label_2": "Radio / Call sign",
-        "line_3": ", ".join(prec),                         "label_3": "Precedence",
-        "line_4": ", ".join(equip),                        "label_4": "Special equipment",
-        "line_5": ", ".join(l5),                           "label_5": "Patients",
-        "line_6": sec,                                     "label_6": "Security at PZ",
-        "line_7": mark,                                    "label_7": "Marking method",
-        "line_8": ", ".join(nat),                          "label_8": "Patient nationality",
-        "line_9": ", ".join(terr),                         "label_9": "Terrain / NBC",
-        "notes":  title,
-        "raw":    attrs,
+        "line_1": f"{lat:.5f}, {lon:.5f}",
+        "label_1": "Location (PZ)",
+        "line_2": " / ".join(x for x in (freq, callsign) if x),
+        "label_2": "Radio / Call sign",
+        "line_3": ", ".join(prec),
+        "label_3": "Precedence",
+        "line_4": ", ".join(equip),
+        "label_4": "Special equipment",
+        "line_5": ", ".join(l5),
+        "label_5": "Patients",
+        "line_6": sec,
+        "label_6": "Security at PZ",
+        "line_7": mark,
+        "label_7": "Marking method",
+        "line_8": ", ".join(nat),
+        "label_8": "Patient nationality",
+        "line_9": ", ".join(terr),
+        "label_9": "Terrain / NBC",
+        "notes": title,
+        "raw": attrs,
     }
 
 
@@ -386,7 +447,7 @@ def parse_geochat(xml: bytes | str) -> dict | None:
     except Exception:
         return None
 
-    chat     = root.find("detail/__chat")
+    chat = root.find("detail/__chat")
     cot_type = root.get("type", "")
     if chat is None and not cot_type.startswith("b-t-f"):
         return None
@@ -396,12 +457,18 @@ def parse_geochat(xml: bytes | str) -> dict | None:
     if not text:
         return None
 
-    chatgrp    = root.find("detail/__chat/chatgrp")
-    sender_uid = (chatgrp.get("uid0", "") if chatgrp is not None else "") or root.get("uid", "")
-    sender_cs  = (chat.get("senderCallsign", "") if chat is not None else "") or sender_uid or "ATAK"
-    chatroom   = (chat.get("chatroom", "") if chat is not None else "") or ALL_CHAT_ROOMS
-    room_id    = (chat.get("id", "") if chat is not None else "") or chatroom
-    source     = remarks.get("source", "") if remarks is not None else ""
+    chatgrp = root.find("detail/__chat/chatgrp")
+    sender_uid = (chatgrp.get("uid0", "") if chatgrp is not None else "") or root.get(
+        "uid", ""
+    )
+    sender_cs = (
+        (chat.get("senderCallsign", "") if chat is not None else "")
+        or sender_uid
+        or "ATAK"
+    )
+    chatroom = (chat.get("chatroom", "") if chat is not None else "") or ALL_CHAT_ROOMS
+    room_id = (chat.get("id", "") if chat is not None else "") or chatroom
+    source = remarks.get("source", "") if remarks is not None else ""
 
     # chatgrp lists participants as uid0, uid1, … — collect them all.
     members: list[str] = []
@@ -413,20 +480,21 @@ def parse_geochat(xml: bytes | str) -> dict | None:
 
     return {
         "sender_callsign": sender_cs,
-        "sender_uid":      sender_uid,
-        "text":            text,
-        "chatroom":        chatroom,
-        "room_id":         room_id,
-        "members":         members,
-        "source":          source,
-        "uid":             root.get("uid", ""),
+        "sender_uid": sender_uid,
+        "text": text,
+        "chatroom": chatroom,
+        "room_id": room_id,
+        "members": members,
+        "source": source,
+        "uid": root.get("uid", ""),
     }
 
 
 def is_arrow_geochat(chat: dict) -> bool:
     """True if a parsed GeoChat originated from Arrow (our own echo)."""
-    return str(chat.get("source", "")).startswith(_GEOCHAT_SOURCE) \
-        or str(chat.get("uid", "")).startswith(_GEOCHAT_UID_PREFIX)
+    return str(chat.get("source", "")).startswith(_GEOCHAT_SOURCE) or str(
+        chat.get("uid", "")
+    ).startswith(_GEOCHAT_UID_PREFIX)
 
 
 def parse_emergency(xml: bytes | str) -> dict | None:
@@ -442,20 +510,26 @@ def parse_emergency(xml: bytes | str) -> dict | None:
     cot_type = root.get("type", "")
     if not (cot_type.startswith("b-a-o-opn") or cot_type.startswith("b-a-o-can")):
         return None
-    point   = root.find("point")
+    point = root.find("point")
     contact = root.find("detail/contact")
-    emerg   = root.find("detail/emergency")
-    callsign = (contact.get("callsign","") if contact is not None else "") or root.get("uid","ATAK")
-    text = (emerg.get("type","") if emerg is not None else "") or ("911 Alert" if "opn" in cot_type else "Cancelled")
+    emerg = root.find("detail/emergency")
+    callsign = (contact.get("callsign", "") if contact is not None else "") or root.get(
+        "uid", "ATAK"
+    )
+    text = (emerg.get("type", "") if emerg is not None else "") or (
+        "911 Alert" if "opn" in cot_type else "Cancelled"
+    )
+
     def _f(s):
-        return float((s or "0").replace(",","."))
+        return float((s or "0").replace(",", "."))
+
     return {
-        "uid":      root.get("uid",""),
+        "uid": root.get("uid", ""),
         "callsign": callsign,
-        "lat":      _f(point.get("lat")) if point is not None else 0.0,
-        "lon":      _f(point.get("lon")) if point is not None else 0.0,
-        "active":   "opn" in cot_type,
-        "text":     text,
+        "lat": _f(point.get("lat")) if point is not None else 0.0,
+        "lon": _f(point.get("lon")) if point is not None else 0.0,
+        "active": "opn" in cot_type,
+        "text": text,
     }
 
 
@@ -469,23 +543,27 @@ def parse_spot_report(xml: bytes | str) -> dict | None:
         root = etree.fromstring(xml, _SAFE_PARSER)
     except Exception:
         return None
-    cot_type = root.get("type","")
+    cot_type = root.get("type", "")
     if not cot_type.startswith("b-r-f-") or cot_type.startswith("b-r-f-h-c"):
         return None
-    point   = root.find("point")
+    point = root.find("point")
     contact = root.find("detail/contact")
     remarks = root.find("detail/remarks")
-    callsign = (contact.get("callsign","") if contact is not None else "") or root.get("uid","ATAK")
+    callsign = (contact.get("callsign", "") if contact is not None else "") or root.get(
+        "uid", "ATAK"
+    )
     text = (remarks.text or "").strip() if remarks is not None else ""
+
     def _f(s):
-        return float((s or "0").replace(",","."))
+        return float((s or "0").replace(",", "."))
+
     return {
         "callsign": callsign,
-        "lat":      _f(point.get("lat")) if point is not None else 0.0,
-        "lon":      _f(point.get("lon")) if point is not None else 0.0,
+        "lat": _f(point.get("lat")) if point is not None else 0.0,
+        "lon": _f(point.get("lon")) if point is not None else 0.0,
         "cot_type": cot_type,
-        "remarks":  text,
-        "title":    callsign,
+        "remarks": text,
+        "title": callsign,
     }
 
 
@@ -499,22 +577,29 @@ def parse_fileshare_announcement(xml: bytes | str) -> dict | None:
         root = etree.fromstring(xml, _SAFE_PARSER)
     except Exception:
         return None
-    if root.get("type","") != "b-f-t-a":
+    if root.get("type", "") != "b-f-t-a":
         return None
-    fs  = root.find("detail/fileshare")
+    fs = root.find("detail/fileshare")
     ack = root.find("detail/ackrequest")
     if fs is None:
         return None
-    filename = fs.get("filename","") or fs.get("name","")
-    sender   = fs.get("senderCallsign","") or root.get("uid","ATAK")
-    url      = (ack.get("endpoint","") if ack is not None else "")
+    filename = fs.get("filename", "") or fs.get("name", "")
+    sender = fs.get("senderCallsign", "") or root.get("uid", "ATAK")
+    url = ack.get("endpoint", "") if ack is not None else ""
     if not url:
         return None
     # Infer mime type from extension
-    ext = filename.rsplit(".",1)[-1].lower() if "." in filename else "jpg"
-    MIME = {"jpg":"image/jpeg","jpeg":"image/jpeg","png":"image/png",
-            "gif":"image/gif","webp":"image/webp","mp4":"video/mp4",
-            "mov":"video/quicktime","pdf":"application/pdf"}
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    MIME = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "mp4": "video/mp4",
+        "mov": "video/quicktime",
+        "pdf": "application/pdf",
+    }
     mime = MIME.get(ext, "application/octet-stream")
     return {"filename": filename, "sender_callsign": sender, "url": url, "mime": mime}
 
@@ -529,32 +614,43 @@ def parse_atak_shape(xml: bytes | str) -> dict | None:
         root = etree.fromstring(xml, _SAFE_PARSER)
     except Exception:
         return None
-    cot_type = root.get("type","")
+    cot_type = root.get("type", "")
     # Match route and drawing types
-    if not (cot_type.startswith("b-m-r") or cot_type.startswith("u-d-")
-            or cot_type.startswith("u-rb-")):
+    if not (
+        cot_type.startswith("b-m-r")
+        or cot_type.startswith("u-d-")
+        or cot_type.startswith("u-rb-")
+    ):
         return None
-    uid     = root.get("uid","")
+    uid = root.get("uid", "")
     contact = root.find("detail/contact")
     remarks = root.find("detail/remarks")
-    callsign = (contact.get("callsign","") if contact is not None else "") or uid
-    title    = (remarks.text or "").strip() if remarks is not None else callsign
+    callsign = (contact.get("callsign", "") if contact is not None else "") or uid
+    title = (remarks.text or "").strip() if remarks is not None else callsign
 
     def _f(s):
-        return float((s or "0").replace(",","."))
+        return float((s or "0").replace(",", "."))
 
     coords = []
 
     # Route: waypoints as <link lat="..." lon="..."/>
     if cot_type.startswith("b-m-r") or cot_type.startswith("u-rb-"):
         for lnk in root.findall("detail/link"):
-            lat = lnk.get("lat") or lnk.get("point","").split(",")[0] if "," in (lnk.get("point","")) else lnk.get("lat")
-            lon = lnk.get("lon") or (lnk.get("point","").split(",")[1] if "," in (lnk.get("point","")) else lnk.get("lon"))
+            lat = (
+                lnk.get("lat") or lnk.get("point", "").split(",")[0]
+                if "," in (lnk.get("point", ""))
+                else lnk.get("lat")
+            )
+            lon = lnk.get("lon") or (
+                lnk.get("point", "").split(",")[1]
+                if "," in (lnk.get("point", ""))
+                else lnk.get("lon")
+            )
             if lat and lon:
                 coords.append([_f(lon), _f(lat)])
         if len(coords) < 2:
             return None
-        geometry_json = json.dumps({"type":"LineString","coordinates":coords})
+        geometry_json = json.dumps({"type": "LineString", "coordinates": coords})
         shape_type = "ROUTE"
 
     # Drawing/area: <shape><polyline/> or <shape><polygon/>
@@ -565,33 +661,37 @@ def parse_atak_shape(xml: bytes | str) -> dict | None:
             poly = _pl if _pl is not None else shape_el.find("polygon")
             if poly is not None:
                 for v in poly.findall("vertex"):
-                    lat = v.get("lat"); lon = v.get("lon")
+                    lat = v.get("lat")
+                    lon = v.get("lon")
                     if lat and lon:
                         coords.append([_f(lon), _f(lat)])
         # Fallback: link elements
         if not coords:
             for lnk in root.findall("detail/link"):
-                lat = lnk.get("lat"); lon = lnk.get("lon")
+                lat = lnk.get("lat")
+                lon = lnk.get("lon")
                 if lat and lon:
                     coords.append([_f(lon), _f(lat)])
         if len(coords) < 2:
             return None
-        closed = (shape_el is not None and shape_el.find("polygon") is not None) or cot_type.startswith("u-d-r")
+        closed = (
+            shape_el is not None and shape_el.find("polygon") is not None
+        ) or cot_type.startswith("u-d-r")
         if closed and coords[0] != coords[-1]:
             coords.append(coords[0])
         if closed:
-            geometry_json = json.dumps({"type":"Polygon","coordinates":[coords]})
+            geometry_json = json.dumps({"type": "Polygon", "coordinates": [coords]})
             shape_type = "AREA"
         else:
-            geometry_json = json.dumps({"type":"LineString","coordinates":coords})
+            geometry_json = json.dumps({"type": "LineString", "coordinates": coords})
             shape_type = "LINE"
 
     return {
-        "uid":           uid,
-        "cot_type":      cot_type,
-        "title":         title or callsign,
-        "callsign":      callsign,
-        "shape_type":    shape_type,
+        "uid": uid,
+        "cot_type": cot_type,
+        "title": title or callsign,
+        "callsign": callsign,
+        "shape_type": shape_type,
         "geometry_json": geometry_json,
     }
 
@@ -612,26 +712,39 @@ def build_geochat(
     member) — they are listed in ``<chatgrp>`` as uid1, uid2, … alongside the
     sender (uid0). For a 1:1 message pass ``recipient_uid`` instead.
     """
-    now   = time or datetime.now(timezone.utc)
+    now = time or datetime.now(timezone.utc)
     stale = now + timedelta(seconds=STALE_SECONDS["neutral"])
-    ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-    ss    = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    ts = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    ss = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
 
-    msg_id     = str(uuid.uuid4())
+    msg_id = str(uuid.uuid4())
     sender_uid = f"ARROW.{sender_callsign}"
-    room_id    = room
-    uid        = f"{_GEOCHAT_UID_PREFIX}{sender_callsign}.{room_id}.{msg_id}"
+    room_id = room
+    uid = f"{_GEOCHAT_UID_PREFIX}{sender_callsign}.{room_id}.{msg_id}"
 
     event = etree.Element(
-        "event", version="2.0", uid=uid, type="b-t-f",
-        how="h-g-i-g-o", time=ts, start=ts, stale=ss,
+        "event",
+        version="2.0",
+        uid=uid,
+        type="b-t-f",
+        how="h-g-i-g-o",
+        time=ts,
+        start=ts,
+        stale=ss,
     )
-    etree.SubElement(event, "point", lat="0.0", lon="0.0", hae="0.0",
-                     ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        event, "point", lat="0.0", lon="0.0", hae="0.0", ce="9999999.0", le="9999999.0"
+    )
     detail = etree.SubElement(event, "detail")
     chat = etree.SubElement(
-        detail, "__chat", parent="RootContactGroup", groupOwner="false",
-        messageId=msg_id, chatroom=room, id=room_id, senderCallsign=sender_callsign,
+        detail,
+        "__chat",
+        parent="RootContactGroup",
+        groupOwner="false",
+        messageId=msg_id,
+        chatroom=room,
+        id=room_id,
+        senderCallsign=sender_callsign,
     )
     chatgrp = etree.SubElement(chat, "chatgrp", uid0=sender_uid, id=room_id)
     others = [u for u in (member_uids or []) if u and u != sender_uid]
@@ -641,8 +754,13 @@ def build_geochat(
     else:
         chatgrp.set("uid1", recipient_uid or room_id)
     etree.SubElement(detail, "link", uid=sender_uid, type="a-f-G-U-C", relation="p-p")
-    rem = etree.SubElement(detail, "remarks",
-                           source=f"{_GEOCHAT_SOURCE}.{sender_callsign}", to=room_id, time=ts)
+    rem = etree.SubElement(
+        detail,
+        "remarks",
+        source=f"{_GEOCHAT_SOURCE}.{sender_callsign}",
+        to=room_id,
+        time=ts,
+    )
     if image_url:
         rem.text = f"{text}\n[photo: {image_url}]"
     else:
@@ -674,7 +792,7 @@ def parse_cot_image(xml: bytes | str) -> dict | None:
         return None
 
     image = root.find("detail/image")
-    b64   = (image.text or "").strip() if image is not None else ""
+    b64 = (image.text or "").strip() if image is not None else ""
     if not b64:
         return None
     try:
@@ -684,21 +802,24 @@ def parse_cot_image(xml: bytes | str) -> dict | None:
     if not data:
         return None
 
-    point   = root.find("point")
+    point = root.find("point")
     contact = root.find("detail/contact")
     remarks = root.find("detail/remarks")
+
     def _f(s: str | None) -> float:
         return float((s or "0").replace(",", "."))
 
-    callsign = (contact.get("callsign") if contact is not None else None) or root.get("uid", "ATAK")
+    callsign = (contact.get("callsign") if contact is not None else None) or root.get(
+        "uid", "ATAK"
+    )
     return {
-        "lat":         _f(point.get("lat")) if point is not None else 0.0,
-        "lon":         _f(point.get("lon")) if point is not None else 0.0,
-        "callsign":    callsign,
-        "mime":        image.get("mime") or image.get("type") or "image/jpeg",
+        "lat": _f(point.get("lat")) if point is not None else 0.0,
+        "lon": _f(point.get("lon")) if point is not None else 0.0,
+        "callsign": callsign,
+        "mime": image.get("mime") or image.get("type") or "image/jpeg",
         "image_bytes": data,
-        "caption":     (remarks.text or "").strip() if remarks is not None else "",
-        "uid":         root.get("uid", ""),
+        "caption": (remarks.text or "").strip() if remarks is not None else "",
+        "uid": root.get("uid", ""),
     }
 
 
@@ -715,22 +836,35 @@ def build_image_cot(
     image_bytes: bytes,
     mime: str = "image/jpeg",
     caption: str = "",
-    cot_type: str = "b-m-p-s-p-i",   # sensor point of interest (image marker)
+    cot_type: str = "b-m-p-s-p-i",  # sensor point of interest (image marker)
     time: datetime | None = None,
 ) -> bytes:
     """Build a point CoT with an embedded base64 ``<image>`` for ATAK."""
-    now   = time or datetime.now(timezone.utc)
+    now = time or datetime.now(timezone.utc)
     stale = now + timedelta(seconds=STALE_SECONDS["neutral"])
-    ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-    ss    = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-    uid   = f"{_PHOTO_UID_PREFIX}{callsign}.{uuid.uuid4().hex[:8]}"
+    ts = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    ss = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    uid = f"{_PHOTO_UID_PREFIX}{callsign}.{uuid.uuid4().hex[:8]}"
 
     event = etree.Element(
-        "event", version="2.0", uid=uid, type=cot_type,
-        how="h-e", time=ts, start=ts, stale=ss,
+        "event",
+        version="2.0",
+        uid=uid,
+        type=cot_type,
+        how="h-e",
+        time=ts,
+        start=ts,
+        stale=ss,
     )
-    etree.SubElement(event, "point", lat=f"{lat:.7f}", lon=f"{lon:.7f}",
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        event,
+        "point",
+        lat=f"{lat:.7f}",
+        lon=f"{lon:.7f}",
+        hae="0.0",
+        ce="9999999.0",
+        le="9999999.0",
+    )
     detail = etree.SubElement(event, "detail")
     etree.SubElement(detail, "contact", callsign=callsign)
     img = etree.SubElement(detail, "image", type=mime, mime=mime)
@@ -761,22 +895,42 @@ def build_fileshare(
     time: datetime | None = None,
 ) -> bytes:
     """Build a TAK `b-f-t-r` file-transfer CoT pointing at a binary download URL."""
-    now   = time or datetime.now(timezone.utc)
+    now = time or datetime.now(timezone.utc)
     stale = now + timedelta(seconds=STALE_SECONDS["neutral"])
-    ts    = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-    ss    = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
-    uid   = f"{_FILESHARE_UID_PREFIX}{sha256[:16]}"
+    ts = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    ss = stale.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    uid = f"{_FILESHARE_UID_PREFIX}{sha256[:16]}"
 
-    event = etree.Element("event", version="2.0", uid=uid, type="b-f-t-r",
-                          how="h-e", time=ts, start=ts, stale=ss)
-    etree.SubElement(event, "point", lat=f"{lat:.7f}", lon=f"{lon:.7f}",
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    event = etree.Element(
+        "event",
+        version="2.0",
+        uid=uid,
+        type="b-f-t-r",
+        how="h-e",
+        time=ts,
+        start=ts,
+        stale=ss,
+    )
+    etree.SubElement(
+        event,
+        "point",
+        lat=f"{lat:.7f}",
+        lon=f"{lon:.7f}",
+        hae="0.0",
+        ce="9999999.0",
+        le="9999999.0",
+    )
     detail = etree.SubElement(event, "detail")
     etree.SubElement(
-        detail, "fileshare",
-        filename=filename, name=filename, senderUrl=url,
-        sizeInBytes=str(size_bytes), sha256=sha256,
-        senderUid=f"ARROW.{sender_callsign}", senderCallsign=sender_callsign,
+        detail,
+        "fileshare",
+        filename=filename,
+        name=filename,
+        senderUrl=url,
+        sizeInBytes=str(size_bytes),
+        sha256=sha256,
+        senderUid=f"ARROW.{sender_callsign}",
+        senderCallsign=sender_callsign,
     )
     etree.SubElement(detail, "ackrequest", uid=uid, ackrequested="true", tag=filename)
     if caption:
@@ -804,19 +958,21 @@ def parse_fileshare(xml: bytes | str) -> dict | None:
         return None
 
     point = root.find("point")
+
     def _f(s: str | None) -> float:
         return float((s or "0").replace(",", "."))
+
     try:
         size = int(fs.get("sizeInBytes") or "0")
     except ValueError:
         size = 0
     return {
-        "uid":             root.get("uid", ""),
-        "filename":        fs.get("filename") or fs.get("name") or "file",
-        "sha256":          fs.get("sha256", ""),
-        "size_bytes":      size,
-        "url":             fs.get("senderUrl", ""),
+        "uid": root.get("uid", ""),
+        "filename": fs.get("filename") or fs.get("name") or "file",
+        "sha256": fs.get("sha256", ""),
+        "size_bytes": size,
+        "url": fs.get("senderUrl", ""),
         "sender_callsign": fs.get("senderCallsign", "") or "ATAK",
-        "lat":             _f(point.get("lat")) if point is not None else 0.0,
-        "lon":             _f(point.get("lon")) if point is not None else 0.0,
+        "lat": _f(point.get("lat")) if point is not None else 0.0,
+        "lon": _f(point.get("lon")) if point is not None else 0.0,
     }

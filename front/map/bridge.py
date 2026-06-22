@@ -1,25 +1,28 @@
 """QWebChannel bridge — all Python↔JS slots and signals."""
+
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 
 class MapBridge(QObject):
-    map_ready        = pyqtSignal()
-    coords_changed   = pyqtSignal(float, float, str)
-    own_position     = pyqtSignal(float, float, float)  # lat, lon, accuracy (m)
-    track_clicked    = pyqtSignal(str)
-    map_clicked      = pyqtSignal(float, float)
-    graphic_drawn    = pyqtSignal(str, str, str)   # type, geojson, affiliation
-    measure_done     = pyqtSignal(str, str)
-    radial_action         = pyqtSignal(str, float, float)
-    symbol_selected       = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
-    free_draw_saved       = pyqtSignal(str, str, str)   # type, geom_json, notes_json
-    tactical_object_action = pyqtSignal(str, int)        # action ("delete"), obj_id
-    tactical_object_move   = pyqtSignal(int, float, float, str)  # obj_id, lat, lon, geometry_json
-    route_drawn            = pyqtSignal(str, str)        # route_id, waypoints_json
-    route_draw_cancelled   = pyqtSignal(str)             # route_id
-    nav_waypoint_reached = pyqtSignal(str, int)   # route_id, wp_idx
-    nav_completed        = pyqtSignal(str)          # route_id
-    nav_stopped          = pyqtSignal()
+    map_ready = pyqtSignal()
+    coords_changed = pyqtSignal(float, float, str)
+    own_position = pyqtSignal(float, float, float)  # lat, lon, accuracy (m)
+    track_clicked = pyqtSignal(str)
+    map_clicked = pyqtSignal(float, float)
+    graphic_drawn = pyqtSignal(str, str, str)  # type, geojson, affiliation
+    measure_done = pyqtSignal(str, str)
+    radial_action = pyqtSignal(str, float, float)
+    symbol_selected = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
+    free_draw_saved = pyqtSignal(str, str, str)  # type, geom_json, notes_json
+    tactical_object_action = pyqtSignal(str, int)  # action ("delete"), obj_id
+    tactical_object_move = pyqtSignal(
+        int, float, float, str
+    )  # obj_id, lat, lon, geometry_json
+    route_drawn = pyqtSignal(str, str)  # route_id, waypoints_json
+    route_draw_cancelled = pyqtSignal(str)  # route_id
+    nav_waypoint_reached = pyqtSignal(str, int)  # route_id, wp_idx
+    nav_completed = pyqtSignal(str)  # route_id
+    nav_stopped = pyqtSignal()
 
     @pyqtSlot()
     def onReady(self):
@@ -66,7 +69,9 @@ class MapBridge(QObject):
         self.tactical_object_action.emit(action, obj_id)
 
     @pyqtSlot(int, float, float, str)
-    def onTacticalObjectMove(self, obj_id: int, lat: float, lon: float, geometry_json: str = ""):
+    def onTacticalObjectMove(
+        self, obj_id: int, lat: float, lon: float, geometry_json: str = ""
+    ):
         self.tactical_object_move.emit(obj_id, lat, lon, geometry_json)
 
     @pyqtSlot(str, str)

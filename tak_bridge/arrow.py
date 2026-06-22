@@ -21,7 +21,7 @@ class ArrowClient:
     """Async HTTP client wrapping the Arrow REST API."""
 
     def __init__(self, base_url: str, callsign: str, password: str) -> None:
-        self._base     = base_url.rstrip("/")
+        self._base = base_url.rstrip("/")
         self._callsign = callsign
         self._password = password
         self._token: str = ""
@@ -104,20 +104,20 @@ class ArrowClient:
         if not await self._ensure_token():
             return False
         body = {
-            "type":    "SPOT",          # reuse SPOT report type for inbound TAK contact
+            "type": "SPOT",  # reuse SPOT report type for inbound TAK contact
             "payload": {
-                "source":    "TAK_BRIDGE",
-                "cot_uid":   evt.uid,
-                "cot_type":  evt.cot_type,
-                "callsign":  evt.callsign or evt.uid,
-                "latitude":  evt.lat,
+                "source": "TAK_BRIDGE",
+                "cot_uid": evt.uid,
+                "cot_type": evt.cot_type,
+                "callsign": evt.callsign or evt.uid,
+                "latitude": evt.lat,
                 "longitude": evt.lon,
-                "altitude":  evt.hae,
-                "speed":     evt.speed,
-                "course":    evt.course,
-                "team":      evt.team,
-                "platform":  evt.platform,
-                "dtg":       datetime.now(timezone.utc).isoformat(),
+                "altitude": evt.hae,
+                "speed": evt.speed,
+                "course": evt.course,
+                "team": evt.team,
+                "platform": evt.platform,
+                "dtg": datetime.now(timezone.utc).isoformat(),
             },
         }
         try:
