@@ -20,6 +20,7 @@ class WSListener(QThread):
     track_received = pyqtSignal(dict)
     cot_received = pyqtSignal(dict)
     presence_changed = pyqtSignal(dict)
+    cot_presence_changed = pyqtSignal(dict)  # ATAK TCP client connect/disconnect
     # Reports / Alerts
     alert_received = pyqtSignal(dict)
     report_received = pyqtSignal(dict)
@@ -91,6 +92,7 @@ class WSListener(QThread):
             "tracking": self.track_received,
             "cot-track": self.cot_received,
             "presence": self.presence_changed,
+            "cot-presence": self.cot_presence_changed,
             "alert": self.alert_received,
             "report": self.report_received,
             "chat": self.message_received,
