@@ -36,8 +36,12 @@ MAP
     CONNECTIONTYPE POSTGIS
     CONNECTION "host=postgres dbname=arrow user=arrow password=${POSTGRES_PASSWORD}"
     DATA "geom FROM ms_operators USING UNIQUE id USING srid=4326"
+    PROJECTION
+      "init=epsg:4326"
+    END
     METADATA
       "wms_title"           "Operators"
+      "wms_srs"             "EPSG:4326 EPSG:3857"
       "wms_include_items"   "all"
       "gml_include_items"   "all"
     END
@@ -46,18 +50,20 @@ MAP
       EXPRESSION ("[status]" = "ONLINE")
       STYLE
         SYMBOL "circle"
-        SIZE 10
+        SIZE 12
         COLOR 0 200 0
         OUTLINECOLOR 0 0 0
+        WIDTH 1
       END
     END
     CLASS
       NAME "Offline"
       STYLE
         SYMBOL "circle"
-        SIZE 8
+        SIZE 10
         COLOR 128 128 128
         OUTLINECOLOR 0 0 0
+        WIDTH 1
       END
     END
   END
@@ -69,25 +75,29 @@ MAP
     TYPE POINT
     CONNECTIONTYPE POSTGIS
     CONNECTION "host=postgres dbname=arrow user=arrow password=${POSTGRES_PASSWORD}"
-    DATA "geom FROM ms_tactical_objects USING UNIQUE id USING srid=4326"
+    DATA "geom FROM (SELECT * FROM ms_tactical_objects WHERE latitude <> 0 OR longitude <> 0) AS sub USING UNIQUE id USING srid=4326"
+    PROJECTION
+      "init=epsg:4326"
+    END
     METADATA
       "wms_title"           "Tactical Objects"
+      "wms_srs"             "EPSG:4326 EPSG:3857"
       "wms_include_items"   "all"
       "gml_include_items"   "all"
     END
     CLASS
       NAME "Enemy"
       EXPRESSION ("[affiliation]" = "ENEMY")
-      STYLE SYMBOL "circle" SIZE 10 COLOR 200 0 0 OUTLINECOLOR 80 0 0 END
+      STYLE SYMBOL "circle" SIZE 12 COLOR 200 0 0 OUTLINECOLOR 80 0 0 WIDTH 1 END
     END
     CLASS
       NAME "Unknown"
       EXPRESSION ("[affiliation]" = "UNKNOWN")
-      STYLE SYMBOL "circle" SIZE 10 COLOR 200 200 0 OUTLINECOLOR 80 80 0 END
+      STYLE SYMBOL "circle" SIZE 12 COLOR 200 200 0 OUTLINECOLOR 80 80 0 WIDTH 1 END
     END
     CLASS
       NAME "Friendly"
-      STYLE SYMBOL "circle" SIZE 10 COLOR 0 100 200 OUTLINECOLOR 0 40 80 END
+      STYLE SYMBOL "circle" SIZE 12 COLOR 0 100 200 OUTLINECOLOR 0 40 80 WIDTH 1 END
     END
   END
 
@@ -99,14 +109,18 @@ MAP
     CONNECTIONTYPE POSTGIS
     CONNECTION "host=postgres dbname=arrow user=arrow password=${POSTGRES_PASSWORD}"
     DATA "geom FROM ms_cot_tracks USING UNIQUE id USING srid=4326"
+    PROJECTION
+      "init=epsg:4326"
+    END
     METADATA
       "wms_title"           "CoT Tracks"
+      "wms_srs"             "EPSG:4326 EPSG:3857"
       "wms_include_items"   "all"
       "gml_include_items"   "all"
     END
     CLASS
       NAME "CoT Track"
-      STYLE SYMBOL "circle" SIZE 8 COLOR 255 165 0 OUTLINECOLOR 100 60 0 END
+      STYLE SYMBOL "circle" SIZE 10 COLOR 255 165 0 OUTLINECOLOR 100 60 0 WIDTH 1 END
     END
   END
 
@@ -118,19 +132,23 @@ MAP
     CONNECTIONTYPE POSTGIS
     CONNECTION "host=postgres dbname=arrow user=arrow password=${POSTGRES_PASSWORD}"
     DATA "geom FROM ms_alerts USING UNIQUE id USING srid=4326"
+    PROJECTION
+      "init=epsg:4326"
+    END
     METADATA
       "wms_title"           "Alerts"
+      "wms_srs"             "EPSG:4326 EPSG:3857"
       "wms_include_items"   "all"
       "gml_include_items"   "all"
     END
     CLASS
       NAME "Active"
       EXPRESSION ("[status]" = "ACTIVE")
-      STYLE SYMBOL "circle" SIZE 12 COLOR 255 0 0 OUTLINECOLOR 100 0 0 END
+      STYLE SYMBOL "circle" SIZE 14 COLOR 255 0 0 OUTLINECOLOR 100 0 0 WIDTH 1 END
     END
     CLASS
       NAME "Resolved"
-      STYLE SYMBOL "circle" SIZE 8 COLOR 200 100 100 END
+      STYLE SYMBOL "circle" SIZE 10 COLOR 200 100 100 WIDTH 1 END
     END
   END
 
@@ -142,14 +160,18 @@ MAP
     CONNECTIONTYPE POSTGIS
     CONNECTION "host=postgres dbname=arrow user=arrow password=${POSTGRES_PASSWORD}"
     DATA "geom FROM ms_fire_missions USING UNIQUE id USING srid=4326"
+    PROJECTION
+      "init=epsg:4326"
+    END
     METADATA
       "wms_title"           "Fire Missions"
+      "wms_srs"             "EPSG:4326 EPSG:3857"
       "wms_include_items"   "all"
       "gml_include_items"   "all"
     END
     CLASS
       NAME "Fire Mission"
-      STYLE SYMBOL "circle" SIZE 10 COLOR 255 100 0 OUTLINECOLOR 100 40 0 END
+      STYLE SYMBOL "circle" SIZE 12 COLOR 255 100 0 OUTLINECOLOR 100 40 0 WIDTH 1 END
     END
   END
 
@@ -161,14 +183,18 @@ MAP
     CONNECTIONTYPE POSTGIS
     CONNECTION "host=postgres dbname=arrow user=arrow password=${POSTGRES_PASSWORD}"
     DATA "geom FROM ms_supply_points USING UNIQUE id USING srid=4326"
+    PROJECTION
+      "init=epsg:4326"
+    END
     METADATA
       "wms_title"           "Supply Points"
+      "wms_srs"             "EPSG:4326 EPSG:3857"
       "wms_include_items"   "all"
       "gml_include_items"   "all"
     END
     CLASS
       NAME "Supply Point"
-      STYLE SYMBOL "square" SIZE 10 COLOR 0 180 120 OUTLINECOLOR 0 60 40 END
+      STYLE SYMBOL "square" SIZE 12 COLOR 0 180 120 OUTLINECOLOR 0 60 40 WIDTH 1 END
     END
   END
 
