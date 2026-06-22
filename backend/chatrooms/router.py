@@ -24,16 +24,26 @@ _MGR_ROLES = {"ADMIN", "BATTLE_CAPTAIN"}
 
 # ── shared helpers (also imported by the ATAK GeoChat bridge) ──────────────────
 
+
 def member_ids(db: Session, room_id: int) -> list[int]:
-    return [m.operator_id for m in
-            db.query(ChatRoomMember).filter(ChatRoomMember.chatroom_id == room_id).all()]
+    return [
+        m.operator_id
+        for m in db.query(ChatRoomMember)
+        .filter(ChatRoomMember.chatroom_id == room_id)
+        .all()
+    ]
 
 
 def is_member(db: Session, room_id: int, op_id: int) -> bool:
-    return db.query(ChatRoomMember).filter(
-        ChatRoomMember.chatroom_id == room_id,
-        ChatRoomMember.operator_id == op_id,
-    ).first() is not None
+    return (
+        db.query(ChatRoomMember)
+        .filter(
+            ChatRoomMember.chatroom_id == room_id,
+            ChatRoomMember.operator_id == op_id,
+        )
+        .first()
+        is not None
+    )
 
 
 def add_member(db: Session, room_id: int, op_id: int) -> bool:
@@ -45,12 +55,19 @@ def add_member(db: Session, room_id: int, op_id: int) -> bool:
     return True
 
 
-def get_or_create_room(db: Session, name: str, creator_id: int,
-                       origin: str = "ARROW", mission_id: int | None = None) -> ChatRoom:
+def get_or_create_room(
+    db: Session,
+    name: str,
+    creator_id: int,
+    origin: str = "ARROW",
+    mission_id: int | None = None,
+) -> ChatRoom:
     """Look up a room by name (case-insensitive), creating it if absent."""
     room = db.query(ChatRoom).filter(ChatRoom.name.ilike(name)).first()
     if room is None:
-        room = ChatRoom(name=name, created_by=creator_id, origin=origin, mission_id=mission_id)
+        room = ChatRoom(
+            name=name, created_by=creator_id, origin=origin, mission_id=mission_id
+        )
         db.add(room)
         db.commit()
         db.refresh(room)
@@ -58,32 +75,45 @@ def get_or_create_room(db: Session, name: str, creator_id: int,
 
 
 def room_out(db: Session, room: ChatRoom) -> dict:
-    rows = (db.query(ChatRoomMember.operator_id, Operator.callsign)
-              .join(Operator, Operator.id == ChatRoomMember.operator_id)
-              .filter(ChatRoomMember.chatroom_id == room.id).all())
+    rows = (
+        db.query(ChatRoomMember.operator_id, Operator.callsign)
+        .join(Operator, Operator.id == ChatRoomMember.operator_id)
+        .filter(ChatRoomMember.chatroom_id == room.id)
+        .all()
+    )
     members = [{"operator_id": oid, "callsign": cs} for oid, cs in rows]
     return {
-        "id": room.id, "name": room.name, "created_by": room.created_by,
+        "id": room.id,
+        "name": room.name,
+        "created_by": room.created_by,
         "created_at": room.created_at.isoformat() if room.created_at else None,
-        "mission_id": room.mission_id, "origin": room.origin,
+        "mission_id": room.mission_id,
+        "origin": room.origin,
         "member_ids": [m["operator_id"] for m in members],
         "members": members,
     }
 
 
 async def _broadcast_room(db: Session, room: ChatRoom, event: str) -> None:
-    await broadcaster.broadcast({
-        "channel": "chat", "event": event,
-        "mission_id": room.mission_id, "data": room_out(db, room),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "chat",
+            "event": event,
+            "mission_id": room.mission_id,
+            "data": room_out(db, room),
+        }
+    )
 
 
 def _require_manage(db: Session, room: ChatRoom, op: Operator) -> None:
     if op.role not in _MGR_ROLES and room.created_by != op.id:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to manage this room")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Not allowed to manage this room"
+        )
 
 
 # ── endpoints ──────────────────────────────────────────────────────────────────
+
 
 @router.get("", response_model=list[ChatRoomOut])
 def list_rooms(
@@ -94,10 +124,20 @@ def list_rooms(
     if current.role in _MGR_ROLES:
         rooms = db.query(ChatRoom).order_by(ChatRoom.name).all()
     else:
-        ids = [m.chatroom_id for m in
-               db.query(ChatRoomMember).filter(ChatRoomMember.operator_id == current.id).all()]
-        rooms = (db.query(ChatRoom).filter(ChatRoom.id.in_(ids)).order_by(ChatRoom.name).all()
-                 if ids else [])
+        ids = [
+            m.chatroom_id
+            for m in db.query(ChatRoomMember)
+            .filter(ChatRoomMember.operator_id == current.id)
+            .all()
+        ]
+        rooms = (
+            db.query(ChatRoom)
+            .filter(ChatRoom.id.in_(ids))
+            .order_by(ChatRoom.name)
+            .all()
+            if ids
+            else []
+        )
     return [room_out(db, r) for r in rooms]
 
 
@@ -108,8 +148,12 @@ async def create_room(
     current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> dict:
-    room = ChatRoom(name=payload.name.strip() or "Room", created_by=current.id,
-                    origin="ARROW", mission_id=mission.id if mission else None)
+    room = ChatRoom(
+        name=payload.name.strip() or "Room",
+        created_by=current.id,
+        origin="ARROW",
+        mission_id=mission.id if mission else None,
+    )
     db.add(room)
     db.commit()
     db.refresh(room)
@@ -190,7 +234,11 @@ async def delete_room(
     rid = room.id
     db.delete(room)
     db.commit()
-    await broadcaster.broadcast({
-        "channel": "chat", "event": "room_deleted",
-        "mission_id": mid, "data": {"id": rid},
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "chat",
+            "event": "room_deleted",
+            "mission_id": mid,
+            "data": {"id": rid},
+        }
+    )

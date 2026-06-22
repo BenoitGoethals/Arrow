@@ -31,16 +31,29 @@ _TS = "2026-06-13T10:00:00.000000Z"
 _ST = "2026-06-13T10:01:30.000000Z"
 
 
-def _event(cot_type: str, uid: str = "TEST-UID",
-           lat: float = 51.5, lon: float = 4.2) -> etree._Element:
+def _event(
+    cot_type: str, uid: str = "TEST-UID", lat: float = 51.5, lon: float = 4.2
+) -> etree._Element:
     """Return a bare <event> element with <point>."""
     ev = etree.Element(
-        "event", version="2.0", uid=uid, type=cot_type,
-        time=_TS, start=_TS, stale=_ST, how="h-g-i-g-o",
+        "event",
+        version="2.0",
+        uid=uid,
+        type=cot_type,
+        time=_TS,
+        start=_TS,
+        stale=_ST,
+        how="h-g-i-g-o",
     )
-    etree.SubElement(ev, "point",
-                     lat=str(lat), lon=str(lon),
-                     hae="0.0", ce="9999999.0", le="9999999.0")
+    etree.SubElement(
+        ev,
+        "point",
+        lat=str(lat),
+        lon=str(lon),
+        hae="0.0",
+        ce="9999999.0",
+        le="9999999.0",
+    )
     return ev
 
 
@@ -58,11 +71,17 @@ def _add_detail(ev: etree._Element, **sub_elements) -> etree._Element:
 
 # ── parse_emergency ───────────────────────────────────────────────────────────
 
+
 class TestParseEmergency:
 
-    def _make(self, cot_type: str, callsign: str = "OPS-1",
-              lat: float = 51.5, lon: float = 4.2,
-              emerg_text: str = "911 Alert") -> bytes:
+    def _make(
+        self,
+        cot_type: str,
+        callsign: str = "OPS-1",
+        lat: float = 51.5,
+        lon: float = 4.2,
+        emerg_text: str = "911 Alert",
+    ) -> bytes:
         ev = _event(cot_type, uid=f"ATAK.{callsign}", lat=lat, lon=lon)
         det = etree.SubElement(ev, "detail")
         etree.SubElement(det, "contact", callsign=callsign)
@@ -75,7 +94,7 @@ class TestParseEmergency:
         assert result["active"] is True
         assert result["callsign"] == "OPS-1"
         assert abs(result["lat"] - 51.5) < 1e-5
-        assert abs(result["lon"] - 4.2)  < 1e-5
+        assert abs(result["lon"] - 4.2) < 1e-5
         assert result["text"] == "911 Alert"
 
     def test_cancel_emergency_parsed(self):
@@ -91,14 +110,14 @@ class TestParseEmergency:
 
     def test_fallback_callsign_from_uid(self):
         ev = _event("b-a-o-opn", uid="ATAK.BRAVO-2")
-        etree.SubElement(ev, "detail")   # no <contact>
+        etree.SubElement(ev, "detail")  # no <contact>
         result = parse_emergency(_xml(ev))
         assert result is not None
         assert result["callsign"] == "ATAK.BRAVO-2"
 
     def test_non_emergency_returns_none(self):
         assert parse_emergency(self._make("a-f-G-U-C")) is None
-        assert parse_emergency(self._make("b-t-f"))     is None
+        assert parse_emergency(self._make("b-t-f")) is None
         assert parse_emergency(self._make("b-r-f-h-c")) is None
 
     def test_malformed_xml_returns_none(self):
@@ -135,12 +154,17 @@ class TestParseEmergency:
 
 # ── parse_spot_report ─────────────────────────────────────────────────────────
 
+
 class TestParseSpotReport:
 
-    def _make(self, cot_type: str = "b-r-f-h-s",
-              callsign: str = "RECON-1",
-              remarks: str = "Enemy vehicle spotted grid 123456",
-              lat: float = 50.9, lon: float = 3.7) -> bytes:
+    def _make(
+        self,
+        cot_type: str = "b-r-f-h-s",
+        callsign: str = "RECON-1",
+        remarks: str = "Enemy vehicle spotted grid 123456",
+        lat: float = 50.9,
+        lon: float = 3.7,
+    ) -> bytes:
         ev = _event(cot_type, uid=f"SPOT.{callsign}", lat=lat, lon=lon)
         det = etree.SubElement(ev, "detail")
         etree.SubElement(det, "contact", callsign=callsign)
@@ -166,7 +190,7 @@ class TestParseSpotReport:
 
     def test_non_spot_returns_none(self):
         assert parse_spot_report(self._make("a-f-G-U-C")) is None
-        assert parse_spot_report(self._make("b-t-f"))     is None
+        assert parse_spot_report(self._make("b-t-f")) is None
 
     def test_empty_remarks_accepted(self):
         ev = _event("b-r-f-h-s", uid="SPOT.ALPHA")
@@ -196,19 +220,29 @@ class TestParseSpotReport:
 
 # ── parse_fileshare_announcement ──────────────────────────────────────────────
 
+
 class TestParseFileshare:
 
-    def _make(self, filename: str = "photo.jpg",
-              sender: str = "OPS-2",
-              url: str = "http://192.168.0.1:8080/Attachment/photo.jpg") -> bytes:
+    def _make(
+        self,
+        filename: str = "photo.jpg",
+        sender: str = "OPS-2",
+        url: str = "http://192.168.0.1:8080/Attachment/photo.jpg",
+    ) -> bytes:
         ev = _event("b-f-t-a", uid=f"FS.{sender}")
         det = etree.SubElement(ev, "detail")
-        etree.SubElement(det, "fileshare",
-                         filename=filename, name=filename,
-                         senderCallsign=sender,
-                         sizeInBytes="12345", sha256hash="abc123")
-        etree.SubElement(det, "ackrequest",
-                         uid=f"ACK.{sender}", tag=filename, endpoint=url)
+        etree.SubElement(
+            det,
+            "fileshare",
+            filename=filename,
+            name=filename,
+            senderCallsign=sender,
+            sizeInBytes="12345",
+            sha256hash="abc123",
+        )
+        etree.SubElement(
+            det, "ackrequest", uid=f"ACK.{sender}", tag=filename, endpoint=url
+        )
         return _xml(ev)
 
     def test_basic_fileshare_parsed(self):
@@ -232,16 +266,18 @@ class TestParseFileshare:
         assert r["mime"] == "video/mp4"
 
     def test_mime_inference_unknown_falls_back(self):
-        r = parse_fileshare_announcement(self._make("data.xyz",
-                url="http://192.168.0.1:8080/Attachment/data.xyz"))
+        r = parse_fileshare_announcement(
+            self._make("data.xyz", url="http://192.168.0.1:8080/Attachment/data.xyz")
+        )
         assert r is not None
         assert "octet" in r["mime"]
 
     def test_no_ackrequest_returns_none(self):
         ev = _event("b-f-t-a")
         det = etree.SubElement(ev, "detail")
-        etree.SubElement(det, "fileshare", filename="x.jpg",
-                         senderCallsign="OPS", sizeInBytes="1")
+        etree.SubElement(
+            det, "fileshare", filename="x.jpg", senderCallsign="OPS", sizeInBytes="1"
+        )
         # No <ackrequest> → no URL → must return None
         assert parse_fileshare_announcement(_xml(ev)) is None
 
@@ -251,8 +287,12 @@ class TestParseFileshare:
         assert parse_fileshare_announcement(_xml(ev)) is None
 
     def test_wrong_type_returns_none(self):
-        assert parse_fileshare_announcement(self._make("x.jpg")
-               .replace(b"b-f-t-a", b"b-t-f")) is None
+        assert (
+            parse_fileshare_announcement(
+                self._make("x.jpg").replace(b"b-f-t-a", b"b-t-f")
+            )
+            is None
+        )
 
     def test_malformed_returns_none(self):
         assert parse_fileshare_announcement(b"<<<bad>>>") is None
@@ -260,23 +300,27 @@ class TestParseFileshare:
 
 # ── parse_atak_shape ──────────────────────────────────────────────────────────
 
+
 class TestParseAtakShape:
 
     # ── Route (b-m-r) ────────────────────────────────────────────────────────
 
-    def _route_xml(self, waypoints: list[tuple[float, float]],
-                   uid: str = "ROUTE-001",
-                   callsign: str = "BC-1",
-                   title: str = "Main Supply Route") -> bytes:
+    def _route_xml(
+        self,
+        waypoints: list[tuple[float, float]],
+        uid: str = "ROUTE-001",
+        callsign: str = "BC-1",
+        title: str = "Main Supply Route",
+    ) -> bytes:
         ev = _event("b-m-r", uid=uid)
         det = etree.SubElement(ev, "detail")
         etree.SubElement(det, "contact", callsign=callsign)
         rem = etree.SubElement(det, "remarks")
         rem.text = title
         for lat, lon in waypoints:
-            etree.SubElement(det, "link",
-                             lat=str(lat), lon=str(lon),
-                             type="b-m-p-w", uid=f"WP-{lat}")
+            etree.SubElement(
+                det, "link", lat=str(lat), lon=str(lon), type="b-m-p-w", uid=f"WP-{lat}"
+            )
         return _xml(ev)
 
     def test_route_parsed_as_linestring(self):
@@ -284,8 +328,8 @@ class TestParseAtakShape:
         result = parse_atak_shape(self._route_xml(pts))
         assert result is not None
         assert result["shape_type"] == "ROUTE"
-        assert result["callsign"]   == "BC-1"
-        assert result["title"]      == "Main Supply Route"
+        assert result["callsign"] == "BC-1"
+        assert result["title"] == "Main Supply Route"
         geo = json.loads(result["geometry_json"])
         assert geo["type"] == "LineString"
         assert len(geo["coordinates"]) == 3
@@ -314,8 +358,9 @@ class TestParseAtakShape:
 
     # ── Drawing (u-d-*) with <shape><polyline> ───────────────────────────────
 
-    def _polyline_xml(self, pts: list[tuple[float, float]],
-                      closed: bool = False) -> bytes:
+    def _polyline_xml(
+        self, pts: list[tuple[float, float]], closed: bool = False
+    ) -> bytes:
         ev = _event("u-d-f", uid="DRAW-001")
         det = etree.SubElement(ev, "detail")
         etree.SubElement(det, "contact", callsign="SNIPER-1")
@@ -356,8 +401,14 @@ class TestParseAtakShape:
         assert ring[0] == ring[-1], "Ring must be closed for valid GeoJSON"
 
     def test_non_shape_type_returns_none(self):
-        assert parse_atak_shape(self._route_xml(
-            [(51.0, 4.0), (51.1, 4.1)]).replace(b"b-m-r", b"a-f-G-U-C")) is None
+        assert (
+            parse_atak_shape(
+                self._route_xml([(51.0, 4.0), (51.1, 4.1)]).replace(
+                    b"b-m-r", b"a-f-G-U-C"
+                )
+            )
+            is None
+        )
 
     def test_b_t_f_returns_none(self):
         ev = _event("b-t-f")
@@ -392,12 +443,15 @@ class TestParseAtakShape:
 
 # ── parse_cot — remarks extraction ───────────────────────────────────────────
 
+
 class TestParseCotRemarks:
 
     def test_remarks_extracted(self):
         from backend.cot.cot import CotEvent
-        ev = CotEvent(uid="ARROW.X", cot_type="a-f-G-U-C",
-                      lat=50.0, lon=4.0, callsign="X")
+
+        ev = CotEvent(
+            uid="ARROW.X", cot_type="a-f-G-U-C", lat=50.0, lon=4.0, callsign="X"
+        )
         xml = ev.to_xml()
         # Inject <remarks> into the XML
         root = etree.fromstring(xml)
@@ -409,21 +463,24 @@ class TestParseCotRemarks:
 
     def test_no_remarks_gives_empty_string(self):
         from backend.cot.cot import CotEvent
-        ev = CotEvent(uid="ARROW.Y", cot_type="a-f-G-U-C",
-                      lat=50.0, lon=4.0, callsign="Y")
+
+        ev = CotEvent(
+            uid="ARROW.Y", cot_type="a-f-G-U-C", lat=50.0, lon=4.0, callsign="Y"
+        )
         parsed = parse_cot(ev.to_xml())
         assert parsed.remarks == ""
 
 
 # ── Cross-parser negative: each parser rejects the others' types ──────────────
 
+
 class TestParserMutualExclusion:
 
     _TYPES = [
         ("b-a-o-opn", parse_emergency, True),
         ("b-r-f-h-s", parse_spot_report, True),
-        ("b-f-t-a",   parse_fileshare_announcement, True),  # needs ackrequest
-        ("b-m-r",     parse_atak_shape, True),
+        ("b-f-t-a", parse_fileshare_announcement, True),  # needs ackrequest
+        ("b-m-r", parse_atak_shape, True),
     ]
 
     @pytest.mark.parametrize("cot_type,fn,_", _TYPES)

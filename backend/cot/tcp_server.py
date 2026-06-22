@@ -11,30 +11,49 @@ import json
 import logging
 import os
 import time
-import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from lxml import etree
 
 from backend.cot.cot import (
-    ALL_CHAT_ROOMS, PHOTO_COT_MAX_BYTES, CotEvent, build_fileshare, build_geochat,
-    build_image_cot, cot_type_to_sidc, is_arrow_fileshare, is_arrow_geochat,
-    is_arrow_photo, parse_atak_shape, parse_cot, parse_cot_image, parse_emergency,
-    parse_fileshare, parse_fileshare_announcement, parse_geochat, parse_medevac,
-    parse_spot_report, role_to_cot_type,
+    ALL_CHAT_ROOMS,
+    CotEvent,
+    build_fileshare,
+    build_geochat,
+    cot_type_to_sidc,
+    is_arrow_fileshare,
+    is_arrow_geochat,
+    is_arrow_photo,
+    parse_atak_shape,
+    parse_cot,
+    parse_cot_image,
+    parse_emergency,
+    parse_fileshare,
+    parse_fileshare_announcement,
+    parse_geochat,
+    parse_medevac,
+    parse_spot_report,
+    role_to_cot_type,
 )
 from backend.storage.database import SessionLocal
 from backend.storage.models import (
-    Alert, AtakShape, ChatRoom, ChatRoomMember, CotTrack, Message, Operator, Photo,
-    Report, TacticalObject,
+    Alert,
+    AtakShape,
+    ChatRoom,
+    ChatRoomMember,
+    CotTrack,
+    Message,
+    Operator,
+    Photo,
+    Report,
+    TacticalObject,
 )
 from backend.websocket.manager import broadcaster
 
 log = logging.getLogger("backend.cot.tcp")
 
-_END_TAG  = b"</event>"
+_END_TAG = b"</event>"
 _CFG_FILE = Path("data/tak_cot_config.json")
 
 
@@ -49,18 +68,19 @@ def _stream_frame(data: bytes) -> bytes:
     i = data.find(b"<event")
     return data[i:] if i > 0 else data
 
+
 # ── Persistent config ─────────────────────────────────────────────────────────
 
 _cfg: dict = {
-    "enabled":     True,
-    "host":        "0.0.0.0",
-    "port":        int(os.environ.get("ARROW_COT_TCP_PORT", "8087")),
+    "enabled": True,
+    "host": "0.0.0.0",
+    "port": int(os.environ.get("ARROW_COT_TCP_PORT", "8087")),
     "tls_enabled": os.environ.get("ARROW_COT_TLS", "1") != "0",
-    "tls_port":    int(os.environ.get("ARROW_COT_TLS_PORT", "8089")),
-    "tak_host":    "",          # upstream TAK server (optional)
-    "tak_port":    8087,
-    "tak_ssl":     False,
-    "note":        "ATAK devices connect to this server's IP — plain TCP on `port`, TLS on `tls_port`.",
+    "tls_port": int(os.environ.get("ARROW_COT_TLS_PORT", "8089")),
+    "tak_host": "",  # upstream TAK server (optional)
+    "tak_port": 8087,
+    "tak_ssl": False,
+    "note": "ATAK devices connect to this server's IP — plain TCP on `port`, TLS on `tls_port`.",
 }
 
 
@@ -91,20 +111,21 @@ def update_config(patch: dict) -> dict:
 
 # ── Connected client record ───────────────────────────────────────────────────
 
+
 @dataclass
 class ClientInfo:
-    uid:          str
-    ip:           str
-    port:         int
-    callsign:     str  = ""
-    cot_type:     str  = ""
-    last_lat:     float = 0.0
-    last_lon:     float = 0.0
-    platform:     str  = ""
+    uid: str
+    ip: str
+    port: int
+    callsign: str = ""
+    cot_type: str = ""
+    last_lat: float = 0.0
+    last_lon: float = 0.0
+    platform: str = ""
     connected_at: float = field(default_factory=time.time)
     last_seen_at: float = field(default_factory=time.time)
-    rx_count:     int  = 0
-    tx_count:     int  = 0
+    rx_count: int = 0
+    tx_count: int = 0
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -115,9 +136,10 @@ class ClientInfo:
 
 # ── Connection pool ───────────────────────────────────────────────────────────
 
+
 class _Pool:
     _writers: dict[str, asyncio.StreamWriter] = {}
-    _clients: dict[str, ClientInfo]           = {}
+    _clients: dict[str, ClientInfo] = {}
     _total_rx: int = 0
     _total_tx: int = 0
     _total_conns: int = 0
@@ -127,27 +149,37 @@ class _Pool:
         cls._writers[info.uid] = writer
         cls._clients[info.uid] = info
         cls._total_conns += 1
-        log.info("ATAK connect: %s %s:%d  (total=%d)", info.uid, info.ip, info.port, cls.count(),
-                 extra={"cat": "connections"})
+        log.info(
+            "ATAK connect: %s %s:%d  (total=%d)",
+            info.uid,
+            info.ip,
+            info.port,
+            cls.count(),
+            extra={"cat": "connections"},
+        )
 
     @classmethod
     def remove(cls, uid: str) -> None:
         cls._writers.pop(uid, None)
         cls._clients.pop(uid, None)
-        log.info("ATAK disconnect: %s  (total=%d)", uid, cls.count(),
-                 extra={"cat": "connections"})
+        log.info(
+            "ATAK disconnect: %s  (total=%d)",
+            uid,
+            cls.count(),
+            extra={"cat": "connections"},
+        )
 
     @classmethod
     def update(cls, uid: str, evt: "CotEvent") -> None:
         c = cls._clients.get(uid)
         if c:
-            c.callsign    = evt.callsign or c.callsign
-            c.cot_type    = evt.cot_type
-            c.last_lat    = evt.lat
-            c.last_lon    = evt.lon
-            c.platform    = evt.platform
+            c.callsign = evt.callsign or c.callsign
+            c.cot_type = evt.cot_type
+            c.last_lat = evt.lat
+            c.last_lon = evt.lon
+            c.platform = evt.platform
             c.last_seen_at = time.time()
-            c.rx_count    += 1
+            c.rx_count += 1
         cls._total_rx += 1
 
     @classmethod
@@ -192,6 +224,7 @@ class _Pool:
 
 # ── Frame buffer ──────────────────────────────────────────────────────────────
 
+
 class _FrameBuf:
     def __init__(self) -> None:
         self._buf = bytearray()
@@ -203,8 +236,8 @@ class _FrameBuf:
             idx = self._buf.find(_END_TAG)
             if idx == -1:
                 break
-            end  = idx + len(_END_TAG)
-            raw  = bytes(self._buf[:end])
+            end = idx + len(_END_TAG)
+            raw = bytes(self._buf[:end])
             self._buf = self._buf[end:]
             start = raw.find(b"<event")
             if start == -1:
@@ -217,6 +250,7 @@ class _FrameBuf:
 
 
 # ── CoT routing ───────────────────────────────────────────────────────────────
+
 
 async def _handle_frame(raw: bytes, sender_uid: str) -> None:
     try:
@@ -272,7 +306,7 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
     # ATAK GeoChat → Arrow chat message. Relay to other ATAK clients too.
     chat = parse_geochat(raw)
     if chat is not None:
-        if not is_arrow_geochat(chat):   # ignore our own outbound echoed back
+        if not is_arrow_geochat(chat):  # ignore our own outbound echoed back
             await _handle_geochat(chat)
         await _Pool.broadcast(raw, exclude=sender_uid)
         return
@@ -280,7 +314,7 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
     # ATAK file-share (binary attachment transfer) → store centrally + pin a POI.
     fs = parse_fileshare(raw)
     if fs is not None:
-        if not is_arrow_fileshare(fs):   # ignore our own outbound echoed back
+        if not is_arrow_fileshare(fs):  # ignore our own outbound echoed back
             await _handle_fileshare(fs)
         await _Pool.broadcast(raw, exclude=sender_uid)
         return
@@ -288,7 +322,7 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
     # ATAK photo (point CoT with embedded base64 image — legacy) → store + pin.
     img = parse_cot_image(raw)
     if img is not None:
-        if not is_arrow_photo(img):      # ignore our own outbound echoed back
+        if not is_arrow_photo(img):  # ignore our own outbound echoed back
             await _handle_cot_image(img)
         await _Pool.broadcast(raw, exclude=sender_uid)
         return
@@ -296,73 +330,94 @@ async def _handle_frame(raw: bytes, sender_uid: str) -> None:
     with SessionLocal() as db:
         op: Operator | None = None
         if evt.callsign:
-            op = db.query(Operator).filter(
-                Operator.callsign.ilike(evt.callsign)
-            ).first()
+            op = (
+                db.query(Operator).filter(Operator.callsign.ilike(evt.callsign)).first()
+            )
 
         if op:
             # ── Own-position path ────────────────────────────────────────
-            op.latitude  = evt.lat
+            op.latitude = evt.lat
             op.longitude = evt.lon
-            op.altitude  = evt.hae
+            op.altitude = evt.hae
             op.last_seen = datetime.now(timezone.utc)
-            op.status    = "ONLINE"
-            op.position_source = "ATAK"   # fix arrived from an ATAK device over CoT TCP
+            op.status = "ONLINE"
+            op.position_source = "ATAK"  # fix arrived from an ATAK device over CoT TCP
             db.commit()
             db.refresh(op)
             cot_type = role_to_cot_type(op.role)
-            await broadcaster.broadcast({
-                "channel": "tracking", "event": "position",
-                "cot_xml": CotEvent(
-                    uid=f"ARROW.{op.callsign}", cot_type=cot_type,
-                    lat=op.latitude, lon=op.longitude, hae=op.altitude or 0.0,
-                    callsign=op.callsign, role=op.role,
-                    speed=evt.speed, course=evt.course,
-                ).to_xml_str(),
-                "data": {
-                    "operator_id": op.id, "callsign": op.callsign,
-                    "latitude": op.latitude, "longitude": op.longitude,
-                    "altitude": op.altitude, "team_id": op.team_id,
-                    "cot_type": cot_type, "position_source": "ATAK",
-                },
-            })
+            await broadcaster.broadcast(
+                {
+                    "channel": "tracking",
+                    "event": "position",
+                    "cot_xml": CotEvent(
+                        uid=f"ARROW.{op.callsign}",
+                        cot_type=cot_type,
+                        lat=op.latitude,
+                        lon=op.longitude,
+                        hae=op.altitude or 0.0,
+                        callsign=op.callsign,
+                        role=op.role,
+                        speed=evt.speed,
+                        course=evt.course,
+                    ).to_xml_str(),
+                    "data": {
+                        "operator_id": op.id,
+                        "callsign": op.callsign,
+                        "latitude": op.latitude,
+                        "longitude": op.longitude,
+                        "altitude": op.altitude,
+                        "team_id": op.team_id,
+                        "cot_type": cot_type,
+                        "position_source": "ATAK",
+                    },
+                }
+            )
         else:
             # ── Foreign entity path ──────────────────────────────────────
             track = db.query(CotTrack).filter(CotTrack.cot_uid == evt.uid).first()
             if track is None:
                 track = CotTrack(cot_uid=evt.uid)
                 db.add(track)
-            track.cot_type  = evt.cot_type
-            track.callsign  = evt.callsign or evt.uid
-            track.latitude  = evt.lat
+            track.cot_type = evt.cot_type
+            track.callsign = evt.callsign or evt.uid
+            track.latitude = evt.lat
             track.longitude = evt.lon
-            track.hae       = evt.hae
-            track.speed     = evt.speed
-            track.course    = evt.course
-            track.team      = evt.team
-            track.remarks   = evt.remarks if hasattr(evt, 'remarks') else None
+            track.hae = evt.hae
+            track.speed = evt.speed
+            track.course = evt.course
+            track.team = evt.team
+            track.remarks = evt.remarks if hasattr(evt, "remarks") else None
             track.last_seen = datetime.now(timezone.utc)
             db.commit()
             db.refresh(track)
-            await broadcaster.broadcast({
-                "channel": "cot-track", "event": "update",
-                "data": {
-                    "id": track.id, "cot_uid": track.cot_uid,
-                    "cot_type": track.cot_type,
-                    "sidc": cot_type_to_sidc(track.cot_type),
-                    "callsign": track.callsign,
-                    "latitude": track.latitude, "longitude": track.longitude,
-                    "hae": track.hae, "speed": track.speed, "course": track.course,
-                    "team": track.team, "remarks": track.remarks or "",
-                    "last_seen": track.last_seen.isoformat(),
-                },
-            })
+            await broadcaster.broadcast(
+                {
+                    "channel": "cot-track",
+                    "event": "update",
+                    "data": {
+                        "id": track.id,
+                        "cot_uid": track.cot_uid,
+                        "cot_type": track.cot_type,
+                        "sidc": cot_type_to_sidc(track.cot_type),
+                        "callsign": track.callsign,
+                        "latitude": track.latitude,
+                        "longitude": track.longitude,
+                        "hae": track.hae,
+                        "speed": track.speed,
+                        "course": track.course,
+                        "team": track.team,
+                        "remarks": track.remarks or "",
+                        "last_seen": track.last_seen.isoformat(),
+                    },
+                }
+            )
 
     # Relay to other ATAK clients
     await _Pool.broadcast(raw, exclude=sender_uid)
 
 
 # ── MEDEVAC handling ──────────────────────────────────────────────────────────
+
 
 def _resolve_operator_id(db, callsign: str | None) -> int | None:
     """Map an ATAK callsign to an Operator row (Report/Alert need a valid FK).
@@ -381,48 +436,80 @@ def _resolve_operator_id(db, callsign: str | None) -> int | None:
 async def _handle_medevac(med: dict) -> None:
     """Persist an ATAK MEDEVAC/CASEVAC as a Report + Alert and broadcast both."""
     rtype = med.get("type", "MEDEVAC")
-    lat   = med.get("latitude")
-    lon   = med.get("longitude")
+    lat = med.get("latitude")
+    lon = med.get("longitude")
 
     with SessionLocal() as db:
         op_id = _resolve_operator_id(db, med.get("callsign"))
         if op_id is None:
             log.warning("MEDEVAC dropped: no operators exist to attribute it to")
             return
-        rep = Report(type=rtype, operator_id=op_id,
-                     payload=json.dumps(med), status="RECEIVED")
+        rep = Report(
+            type=rtype, operator_id=op_id, payload=json.dumps(med), status="RECEIVED"
+        )
         db.add(rep)
-        alert = Alert(type="MEDEVAC", operator_id=op_id,
-                      latitude=lat, longitude=lon, status="ACTIVE")
+        alert = Alert(
+            type="MEDEVAC",
+            operator_id=op_id,
+            latitude=lat,
+            longitude=lon,
+            status="ACTIVE",
+        )
         db.add(alert)
         db.commit()
         db.refresh(rep)
         db.refresh(alert)
-        callsign  = med.get("callsign") or "ATAK"
+        callsign = med.get("callsign") or "ATAK"
         rep_id, rep_mid, rep_status = rep.id, rep.mission_id, rep.status
         al_id, al_mid, al_ts = alert.id, alert.mission_id, alert.timestamp
 
-    await broadcaster.broadcast({
-        "channel": "report", "event": "submitted", "mission_id": rep_mid,
-        "data": {
-            "id": rep_id, "type": rtype, "status": rep_status,
-            "operator_id": op_id, "callsign": callsign, "sender": callsign,
-            "source": "ATAK", "payload": json.dumps(med),
-        },
-    })
-    await broadcaster.broadcast({
-        "channel": "alert", "event": "triggered", "mission_id": al_mid,
-        "data": {
-            "id": al_id, "type": "MEDEVAC", "operator_id": op_id,
-            "callsign": callsign, "latitude": lat, "longitude": lon,
-            "status": "ACTIVE", "timestamp": al_ts.isoformat() if al_ts else None,
-        },
-    })
-    log.info("ATAK %s from %s at %s,%s → report#%s alert#%s",
-             rtype, callsign, lat, lon, rep_id, al_id)
+    await broadcaster.broadcast(
+        {
+            "channel": "report",
+            "event": "submitted",
+            "mission_id": rep_mid,
+            "data": {
+                "id": rep_id,
+                "type": rtype,
+                "status": rep_status,
+                "operator_id": op_id,
+                "callsign": callsign,
+                "sender": callsign,
+                "source": "ATAK",
+                "payload": json.dumps(med),
+            },
+        }
+    )
+    await broadcaster.broadcast(
+        {
+            "channel": "alert",
+            "event": "triggered",
+            "mission_id": al_mid,
+            "data": {
+                "id": al_id,
+                "type": "MEDEVAC",
+                "operator_id": op_id,
+                "callsign": callsign,
+                "latitude": lat,
+                "longitude": lon,
+                "status": "ACTIVE",
+                "timestamp": al_ts.isoformat() if al_ts else None,
+            },
+        }
+    )
+    log.info(
+        "ATAK %s from %s at %s,%s → report#%s alert#%s",
+        rtype,
+        callsign,
+        lat,
+        lon,
+        rep_id,
+        al_id,
+    )
 
 
 # ── Chat bridge (ATAK GeoChat ↔ Arrow messaging) ──────────────────────────────
+
 
 async def _handle_geochat(chat: dict) -> None:
     """Persist an inbound ATAK GeoChat as an Arrow Message + broadcast on `chat`.
@@ -447,42 +534,66 @@ async def _handle_geochat(chat: dict) -> None:
 
         mtype, receiver_id, chatroom_id = "BROADCAST", None, None
         if room_name.lower() != ALL_CHAT_ROOMS.lower():
-            target = db.query(Operator).filter(Operator.callsign.ilike(room_name)).first()
+            target = (
+                db.query(Operator).filter(Operator.callsign.ilike(room_name)).first()
+            )
             if target is not None:
                 mtype, receiver_id = "DIRECT", target.id
             else:
-                existing = db.query(ChatRoom).filter(ChatRoom.name.ilike(room_name)).first()
-                room = existing or get_or_create_room(db, room_name, sender_id, origin="ATAK")
+                existing = (
+                    db.query(ChatRoom).filter(ChatRoom.name.ilike(room_name)).first()
+                )
+                room = existing or get_or_create_room(
+                    db, room_name, sender_id, origin="ATAK"
+                )
                 add_member(db, room.id, sender_id)
                 mtype, chatroom_id = "ROOM", room.id
                 if existing is None:
                     created_room = room.id
 
-        msg = Message(sender_id=sender_id, content=text, message_type=mtype,
-                      receiver_id=receiver_id, chatroom_id=chatroom_id)
+        msg = Message(
+            sender_id=sender_id,
+            content=text,
+            message_type=mtype,
+            receiver_id=receiver_id,
+            chatroom_id=chatroom_id,
+        )
         db.add(msg)
         db.commit()
         db.refresh(msg)
         data = MessageOut.model_validate(msg).model_dump(mode="json")
-        mid  = msg.mission_id
+        mid = msg.mission_id
 
     # Surface the original ATAK callsign + source so clients can label it even
     # when the sender isn't a registered operator (sender_id is a fallback then).
     data["sender_callsign"] = chat.get("sender_callsign")
     data["source"] = "ATAK"
-    await broadcaster.broadcast({
-        "channel": "chat", "event": "message", "mission_id": mid, "data": data,
-    })
-    if created_room is not None:   # new ATAK room → tell clients to refresh
+    await broadcaster.broadcast(
+        {
+            "channel": "chat",
+            "event": "message",
+            "mission_id": mid,
+            "data": data,
+        }
+    )
+    if created_room is not None:  # new ATAK room → tell clients to refresh
         with SessionLocal() as db:
             r = db.get(ChatRoom, created_room)
             if r is not None:
-                await broadcaster.broadcast({
-                    "channel": "chat", "event": "room_created",
-                    "mission_id": r.mission_id, "data": room_out(db, r),
-                })
-    log.info("ATAK GeoChat from %s in '%s': %.40s",
-             chat.get("sender_callsign"), room_name, text)
+                await broadcaster.broadcast(
+                    {
+                        "channel": "chat",
+                        "event": "room_created",
+                        "mission_id": r.mission_id,
+                        "data": room_out(db, r),
+                    }
+                )
+    log.info(
+        "ATAK GeoChat from %s in '%s': %.40s",
+        chat.get("sender_callsign"),
+        room_name,
+        text,
+    )
 
 
 async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
@@ -496,6 +607,7 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
         return
 
     import os
+
     image_url: str | None = None
     if msg.photo_id:
         base = os.environ.get("ARROW_BACKEND_URL", "http://127.0.0.1:6001")
@@ -521,14 +633,20 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
             if r is None:
                 return
             room = r.name
-            rows = (db.query(Operator.callsign)
-                      .join(ChatRoomMember, ChatRoomMember.operator_id == Operator.id)
-                      .filter(ChatRoomMember.chatroom_id == r.id).all())
+            rows = (
+                db.query(Operator.callsign)
+                .join(ChatRoomMember, ChatRoomMember.operator_id == Operator.id)
+                .filter(ChatRoomMember.chatroom_id == r.id)
+                .all()
+            )
             member_uids = [f"ARROW.{cs}" for (cs,) in rows if cs]
 
     cot = build_geochat(
-        sender_callsign=sender.callsign, text=msg.content,
-        room=room, recipient_uid=recipient_uid, member_uids=member_uids,
+        sender_callsign=sender.callsign,
+        text=msg.content,
+        room=room,
+        recipient_uid=recipient_uid,
+        member_uids=member_uids,
         image_url=image_url,
     )
     await _Pool.broadcast(cot)
@@ -536,18 +654,22 @@ async def broadcast_chat_to_atak(msg: Message, sender: Operator) -> None:
 
 # ── Emergency / panic button ──────────────────────────────────────────────────
 
+
 async def _handle_emergency(emerg: dict) -> None:
     """Persist an ATAK emergency alert and broadcast on the alert channel."""
     lat, lon = emerg.get("lat", 0.0), emerg.get("lon", 0.0)
-    active   = emerg.get("active", True)
+    active = emerg.get("active", True)
     with SessionLocal() as db:
         op_id = _resolve_operator_id(db, emerg.get("callsign"))
         if op_id is None:
             return
         if active:
             alert = Alert(
-                type="ATAK_EMERGENCY", operator_id=op_id,
-                latitude=lat, longitude=lon, status="ACTIVE",
+                type="ATAK_EMERGENCY",
+                operator_id=op_id,
+                latitude=lat,
+                longitude=lon,
+                status="ACTIVE",
             )
             db.add(alert)
             db.commit()
@@ -555,11 +677,16 @@ async def _handle_emergency(emerg: dict) -> None:
             al_id, al_ts, al_mid = alert.id, alert.timestamp, alert.mission_id
         else:
             # Cancel: mark the most recent active emergency for this operator as RESOLVED
-            alert = db.query(Alert).filter(
-                Alert.operator_id == op_id,
-                Alert.type == "ATAK_EMERGENCY",
-                Alert.status == "ACTIVE",
-            ).order_by(Alert.id.desc()).first()
+            alert = (
+                db.query(Alert)
+                .filter(
+                    Alert.operator_id == op_id,
+                    Alert.type == "ATAK_EMERGENCY",
+                    Alert.status == "ACTIVE",
+                )
+                .order_by(Alert.id.desc())
+                .first()  # type: ignore[assignment]
+            )
             if alert:
                 alert.status = "RESOLVED"
                 db.commit()
@@ -567,22 +694,29 @@ async def _handle_emergency(emerg: dict) -> None:
             else:
                 return
 
-    callsign = emerg.get("callsign","ATAK")
-    await broadcaster.broadcast({
-        "channel": "alert", "event": "triggered" if active else "ack",
-        "mission_id": al_mid,
-        "data": {
-            "id": al_id, "type": "ATAK_EMERGENCY",
-            "operator_id": op_id, "callsign": callsign,
-            "latitude": lat, "longitude": lon,
-            "status": "ACTIVE" if active else "RESOLVED",
-            "timestamp": al_ts.isoformat() if al_ts else None,
-        },
-    })
+    callsign = emerg.get("callsign", "ATAK")
+    await broadcaster.broadcast(
+        {
+            "channel": "alert",
+            "event": "triggered" if active else "ack",
+            "mission_id": al_mid,
+            "data": {
+                "id": al_id,
+                "type": "ATAK_EMERGENCY",
+                "operator_id": op_id,
+                "callsign": callsign,
+                "latitude": lat,
+                "longitude": lon,
+                "status": "ACTIVE" if active else "RESOLVED",
+                "timestamp": al_ts.isoformat() if al_ts else None,
+            },
+        }
+    )
     log.info("ATAK emergency %s from %s", "ACTIVE" if active else "RESOLVED", callsign)
 
 
 # ── Spot / contact report ─────────────────────────────────────────────────────
+
 
 async def _handle_spot_report(spot: dict) -> None:
     """Persist an ATAK spot/contact report and broadcast on the report channel."""
@@ -591,52 +725,67 @@ async def _handle_spot_report(spot: dict) -> None:
         if op_id is None:
             return
         rep = Report(
-            type="CONTACT_REPORT", operator_id=op_id,
-            payload=json.dumps(spot), status="RECEIVED",
+            type="CONTACT_REPORT",
+            operator_id=op_id,
+            payload=json.dumps(spot),
+            status="RECEIVED",
         )
         db.add(rep)
         db.commit()
         db.refresh(rep)
         rep_id, rep_mid, rep_status = rep.id, rep.mission_id, rep.status
 
-    callsign = spot.get("callsign","ATAK")
-    await broadcaster.broadcast({
-        "channel": "report", "event": "submitted", "mission_id": rep_mid,
-        "data": {
-            "id": rep_id, "type": "CONTACT_REPORT", "status": rep_status,
-            "operator_id": op_id, "callsign": callsign,
-            "source": "ATAK", "payload": json.dumps(spot),
-        },
-    })
-    log.info("ATAK spot report from %s: %.60s", callsign, spot.get("remarks",""))
+    callsign = spot.get("callsign", "ATAK")
+    await broadcaster.broadcast(
+        {
+            "channel": "report",
+            "event": "submitted",
+            "mission_id": rep_mid,
+            "data": {
+                "id": rep_id,
+                "type": "CONTACT_REPORT",
+                "status": rep_status,
+                "operator_id": op_id,
+                "callsign": callsign,
+                "source": "ATAK",
+                "payload": json.dumps(spot),
+            },
+        }
+    )
+    log.info("ATAK spot report from %s: %.60s", callsign, spot.get("remarks", ""))
 
 
 # ── File share announcement (b-f-t-a) ────────────────────────────────────────
 
+
 async def _handle_fileshare_announcement(fs: dict, sender_ip: str) -> None:
     """Download an ATAK file-share attachment, store as Photo, post as chat."""
-    url = fs.get("url","")
+    url = fs.get("url", "")
     if not url:
         return
     # Download the file (ATAK serves on port 8080)
     import urllib.request
     import urllib.error
+
     try:
         loop = asyncio.get_event_loop()
+
         def _dl():
             req = urllib.request.Request(url, headers={"User-Agent": "ArrowServer/1.0"})
             with urllib.request.urlopen(req, timeout=10) as resp:
                 return resp.read()
+
         raw = await loop.run_in_executor(None, _dl)
     except Exception as exc:
         log.warning("ATAK fileshare announcement download failed (%s): %s", url, exc)
         return
 
-    mime      = fs.get("mime","image/jpeg")
-    filename  = fs.get("filename","photo")
-    sender_cs = fs.get("sender_callsign","ATAK")
+    mime = fs.get("mime", "image/jpeg")
+    filename = fs.get("filename", "photo")
+    sender_cs = fs.get("sender_callsign", "ATAK")
 
     from backend.photos.router import store_photo_bytes
+
     with SessionLocal() as db:
         op_id = _resolve_operator_id(db, sender_cs)
         if op_id is None:
@@ -652,19 +801,28 @@ async def _handle_fileshare_announcement(fs: dict, sender_ip: str) -> None:
         db.commit()
         db.refresh(msg)
         from backend.api.schemas import MessageOut
-        data     = MessageOut.model_validate(msg).model_dump(mode="json")
-        mid      = msg.mission_id
-        photo_id = photo.id   # capture before session closes
+
+        data = MessageOut.model_validate(msg).model_dump(mode="json")
+        mid = msg.mission_id
+        photo_id = photo.id  # capture before session closes
 
     data["sender_callsign"] = sender_cs
     data["source"] = "ATAK"
-    await broadcaster.broadcast({
-        "channel": "chat", "event": "message", "mission_id": mid, "data": data,
-    })
-    log.info("ATAK fileshare announcement from %s stored as photo#%s", sender_cs, photo_id)
+    await broadcaster.broadcast(
+        {
+            "channel": "chat",
+            "event": "message",
+            "mission_id": mid,
+            "data": data,
+        }
+    )
+    log.info(
+        "ATAK fileshare announcement from %s stored as photo#%s", sender_cs, photo_id
+    )
 
 
 # ── ATAK drawn shapes ─────────────────────────────────────────────────────────
+
 
 async def _handle_atak_shape(shape: dict) -> None:
     """Upsert an ATAK drawn shape and broadcast on the atak-shape channel."""
@@ -673,67 +831,111 @@ async def _handle_atak_shape(shape: dict) -> None:
         if obj is None:
             obj = AtakShape(uid=shape["uid"])
             db.add(obj)
-        obj.cot_type      = shape["cot_type"]
-        obj.shape_type    = shape["shape_type"]
-        obj.title         = shape["title"]
-        obj.callsign      = shape["callsign"]
+        obj.cot_type = shape["cot_type"]
+        obj.shape_type = shape["shape_type"]
+        obj.title = shape["title"]
+        obj.callsign = shape["callsign"]
         obj.geometry_json = shape["geometry_json"]
-        obj.last_seen     = datetime.now(timezone.utc)
+        obj.last_seen = datetime.now(timezone.utc)
         db.commit()
         db.refresh(obj)
         shape_id = obj.id
 
-    await broadcaster.broadcast({
-        "channel": "atak-shape", "event": "upsert",
-        "data": {
-            "id": shape_id, "uid": shape["uid"],
-            "cot_type": shape["cot_type"], "shape_type": shape["shape_type"],
-            "title": shape["title"], "callsign": shape["callsign"],
-            "geometry_json": shape["geometry_json"],
-        },
-    })
-    log.info("ATAK shape %s (%s) from %s", shape["uid"], shape["shape_type"], shape["callsign"])
+    await broadcaster.broadcast(
+        {
+            "channel": "atak-shape",
+            "event": "upsert",
+            "data": {
+                "id": shape_id,
+                "uid": shape["uid"],
+                "cot_type": shape["cot_type"],
+                "shape_type": shape["shape_type"],
+                "title": shape["title"],
+                "callsign": shape["callsign"],
+                "geometry_json": shape["geometry_json"],
+            },
+        }
+    )
+    log.info(
+        "ATAK shape %s (%s) from %s",
+        shape["uid"],
+        shape["shape_type"],
+        shape["callsign"],
+    )
 
 
 # ── Photo bridge (geo-pinned images, ATAK ↔ Arrow) ────────────────────────────
 
+
 def _guess_mime(filename: str | None) -> str:
     ext = (filename or "").rsplit(".", 1)[-1].lower()
-    return {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-            "gif": "image/gif", "webp": "image/webp", "mp4": "video/mp4"}.get(ext, "image/jpeg")
+    return {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "mp4": "video/mp4",
+    }.get(ext, "image/jpeg")
 
 
-def _create_photo_poi(db, photo: Photo, lat: float, lon: float, caption: str, op_id: int):
+def _create_photo_poi(
+    db, photo: Photo, lat: float, lon: float, caption: str, op_id: int
+):
     """Create a POI tactical object pinned to a stored photo. Returns (data, mid, ids)."""
     from backend.api.schemas import TacticalObjectOut
+
     obj = TacticalObject(
-        type="POI", symbol_code="", created_by=op_id,
-        latitude=lat, longitude=lon, notes=caption or "ATAK photo",
-        photo_id=photo.id, affiliation="FRIENDLY",
+        type="POI",
+        symbol_code="",
+        created_by=op_id,
+        latitude=lat,
+        longitude=lon,
+        notes=caption or "ATAK photo",
+        photo_id=photo.id,
+        affiliation="FRIENDLY",
     )
     db.add(obj)
     db.commit()
     db.refresh(obj)
-    return (TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
-            obj.mission_id, photo.id, obj.id)
+    return (
+        TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
+        obj.mission_id,
+        photo.id,
+        obj.id,
+    )
 
 
 async def _handle_cot_image(img: dict) -> None:
     """Inbound ATAK photo embedded as base64 (legacy) → store binary + pin a POI."""
     from backend.photos.router import store_photo_bytes
+
     with SessionLocal() as db:
         op_id = _resolve_operator_id(db, img.get("callsign"))
         if op_id is None:
             log.warning("ATAK photo dropped: no operators exist to attribute it to")
             return
-        photo = store_photo_bytes(db, img["image_bytes"], img.get("mime") or "image/jpeg",
-                                  uploaded_by=op_id, original_name=img.get("caption") or "atak-photo")
-        data, mid, pid, oid = _create_photo_poi(db, photo, img["lat"], img["lon"],
-                                                img.get("caption"), op_id)
-    await broadcaster.broadcast({
-        "channel": "tactical-object", "event": "created", "mission_id": mid, "data": data,
-    })
-    log.info("ATAK photo (base64) from %s → photo#%s poi#%s", img.get("callsign"), pid, oid)
+        photo = store_photo_bytes(
+            db,
+            img["image_bytes"],
+            img.get("mime") or "image/jpeg",
+            uploaded_by=op_id,
+            original_name=img.get("caption") or "atak-photo",
+        )
+        data, mid, pid, oid = _create_photo_poi(
+            db, photo, img["lat"], img["lon"], img.get("caption") or "", op_id
+        )
+    await broadcaster.broadcast(
+        {
+            "channel": "tactical-object",
+            "event": "created",
+            "mission_id": mid,
+            "data": data,
+        }
+    )
+    log.info(
+        "ATAK photo (base64) from %s → photo#%s poi#%s", img.get("callsign"), pid, oid
+    )
 
 
 def _fetch_binary(url: str) -> bytes | None:
@@ -741,7 +943,10 @@ def _fetch_binary(url: str) -> bytes | None:
         return None
     try:
         import urllib.request
-        with urllib.request.urlopen(url, timeout=15) as r:  # noqa: S310 — TAK file fetch
+
+        with urllib.request.urlopen(
+            url, timeout=15
+        ) as r:  # noqa: S310 — TAK file fetch
             return r.read()
     except Exception as exc:
         log.debug("fileshare fetch failed (%s): %s", url, exc)
@@ -756,6 +961,7 @@ async def _handle_fileshare(fs: dict) -> None:
     photo ends up in the server's central store.
     """
     from backend.photos.router import find_photo_by_hash, store_photo_bytes
+
     sha = fs.get("sha256") or ""
     with SessionLocal() as db:
         op_id = _resolve_operator_id(db, fs.get("sender_callsign"))
@@ -763,32 +969,52 @@ async def _handle_fileshare(fs: dict) -> None:
             return
         photo = find_photo_by_hash(db, sha) if sha else None
         if photo is None:
-            raw = _fetch_binary(fs.get("url"))
+            raw = _fetch_binary(fs.get("url") or "")  # type: ignore[arg-type]
             if not raw:
-                log.info("ATAK fileshare %s: binary not in store and senderUrl unfetchable",
-                         sha[:12] or "?")
+                log.info(
+                    "ATAK fileshare %s: binary not in store and senderUrl unfetchable",
+                    sha[:12] or "?",
+                )
                 return
-            photo = store_photo_bytes(db, raw, _guess_mime(fs.get("filename")),
-                                      uploaded_by=op_id, original_name=fs.get("filename") or "atak-file")
+            photo = store_photo_bytes(
+                db,
+                raw,
+                _guess_mime(fs.get("filename")),
+                uploaded_by=op_id,
+                original_name=fs.get("filename") or "atak-file",
+            )
         # Only pin a POI when the share carries a real location.
         lat, lon = fs.get("lat") or 0.0, fs.get("lon") or 0.0
         if lat or lon:
-            data, mid, pid, oid = _create_photo_poi(db, photo, lat, lon, fs.get("filename"), op_id)
+            data, mid, pid, oid = _create_photo_poi(
+                db, photo, lat, lon, fs.get("filename") or "", op_id
+            )
         else:
-            data = mid = pid = oid = None
+            data = mid = None
+            pid = oid = None  # noqa: F841
         photo_id_v = photo.id
     if data is not None:
-        await broadcaster.broadcast({
-            "channel": "tactical-object", "event": "created", "mission_id": mid, "data": data,
-        })
-    log.info("ATAK fileshare from %s → stored photo#%s (poi=%s)",
-             fs.get("sender_callsign"), photo_id_v, oid)
+        await broadcaster.broadcast(
+            {
+                "channel": "tactical-object",
+                "event": "created",
+                "mission_id": mid,
+                "data": data,
+            }
+        )
+    log.info(
+        "ATAK fileshare from %s → stored photo#%s (poi=%s)",
+        fs.get("sender_callsign"),
+        photo_id_v,
+        oid,
+    )
 
 
 async def broadcast_photo_to_atak(obj: TacticalObject, sender: Operator) -> None:
     """Forward an Arrow geo-pinned photo to ATAK as a binary TAK file-share."""
     from backend.marti.router import content_url
     from backend.photos.router import ensure_photo_hash, read_photo_bytes
+
     if _Pool.count() == 0 or not obj.photo_id:
         return
     lat, lon, notes = obj.latitude, obj.longitude, obj.notes or ""
@@ -796,32 +1022,44 @@ async def broadcast_photo_to_atak(obj: TacticalObject, sender: Operator) -> None
         photo = db.get(Photo, obj.photo_id)
         if photo is None:
             return
-        sha   = ensure_photo_hash(db, photo)
-        raw   = read_photo_bytes(photo)
+        sha = ensure_photo_hash(db, photo)
+        raw = read_photo_bytes(photo)
         fname = photo.original_name or f"photo_{photo.id}.jpg"
     if not sha or raw is None:
         return
     cot = build_fileshare(
-        filename=fname, sha256=sha, size_bytes=len(raw), url=content_url(sha),
-        sender_callsign=sender.callsign, lat=lat, lon=lon, caption=notes,
+        filename=fname,
+        sha256=sha,
+        size_bytes=len(raw),
+        url=content_url(sha),
+        sender_callsign=sender.callsign,
+        lat=lat,
+        lon=lon,
+        caption=notes,
     )
     await _Pool.broadcast(cot)
 
 
 # ── Per-client handler ────────────────────────────────────────────────────────
 
+
 async def _client_handler(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
 ) -> None:
     peer = writer.get_extra_info("peername", ("?", 0))
-    uid  = f"atak-{peer[0]}-{peer[1]}"
+    uid = f"atak-{peer[0]}-{peer[1]}"
     info = ClientInfo(uid=uid, ip=str(peer[0]), port=int(peer[1]))
     _Pool.add(info, writer)
 
     # Welcome presence
     presence = CotEvent(
-        uid="ARROW.SERVER", cot_type="a-f-G-U-C-O",
-        lat=0.0, lon=0.0, callsign="ARROW", platform="Arrow",
+        uid="ARROW.SERVER",
+        cot_type="a-f-G-U-C-O",
+        lat=0.0,
+        lon=0.0,
+        callsign="ARROW",
+        platform="Arrow",
     )
     try:
         writer.write(_stream_frame(presence.to_xml()))
@@ -832,10 +1070,15 @@ async def _client_handler(
 
     # Push current operator snapshot
     asyncio.create_task(_push_snapshot(writer))
-    asyncio.create_task(broadcaster.broadcast({
-        "channel": "cot-presence", "event": "connected",
-        "data": info.to_dict(),
-    }))
+    asyncio.create_task(
+        broadcaster.broadcast(
+            {
+                "channel": "cot-presence",
+                "event": "connected",
+                "data": info.to_dict(),
+            }
+        )
+    )
 
     buf = _FrameBuf()
     try:
@@ -855,10 +1098,15 @@ async def _client_handler(
         log.debug("client %s error: %s", uid, exc)
     finally:
         _Pool.remove(uid)
-        asyncio.create_task(broadcaster.broadcast({
-            "channel": "cot-presence", "event": "disconnected",
-            "data": {"uid": uid},
-        }))
+        asyncio.create_task(
+            broadcaster.broadcast(
+                {
+                    "channel": "cot-presence",
+                    "event": "disconnected",
+                    "data": {"uid": uid},
+                }
+            )
+        )
         try:
             writer.close()
             await writer.wait_closed()
@@ -873,13 +1121,20 @@ async def _push_snapshot(writer: asyncio.StreamWriter) -> None:
     try:
         with SessionLocal() as db:
             for op in db.query(Operator).all():
-                writer.write(_stream_frame(CotEvent(
-                    uid=f"ARROW.{op.callsign}",
-                    cot_type=role_to_cot_type(op.role),
-                    lat=op.latitude or 0.0, lon=op.longitude or 0.0,
-                    hae=op.altitude or 0.0,
-                    callsign=op.callsign, role=op.role, platform="Arrow",
-                ).to_xml()))
+                writer.write(
+                    _stream_frame(
+                        CotEvent(
+                            uid=f"ARROW.{op.callsign}",
+                            cot_type=role_to_cot_type(op.role),
+                            lat=op.latitude or 0.0,
+                            lon=op.longitude or 0.0,
+                            hae=op.altitude or 0.0,
+                            callsign=op.callsign,
+                            role=op.role,
+                            platform="Arrow",
+                        ).to_xml()
+                    )
+                )
             # Replay existing tactical objects so the web map picture appears in ATAK.
             for obj in db.query(TacticalObject).all():
                 if obj.latitude is None or obj.longitude is None:
@@ -895,17 +1150,23 @@ async def _push_snapshot(writer: asyncio.StreamWriter) -> None:
 
 # ── Public helpers ────────────────────────────────────────────────────────────
 
+
 async def broadcast_operator_cot(op: Operator) -> None:
     """Push an operator's position to all connected ATAK clients (called by tracking router)."""
     if _Pool.count() == 0:
         return
-    await _Pool.broadcast(CotEvent(
-        uid=f"ARROW.{op.callsign}",
-        cot_type=role_to_cot_type(op.role),
-        lat=op.latitude or 0.0, lon=op.longitude or 0.0,
-        hae=op.altitude or 0.0,
-        callsign=op.callsign, role=op.role, platform="Arrow",
-    ).to_xml())
+    await _Pool.broadcast(
+        CotEvent(
+            uid=f"ARROW.{op.callsign}",
+            cot_type=role_to_cot_type(op.role),
+            lat=op.latitude or 0.0,
+            lon=op.longitude or 0.0,
+            hae=op.altitude or 0.0,
+            callsign=op.callsign,
+            role=op.role,
+            platform="Arrow",
+        ).to_xml()
+    )
 
 
 # ── Tactical-object ↔ ATAK bridge ────────────────────────────────────────────
@@ -915,23 +1176,45 @@ async def broadcast_operator_cot(op: Operator) -> None:
 # positions.  We pick a CoT type from the SIDC if present, otherwise infer it
 # from the type+affiliation.
 
-from backend.cot.cot import sidc_to_cot_type   # noqa: E402  (late import to avoid cycle)
+from backend.cot.cot import sidc_to_cot_type  # noqa: E402  (late import to avoid cycle)
 
 _TO_TYPE_FALLBACK = {
     # type-name        affiliation → cot type
-    "ENEMY":      {"HOSTILE": "a-h-G-U-C-I", "FRIENDLY": "a-f-G-U-C",
-                   "UNKNOWN": "a-u-G",       "NEUTRAL":  "a-n-G"},
-    "POI":        {"FRIENDLY": "a-n-G-I-N",  "HOSTILE":  "a-h-G",
-                   "UNKNOWN":  "a-u-G",      "NEUTRAL":  "a-n-G"},
-    "OBJECTIVE":  {"FRIENDLY": "a-f-G-U-C-O","HOSTILE":  "a-h-G-U-C",
-                   "UNKNOWN":  "a-u-G",      "NEUTRAL":  "a-n-G"},
-    "MARKER":     {"FRIENDLY": "a-f-G",      "HOSTILE":  "a-h-G",
-                   "UNKNOWN":  "a-u-G",      "NEUTRAL":  "a-n-G"},
+    "ENEMY": {
+        "HOSTILE": "a-h-G-U-C-I",
+        "FRIENDLY": "a-f-G-U-C",
+        "UNKNOWN": "a-u-G",
+        "NEUTRAL": "a-n-G",
+    },
+    "POI": {
+        "FRIENDLY": "a-n-G-I-N",
+        "HOSTILE": "a-h-G",
+        "UNKNOWN": "a-u-G",
+        "NEUTRAL": "a-n-G",
+    },
+    "OBJECTIVE": {
+        "FRIENDLY": "a-f-G-U-C-O",
+        "HOSTILE": "a-h-G-U-C",
+        "UNKNOWN": "a-u-G",
+        "NEUTRAL": "a-n-G",
+    },
+    "MARKER": {
+        "FRIENDLY": "a-f-G",
+        "HOSTILE": "a-h-G",
+        "UNKNOWN": "a-u-G",
+        "NEUTRAL": "a-n-G",
+    },
 }
 
 
-_AFF_CHAR = {"FRIENDLY": "f", "ASSUMED_FRIEND": "f", "HOSTILE": "h",
-             "ENEMY": "h", "NEUTRAL": "n", "UNKNOWN": "u"}
+_AFF_CHAR = {
+    "FRIENDLY": "f",
+    "ASSUMED_FRIEND": "f",
+    "HOSTILE": "h",
+    "ENEMY": "h",
+    "NEUTRAL": "n",
+    "UNKNOWN": "u",
+}
 
 
 def _tactical_object_cot_type(obj: "TacticalObject") -> str:
@@ -954,21 +1237,21 @@ def _tactical_object_cot_type(obj: "TacticalObject") -> str:
 def _tactical_object_to_cot(obj: "TacticalObject", *, stale: bool = False) -> bytes:
     """Build a CoT XML frame for a TacticalObject.  When `stale=True`, sets the
     stale timestamp to NOW so ATAK drops the marker (used for delete)."""
-    from datetime import timedelta as _td
     now = datetime.now(timezone.utc)
     evt = CotEvent(
-        uid      = f"ARROW.TO.{obj.id}",
-        cot_type = _tactical_object_cot_type(obj),
-        lat      = obj.latitude or 0.0,
-        lon      = obj.longitude or 0.0,
-        callsign = (obj.notes or obj.type or "")[:60] or f"TO-{obj.id}",
-        platform = "Arrow",
-        time     = now,
+        uid=f"ARROW.TO.{obj.id}",
+        cot_type=_tactical_object_cot_type(obj),
+        lat=obj.latitude or 0.0,
+        lon=obj.longitude or 0.0,
+        callsign=(obj.notes or obj.type or "")[:60] or f"TO-{obj.id}",
+        platform="Arrow",
+        time=now,
     )
     xml = evt.to_xml()
     if stale:
         # Rewrite stale=now so ATAK immediately considers the event expired
         from lxml import etree as _et
+
         root = _et.fromstring(xml)
         ts = now.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
         root.set("stale", ts)
@@ -999,16 +1282,16 @@ async def broadcast_tactical_object_delete_to_atak(obj: "TacticalObject") -> Non
 def get_status() -> dict:
     """Return full TAK server status for the admin UI."""
     return {
-        "enabled":     _cfg.get("enabled", True),
-        "host":        _cfg.get("host", "0.0.0.0"),
-        "port":        _cfg.get("port", 8087),
-        "running":     _server is not None,
+        "enabled": _cfg.get("enabled", True),
+        "host": _cfg.get("host", "0.0.0.0"),
+        "port": _cfg.get("port", 8087),
+        "running": _server is not None,
         "tls_enabled": _cfg.get("tls_enabled", True),
-        "tls_port":    _cfg.get("tls_port", 8089),
+        "tls_port": _cfg.get("tls_port", 8089),
         "tls_running": _tls_server is not None,
-        "tak_host":    _cfg.get("tak_host", ""),
-        "tak_port":    _cfg.get("tak_port", 8087),
-        "tak_ssl":     _cfg.get("tak_ssl", False),
+        "tak_host": _cfg.get("tak_host", ""),
+        "tak_port": _cfg.get("tak_port", 8087),
+        "tak_ssl": _cfg.get("tak_ssl", False),
         **_Pool.stats(),
         "clients": _Pool.client_list(),
     }
@@ -1016,7 +1299,7 @@ def get_status() -> dict:
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
-_server:     asyncio.Server | None = None
+_server: asyncio.Server | None = None
 _tls_server: asyncio.Server | None = None
 
 
@@ -1029,7 +1312,9 @@ async def start() -> None:
     if _cfg.get("enabled", True):
         port = int(_cfg.get("port", 8087))
         _server = await asyncio.start_server(_client_handler, host, port)
-        log.info("CoT TCP server listening on %s:%d — ATAK (plain) connects here", host, port)
+        log.info(
+            "CoT TCP server listening on %s:%d — ATAK (plain) connects here", host, port
+        )
     else:
         log.info("CoT plain TCP server disabled in config")
 
@@ -1050,10 +1335,12 @@ async def _start_tls(host: str) -> asyncio.Server:
     cert_path, key_path = ensure_cot_tls()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert_path, key_path)
-    ctx.verify_mode = ssl.CERT_NONE          # ATAK only needs to trust us (no mTLS)
+    ctx.verify_mode = ssl.CERT_NONE  # ATAK only needs to trust us (no mTLS)
     tls_port = int(_cfg.get("tls_port", 8089))
     srv = await asyncio.start_server(_client_handler, host, tls_port, ssl=ctx)
-    log.info("CoT TLS server listening on %s:%d — ATAK (SSL) connects here", host, tls_port)
+    log.info(
+        "CoT TLS server listening on %s:%d — ATAK (SSL) connects here", host, tls_port
+    )
     return srv
 
 

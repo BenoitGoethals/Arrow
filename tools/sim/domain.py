@@ -16,18 +16,18 @@ class CotEntry:
     them.  Use ``dataclasses.replace(entry, lat=…)`` to derive edited copies.
     """
 
-    uid:      str
+    uid: str
     cot_type: str
-    label:    str
+    label: str
     category: str
-    callsign: str   = ""
-    lat:      float = 0.0
-    lon:      float = 0.0
-    hae:      float = 0.0
-    speed:    float = 0.0
-    course:   float = 0.0
-    team:     str   = ""
-    role:     str   = ""
+    callsign: str = ""
+    lat: float = 0.0
+    lon: float = 0.0
+    hae: float = 0.0
+    speed: float = 0.0
+    course: float = 0.0
+    team: str = ""
+    role: str = ""
 
     @property
     def affiliation(self) -> str:

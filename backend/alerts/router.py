@@ -17,7 +17,11 @@ def list_alerts(
     _: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[Alert]:
-    q = db.query(Alert).options(selectinload(Alert.operator)).order_by(Alert.timestamp.desc())
+    q = (
+        db.query(Alert)
+        .options(selectinload(Alert.operator))
+        .order_by(Alert.timestamp.desc())
+    )
     if mission:
         q = q.filter(Alert.mission_id == mission.id)
     return q.limit(200).all()
@@ -34,7 +38,9 @@ async def trigger_alert(
         type=payload.type,
         operator_id=current.id,
         latitude=payload.latitude if payload.latitude is not None else current.latitude,
-        longitude=payload.longitude if payload.longitude is not None else current.longitude,
+        longitude=(
+            payload.longitude if payload.longitude is not None else current.longitude
+        ),
         mission_id=mission.id if mission else current.mission_id,
     )
     db.add(alert)
@@ -43,12 +49,14 @@ async def trigger_alert(
 
     data = AlertOut.model_validate(alert).model_dump(mode="json")
     data["callsign"] = current.callsign
-    await broadcaster.broadcast({
-        "channel": "alert",
-        "event": "triggered",
-        "mission_id": alert.mission_id,
-        "data": data,
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "alert",
+            "event": "triggered",
+            "mission_id": alert.mission_id,
+            "data": data,
+        }
+    )
     return alert
 
 
@@ -64,10 +72,12 @@ async def acknowledge(
     alert.status = "ACKNOWLEDGED"
     db.commit()
     db.refresh(alert)
-    await broadcaster.broadcast({
-        "channel": "alert",
-        "event": "ack",
-        "mission_id": alert.mission_id,
-        "data": AlertOut.model_validate(alert).model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "alert",
+            "event": "ack",
+            "mission_id": alert.mission_id,
+            "data": AlertOut.model_validate(alert).model_dump(mode="json"),
+        }
+    )
     return alert

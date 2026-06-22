@@ -3,12 +3,11 @@
 Runs as a daemon thread inside the FastAPI process. No audio captured or sent;
 it is a silent spectator that lets the web dashboard show who is in each channel.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-import os
-import sys
 import threading
 import time
 from pathlib import Path
@@ -22,11 +21,7 @@ import backend.mumble.opus_fix as _opus_fix  # patches ctypes + ssl before opusl
 
 try:
     import pymumble_py3 as pymumble
-    from pymumble_py3.callbacks import (
-        PYMUMBLE_CLBK_CONNECTED,
-        PYMUMBLE_CLBK_DISCONNECTED,
-        PYMUMBLE_CLBK_SOUNDRECEIVED,
-    )
+
     _AVAILABLE = True
     _ERR = ""
     if _opus_fix.OPUS_STUB_ACTIVE:
@@ -40,16 +35,17 @@ except Exception as _e:
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class MumbleMonitor:
     """Thread-safe Mumble presence observer."""
 
     def __init__(self):
-        self._lock    = threading.Lock()
-        self._mumble  = None
+        self._lock = threading.Lock()
+        self._mumble = None
         self._thread: threading.Thread | None = None
-        self._stop    = threading.Event()
+        self._stop = threading.Event()
         self._config: dict = {}
-        self._state: dict  = {
+        self._state: dict = {
             "connected": False,
             "error": "",
             "channels": [],
@@ -95,7 +91,9 @@ class MumbleMonitor:
 
     def _start(self):
         self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="mumble-monitor")
+        self._thread = threading.Thread(
+            target=self._run, daemon=True, name="mumble-monitor"
+        )
         self._thread.start()
 
     def _stop_connection(self):
@@ -124,22 +122,26 @@ class MumbleMonitor:
             return
 
         cfg = self._config
-        host     = cfg.get("host", "")
-        port     = int(cfg.get("port", 64738))
+        host = cfg.get("host", "")
+        port = int(cfg.get("port", 64738))
         username = cfg.get("username", "ArrowBot")
         password = cfg.get("password", "")
 
         while not self._stop.is_set():
             try:
-                log.info("Mumble monitor: connecting to %s:%s as %s", host, port, username)
-                m = pymumble.Mumble(host, username, password=password, port=port, reconnect=False)
+                log.info(
+                    "Mumble monitor: connecting to %s:%s as %s", host, port, username
+                )
+                m = pymumble.Mumble(
+                    host, username, password=password, port=port, reconnect=False
+                )
                 m.set_application_string("Arrow Monitor")
                 m.start()
                 m.is_ready()
                 self._mumble = m
                 with self._lock:
                     self._state["connected"] = True
-                    self._state["error"]     = ""
+                    self._state["error"] = ""
                 log.info("Mumble monitor: connected")
 
                 # Poll loop
@@ -149,7 +151,7 @@ class MumbleMonitor:
                         channels, users = self._snapshot(m)
                         with self._lock:
                             self._state["channels"] = channels
-                            self._state["users"]    = users
+                            self._state["users"] = users
                     except Exception as exc:
                         log.debug("Mumble snapshot error: %s", exc)
 
@@ -160,7 +162,7 @@ class MumbleMonitor:
                 log.warning("Mumble monitor: connection failed — %s", msg)
                 with self._lock:
                     self._state["connected"] = False
-                    self._state["error"]     = msg
+                    self._state["error"] = msg
                 self._mumble = None
 
             if self._stop.is_set():
@@ -178,20 +180,24 @@ class MumbleMonitor:
     def _snapshot(m) -> tuple[list[dict], list[dict]]:
         channels = []
         for cid, ch in m.channels.items():
-            channels.append({
-                "id":        cid,
-                "name":      ch.get("name", "?"),
-                "parent_id": ch.get("parent", -1),
-            })
+            channels.append(
+                {
+                    "id": cid,
+                    "name": ch.get("name", "?"),
+                    "parent_id": ch.get("parent", -1),
+                }
+            )
         users = []
         for session, u in m.users.items():
-            users.append({
-                "session":    session,
-                "name":       u.get("name", "?"),
-                "channel_id": u.get("channel_id", 0),
-                "muted":      bool(u.get("mute") or u.get("self_mute")),
-                "deafened":   bool(u.get("deaf") or u.get("self_deaf")),
-            })
+            users.append(
+                {
+                    "session": session,
+                    "name": u.get("name", "?"),
+                    "channel_id": u.get("channel_id", 0),
+                    "muted": bool(u.get("mute") or u.get("self_mute")),
+                    "deafened": bool(u.get("deaf") or u.get("self_deaf")),
+                }
+            )
         return channels, users
 
     # ── Status ───────────────────────────────────────────────────────────────

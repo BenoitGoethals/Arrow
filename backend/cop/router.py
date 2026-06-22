@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import Response
@@ -46,7 +46,9 @@ def list_documents(
     return q.limit(200).all()
 
 
-@router.post("/documents", response_model=CopDocumentOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/documents", response_model=CopDocumentOut, status_code=status.HTTP_201_CREATED
+)
 async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -74,6 +76,7 @@ async def upload_document(
         try:
             import io
             from docx import Document as DocxDocument  # type: ignore[import]
+
             doc = DocxDocument(io.BytesIO(data))
             text_preview = "\n".join(p.text for p in doc.paragraphs)[:20_000]
         except Exception:
@@ -92,8 +95,13 @@ async def upload_document(
     db.add(doc)
     db.commit()
     db.refresh(doc)
-    log_event(db, "COP_DOCUMENT_UPLOADED", operator_id=current.id,
-              resource=f"cop_doc:{doc.id}", detail=f"file:{filename}")
+    log_event(
+        db,
+        "COP_DOCUMENT_UPLOADED",
+        operator_id=current.id,
+        resource=f"cop_doc:{doc.id}",
+        detail=f"file:{filename}",
+    )
     return doc
 
 
@@ -106,8 +114,10 @@ def download_document(
     doc = db.get(CopDocument, doc_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    mime = "text/plain" if doc.content_type == "TXT" else (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    mime = (
+        "text/plain"
+        if doc.content_type == "TXT"
+        else ("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     )
     return Response(
         content=doc.file_data,
@@ -127,4 +137,6 @@ def delete_document(
         raise HTTPException(status_code=404, detail="Document not found")
     db.delete(doc)
     db.commit()
-    log_event(db, "COP_DOCUMENT_DELETED", operator_id=current.id, resource=f"cop_doc:{doc_id}")
+    log_event(
+        db, "COP_DOCUMENT_DELETED", operator_id=current.id, resource=f"cop_doc:{doc_id}"
+    )

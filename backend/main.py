@@ -105,17 +105,22 @@ def _configure_logging() -> None:
     use_json = os.environ.get("ARROW_JSON_LOGS", "1") == "1"
     if use_json:
         from pythonjsonlogger.json import JsonFormatter
+
         handler = logging.StreamHandler()
-        handler.setFormatter(JsonFormatter(
-            fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
-            rename_fields={"asctime": "ts", "name": "logger", "levelname": "level"},
-        ))
+        handler.setFormatter(
+            JsonFormatter(
+                fmt="%(asctime)s %(name)s %(levelname)s %(message)s",
+                rename_fields={"asctime": "ts", "name": "logger", "levelname": "level"},
+            )
+        )
     else:
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter(
-            "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-            datefmt="%H:%M:%S",
-        ))
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
 
     root = logging.getLogger()
     root.handlers.clear()
@@ -124,6 +129,7 @@ def _configure_logging() -> None:
 
     # In-memory ring buffer feeding the admin Logs viewer (captures everything).
     from backend import logbuffer
+
     logbuffer.install()
 
     # Arrow domain loggers — all at the configured level
@@ -155,6 +161,7 @@ async def lifespan(app: FastAPI):
     # Resolve JWT secret (auto-generates on first boot if config still has the default)
     resolved_secret = _resolve_jwt_secret(cfg.auth.secret)
     from backend.auth.infrastructure import token_service as _token_service
+
     _token_service._cfg = type(_token_service._cfg)(
         secret=resolved_secret,
         algorithm=cfg.auth.algorithm,
@@ -167,14 +174,17 @@ async def lifespan(app: FastAPI):
 
     # Token revocation blacklist (Redis, falls back to in-memory)
     from backend import token_blacklist
+
     token_blacklist.init(os.environ.get("ARROW_REDIS_URL"))
 
     # Mumble observer bot — loads saved config and connects if configured
     from backend.mumble.monitor import monitor as _mumble_monitor
+
     _mumble_monitor.load_config()
 
     # Native CoT TCP server — ATAK devices connect directly on port 8087
     from backend.cot import tcp_server as _cot_tcp
+
     await _cot_tcp.start()
 
     yield
@@ -192,11 +202,12 @@ def create_app() -> FastAPI:
 
     # Rate limiting
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
     # HTTP access log — every request (method, path, status, ms, client) so the
     # admin Logs viewer shows full backend API traffic.
     import time as _time
+
     _req_log = logging.getLogger("backend.request")
 
     @app.middleware("http")
@@ -206,14 +217,26 @@ def create_app() -> FastAPI:
             response = await call_next(request)
         except Exception:
             ms = (_time.monotonic() - t0) * 1000
-            _req_log.exception("%s %s → ERROR (%.0f ms)", request.method, request.url.path)
+            _req_log.exception(
+                "%s %s → ERROR (%.0f ms)", request.method, request.url.path
+            )
             raise
         ms = (_time.monotonic() - t0) * 1000
         client = request.client.host if request.client else "?"
-        lvl = logging.WARNING if response.status_code >= 500 else logging.DEBUG \
-            if request.url.path in ("/health",) else logging.INFO
-        _req_log.log(lvl, "%s %s → %d (%.0f ms) [%s]",
-                     request.method, request.url.path, response.status_code, ms, client)
+        lvl = (
+            logging.WARNING
+            if response.status_code >= 500
+            else logging.DEBUG if request.url.path in ("/health",) else logging.INFO
+        )
+        _req_log.log(
+            lvl,
+            "%s %s → %d (%.0f ms) [%s]",
+            request.method,
+            request.url.path,
+            response.status_code,
+            ms,
+            client,
+        )
         return response
 
     # CORS
@@ -277,8 +300,11 @@ app = create_app()
 
 def run() -> None:
     import uvicorn
+
     cfg = load_config()
-    uvicorn.run("backend.main:app", host=cfg.server.host, port=cfg.server.port, reload=True)
+    uvicorn.run(
+        "backend.main:app", host=cfg.server.host, port=cfg.server.port, reload=True
+    )
 
 
 if __name__ == "__main__":

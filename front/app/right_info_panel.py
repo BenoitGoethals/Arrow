@@ -6,26 +6,32 @@ Replaces the plain QTabWidget with a military-style panel selector:
   - QStackedWidget content below
   - Keyboard shortcuts 1-5 to switch panels
 """
+
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFrame,
-    QStackedWidget, QPushButton, QSizePolicy,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFrame,
+    QStackedWidget,
+    QPushButton,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetrics
 
-
 # ── Nav button ───────────────────────────────────────────────────────────────
+
 
 class _NavBtn(QPushButton):
     """Single navigation button — icon char + label + optional badge."""
 
     def __init__(self, icon: str, label: str, shortcut: str = ""):
         super().__init__()
-        self._icon   = icon
-        self._lbl    = label
-        self._badge  = 0
-        self._sc     = shortcut
+        self._icon = icon
+        self._lbl = label
+        self._badge = 0
+        self._sc = shortcut
         self.setCheckable(True)
         self.setFixedHeight(44)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -107,10 +113,10 @@ class _NavBtn(QPushButton):
             badge_font = QFont("Courier New", 7, QFont.Weight.Bold)
             p.setFont(badge_font)
             fm3 = QFontMetrics(badge_font)
-            bw  = max(fm3.horizontalAdvance(txt) + 6, 14)
-            bh  = 13
-            bx  = self.width() - bw - 3
-            by  = 3
+            bw = max(fm3.horizontalAdvance(txt) + 6, 14)
+            bh = 13
+            bx = self.width() - bw - 3
+            by = 3
             p.setBrush(QColor("#f85149"))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(bx, by, bw, bh, bh // 2, bh // 2)
@@ -122,6 +128,7 @@ class _NavBtn(QPushButton):
 
 # ── Panel container ──────────────────────────────────────────────────────────
 
+
 class RightInfoPanel(QWidget):
     """Icon-navigation + stacked content for the right info panel."""
 
@@ -130,7 +137,7 @@ class RightInfoPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._panels: dict[str, tuple[QWidget, _NavBtn]] = {}
-        self._order:  list[str] = []
+        self._order: list[str] = []
         self._current: str | None = None
         self._build()
 
@@ -145,8 +152,7 @@ class RightInfoPanel(QWidget):
         nav_frame = QFrame()
         nav_frame.setFixedHeight(44)
         nav_frame.setStyleSheet(
-            "background:#161b22;"
-            "border-bottom:2px solid #21262d;"
+            "background:#161b22;" "border-bottom:2px solid #21262d;"
         )
         self._nav_layout = QHBoxLayout(nav_frame)
         self._nav_layout.setContentsMargins(0, 0, 0, 0)
@@ -160,8 +166,9 @@ class RightInfoPanel(QWidget):
 
     # ---- public API -------------------------------------------------------
 
-    def add_panel(self, name: str, icon: str, label: str,
-                  widget: QWidget, shortcut: str = "") -> _NavBtn:
+    def add_panel(
+        self, name: str, icon: str, label: str, widget: QWidget, shortcut: str = ""
+    ) -> _NavBtn:
         btn = _NavBtn(icon, label, shortcut)
         btn.clicked.connect(lambda _checked, n=name: self.activate(n))
         self._nav_layout.addWidget(btn)

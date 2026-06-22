@@ -20,27 +20,25 @@ Run
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
 from tak_bridge.bridge import BridgeManager
 from tak_bridge.config import TakBridgeConfig, load_config, save_config
-from tak_bridge.cot_stream import CotEvent, CotFrameBuffer, parse_cot
+from tak_bridge.cot_stream import CotEvent, parse_cot
 
 log = logging.getLogger("tak_bridge")
 
 # ── Global bridge instance ────────────────────────────────────────────────────
 
-_cfg:    TakBridgeConfig | None = None
-_bridge: BridgeManager    | None = None
+_cfg: TakBridgeConfig | None = None
+_bridge: BridgeManager | None = None
 
 # In-memory contact registry: uid → last CotEvent
 _contacts: dict[str, dict] = {}
@@ -54,7 +52,7 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s  %(levelname)-7s  %(name)s  %(message)s",
         datefmt="%H:%M:%S",
     )
-    _cfg    = load_config()
+    _cfg = load_config()
     _bridge = BridgeManager(_cfg)
     await _bridge.start()
     log.info("TAK Bridge REST API ready on :8099")
@@ -85,6 +83,7 @@ app.add_middleware(
 
 # ── Status & health ───────────────────────────────────────────────────────────
 
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "tak-bridge"}
@@ -97,12 +96,19 @@ def bridge_status() -> dict:
     stats = _bridge.stats.to_dict()
     stats["running"] = _bridge._running
     stats["contacts_known"] = len(_contacts)
-    stats["cot_server"] = f"{_cfg.cot_server_host}:{_cfg.cot_server_port}" if _cfg else ""
-    stats["tak_server"]  = f"{_cfg.tak_host}:{_cfg.tak_port}" if _cfg and _cfg.tak_host else "not configured"
+    stats["cot_server"] = (
+        f"{_cfg.cot_server_host}:{_cfg.cot_server_port}" if _cfg else ""
+    )
+    stats["tak_server"] = (
+        f"{_cfg.tak_host}:{_cfg.tak_port}"
+        if _cfg and _cfg.tak_host
+        else "not configured"
+    )
     return stats
 
 
 # ── Configuration ─────────────────────────────────────────────────────────────
+
 
 @app.get("/config", response_model=TakBridgeConfig)
 def get_config() -> TakBridgeConfig:
@@ -120,6 +126,7 @@ async def update_config(body: TakBridgeConfig) -> dict:
 
 
 # ── Lifecycle control ─────────────────────────────────────────────────────────
+
 
 @app.post("/start")
 async def start_bridge() -> dict:
@@ -141,20 +148,22 @@ async def stop_bridge() -> dict:
 
 # ── Manual sync ───────────────────────────────────────────────────────────────
 
+
 @app.post("/sync")
 async def manual_sync() -> dict:
     if not _bridge or not _bridge._running:
         raise HTTPException(503, "Bridge is not running")
     await _bridge._do_sync()
     return {
-        "status":   "ok",
-        "sent":     _bridge.stats.cot_sent,
-        "pushed":   _bridge.stats.arrow_pushed,
-        "at":       datetime.now(timezone.utc).isoformat(),
+        "status": "ok",
+        "sent": _bridge.stats.cot_sent,
+        "pushed": _bridge.stats.arrow_pushed,
+        "at": datetime.now(timezone.utc).isoformat(),
     }
 
 
 # ── CoT injection (test/debug) ────────────────────────────────────────────────
+
 
 @app.post("/cot", status_code=status.HTTP_202_ACCEPTED)
 async def inject_cot(request: Request) -> dict:
@@ -177,8 +186,8 @@ async def inject_cot(request: Request) -> dict:
             await _bridge._arrow.push_cot_track(evt)
 
     return {
-        "status":   "injected",
-        "uid":      evt.uid,
+        "status": "injected",
+        "uid": evt.uid,
         "cot_type": evt.cot_type,
         "callsign": evt.callsign,
     }
@@ -186,15 +195,13 @@ async def inject_cot(request: Request) -> dict:
 
 # ── Contact registry ──────────────────────────────────────────────────────────
 
+
 @app.get("/contacts")
 def list_contacts() -> list[dict]:
     """List all TAK/ATAK contacts seen by the bridge."""
     now = time.time()
-    stale_s = (_cfg.stale_track_purge_s if _cfg else 300)
-    return [
-        c for c in _contacts.values()
-        if (now - c.get("last_seen_ts", 0)) < stale_s
-    ]
+    stale_s = _cfg.stale_track_purge_s if _cfg else 300
+    return [c for c in _contacts.values() if (now - c.get("last_seen_ts", 0)) < stale_s]
 
 
 @app.delete("/contacts/{uid}", status_code=status.HTTP_204_NO_CONTENT)
@@ -205,18 +212,20 @@ def delete_contact(uid: str) -> Response:
 
 # ── CoT test builder ──────────────────────────────────────────────────────────
 
+
 @app.post("/test/cot")
 async def send_test_cot(
-    lat:      float = 52.1228,
-    lon:      float = 5.2825,
-    callsign: str   = "TEST-1",
-    cot_type: str   = "a-f-G-U-C",
+    lat: float = 52.1228,
+    lon: float = 5.2825,
+    callsign: str = "TEST-1",
+    cot_type: str = "a-f-G-U-C",
 ) -> dict:
     """Generate and broadcast a test CoT event (for ATAK connection testing)."""
     evt = CotEvent(
         uid=f"ARROW.TEST.{callsign}",
         cot_type=cot_type,
-        lat=lat, lon=lon,
+        lat=lat,
+        lon=lon,
         callsign=callsign,
         platform="ARROW-BRIDGE-TEST",
     )
@@ -225,31 +234,32 @@ async def send_test_cot(
     if _bridge and _bridge._running:
         clients = await _bridge._pool.broadcast(xml)
     return {
-        "status":   "sent",
-        "uid":      evt.uid,
+        "status": "sent",
+        "uid": evt.uid,
         "callsign": callsign,
-        "lat":      lat,
-        "lon":      lon,
-        "clients":  clients,
-        "xml":      xml.decode(),
+        "lat": lat,
+        "lon": lon,
+        "clients": clients,
+        "xml": xml.decode(),
     }
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
+
 def _contact_dict(evt: CotEvent) -> dict:
     return {
-        "uid":          evt.uid,
-        "cot_type":     evt.cot_type,
-        "callsign":     evt.callsign or evt.uid,
-        "affiliation":  evt.affiliation,
-        "lat":          evt.lat,
-        "lon":          evt.lon,
-        "hae":          evt.hae,
-        "speed":        evt.speed,
-        "course":       evt.course,
-        "team":         evt.team,
-        "platform":     evt.platform,
-        "last_seen":    datetime.now(timezone.utc).isoformat(),
+        "uid": evt.uid,
+        "cot_type": evt.cot_type,
+        "callsign": evt.callsign or evt.uid,
+        "affiliation": evt.affiliation,
+        "lat": evt.lat,
+        "lon": evt.lon,
+        "hae": evt.hae,
+        "speed": evt.speed,
+        "course": evt.course,
+        "team": evt.team,
+        "platform": evt.platform,
+        "last_seen": datetime.now(timezone.utc).isoformat(),
         "last_seen_ts": time.time(),
     }

@@ -1,6 +1,6 @@
 """Route planning panel — draw routes, import GPX, manage routes."""
+
 from __future__ import annotations
-import json
 import math
 import uuid
 import xml.etree.ElementTree as ET
@@ -8,10 +8,24 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QPushButton,
-    QLabel, QFrame, QDialog, QLineEdit, QDoubleSpinBox, QTableWidget,
-    QTableWidgetItem, QComboBox, QDialogButtonBox, QFileDialog,
-    QHeaderView, QAbstractItemView, QSizePolicy, QMenu,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QScrollArea,
+    QPushButton,
+    QLabel,
+    QFrame,
+    QDialog,
+    QLineEdit,
+    QDoubleSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QComboBox,
+    QDialogButtonBox,
+    QFileDialog,
+    QHeaderView,
+    QAbstractItemView,
+    QMenu,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
@@ -36,7 +50,10 @@ def _haversine(a: dict, b: dict) -> float:
     dlat = math.radians(b["lat"] - a["lat"])
     dlon = math.radians(b["lon"] - a["lon"])
     la1, la2 = math.radians(a["lat"]), math.radians(b["lat"])
-    x = math.sin(dlat / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
+    x = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(la1) * math.cos(la2) * math.sin(dlon / 2) ** 2
+    )
     return 2 * R * math.asin(math.sqrt(max(0.0, x)))
 
 
@@ -66,6 +83,7 @@ def _fmt_time(secs: float) -> str:
 
 # ── GPX parser ─────────────────────────────────────────────────────────────────
 
+
 def parse_gpx(text: str) -> list[dict]:
     """Return [{lat, lon, label, type, notes}] from a GPX string."""
     try:
@@ -90,13 +108,20 @@ def parse_gpx(text: str) -> list[dict]:
 
     def _guess_type(label: str) -> str:
         u = label.upper()
-        if any(k in u for k in ("START", "BEGIN", "RP ", "RP-")): return "START"
-        if any(k in u for k in ("END", "OBJ", "TARGET")):          return "END"
-        if "IP" in u:   return "IP"
-        if "RV" in u:   return "RV"
-        if "CP" in u:   return "CP"
-        if "RP" in u:   return "RP"
-        if "HOLD" in u: return "HOLD"
+        if any(k in u for k in ("START", "BEGIN", "RP ", "RP-")):
+            return "START"
+        if any(k in u for k in ("END", "OBJ", "TARGET")):
+            return "END"
+        if "IP" in u:
+            return "IP"
+        if "RV" in u:
+            return "RV"
+        if "CP" in u:
+            return "CP"
+        if "RP" in u:
+            return "RP"
+        if "HOLD" in u:
+            return "HOLD"
         return "WP"
 
     wps: list[dict] = []
@@ -109,8 +134,15 @@ def parse_gpx(text: str) -> list[dict]:
             continue
         label = _text(wpt, "name")
         notes = _text(wpt, "desc") or _text(wpt, "cmt")
-        wps.append({"lat": lat, "lon": lon, "label": label,
-                    "type": _guess_type(label), "notes": notes})
+        wps.append(
+            {
+                "lat": lat,
+                "lon": lon,
+                "label": label,
+                "type": _guess_type(label),
+                "notes": notes,
+            }
+        )
 
     # Track points <trk>/<trkseg>/<trkpt> — only when no named wpts
     if not wps:
@@ -122,11 +154,18 @@ def parse_gpx(text: str) -> list[dict]:
                     if not lat and not lon:
                         continue
                     label = _text(tpt, "name") or f"WP{i + 1}"
-                    wps.append({"lat": lat, "lon": lon, "label": label,
-                                "type": "WP", "notes": ""})
+                    wps.append(
+                        {
+                            "lat": lat,
+                            "lon": lon,
+                            "label": label,
+                            "type": "WP",
+                            "notes": "",
+                        }
+                    )
 
     if wps:
-        wps[0]["type"]  = "START"
+        wps[0]["type"] = "START"
         wps[-1]["type"] = "END"
 
     return wps
@@ -236,8 +275,8 @@ class RoutePropertiesDialog(QDialog):
         self._tbl.verticalHeader().hide()
         self._tbl.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._tbl.setEditTriggers(
-            QAbstractItemView.EditTrigger.DoubleClicked |
-            QAbstractItemView.EditTrigger.SelectedClicked
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
         )
         self._tbl.setMinimumHeight(180)
 
@@ -251,7 +290,9 @@ class RoutePropertiesDialog(QDialog):
             self._tbl.setItem(i, 1, QTableWidgetItem(wp.get("label", "")))
             self._tbl.setItem(i, 2, QTableWidgetItem(wp.get("notes", "")))
             coords_item = QTableWidgetItem(f"{wp['lat']:.5f}, {wp['lon']:.5f}")
-            coords_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            coords_item.setFlags(
+                Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
+            )
             coords_item.setForeground(QColor("#6e7681"))
             self._tbl.setItem(i, 3, coords_item)
 
@@ -259,17 +300,18 @@ class RoutePropertiesDialog(QDialog):
 
         # ── Stats preview ─────────────────────────────────────────────────────
         self._stats_lbl = QLabel()
-        self._stats_lbl.setStyleSheet("color:#6e7681;font-size:12px;font-family:'Courier New',monospace;")
+        self._stats_lbl.setStyleSheet(
+            "color:#6e7681;font-size:12px;font-family:'Courier New',monospace;"
+        )
         self._update_stats(wps, self._speed.value())
-        self._speed.valueChanged.connect(lambda v: self._update_stats(
-            self._route.get("waypoints", []), v
-        ))
+        self._speed.valueChanged.connect(
+            lambda v: self._update_stats(self._route.get("waypoints", []), v)
+        )
         lay.addWidget(self._stats_lbl)
 
         # ── Buttons ───────────────────────────────────────────────────────────
         btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok |
-            QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         ok = btns.button(QDialogButtonBox.StandardButton.Ok)
         ok.setText("Save Route")
@@ -298,7 +340,9 @@ class RoutePropertiesDialog(QDialog):
 
     def _update_stats(self, wps: list, speed: float):
         if len(wps) < 2:
-            self._stats_lbl.setText(f"{len(wps)} waypoint(s) — draw more points for distance")
+            self._stats_lbl.setText(
+                f"{len(wps)} waypoint(s) — draw more points for distance"
+            )
             return
         d = _route_distance(wps)
         spd = speed or 30.0
@@ -312,19 +356,21 @@ class RoutePropertiesDialog(QDialog):
         orig_wps = self._route.get("waypoints", [])
         for i in range(self._tbl.rowCount()):
             orig = orig_wps[i] if i < len(orig_wps) else {}
-            cmb        = self._tbl.cellWidget(i, 0)
+            cmb = self._tbl.cellWidget(i, 0)
             label_item = self._tbl.item(i, 1)
             notes_item = self._tbl.item(i, 2)
-            wps.append({
-                **orig,
-                "type":  cmb.currentText() if cmb else orig.get("type", "WP"),
-                "label": label_item.text() if label_item else orig.get("label", ""),
-                "notes": notes_item.text() if notes_item else orig.get("notes", ""),
-            })
+            wps.append(
+                {
+                    **orig,
+                    "type": cmb.currentText() if cmb else orig.get("type", "WP"),
+                    "label": label_item.text() if label_item else orig.get("label", ""),
+                    "notes": notes_item.text() if notes_item else orig.get("notes", ""),
+                }
+            )
         return {
             **self._route,
-            "name":      self._name_edit.text().strip() or "Route",
-            "color":     self._color,
+            "name": self._name_edit.text().strip() or "Route",
+            "color": self._color,
             "speed_kmh": self._speed.value(),
             "waypoints": wps,
         }
@@ -349,15 +395,15 @@ QPushButton:hover { background:#30363d; color:#e6edf3; }
 
 
 class _RouteCard(QFrame):
-    delete_requested    = pyqtSignal(str)
-    visibility_toggled  = pyqtSignal(str, bool)
-    focus_requested     = pyqtSignal(str)
-    edit_requested      = pyqtSignal(str)
-    navigate_requested  = pyqtSignal(str)
+    delete_requested = pyqtSignal(str)
+    visibility_toggled = pyqtSignal(str, bool)
+    focus_requested = pyqtSignal(str)
+    edit_requested = pyqtSignal(str)
+    navigate_requested = pyqtSignal(str)
 
     def __init__(self, route: dict, parent=None):
         super().__init__(parent)
-        self._route   = route
+        self._route = route
         self._visible = True
         self.setStyleSheet(_CARD_STYLE)
         self._build()
@@ -387,11 +433,31 @@ class _RouteCard(QFrame):
         h.addWidget(name, 1)
 
         for icon, tip, color, cb in [
-            ("▶", "Navigate route",    "#3fb950", lambda: self.navigate_requested.emit(self._route["id"])),
-            ("◉", "Focus on map",      "#8b949e", lambda: self.focus_requested.emit(self._route["id"])),
+            (
+                "▶",
+                "Navigate route",
+                "#3fb950",
+                lambda: self.navigate_requested.emit(self._route["id"]),
+            ),
+            (
+                "◉",
+                "Focus on map",
+                "#8b949e",
+                lambda: self.focus_requested.emit(self._route["id"]),
+            ),
             ("👁", "Toggle visibility", "#8b949e", self._toggle_vis),
-            ("✏", "Edit route",        "#8b949e", lambda: self.edit_requested.emit(self._route["id"])),
-            ("🗑", "Delete route",      "#f85149", lambda: self.delete_requested.emit(self._route["id"])),
+            (
+                "✏",
+                "Edit route",
+                "#8b949e",
+                lambda: self.edit_requested.emit(self._route["id"]),
+            ),
+            (
+                "🗑",
+                "Delete route",
+                "#f85149",
+                lambda: self.delete_requested.emit(self._route["id"]),
+            ),
         ]:
             btn = QPushButton(icon)
             btn.setFixedSize(24, 24)
@@ -410,7 +476,7 @@ class _RouteCard(QFrame):
         # ── Stats ─────────────────────────────────────────────────────────────
         wps = self._route.get("waypoints", [])
         if len(wps) >= 2:
-            d   = _route_distance(wps)
+            d = _route_distance(wps)
             spd = self._route.get("speed_kmh", 30) or 30
             txt = (
                 f"📏 {_fmt_dist(d)}  ·  "
@@ -460,20 +526,20 @@ _PANEL_BTN = (
 class RoutesPanel(QWidget):
     """Route management panel — draw, import, list, edit, delete routes."""
 
-    route_draw_requested     = pyqtSignal(str, str)   # route_id, color
-    route_draw_cancelled     = pyqtSignal()
-    route_deleted            = pyqtSignal(str)
+    route_draw_requested = pyqtSignal(str, str)  # route_id, color
+    route_draw_cancelled = pyqtSignal()
+    route_deleted = pyqtSignal(str)
     route_visibility_changed = pyqtSignal(str, bool)
-    route_focus_requested    = pyqtSignal(str)
-    route_edit_done          = pyqtSignal(dict)        # updated route dict
-    route_add_requested      = pyqtSignal(dict)        # new route (GPX or draw finish)
-    navigate_requested       = pyqtSignal(str)         # route_id
+    route_focus_requested = pyqtSignal(str)
+    route_edit_done = pyqtSignal(dict)  # updated route dict
+    route_add_requested = pyqtSignal(dict)  # new route (GPX or draw finish)
+    navigate_requested = pyqtSignal(str)  # route_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._routes:  dict[str, dict]      = {}
-        self._cards:   dict[str, _RouteCard] = {}
-        self._drawing_id: Optional[str]     = None
+        self._routes: dict[str, dict] = {}
+        self._cards: dict[str, _RouteCard] = {}
+        self._drawing_id: Optional[str] = None
         self._build()
 
     # ── Build ──────────────────────────────────────────────────────────────────
@@ -523,7 +589,9 @@ class RoutesPanel(QWidget):
         dr = QHBoxLayout(self._draw_row)
         dr.setContentsMargins(8, 5, 8, 5)
         dr.setSpacing(6)
-        draw_lbl = QLabel("🗺  Click map to add waypoints  ·  Right-click or Dbl-click to finish  ·  ESC cancels")
+        draw_lbl = QLabel(
+            "🗺  Click map to add waypoints  ·  Right-click or Dbl-click to finish  ·  ESC cancels"
+        )
         draw_lbl.setStyleSheet(
             "color:#79c0ff;font-size:12px;font-weight:700;font-family:'Courier New',monospace;"
         )
@@ -637,8 +705,7 @@ class RoutesPanel(QWidget):
 
     def _import_gpx(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import GPX File", "",
-            "GPX Files (*.gpx);;All Files (*)"
+            self, "Import GPX File", "", "GPX Files (*.gpx);;All Files (*)"
         )
         if not path:
             return
@@ -646,25 +713,26 @@ class RoutesPanel(QWidget):
             text = Path(path).read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
             from PyQt6.QtWidgets import QMessageBox
+
             QMessageBox.warning(self, "GPX Error", f"Could not read file:\n{exc}")
             return
 
         wps = parse_gpx(text)
         if not wps:
             from PyQt6.QtWidgets import QMessageBox
+
             QMessageBox.warning(
-                self, "GPX Error",
-                "No waypoints or track points found in the GPX file."
+                self, "GPX Error", "No waypoints or track points found in the GPX file."
             )
             return
 
         route = {
-            "id":        str(uuid.uuid4()),
-            "name":      Path(path).stem,
-            "color":     _next_color(),
+            "id": str(uuid.uuid4()),
+            "name": Path(path).stem,
+            "color": _next_color(),
             "speed_kmh": 30.0,
             "waypoints": wps,
-            "visible":   True,
+            "visible": True,
         }
         dlg = RoutePropertiesDialog(route, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:

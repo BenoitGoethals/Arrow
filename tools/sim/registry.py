@@ -36,8 +36,7 @@ class CotMessageProvider(ABC):
     category: str = "Uncategorised"
 
     @abstractmethod
-    def get_messages(self) -> list[CotEntry]:
-        ...
+    def get_messages(self) -> list[CotEntry]: ...
 
 
 class CotLibraryRegistry:
@@ -52,7 +51,8 @@ class CotLibraryRegistry:
     def register(self, provider: CotMessageProvider) -> None:
         if not isinstance(provider, CotMessageProvider):
             raise TypeError(
-                f"Expected CotMessageProvider, got {type(provider).__name__}")
+                f"Expected CotMessageProvider, got {type(provider).__name__}"
+            )
         self._providers.append(provider)
 
     def categories(self) -> list[str]:
@@ -65,9 +65,12 @@ class CotLibraryRegistry:
     def entries_for(self, category: str) -> list[CotEntry]:
         if category == "All":
             return self.all_entries()
-        return [e for p in self._providers
-                if p.category == category
-                for e in p.get_messages()]
+        return [
+            e
+            for p in self._providers
+            if p.category == category
+            for e in p.get_messages()
+        ]
 
 
 # Module-level singleton — the only instance that should exist.

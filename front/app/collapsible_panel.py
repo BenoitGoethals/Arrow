@@ -5,24 +5,28 @@ Usage:
     splitter.addWidget(panel)
     panel.bind_splitter(splitter, index=0)       # call after addWidget
 """
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
-    QLabel, QSplitter, QSizePolicy,
+    QWidget,
+    QHBoxLayout,
+    QSplitter,
+    QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QFont, QFontMetrics
 
 
 class _ToggleStrip(QWidget):
     """Thin vertical strip — the collapse/expand hit target."""
+
     clicked = pyqtSignal()
 
     def __init__(self, title: str, side: str):
         super().__init__()
-        self._title  = title.upper()
-        self._side   = side          # 'left' or 'right'
+        self._title = title.upper()
+        self._side = side  # 'left' or 'right'
         self._collapsed = False
         self.setFixedWidth(18)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
@@ -85,15 +89,17 @@ class CollapsibleSidePanel(QWidget):
     side='left'  → strip is on the right of the content
     side='right' → strip is on the left  of the content
     """
-    toggled = pyqtSignal(bool)   # True = collapsed
 
-    def __init__(self, content: QWidget, title: str, side: str = "left",
-                 default_width: int = 280):
+    toggled = pyqtSignal(bool)  # True = collapsed
+
+    def __init__(
+        self, content: QWidget, title: str, side: str = "left", default_width: int = 280
+    ):
         super().__init__()
-        self._content      = content
-        self._side         = side
-        self._collapsed    = False
-        self._default_w    = default_width
+        self._content = content
+        self._side = side
+        self._collapsed = False
+        self._default_w = default_width
         self._splitter: QSplitter | None = None
         self._splitter_idx: int = 0
 
@@ -116,7 +122,7 @@ class CollapsibleSidePanel(QWidget):
     # ---- API ---------------------------------------------------------------
 
     def bind_splitter(self, splitter: QSplitter, index: int):
-        self._splitter     = splitter
+        self._splitter = splitter
         self._splitter_idx = index
 
     def toggle(self):

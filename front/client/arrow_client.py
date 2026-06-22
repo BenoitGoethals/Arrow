@@ -1,4 +1,5 @@
 """Synchronous Arrow REST client."""
+
 import logging
 import time
 from typing import Optional
@@ -13,15 +14,20 @@ _VERIFY = False
 class ArrowClient:
     def __init__(self, base_url: str, token: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
-        self._token   = token
+        self._token = token
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self._token}"} if self._token else {}
 
     def _get(self, path: str, **params) -> list | dict:
         t0 = time.monotonic()
-        r = httpx.get(f"{self.base_url}{path}", headers=self._headers(),
-                      params=params, timeout=10.0, verify=_VERIFY)
+        r = httpx.get(
+            f"{self.base_url}{path}",
+            headers=self._headers(),
+            params=params,
+            timeout=10.0,
+            verify=_VERIFY,
+        )
         ms = int((time.monotonic() - t0) * 1000)
         log.debug("GET %s → %d  (%d ms)", path, r.status_code, ms)
         r.raise_for_status()
@@ -41,17 +47,25 @@ class ArrowClient:
         return r.json()
 
     def _delete(self, path: str) -> None:
-        r = httpx.request("DELETE", f"{self.base_url}{path}",
-                          headers=self._headers(), timeout=8.0, verify=_VERIFY)
+        r = httpx.request(
+            "DELETE",
+            f"{self.base_url}{path}",
+            headers=self._headers(),
+            timeout=8.0,
+            verify=_VERIFY,
+        )
         log.debug("DELETE %s → %d", path, r.status_code)
         r.raise_for_status()
 
     # ---- Auth -------------------------------------------------------
     def login(self, callsign: str, password: str) -> dict:
         log.info("Login: callsign=%s  server=%s", callsign, self.base_url)
-        r = httpx.post(f"{self.base_url}/auth/login",
-                       data={"username": callsign, "password": password},
-                       timeout=8.0, verify=_VERIFY)
+        r = httpx.post(
+            f"{self.base_url}/auth/login",
+            data={"username": callsign, "password": password},
+            timeout=8.0,
+            verify=_VERIFY,
+        )
         log.info("Login response: %d", r.status_code)
         r.raise_for_status()
         data = r.json()
@@ -72,8 +86,9 @@ class ArrowClient:
         return self._get("/vehicles")
 
     # ---- Tracking ---------------------------------------------------
-    def push_position(self, lat: float, lon: float,
-                      altitude: Optional[float] = None) -> dict:
+    def push_position(
+        self, lat: float, lon: float, altitude: Optional[float] = None
+    ) -> dict:
         """Report this operator's own GPS fix to the backend.
 
         Persists lat/lon on the Operator row (marking it ONLINE) and broadcasts
@@ -94,23 +109,35 @@ class ArrowClient:
     def tactical_objects(self) -> list:
         return self._get("/tactical-objects")
 
-    def post_tactical_object(self, obj_type: str, geometry: dict, notes: str = "",
-                              affiliation: str = "UNKNOWN", symbol_code: str = "",
-                              echelon: str = "", photo_id: Optional[int] = None) -> dict:
+    def post_tactical_object(
+        self,
+        obj_type: str,
+        geometry: dict,
+        notes: str = "",
+        affiliation: str = "UNKNOWN",
+        symbol_code: str = "",
+        echelon: str = "",
+        photo_id: Optional[int] = None,
+    ) -> dict:
         import json as _json
+
         coords = geometry.get("coords", [])
         lat = float(coords[0][0]) if coords else 0.0
         lon = float(coords[0][1]) if coords else 0.0
-        geom_str = _json.dumps(geometry) if geometry.get("type") in ("line", "polygon", "point") else ""
+        geom_str = (
+            _json.dumps(geometry)
+            if geometry.get("type") in ("line", "polygon", "point")
+            else ""
+        )
         body: dict = {
-            "type":        obj_type,
-            "latitude":    lat,
-            "longitude":   lon,
-            "geometry":    geom_str,
-            "notes":       notes,
+            "type": obj_type,
+            "latitude": lat,
+            "longitude": lon,
+            "geometry": geom_str,
+            "notes": notes,
             "affiliation": affiliation,
             "symbol_code": symbol_code,
-            "echelon":     echelon,
+            "echelon": echelon,
         }
         if photo_id is not None:
             body["photo_id"] = photo_id
@@ -120,12 +147,14 @@ class ArrowClient:
         r = httpx.delete(
             f"{self.base_url}/tactical-objects/{obj_id}",
             headers=self._headers(),
-            timeout=8.0, verify=_VERIFY,
+            timeout=8.0,
+            verify=_VERIFY,
         )
         r.raise_for_status()
 
-    def patch_tactical_object(self, obj_id: int, lat: float, lon: float,
-                              geometry: str | None = None) -> dict:
+    def patch_tactical_object(
+        self, obj_id: int, lat: float, lon: float, geometry: str | None = None
+    ) -> dict:
         body = {"latitude": lat, "longitude": lon}
         if geometry is not None:
             body["geometry"] = geometry
@@ -133,7 +162,8 @@ class ArrowClient:
             f"{self.base_url}/tactical-objects/{obj_id}",
             json=body,
             headers=self._headers(),
-            timeout=8.0, verify=_VERIFY,
+            timeout=8.0,
+            verify=_VERIFY,
         )
         r.raise_for_status()
         return r.json()
@@ -153,8 +183,9 @@ class ArrowClient:
     def alerts(self) -> list:
         return self._get("/alerts")
 
-    def send_alert(self, alert_type: str,
-                   lat: Optional[float] = None, lon: Optional[float] = None) -> dict:
+    def send_alert(
+        self, alert_type: str, lat: Optional[float] = None, lon: Optional[float] = None
+    ) -> dict:
         body: dict = {"type": alert_type}
         if lat is not None:
             body["latitude"] = lat
@@ -172,7 +203,9 @@ class ArrowClient:
     # ---- Photos / media ---------------------------------------------
     def upload_media(self, file_path: str) -> int:
         """Upload an image or video file; returns the photo ID."""
-        import mimetypes, os
+        import mimetypes
+        import os
+
         mime = mimetypes.guess_type(file_path)[0] or "image/jpeg"
         with open(file_path, "rb") as f:
             data = f.read()
@@ -197,8 +230,12 @@ class ArrowClient:
     def messages(self, limit: int = 100) -> list:
         return self._get("/messages", limit=limit)
 
-    def send_message(self, content: str, receiver_id: Optional[int] = None,
-                     photo_id: Optional[int] = None) -> dict:
+    def send_message(
+        self,
+        content: str,
+        receiver_id: Optional[int] = None,
+        photo_id: Optional[int] = None,
+    ) -> dict:
         body: dict = {"content": content, "message_type": "BROADCAST"}
         if receiver_id:
             body["receiver_id"] = receiver_id
@@ -207,8 +244,9 @@ class ArrowClient:
             body["photo_id"] = photo_id
         return self._post("/messages", body)
 
-    def send_message_room(self, content: str, chatroom_id: int,
-                          photo_id: Optional[int] = None) -> dict:
+    def send_message_room(
+        self, content: str, chatroom_id: int, photo_id: Optional[int] = None
+    ) -> dict:
         body: dict = {
             "content": content,
             "message_type": "ROOM",
@@ -222,7 +260,9 @@ class ArrowClient:
     def chatrooms(self) -> list:
         return self._get("/chatrooms")
 
-    def create_chatroom(self, name: str, member_ids: Optional[list[int]] = None) -> dict:
+    def create_chatroom(
+        self, name: str, member_ids: Optional[list[int]] = None
+    ) -> dict:
         return self._post("/chatrooms", {"name": name, "member_ids": member_ids or []})
 
     def add_chatroom_member(self, room_id: int, operator_id: int) -> dict:
@@ -247,7 +287,9 @@ class ArrowClient:
     def delete_mission(self, mission_id: int) -> None:
         r = httpx.delete(
             f"{self.base_url}/missions/{mission_id}",
-            headers=self._headers(), timeout=8.0, verify=_VERIFY,
+            headers=self._headers(),
+            timeout=8.0,
+            verify=_VERIFY,
         )
         r.raise_for_status()
 
@@ -267,12 +309,18 @@ class ArrowClient:
     def external_streams(self) -> list:
         return self._get("/streams/external")
 
-    def add_external_stream(self, name: str, url: str, stream_type: str,
-                            description: str = "") -> dict:
-        return self._post("/streams/external", {
-            "name": name, "url": url,
-            "stream_type": stream_type, "description": description,
-        })
+    def add_external_stream(
+        self, name: str, url: str, stream_type: str, description: str = ""
+    ) -> dict:
+        return self._post(
+            "/streams/external",
+            {
+                "name": name,
+                "url": url,
+                "stream_type": stream_type,
+                "description": description,
+            },
+        )
 
     def recordings(self) -> list:
         return self._get("/streams/recordings")
@@ -285,22 +333,33 @@ class ArrowClient:
 
     # ---- OPORDs -----------------------------------------------------
     # ---- OPORD snapshots --------------------------------------------
-    def add_opord_snapshot(self, opord_id: int, label: str, image_b64: str,
-                           bbox: list = None, center: list = None,
-                           zoom: float = 0.0) -> dict:
-        return self._post(f"/opord/{opord_id}/snapshots", {
-            "label":     label,
-            "image_b64": image_b64,
-            "bbox":      bbox    or [],
-            "center":    center  or [],
-            "zoom":      zoom,
-            "annotations": "",
-        })
+    def add_opord_snapshot(
+        self,
+        opord_id: int,
+        label: str,
+        image_b64: str,
+        bbox: list = None,
+        center: list = None,
+        zoom: float = 0.0,
+    ) -> dict:
+        return self._post(
+            f"/opord/{opord_id}/snapshots",
+            {
+                "label": label,
+                "image_b64": image_b64,
+                "bbox": bbox or [],
+                "center": center or [],
+                "zoom": zoom,
+                "annotations": "",
+            },
+        )
 
     def delete_opord_snapshot(self, opord_id: int, snap_id: int) -> dict:
         r = httpx.delete(
             f"{self.base_url}/opord/{opord_id}/snapshots/{snap_id}",
-            headers=self._headers(), timeout=8.0, verify=_VERIFY,
+            headers=self._headers(),
+            timeout=8.0,
+            verify=_VERIFY,
         )
         r.raise_for_status()
         return r.json()
@@ -317,7 +376,10 @@ class ArrowClient:
     def update_opord(self, opord_id: int, data: dict) -> dict:
         r = httpx.put(
             f"{self.base_url}/opord/{opord_id}",
-            json=data, headers=self._headers(), timeout=10.0, verify=_VERIFY,
+            json=data,
+            headers=self._headers(),
+            timeout=10.0,
+            verify=_VERIFY,
         )
         r.raise_for_status()
         return r.json()
@@ -352,8 +414,8 @@ class ArrowClient:
         self,
         name: str,
         dest_path: str,
-        on_progress=None,   # callable(done_bytes: int, total_bytes: int)
-        stop_event=None,    # threading.Event — set it to abort
+        on_progress=None,  # callable(done_bytes: int, total_bytes: int)
+        stop_event=None,  # threading.Event — set it to abort
     ) -> None:
         """Stream /map/sources/{name}/download to dest_path.
 
@@ -361,16 +423,19 @@ class ArrowClient:
         Aborts cleanly when stop_event is set.
         """
         import os
+
         url = f"{self.base_url}/map/sources/{name}/download"
         with httpx.stream(
-            "GET", url, headers=self._headers(),
+            "GET",
+            url,
+            headers=self._headers(),
             timeout=httpx.Timeout(connect=10.0, read=120.0, write=60.0, pool=5.0),
             verify=_VERIFY,
         ) as r:
             r.raise_for_status()
             total = int(r.headers.get("content-length", 0))
-            done  = 0
-            tmp   = dest_path + ".part"
+            done = 0
+            tmp = dest_path + ".part"
             try:
                 with open(tmp, "wb") as f:
                     for chunk in r.iter_bytes(chunk_size=65_536):

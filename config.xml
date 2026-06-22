@@ -6,7 +6,10 @@
     </server>
 
     <database>
-        <url>sqlite:///./arrow.db</url>
+        <!-- PostgreSQL + PostGIS. Override with ARROW_DATABASE_URL env var.
+             Local dev: postgresql+psycopg://arrow:arrow_dev@localhost:5432/arrow
+             Docker:    set via ARROW_DATABASE_URL in docker-compose.yml        -->
+        <url>postgresql+psycopg://arrow:arrow_dev@localhost:5432/arrow</url>
     </database>
 
     <auth>

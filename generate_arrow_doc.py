@@ -3,17 +3,22 @@ Generate Arrow ecosystem document — high-res diagram + 2000-word text → PDF.
 Run: python3 generate_arrow_doc.py
 Output: Arrow_Ecosystem.pdf
 """
+
 from __future__ import annotations
-import io, math
+import io
 from PIL import Image, ImageDraw, ImageFont
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, HRFlowable,
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Image as RLImage,
+    HRFlowable,
     KeepTogether,
 )
 
@@ -21,92 +26,116 @@ from reportlab.platypus import (
 # 1.  DIAGRAM
 # ─────────────────────────────────────────────────────────────────────────────
 
-W, H = 3200, 2000   # canvas size (pixels)
-BG    = (10, 13, 18)
+W, H = 3200, 2000  # canvas size (pixels)
+BG = (10, 13, 18)
 PANEL = (20, 27, 36)
-BORD  = (48, 54, 61)
+BORD = (48, 54, 61)
 
 # colour palette per layer
 C = {
-    "backend":  "#e36209",   # amber
-    "web":      "#388bfd",   # blue
-    "android":  "#3fb950",   # green
-    "front":    "#bc8cff",   # purple
-    "protocol": "#58a6ff",   # light-blue
-    "db":       "#f78166",   # salmon
-    "title":    "#e6edf3",
-    "sub":      "#8b949e",
+    "backend": "#e36209",  # amber
+    "web": "#388bfd",  # blue
+    "android": "#3fb950",  # green
+    "front": "#bc8cff",  # purple
+    "protocol": "#58a6ff",  # light-blue
+    "db": "#f78166",  # salmon
+    "title": "#e6edf3",
+    "sub": "#8b949e",
     "border_b": "#e36209",
     "border_w": "#388bfd",
     "border_a": "#3fb950",
     "border_f": "#bc8cff",
 }
 
+
 def hex_to_rgb(h: str):
     h = h.lstrip("#")
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
+
 
 def rounded_rect(draw, xy, radius, fill, outline=None, width=2):
     x0, y0, x1, y1 = xy
-    draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill,
-                           outline=outline, width=width)
+    draw.rounded_rectangle(
+        [x0, y0, x1, y1], radius=radius, fill=fill, outline=outline, width=width
+    )
+
 
 def make_diagram() -> io.BytesIO:
-    img  = Image.new("RGB", (W, H), BG)
+    img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
     # ── try to load a font, fall back gracefully ──────────────────────────
     def font(size):
-        for name in ["/System/Library/Fonts/Helvetica.ttc",
-                     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                     "/usr/share/fonts/dejavu/DejaVuSans.ttf"]:
+        for name in [
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        ]:
             try:
                 return ImageFont.truetype(name, size)
             except Exception:
                 pass
         return ImageFont.load_default()
 
-    F_TITLE  = font(52)
-    F_HEAD   = font(36)
-    F_BODY   = font(26)
-    F_SMALL  = font(22)
-    F_TINY   = font(18)
-    F_PROTO  = font(24)
+    F_TITLE = font(52)
+    F_HEAD = font(36)
+    F_BODY = font(26)
+    F_SMALL = font(22)
+    F_TINY = font(18)
+    F_PROTO = font(24)
 
     # ── title bar ────────────────────────────────────────────────────────
     draw.rectangle([0, 0, W, 90], fill=(16, 21, 28))
-    draw.text((W//2, 45), "A R R O W   —   Tactical Situational Awareness Ecosystem",
-              font=F_TITLE, fill=hex_to_rgb(C["title"]), anchor="mm")
+    draw.text(
+        (W // 2, 45),
+        "A R R O W   —   Tactical Situational Awareness Ecosystem",
+        font=F_TITLE,
+        fill=hex_to_rgb(C["title"]),
+        anchor="mm",
+    )
     draw.line([0, 90, W, 90], fill=BORD, width=2)
 
     # ── layout constants ─────────────────────────────────────────────────
-    MARGIN   = 40
-    TOP      = 110
-    BOT      = H - 50
-    COL_W    = (W - MARGIN * 5) // 4
-    ROWS     = BOT - TOP
-    CORNER   = 18
+    MARGIN = 40
+    TOP = 110
+    BOT = H - 50
+    COL_W = (W - MARGIN * 5) // 4
+    ROWS = BOT - TOP
+    CORNER = 18
 
-    cols = [MARGIN + i * (COL_W + MARGIN) for i in range(4)]   # left-x of each col
-    col_labels = ["ANDROID CLIENT", "BACKEND SERVICES", "WEB DASHBOARD", "DESKTOP CLIENT (PyQt6)"]
+    cols = [MARGIN + i * (COL_W + MARGIN) for i in range(4)]  # left-x of each col
+    col_labels = [
+        "ANDROID CLIENT",
+        "BACKEND SERVICES",
+        "WEB DASHBOARD",
+        "DESKTOP CLIENT (PyQt6)",
+    ]
     col_colors = [C["android"], C["backend"], C["web"], C["front"]]
 
-    def col_right(ci): return cols[ci] + COL_W
+    def col_right(ci):
+        return cols[ci] + COL_W
 
     # ── draw column panels ────────────────────────────────────────────────
     def draw_col(ci, label, color):
         x0, y0 = cols[ci], TOP
         x1, y1 = col_right(ci), BOT
-        c_rgb   = hex_to_rgb(color)
-        bg_rgb  = tuple(max(0, v - 6) for v in PANEL)   # slightly darker panel
-        rounded_rect(draw, [x0, y0, x1, y1], CORNER,
-                     fill=bg_rgb, outline=c_rgb, width=3)
+        c_rgb = hex_to_rgb(color)
+        bg_rgb = tuple(max(0, v - 6) for v in PANEL)  # slightly darker panel
+        rounded_rect(
+            draw, [x0, y0, x1, y1], CORNER, fill=bg_rgb, outline=c_rgb, width=3
+        )
         # coloured header strip
-        draw.rounded_rectangle([x0, y0, x1, y0 + 52], radius=CORNER,
-                               fill=c_rgb, outline=c_rgb)
+        draw.rounded_rectangle(
+            [x0, y0, x1, y0 + 52], radius=CORNER, fill=c_rgb, outline=c_rgb
+        )
         draw.rectangle([x0, y0 + CORNER, x1, y0 + 52], fill=c_rgb)
-        draw.text(((x0 + x1) // 2, y0 + 26), label,
-                  font=F_HEAD, fill=(255, 255, 255), anchor="mm")
+        draw.text(
+            ((x0 + x1) // 2, y0 + 26),
+            label,
+            font=F_HEAD,
+            fill=(255, 255, 255),
+            anchor="mm",
+        )
 
     for i, (lbl, clr) in enumerate(zip(col_labels, col_colors)):
         draw_col(i, lbl, clr)
@@ -114,142 +143,264 @@ def make_diagram() -> io.BytesIO:
     # ── helper: draw a feature box inside a column ─────────────────────
     def feature_box(ci, y_start, title, lines, color, height=None):
         pad = 14
-        x0  = cols[ci] + pad
-        x1  = col_right(ci) - pad
+        x0 = cols[ci] + pad
+        x1 = col_right(ci) - pad
         if height is None:
             height = 28 + len(lines) * 28
-        y1  = y_start + height
+        y1 = y_start + height
         c_rgb = hex_to_rgb(color)
         faded = tuple(int(v * 0.15) for v in c_rgb)
-        rounded_rect(draw, [x0, y_start, x1, y1], 8,
-                     fill=faded, outline=c_rgb, width=2)
-        draw.text((x0 + 10, y_start + 8), title,
-                  font=F_BODY, fill=c_rgb)
+        rounded_rect(draw, [x0, y_start, x1, y1], 8, fill=faded, outline=c_rgb, width=2)
+        draw.text((x0 + 10, y_start + 8), title, font=F_BODY, fill=c_rgb)
         for j, line in enumerate(lines):
-            draw.text((x0 + 14, y_start + 36 + j * 28), "• " + line,
-                      font=F_SMALL, fill=hex_to_rgb(C["title"]))
+            draw.text(
+                (x0 + 14, y_start + 36 + j * 28),
+                "• " + line,
+                font=F_SMALL,
+                fill=hex_to_rgb(C["title"]),
+            )
         return y1 + 12
 
     # ── ANDROID column (0) ────────────────────────────────────────────────
     y = TOP + 62
-    y = feature_box(0, y, "Tactical Map", [
-        "OSMdroid + MIL-STD-2525C",
-        "Live operator positions",
-        "Radial menu (Enemy/Fire/POI)",
-        "Offline tile zones",
-    ], C["android"])
-    y = feature_box(0, y, "GPS Tracking", [
-        "Foreground service",
-        "5s heartbeat broadcast",
-        "Battery-aware",
-    ], C["android"])
-    y = feature_box(0, y, "Reports & Alerts", [
-        "9-Liners (CASEVAC/MEDEVAC/CAS)",
-        "Drone spot report",
-        "CBRN 1–6",
-        "TIC / MEDICAL / EVAC / LOST COMMS",
-    ], C["android"])
-    y = feature_box(0, y, "Messaging & OPORDs", [
-        "Direct / group / broadcast",
-        "Photo attachments (AES-256)",
-        "Read operation orders",
-    ], C["android"])
-    feature_box(0, y, "Auth & CoT Bridge", [
-        "JWT + TOTP MFA",
-        "CoT XML → ATAK interop",
-        "WebSocket auto-reconnect",
-    ], C["android"])
+    y = feature_box(
+        0,
+        y,
+        "Tactical Map",
+        [
+            "OSMdroid + MIL-STD-2525C",
+            "Live operator positions",
+            "Radial menu (Enemy/Fire/POI)",
+            "Offline tile zones",
+        ],
+        C["android"],
+    )
+    y = feature_box(
+        0,
+        y,
+        "GPS Tracking",
+        [
+            "Foreground service",
+            "5s heartbeat broadcast",
+            "Battery-aware",
+        ],
+        C["android"],
+    )
+    y = feature_box(
+        0,
+        y,
+        "Reports & Alerts",
+        [
+            "9-Liners (CASEVAC/MEDEVAC/CAS)",
+            "Drone spot report",
+            "CBRN 1–6",
+            "TIC / MEDICAL / EVAC / LOST COMMS",
+        ],
+        C["android"],
+    )
+    y = feature_box(
+        0,
+        y,
+        "Messaging & OPORDs",
+        [
+            "Direct / group / broadcast",
+            "Photo attachments (AES-256)",
+            "Read operation orders",
+        ],
+        C["android"],
+    )
+    feature_box(
+        0,
+        y,
+        "Auth & CoT Bridge",
+        [
+            "JWT + TOTP MFA",
+            "CoT XML → ATAK interop",
+            "WebSocket auto-reconnect",
+        ],
+        C["android"],
+    )
 
     # ── BACKEND column (1) ────────────────────────────────────────────────
     y = TOP + 62
-    y = feature_box(1, y, "API Layer (FastAPI)", [
-        "REST CRUD (hierarchy, reports)",
-        "JWT auth + role gating",
-        "Rate limiting + lockout",
-    ], C["backend"])
-    y = feature_box(1, y, "Real-Time Bus", [
-        "WebSocket pub/sub",
-        "Channels: tracking, alert,",
-        "  chat, tactical-obj, report,",
-        "  presence, CBRN, fires",
-    ], C["backend"])
-    y = feature_box(1, y, "Domain Modules", [
-        "tracking / alerts / messaging",
-        "reports / fire_missions / cot",
-        "opord / photos / streams",
-        "battle_management / map",
-    ], C["backend"])
-    y = feature_box(1, y, "Storage", [
-        "SQLite (Postgres-ready)",
-        "Structured JSON audit log",
-        "NIST CSF 2.0 aligned",
-    ], C["backend"])
-    feature_box(1, y, "CoT Gateway", [
-        "Cursor-on-Target XML",
-        "ATAK / WinTAK interop",
-        "NATO coalition bridge",
-    ], C["backend"])
+    y = feature_box(
+        1,
+        y,
+        "API Layer (FastAPI)",
+        [
+            "REST CRUD (hierarchy, reports)",
+            "JWT auth + role gating",
+            "Rate limiting + lockout",
+        ],
+        C["backend"],
+    )
+    y = feature_box(
+        1,
+        y,
+        "Real-Time Bus",
+        [
+            "WebSocket pub/sub",
+            "Channels: tracking, alert,",
+            "  chat, tactical-obj, report,",
+            "  presence, CBRN, fires",
+        ],
+        C["backend"],
+    )
+    y = feature_box(
+        1,
+        y,
+        "Domain Modules",
+        [
+            "tracking / alerts / messaging",
+            "reports / fire_missions / cot",
+            "opord / photos / streams",
+            "battle_management / map",
+        ],
+        C["backend"],
+    )
+    y = feature_box(
+        1,
+        y,
+        "Storage",
+        [
+            "PostgreSQL 16 + PostGIS 3.4",
+            "Structured JSON audit log",
+            "NIST CSF 2.0 aligned",
+        ],
+        C["backend"],
+    )
+    feature_box(
+        1,
+        y,
+        "CoT Gateway",
+        [
+            "Cursor-on-Target XML",
+            "ATAK / WinTAK interop",
+            "NATO coalition bridge",
+        ],
+        C["backend"],
+    )
 
     # ── WEB column (2) ────────────────────────────────────────────────────
     y = TOP + 62
-    y = feature_box(2, y, "Operational Dashboard", [
-        "Live Leaflet tactical map",
-        "All operators + trails",
-        "MIL-STD-2525 symbology",
-    ], C["web"])
-    y = feature_box(2, y, "Battle Management", [
-        "Battle lifecycle control",
-        "Tactical objects (enemy/POI)",
-        "Fire mission FDC",
-        "Mortar firing solutions",
-    ], C["web"])
-    y = feature_box(2, y, "OPORD Authoring", [
-        "Five-paragraph NATO format",
-        "OAKOC / DRAW-D / PACE",
-        "Map snapshot export → PDF",
-        "Distribute to operators",
-    ], C["web"])
-    y = feature_box(2, y, "Reports & Alerts", [
-        "9-liner review workflow",
-        "CBRN zone overlays",
-        "Drone-buzz audio + toast",
-    ], C["web"])
-    feature_box(2, y, "Admin Panel", [
-        "User & hierarchy CRUD",
-        "Offline map management",
-        "Audit log viewer",
-    ], C["web"])
+    y = feature_box(
+        2,
+        y,
+        "Operational Dashboard",
+        [
+            "Live Leaflet tactical map",
+            "All operators + trails",
+            "MIL-STD-2525 symbology",
+        ],
+        C["web"],
+    )
+    y = feature_box(
+        2,
+        y,
+        "Battle Management",
+        [
+            "Battle lifecycle control",
+            "Tactical objects (enemy/POI)",
+            "Fire mission FDC",
+            "Mortar firing solutions",
+        ],
+        C["web"],
+    )
+    y = feature_box(
+        2,
+        y,
+        "OPORD Authoring",
+        [
+            "Five-paragraph NATO format",
+            "OAKOC / DRAW-D / PACE",
+            "Map snapshot export → PDF",
+            "Distribute to operators",
+        ],
+        C["web"],
+    )
+    y = feature_box(
+        2,
+        y,
+        "Reports & Alerts",
+        [
+            "9-liner review workflow",
+            "CBRN zone overlays",
+            "Drone-buzz audio + toast",
+        ],
+        C["web"],
+    )
+    feature_box(
+        2,
+        y,
+        "Admin Panel",
+        [
+            "User & hierarchy CRUD",
+            "Offline map management",
+            "Audit log viewer",
+        ],
+        C["web"],
+    )
 
     # ── FRONT / PyQt6 column (3) ──────────────────────────────────────────
     y = TOP + 62
-    y = feature_box(3, y, "Tactical Map (Leaflet)", [
-        "MBTiles offline server",
-        "MIL-STD-2525 graphics",
-        "Free-draw annotations",
-        "Drag-and-drop media",
-    ], C["front"])
-    y = feature_box(3, y, "Route Planning & Nav", [
-        "Draw / import GPX",
-        "Waypoints: IP/RV/WP/EP",
-        "Turn-by-turn navigation",
-        "Bearing arrow + ETA",
-    ], C["front"])
-    y = feature_box(3, y, "Right-Panel Suite", [
-        "Alerts / Messages / Reports",
-        "Missions / Strike / OPORD",
-        "Draw / Layers / Media",
-        "Log viewer / Mumble PTT",
-    ], C["front"])
-    y = feature_box(3, y, "Simulators", [
-        "Battle scenario scripts",
-        "Multi-company laydowns",
-        "CoT / WS inject",
-    ], C["front"])
-    feature_box(3, y, "CoT & Auth", [
-        "JWT login + token store",
-        "QWebChannel bridge",
-        "QSettings persistence",
-    ], C["front"])
+    y = feature_box(
+        3,
+        y,
+        "Tactical Map (Leaflet)",
+        [
+            "MBTiles offline server",
+            "MIL-STD-2525 graphics",
+            "Free-draw annotations",
+            "Drag-and-drop media",
+        ],
+        C["front"],
+    )
+    y = feature_box(
+        3,
+        y,
+        "Route Planning & Nav",
+        [
+            "Draw / import GPX",
+            "Waypoints: IP/RV/WP/EP",
+            "Turn-by-turn navigation",
+            "Bearing arrow + ETA",
+        ],
+        C["front"],
+    )
+    y = feature_box(
+        3,
+        y,
+        "Right-Panel Suite",
+        [
+            "Alerts / Messages / Reports",
+            "Missions / Strike / OPORD",
+            "Draw / Layers / Media",
+            "Log viewer / Mumble PTT",
+        ],
+        C["front"],
+    )
+    y = feature_box(
+        3,
+        y,
+        "Simulators",
+        [
+            "Battle scenario scripts",
+            "Multi-company laydowns",
+            "CoT / WS inject",
+        ],
+        C["front"],
+    )
+    feature_box(
+        3,
+        y,
+        "CoT & Auth",
+        [
+            "JWT login + token store",
+            "QWebChannel bridge",
+            "QSettings persistence",
+        ],
+        C["front"],
+    )
 
     # ── PROTOCOL ARROWS in centre (between cols 1 and 2 effectively as labels)
     # Draw horizontal connection lines between Android↔Backend and Front↔Backend
@@ -260,13 +411,18 @@ def make_diagram() -> io.BytesIO:
         mx = (x0 + x1) // 2
         draw.line([x0, y, x1, y], fill=c, width=3)
         # arrowhead right
-        draw.polygon([(x1, y), (x1-14, y-7), (x1-14, y+7)], fill=c)
+        draw.polygon([(x1, y), (x1 - 14, y - 7), (x1 - 14, y + 7)], fill=c)
         # arrowhead left (bidirectional)
-        draw.polygon([(x0, y), (x0+14, y-7), (x0+14, y+7)], fill=c)
+        draw.polygon([(x0, y), (x0 + 14, y - 7), (x0 + 14, y + 7)], fill=c)
         # label pill
         tw = len(label) * 13 + 20
-        draw.rounded_rectangle([mx-tw//2, y-16, mx+tw//2, y+16],
-                               radius=8, fill=BG, outline=c, width=2)
+        draw.rounded_rectangle(
+            [mx - tw // 2, y - 16, mx + tw // 2, y + 16],
+            radius=8,
+            fill=BG,
+            outline=c,
+            width=2,
+        )
         draw.text((mx, y), label, font=F_PROTO, fill=c, anchor="mm")
 
     # Gap between col 0 right and col 1 left
@@ -291,18 +447,29 @@ def make_diagram() -> io.BytesIO:
 
     # ── legend ────────────────────────────────────────────────────────────
     lx, ly = MARGIN, H - 40
-    for label, clr in [("Android", C["android"]), ("Backend", C["backend"]),
-                        ("Web", C["web"]), ("Desktop/Front", C["front"]),
-                        ("Protocol", C["protocol"])]:
-        draw.rounded_rectangle([lx, ly-12, lx+16, ly+12], radius=4,
-                               fill=hex_to_rgb(clr))
-        draw.text((lx + 22, ly), label, font=F_TINY, fill=hex_to_rgb(C["sub"]),
-                  anchor="lm")
+    for label, clr in [
+        ("Android", C["android"]),
+        ("Backend", C["backend"]),
+        ("Web", C["web"]),
+        ("Desktop/Front", C["front"]),
+        ("Protocol", C["protocol"]),
+    ]:
+        draw.rounded_rectangle(
+            [lx, ly - 12, lx + 16, ly + 12], radius=4, fill=hex_to_rgb(clr)
+        )
+        draw.text(
+            (lx + 22, ly), label, font=F_TINY, fill=hex_to_rgb(C["sub"]), anchor="lm"
+        )
         lx += len(label) * 11 + 50
 
     # ── version stamp ─────────────────────────────────────────────────────
-    draw.text((W - MARGIN, H - 26), "Arrow  ·  2026",
-              font=F_TINY, fill=hex_to_rgb(C["sub"]), anchor="rm")
+    draw.text(
+        (W - MARGIN, H - 26),
+        "Arrow  ·  2026",
+        font=F_TINY,
+        fill=hex_to_rgb(C["sub"]),
+        anchor="rm",
+    )
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", dpi=(300, 300))
@@ -315,8 +482,9 @@ def make_diagram() -> io.BytesIO:
 # ─────────────────────────────────────────────────────────────────────────────
 
 SECTIONS = [
-    ("What Arrow Is and Why It Exists",
-     """Modern tactical operations produce an enormous, continuous flood of information.
+    (
+        "What Arrow Is and Why It Exists",
+        """Modern tactical operations produce an enormous, continuous flood of information.
 GPS positions, contact reports, fire missions, medical evacuations, chemical hazard zones,
 drone observations, operational orders — all of it arrives simultaneously, from multiple
 echelons, across multiple networks, through multiple device types. The traditional answer
@@ -333,20 +501,22 @@ mid-rotation.
 The platform is built around one central principle: every event that matters on a tactical
 network — a position update, a contact report, an emergency alert, a fire mission, a medical
 request, a CBRN observation — should reach every person who needs it, immediately, on
-whatever device they are carrying, without any manual hand-off between systems."""),
-
-    ("The Four Pillars of the Arrow Ecosystem",
-     """Arrow is not a single application. It is a four-component ecosystem: a backend services
+whatever device they are carrying, without any manual hand-off between systems.""",
+    ),
+    (
+        "The Four Pillars of the Arrow Ecosystem",
+        """Arrow is not a single application. It is a four-component ecosystem: a backend services
 layer, an Android tactical client, a browser-based operational dashboard, and a PyQt6
 desktop client. Each component is built for a distinct context and user, but they share a
 single data model, a single authentication layer, and a single real-time communications bus.
 Changing a tactical object on any one client propagates to all others in under a second.
 
 These four pillars are described in detail below, followed by the communication protocols
-that bind them together."""),
-
-    ("Backend Services — The Operational Core",
-     """The backend is the authoritative source of truth for the entire Arrow network. It is
+that bind them together.""",
+    ),
+    (
+        "Backend Services — The Operational Core",
+        """The backend is the authoritative source of truth for the entire Arrow network. It is
 built on FastAPI, chosen for its native asynchronous support, automatic OpenAPI documentation,
 and clean dependency injection model. Authentication uses JWT tokens with a 256-bit
 auto-generated secret; every endpoint that modifies state requires a valid token, and admin
@@ -362,8 +532,8 @@ encrypted media storage), streams (live MJPEG camera feeds from operators to the
 battle_management (battle lifecycle gated to Battle Captain and Admin roles), and cot
 (Cursor-on-Target XML encoding and decoding for ATAK interoperability).
 
-All persistent state lives in SQLite with a schema that is ready to migrate to PostgreSQL
-when the unit scales. Every action that modifies state produces a structured JSON audit log
+All persistent state lives in PostgreSQL 16 + PostGIS 3.4, with MapServer serving OGC WMS/WFS
+tactical layers from PostGIS views. The schema covers all 32 domain models. Every action that modifies state produces a structured JSON audit log
 entry, aligned to NIST Cybersecurity Framework 2.0 categories (DE.CM / GV.OV). Rate
 limiting, account lockout on repeated failed logins, and token revocation via an in-memory
 blacklist (optionally Redis-backed) round out the security posture.
@@ -371,10 +541,11 @@ blacklist (optionally Redis-backed) round out the security posture.
 A single in-process WebSocket pub/sub broadcaster fans every real-time event across all
 connected clients. The broadcaster interface is deliberately clean and pluggable: swap
 the in-process implementation for Redis or NATS without touching a single caller. Active
-channels include: tracking, tactical-object, alert, chat, report, presence, cbrn, and fires."""),
-
-    ("Android Client — The Operator's Device",
-     """Operators in the field run the Arrow Android application, built entirely in Kotlin with
+channels include: tracking, tactical-object, alert, chat, report, presence, cbrn, and fires.""",
+    ),
+    (
+        "Android Client — The Operator's Device",
+        """Operators in the field run the Arrow Android application, built entirely in Kotlin with
 Jetpack Compose for the UI. The application is designed to scale seamlessly between phone and
 tablet form factors in both portrait and landscape orientations, using a WindowSize
 class-based layout system.
@@ -407,10 +578,11 @@ connected display. Operation orders authored by the Battle Captain are readable 
 Messaging supports direct, group, and broadcast chat with photo attachments stored encrypted
 at rest (AES-256-GCM). Authentication uses JWT with optional TOTP MFA; the CoT bridge
 enables position and event sharing with ATAK and other TAK-ecosystem clients on the same
-coalition network."""),
-
-    ("Web Dashboard — The Battle Captain's Screen",
-     """Battle Captains and Admins access Arrow through a browser-based Flask operational dashboard.
+coalition network.""",
+    ),
+    (
+        "Web Dashboard — The Battle Captain's Screen",
+        """Battle Captains and Admins access Arrow through a browser-based Flask operational dashboard.
 This is the digital operations room — a single screen that replaces a wall of maps, radio
 logs, and whiteboards.
 
@@ -436,10 +608,11 @@ position is adjusted. When emergency alerts arrive, the dashboard plays a distin
 tone, voices the alert type (using the Web Speech API), and shows a colour-coded persistent
 toast carrying all submitted detail. Incoming drone spot reports trigger a drone-buzz tone
 and a purple toast with every field. An admin panel provides full CRUD over the military
-hierarchy, offline map zone management, and the audit log viewer."""),
-
-    ("Desktop Client — Front (PyQt6)",
-     """The PyQt6 desktop client — referred to internally as 'front' — provides a native
+hierarchy, offline map zone management, and the audit log viewer.""",
+    ),
+    (
+        "Desktop Client — Front (PyQt6)",
+        """The PyQt6 desktop client — referred to internally as 'front' — provides a native
 cross-platform tactical workstation for operators and battle captains running macOS, Windows,
 or Linux. It combines the full depth of the backend API with a high-fidelity local map
 experience that runs offline without any browser dependency.
@@ -462,10 +635,11 @@ The right-panel suite is a collapsible docked panel holding purpose-built subpan
 Messages, Reports, Missions, Strike Packages, OPORD viewer, Draw tools, Layer manager,
 Media library, Log viewer, and integrated Mumble push-to-talk. MBTiles offline maps load
 directly from local files. The client connects to the backend via JWT-authenticated REST and
-WebSocket, using the same credentials and protocol as the Android and web clients."""),
-
-    ("How Arrow Communicates",
-     """Three complementary protocols bind the Arrow ecosystem together, each matched to what
+WebSocket, using the same credentials and protocol as the Android and web clients.""",
+    ),
+    (
+        "How Arrow Communicates",
+        """Three complementary protocols bind the Arrow ecosystem together, each matched to what
 it carries.
 
 WebSockets are the backbone of real-time communication. Every connected client — Android,
@@ -495,10 +669,11 @@ All traffic between clients and the backend passes through an nginx reverse prox
 is available with either self-signed certificates (generated dynamically from server IPs
 at deploy time) or CA-signed certificates for production use. The backend port is not
 exposed to the host network — it is reachable only through the proxy — and the entire
-stack deploys with a single docker compose up -d."""),
-
-    ("Security and Deployment",
-     """Arrow is designed to run on infrastructure the unit controls, with no dependency on
+stack deploys with a single docker compose up -d.""",
+    ),
+    (
+        "Security and Deployment",
+        """Arrow is designed to run on infrastructure the unit controls, with no dependency on
 external services. The entire stack deploys from a single docker compose up -d command.
 The backend, web dashboard, MBTiles tile server, and nginx proxy run as separate containers
 on a defined internal network.
@@ -512,7 +687,8 @@ changing action produces a structured JSON audit log entry aligned to NIST CSF 2
 
 The platform is not a product with a vendor in the loop. The code is open, the tests pass,
 the protocols are standard, and every dependency is auditable. When the mission changes
-— new echelon, new reporting format, new interop partner — the platform changes with it."""),
+— new echelon, new reporting format, new interop partner — the platform changes with it.""",
+    ),
 ]
 
 
@@ -520,14 +696,15 @@ the protocols are standard, and every dependency is auditable. When the mission 
 # 3.  PDF ASSEMBLY
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def build_pdf(out_path: str):
     doc = SimpleDocTemplate(
         out_path,
         pagesize=A4,
-        leftMargin=20*mm,
-        rightMargin=20*mm,
-        topMargin=20*mm,
-        bottomMargin=20*mm,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
         title="Arrow — Tactical Situational Awareness Ecosystem",
         author="Arrow Project",
     )
@@ -578,40 +755,54 @@ def build_pdf(out_path: str):
     story = []
 
     # Cover title block
-    story.append(Spacer(1, 4*mm))
+    story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("A R R O W", title_style))
-    story.append(Paragraph(
-        "Open Situational Awareness for the Warfighter",
-        subtitle_style,
-    ))
+    story.append(
+        Paragraph(
+            "Open Situational Awareness for the Warfighter",
+            subtitle_style,
+        )
+    )
     story.append(HRFlowable(width="100%", thickness=1, color=hr_color, spaceAfter=8))
 
     # Ecosystem diagram
     diag_buf = make_diagram()
-    rl_img = RLImage(diag_buf, width=170*mm, height=170*mm * (H/W))
+    rl_img = RLImage(diag_buf, width=170 * mm, height=170 * mm * (H / W))
     story.append(rl_img)
-    story.append(Spacer(1, 6*mm))
+    story.append(Spacer(1, 6 * mm))
     story.append(HRFlowable(width="100%", thickness=1, color=hr_color, spaceAfter=10))
 
     # Text sections
     for heading, body_text in SECTIONS:
-        story.append(KeepTogether([
-            Paragraph(heading, heading_style),
-            HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#21262d"),
-                       spaceAfter=4),
-        ]))
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph(heading, heading_style),
+                    HRFlowable(
+                        width="100%",
+                        thickness=0.5,
+                        color=colors.HexColor("#21262d"),
+                        spaceAfter=4,
+                    ),
+                ]
+            )
+        )
         # Split on double newlines into separate paragraphs
         for para in body_text.strip().split("\n\n"):
-            cleaned = " ".join(line.strip() for line in para.splitlines() if line.strip())
+            cleaned = " ".join(
+                line.strip() for line in para.splitlines() if line.strip()
+            )
             story.append(Paragraph(cleaned, body_style))
-        story.append(Spacer(1, 3*mm))
+        story.append(Spacer(1, 3 * mm))
 
     # Footer rule
     story.append(HRFlowable(width="100%", thickness=1, color=hr_color, spaceBefore=8))
-    story.append(Paragraph(
-        "Arrow  ·  Tactical Situational Awareness  ·  2026",
-        subtitle_style,
-    ))
+    story.append(
+        Paragraph(
+            "Arrow  ·  Tactical Situational Awareness  ·  2026",
+            subtitle_style,
+        )
+    )
 
     doc.build(story)
     print(f"[OK] Written: {out_path}")

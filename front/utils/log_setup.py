@@ -7,6 +7,7 @@ Level   : INFO by default; set ARROW_LOG_LEVEL=DEBUG for verbose output.
 
 In-app access: use get_recent_lines(n) to populate the log panel.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,13 +15,14 @@ import logging.handlers
 import os
 from pathlib import Path
 
-_LOG_DIR  = Path.home() / ".arrow" / "logs"
+_LOG_DIR = Path.home() / ".arrow" / "logs"
 _LOG_FILE = _LOG_DIR / "arrow_front.log"
 
 _FMT = logging.Formatter(
     "%(asctime)s  %(levelname)-8s  %(name)-30s  %(message)s",
     datefmt="%H:%M:%S",
 )
+
 
 # In-memory ring-buffer so the log panel can read recent entries
 class _RingHandler(logging.Handler):
@@ -33,7 +35,7 @@ class _RingHandler(logging.Handler):
         line = self.format(record)
         self._buf.append(line)
         if len(self._buf) > self._max:
-            self._buf = self._buf[-self._max:]
+            self._buf = self._buf[-self._max :]
 
     def lines(self, n: int = 200) -> list[str]:
         return self._buf[-n:]

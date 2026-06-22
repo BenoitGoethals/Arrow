@@ -29,7 +29,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from backend.photos.router import (
-    find_photo_by_hash, read_photo_bytes, store_photo_bytes,
+    find_photo_by_hash,
+    read_photo_bytes,
+    store_photo_bytes,
 )
 from backend.storage.database import get_db
 from backend.storage.models import Operator
@@ -42,9 +44,11 @@ def marti_base_url() -> str:
 
     Set ARROW_MARTI_URL to the device-reachable URL (e.g. http://78.21.255.210:6001).
     """
-    return (os.environ.get("ARROW_MARTI_URL")
-            or os.environ.get("ARROW_PUBLIC_BACKEND_URL")
-            or "http://127.0.0.1:6001").rstrip("/")
+    return (
+        os.environ.get("ARROW_MARTI_URL")
+        or os.environ.get("ARROW_PUBLIC_BACKEND_URL")
+        or "http://127.0.0.1:6001"
+    ).rstrip("/")
 
 
 def content_url(sha256: str) -> str:
@@ -68,7 +72,9 @@ async def _read_upload_bytes(request: Request) -> tuple[bytes, str]:
         for key in ("assetfile", "file", "resource"):
             f = form.get(key)
             if f is not None and hasattr(f, "read"):
-                return await f.read(), (getattr(f, "content_type", None) or "image/jpeg")
+                return await f.read(), (
+                    getattr(f, "content_type", None) or "image/jpeg"
+                )
     body = await request.body()
     return body, (ctype.split(";")[0].strip() or "application/octet-stream")
 
@@ -91,15 +97,22 @@ async def sync_upload(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "empty upload")
     uploader = _fallback_operator_id(db)
     if uploader is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "no operators to attribute upload")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "no operators to attribute upload"
+        )
     if mime == "application/octet-stream" and (filename or name or "").lower().endswith(
         (".jpg", ".jpeg")
     ):
         mime = "image/jpeg"
-    photo = store_photo_bytes(db, raw, mime, uploaded_by=uploader,
-                              original_name=name or filename or "atak-upload")
+    photo = store_photo_bytes(
+        db,
+        raw,
+        mime,
+        uploaded_by=uploader,
+        original_name=name or filename or "atak-upload",
+    )
     # TAK Server returns the content URL as plain text.
-    return Response(content=content_url(photo.sha256), media_type="text/plain")
+    return Response(content=content_url(photo.sha256 or ""), media_type="text/plain")
 
 
 @router.get("/sync/content")

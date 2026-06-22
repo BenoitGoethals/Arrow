@@ -32,7 +32,7 @@ from lxml import etree
 
 # KML 2.2 / 2.3 namespaces — accept both.
 _NS = {
-    "k":  "http://www.opengis.net/kml/2.2",
+    "k": "http://www.opengis.net/kml/2.2",
     "k3": "http://www.opengis.net/kml/2.3",
     "gx": "http://www.google.com/kml/ext/2.2",
 }
@@ -177,8 +177,14 @@ def _placemark_geometries(placemark: etree._Element) -> Iterable[etree._Element]
         local = _strip_ns(child.tag)
         if local == "MultiGeometry":
             yield from _placemark_geometries(child)
-        elif local in {"Point", "LineString", "LinearRing", "Polygon",
-                       "Track", "MultiTrack"}:
+        elif local in {
+            "Point",
+            "LineString",
+            "LinearRing",
+            "Polygon",
+            "Track",
+            "MultiTrack",
+        }:
             yield child
 
 
@@ -223,26 +229,39 @@ def _extract_features(root: etree._Element) -> list[dict]:
                 pts = _parse_coords(_local_text(geom, "coordinates"))
                 if pts:
                     lat, lon = pts[0]
-                    out.append({
-                        "type": "POINT", "name": name, "description": desc,
-                        "style": style, "coords": [lat, lon],
-                    })
+                    out.append(
+                        {
+                            "type": "POINT",
+                            "name": name,
+                            "description": desc,
+                            "style": style,
+                            "coords": [lat, lon],
+                        }
+                    )
             elif local in {"LineString", "LinearRing"}:
                 pts = _parse_coords(_local_text(geom, "coordinates"))
                 if len(pts) >= 2:
-                    out.append({
-                        "type": "LINE", "name": name, "description": desc,
-                        "style": style,
-                        "coords": [list(p) for p in pts],
-                    })
+                    out.append(
+                        {
+                            "type": "LINE",
+                            "name": name,
+                            "description": desc,
+                            "style": style,
+                            "coords": [list(p) for p in pts],
+                        }
+                    )
             elif local == "Polygon":
                 pts = _polygon_outer_coords(geom)
                 if len(pts) >= 3:
-                    out.append({
-                        "type": "POLYGON", "name": name, "description": desc,
-                        "style": style,
-                        "coords": [list(p) for p in pts],
-                    })
+                    out.append(
+                        {
+                            "type": "POLYGON",
+                            "name": name,
+                            "description": desc,
+                            "style": style,
+                            "coords": [list(p) for p in pts],
+                        }
+                    )
             # gx:Track / Track / MultiTrack — rare in tactical overlays;
             # we skip them rather than try to time-resolve the samples.
 
@@ -267,7 +286,9 @@ def _read_kml_bytes(data: bytes) -> bytes:
     return data
 
 
-def parse_kml(data: bytes) -> tuple[list[dict], tuple[float, float, float, float] | None]:
+def parse_kml(
+    data: bytes,
+) -> tuple[list[dict], tuple[float, float, float, float] | None]:
     """Parse KML/KMZ bytes into (features, bbox).
 
     ``bbox`` is ``(min_lon, min_lat, max_lon, max_lat)`` over every coordinate
@@ -278,16 +299,19 @@ def parse_kml(data: bytes) -> tuple[list[dict], tuple[float, float, float, float
     try:
         # ``resolve_entities=False`` blocks billion-laughs / external-entity
         # attacks. KML never legitimately needs entity expansion.
-        parser = etree.XMLParser(resolve_entities=False, no_network=True,
-                                 huge_tree=False)
+        parser = etree.XMLParser(
+            resolve_entities=False, no_network=True, huge_tree=False
+        )
         root = etree.fromstring(xml, parser=parser)
     except etree.XMLSyntaxError as exc:
         raise KmlParseError(f"KML is not valid XML: {exc}")
 
     features = _extract_features(cast(etree._Element, root))
 
-    min_lon =  180.0; min_lat =  90.0
-    max_lon = -180.0; max_lat = -90.0
+    min_lon = 180.0
+    min_lat = 90.0
+    max_lon = -180.0
+    max_lat = -90.0
     found = False
     for f in features:
         if f["type"] == "POINT":
@@ -297,10 +321,14 @@ def parse_kml(data: bytes) -> tuple[list[dict], tuple[float, float, float, float
             pts = [(p[0], p[1]) for p in f["coords"]]
         for lat, lon in pts:
             found = True
-            if lon < min_lon: min_lon = lon
-            if lat < min_lat: min_lat = lat
-            if lon > max_lon: max_lon = lon
-            if lat > max_lat: max_lat = lat
+            if lon < min_lon:
+                min_lon = lon
+            if lat < min_lat:
+                min_lat = lat
+            if lon > max_lon:
+                max_lon = lon
+            if lat > max_lat:
+                max_lat = lat
 
     bbox = (min_lon, min_lat, max_lon, max_lat) if found else None
     return features, bbox

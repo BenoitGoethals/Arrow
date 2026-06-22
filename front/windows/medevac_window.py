@@ -3,17 +3,23 @@
 Opens from the map radial menu with the pickup-zone location pre-filled.
 Submits to the backend as a MEDEVAC report with the full 9-liner payload.
 """
+
 from __future__ import annotations
-import json
 from datetime import datetime, timezone
-from typing import Optional
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QLabel, QLineEdit, QComboBox, QPushButton, QFrame,
-    QScrollArea, QWidget, QMessageBox, QGroupBox,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QComboBox,
+    QPushButton,
+    QFrame,
+    QScrollArea,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QFont
 
 # ── Field definitions per NATO STANAG 3705 / FM 8-10-6 ──────────────────────
@@ -67,17 +73,19 @@ def _sep() -> QFrame:
 
 def _lbl(text: str, color: str = "#8b949e", size: int = 9) -> QLabel:
     l = QLabel(text)
-    l.setStyleSheet(f"color:{color};font-size:{size}px;font-weight:700;letter-spacing:1px;")
+    l.setStyleSheet(
+        f"color:{color};font-size:{size}px;font-weight:700;letter-spacing:1px;"
+    )
     return l
 
 
 class MedevacWindow(QDialog):
     """Full NATO 9-liner MEDEVAC request form."""
 
-    report_submitted = pyqtSignal(dict)   # emitted on successful send
+    report_submitted = pyqtSignal(dict)  # emitted on successful send
 
     # ── Medical marker SIDC (Ground, Medical) ────────────────────────────────
-    MEDEVAC_SIDC = "SFGPUSM---D----"   # Friendly Ground Medical
+    MEDEVAC_SIDC = "SFGPUSM---D----"  # Friendly Ground Medical
 
     def __init__(
         self,
@@ -89,9 +97,9 @@ class MedevacWindow(QDialog):
     ):
         super().__init__(parent)
         self._client = client
-        self._lat    = lat
-        self._lon    = lon
-        self._mgrs   = mgrs or f"{lat:.5f}, {lon:.5f}"
+        self._lat = lat
+        self._lon = lon
+        self._mgrs = mgrs or f"{lat:.5f}, {lon:.5f}"
 
         self.setWindowTitle("MEDEVAC 9-LINER REQUEST")
         self.setMinimumWidth(560)
@@ -119,7 +127,9 @@ class MedevacWindow(QDialog):
         hl.addWidget(title)
         hl.addStretch()
         ts_lbl = QLabel(datetime.now(timezone.utc).strftime("Z %H%Mh %d%b%Y").upper())
-        ts_lbl.setStyleSheet("color:#6e7681;font-size:10px;font-family:'Courier New',monospace;")
+        ts_lbl.setStyleSheet(
+            "color:#6e7681;font-size:10px;font-family:'Courier New',monospace;"
+        )
         hl.addWidget(ts_lbl)
         root.addWidget(hdr)
 
@@ -172,7 +182,12 @@ class MedevacWindow(QDialog):
         def _row(line_num: str, label: str, widget_or_layout, color: str = "#ff9e64"):
             # Accept either a QWidget or a QLayout
             from PyQt6.QtWidgets import QLayout
-            widget = _wrap(widget_or_layout) if isinstance(widget_or_layout, QLayout) else widget_or_layout
+
+            widget = (
+                _wrap(widget_or_layout)
+                if isinstance(widget_or_layout, QLayout)
+                else widget_or_layout
+            )
             box = QHBoxLayout()
             box.setSpacing(8)
             num = QLabel(f"LINE {line_num}")
@@ -199,12 +214,12 @@ class MedevacWindow(QDialog):
         # ── Line 2: Frequency / callsign ────────────────────────────────
         l2_row = QHBoxLayout()
         self._l2_freq = _field("Freq (MHz)")
-        self._l2_cs   = _field("Call sign")
-        self._l2_suf  = _field("Suffix")
+        self._l2_cs = _field("Call sign")
+        self._l2_suf = _field("Suffix")
         self._l2_suf.setFixedWidth(60)
         l2_row.addWidget(self._l2_freq, 2)
-        l2_row.addWidget(self._l2_cs,   2)
-        l2_row.addWidget(self._l2_suf,  1)
+        l2_row.addWidget(self._l2_cs, 2)
+        l2_row.addWidget(self._l2_suf, 1)
         _row("2", "Radio freq / call sign / suffix", l2_row)
 
         # insert the layout directly
@@ -213,10 +228,10 @@ class MedevacWindow(QDialog):
         # ── Line 3: Number of patients by precedence ─────────────────
         l3_row = QHBoxLayout()
         self._l3_prec = _combo(_LINE3_PRECEDENCE)
-        self._l3_num  = _field("Count", True)
+        self._l3_num = _field("Count", True)
         self._l3_num.setFixedWidth(60)
         l3_row.addWidget(self._l3_prec, 3)
-        l3_row.addWidget(self._l3_num,  1)
+        l3_row.addWidget(self._l3_num, 1)
         _row("3", "Patients by\nprecedence / count", l3_row)
         fl.addWidget(_sep())
 
@@ -228,7 +243,7 @@ class MedevacWindow(QDialog):
         # ── Line 5: Number of patients by type ───────────────────────
         l5_row = QHBoxLayout()
         self._l5_litter = _field("Litter")
-        self._l5_amb    = _field("Ambulatory")
+        self._l5_amb = _field("Ambulatory")
         l5_row.addWidget(QLabel("Litter:"))
         l5_row.addWidget(self._l5_litter, 1)
         l5_row.addWidget(QLabel("Ambulatory:"))
@@ -247,9 +262,9 @@ class MedevacWindow(QDialog):
         # ── Line 7: Marking of pickup site ───────────────────────────
         l7_row = QHBoxLayout()
         self._l7_method = _combo(_LINE7_MARKING)
-        self._l7_color  = _field("Smoke colour / panel colour")
+        self._l7_color = _field("Smoke colour / panel colour")
         l7_row.addWidget(self._l7_method, 2)
-        l7_row.addWidget(self._l7_color,  2)
+        l7_row.addWidget(self._l7_color, 2)
         _row("7", "Marking of\npickup site", l7_row)
         fl.addWidget(_sep())
 
@@ -265,6 +280,7 @@ class MedevacWindow(QDialog):
 
         # ── Additional notes ─────────────────────────────────────────
         from PyQt6.QtWidgets import QTextEdit
+
         fl.addWidget(_lbl("ADDITIONAL NOTES / PATIENT CONDITION"))
         self._notes = QTextEdit()
         self._notes.setFont(mono)
@@ -289,7 +305,9 @@ class MedevacWindow(QDialog):
         fbl.setContentsMargins(12, 8, 12, 8)
 
         self._status = QLabel("")
-        self._status.setStyleSheet("color:#8b949e;font-size:10px;font-family:'Courier New',monospace;")
+        self._status.setStyleSheet(
+            "color:#8b949e;font-size:10px;font-family:'Courier New',monospace;"
+        )
         fbl.addWidget(self._status, 1)
 
         cancel_btn = QPushButton("Cancel")
@@ -318,26 +336,28 @@ class MedevacWindow(QDialog):
     def _transmit(self):
         self._send_btn.setEnabled(False)
         self._status.setText("Transmitting…")
-        self._status.setStyleSheet("color:#d29922;font-size:10px;font-family:'Courier New',monospace;")
+        self._status.setStyleSheet(
+            "color:#d29922;font-size:10px;font-family:'Courier New',monospace;"
+        )
 
         payload = {
-            "line1_location":     self._l1.text().strip(),
-            "line2_frequency":    self._l2_freq.text().strip(),
-            "line2_callsign":     self._l2_cs.text().strip(),
-            "line2_suffix":       self._l2_suf.text().strip(),
-            "line3_precedence":   self._l3_prec.currentText(),
-            "line3_count":        self._l3_num.text().strip(),
-            "line4_equipment":    self._l4.currentText(),
-            "line5_litter":       self._l5_litter.text().strip(),
-            "line5_ambulatory":   self._l5_amb.text().strip(),
-            "line6_security":     self._l6.currentText(),
-            "line7_marking":      self._l7_method.currentText(),
-            "line7_color":        self._l7_color.text().strip(),
-            "line8_nationality":  self._l8.currentText(),
-            "line9_nbc":          self._l9.currentText(),
-            "notes":              self._notes.toPlainText().strip(),
-            "latitude":           self._lat,
-            "longitude":          self._lon,
+            "line1_location": self._l1.text().strip(),
+            "line2_frequency": self._l2_freq.text().strip(),
+            "line2_callsign": self._l2_cs.text().strip(),
+            "line2_suffix": self._l2_suf.text().strip(),
+            "line3_precedence": self._l3_prec.currentText(),
+            "line3_count": self._l3_num.text().strip(),
+            "line4_equipment": self._l4.currentText(),
+            "line5_litter": self._l5_litter.text().strip(),
+            "line5_ambulatory": self._l5_amb.text().strip(),
+            "line6_security": self._l6.currentText(),
+            "line7_marking": self._l7_method.currentText(),
+            "line7_color": self._l7_color.text().strip(),
+            "line8_nationality": self._l8.currentText(),
+            "line9_nbc": self._l9.currentText(),
+            "notes": self._notes.toPlainText().strip(),
+            "latitude": self._lat,
+            "longitude": self._lon,
         }
 
         try:
@@ -349,6 +369,7 @@ class MedevacWindow(QDialog):
             self.report_submitted.emit(payload)
             # Auto-close after brief confirmation
             from PyQt6.QtCore import QTimer
+
             QTimer.singleShot(1500, self.accept)
         except Exception as e:
             self._send_btn.setEnabled(True)

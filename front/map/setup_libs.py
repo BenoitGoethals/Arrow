@@ -3,18 +3,19 @@
 Called automatically at startup if any file is missing.
 Safe to call repeatedly — skips already-downloaded files.
 """
+
 from pathlib import Path
 import httpx
 
 LIB_DIR = Path(__file__).parent / "html" / "lib"
 
 LIBS = {
-    "leaflet.js":       "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
-    "leaflet.css":      "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
-    "leaflet.draw.js":  "https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js",
+    "leaflet.js": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+    "leaflet.css": "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+    "leaflet.draw.js": "https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js",
     "leaflet.draw.css": "https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css",
-    "milsymbol.js":     "https://cdn.jsdelivr.net/npm/milsymbol@2.0.0/dist/milsymbol.js",
-    "mgrs.js":          "https://cdn.jsdelivr.net/npm/mgrs@1.0.0/dist/mgrs.js",
+    "milsymbol.js": "https://cdn.jsdelivr.net/npm/milsymbol@2.0.0/dist/milsymbol.js",
+    "mgrs.js": "https://cdn.jsdelivr.net/npm/mgrs@1.0.0/dist/mgrs.js",
 }
 
 

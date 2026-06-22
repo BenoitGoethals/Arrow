@@ -8,23 +8,39 @@ from collections.abc import Iterator, Generator
 
 # ── Set env vars before any backend import ───────────────────────────────────
 os.environ["ARROW_INSECURE_SECRET_OK"] = "1"
-os.environ["ARROW_JSON_LOGS"]          = "0"
-os.environ["ARROW_ALLOWED_ORIGINS"]    = "*"
+os.environ["ARROW_JSON_LOGS"] = "0"
+os.environ["ARROW_ALLOWED_ORIGINS"] = "*"
+# Tests always use in-memory SQLite — fast, isolated, no external server needed.
+# Must be set before database.py is imported (module-level engine creation).
+os.environ["ARROW_DATABASE_URL"] = "sqlite:///:memory:"
 
 # ── Disable rate limiting globally for all tests ─────────────────────────────
 # Must happen BEFORE any test runs and before the first create_app() call.
 # The limiter is a module-level singleton; patching _key_func here makes every
 # request use a fresh UUID as its key, so counters never accumulate.
 import backend.limiter as _limiter_mod
+
 _limiter_mod.limiter._key_func = lambda request: uuid.uuid4().hex
 
 # ── Disable CoT TCP server so tests don't try to bind port 8087 ─────────────
 # The lifespan calls tcp_server.start(); patch it to a coroutine no-op so
 # tests work even when the real server is already running on that port.
 import backend.cot.tcp_server as _cot_tcp
+
+
 async def _noop() -> None: ...
+
+
 _cot_tcp.start = _noop
-_cot_tcp.stop  = _noop
+_cot_tcp.stop = _noop
+
+# ── Disable default account seeding during tests ──────────────────────────────
+# The lifespan calls seed_db() which inserts benoit/capt/ops1/ops2/ops3.
+# Tests use _seed_admin() to insert only a minimal admin account, and they
+# register users explicitly — unexpected seed data breaks count assertions.
+import backend.main as _main_mod
+
+_main_mod.seed_db = lambda force=False: {"created": [], "existing": []}
 
 import pytest
 from fastapi.testclient import TestClient
@@ -43,13 +59,13 @@ def client() -> Iterator[TestClient]:
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,     # single shared connection → tables visible everywhere
+        poolclass=StaticPool,  # single shared connection → tables visible everywhere
     )
     TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
     Base.metadata.create_all(bind=engine)
     _run_migrations(engine)
-    _seed_admin(engine)           # benoit / ranger14 as ADMIN, directly in DB
+    _seed_admin(engine)  # benoit / ranger14 as ADMIN, directly in DB
 
     def override_get_db() -> Generator[Session, None, None]:
         db = TestSession()
@@ -100,21 +116,26 @@ def _run_migrations(engine) -> None:
 def _seed_admin(engine) -> None:
     """Insert admin account directly — avoids the chicken-and-egg bootstrap problem."""
     from backend.auth.jwt_auth import hash_password
+
     pw = hash_password("ranger14")
     with engine.begin() as conn:
         exists = conn.execute(
             text("SELECT id FROM operators WHERE callsign='benoit'")
         ).first()
         if not exists:
-            conn.execute(text(
-                "INSERT INTO operators "
-                "(callsign,rank,status,ops_status,role,password_hash,last_seen,"
-                " failed_login_count,mfa_enabled) "
-                "VALUES ('benoit','OF-3','OFFLINE','OPS','ADMIN',:pw,CURRENT_TIMESTAMP,0,0)"
-            ), {"pw": pw})
+            conn.execute(
+                text(
+                    "INSERT INTO operators "
+                    "(callsign,rank,status,ops_status,role,password_hash,last_seen,"
+                    " failed_login_count,mfa_enabled) "
+                    "VALUES ('benoit','OF-3','OFFLINE','OPS','ADMIN',:pw,CURRENT_TIMESTAMP,0,0)"
+                ),
+                {"pw": pw},
+            )
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
+
 
 def admin_token(client: TestClient) -> str:
     r = client.post("/auth/login", data={"username": "benoit", "password": "ranger14"})
@@ -129,14 +150,17 @@ def register(
 ) -> tuple[str, str, int]:
     callsign = f"T-{uuid.uuid4().hex[:6].upper()}"
     if role == "OPERATOR":
-        r = client.post("/auth/register",
-                        json={"callsign": callsign, "password": password})
+        r = client.post(
+            "/auth/register", json={"callsign": callsign, "password": password}
+        )
         assert r.status_code == 201, r.text
     else:
         tok = admin_token(client)
-        r = client.post("/auth/register/admin",
-                        json={"callsign": callsign, "password": password, "role": role},
-                        headers=auth(tok))
+        r = client.post(
+            "/auth/register/admin",
+            json={"callsign": callsign, "password": password, "role": role},
+            headers=auth(tok),
+        )
         assert r.status_code == 201, r.text
 
     token = r.json()["access_token"]

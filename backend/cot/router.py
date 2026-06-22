@@ -23,7 +23,7 @@ from backend.storage.database import get_db
 from backend.storage.models import CotTrack, Operator
 from backend.websocket.manager import broadcaster
 
-log    = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/cot", tags=["cot"])
 
 
@@ -57,49 +57,52 @@ async def receive_cot(
         evt = parse_cot(body)
     except Exception as exc:
         log.warning("CoT parse error: %s", exc)
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "Invalid CoT XML") from exc
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Invalid CoT XML"
+        ) from exc
 
     own_uid = f"ARROW.{current.callsign}"
-    is_own  = evt.uid == own_uid
+    is_own = evt.uid == own_uid
 
     # ── Path A: operator's own position ──────────────────────────────────────
     if is_own:
-        current.latitude  = evt.lat
+        current.latitude = evt.lat
         current.longitude = evt.lon
-        current.altitude  = evt.hae
+        current.altitude = evt.hae
         current.last_seen = datetime.now(timezone.utc)
-        current.status    = "ONLINE"
+        current.status = "ONLINE"
         db.commit()
         db.refresh(current)
 
         cot_type = role_to_cot_type(current.role)
         ack = CotEvent(
-            uid      = own_uid,
-            cot_type = cot_type,
-            lat      = current.latitude,
-            lon      = current.longitude,
-            hae      = current.altitude or 0.0,
-            callsign = current.callsign,
-            role     = current.role,
-            speed    = evt.speed,
-            course   = evt.course,
-            team     = evt.team,
+            uid=own_uid,
+            cot_type=cot_type,
+            lat=current.latitude,
+            lon=current.longitude,
+            hae=current.altitude or 0.0,
+            callsign=current.callsign,
+            role=current.role,
+            speed=evt.speed,
+            course=evt.course,
+            team=evt.team,
         )
-        await broadcaster.broadcast({
-            "channel": "tracking",
-            "event":   "position",
-            "cot_xml": ack.to_xml_str(),
-            "data": {
-                "operator_id": current.id,
-                "callsign":    current.callsign,
-                "latitude":    current.latitude,
-                "longitude":   current.longitude,
-                "altitude":    current.altitude,
-                "team_id":     current.team_id,
-                "cot_type":    cot_type,
-            },
-        })
+        await broadcaster.broadcast(
+            {
+                "channel": "tracking",
+                "event": "position",
+                "cot_xml": ack.to_xml_str(),
+                "data": {
+                    "operator_id": current.id,
+                    "callsign": current.callsign,
+                    "latitude": current.latitude,
+                    "longitude": current.longitude,
+                    "altitude": current.altitude,
+                    "team_id": current.team_id,
+                    "cot_type": cot_type,
+                },
+            }
+        )
 
     # ── Path B: foreign entity (enemy, simulator unit, ATAK peer) ────────────
     else:
@@ -107,49 +110,51 @@ async def receive_cot(
         if track is None:
             track = CotTrack(cot_uid=evt.uid)
             db.add(track)
-        track.cot_type  = evt.cot_type
-        track.callsign  = evt.callsign or evt.uid
-        track.latitude  = evt.lat
+        track.cot_type = evt.cot_type
+        track.callsign = evt.callsign or evt.uid
+        track.latitude = evt.lat
         track.longitude = evt.lon
-        track.hae       = evt.hae
-        track.speed     = evt.speed
-        track.course    = evt.course
-        track.team      = evt.team
-        track.remarks   = getattr(evt, "remarks", None) or None
+        track.hae = evt.hae
+        track.speed = evt.speed
+        track.course = evt.course
+        track.team = evt.team
+        track.remarks = getattr(evt, "remarks", None) or None
         track.last_seen = datetime.now(timezone.utc)
         db.commit()
         db.refresh(track)
 
-        await broadcaster.broadcast({
-            "channel": "cot-track",
-            "event":   "update",
-            "data": {
-                "id":        track.id,
-                "cot_uid":   track.cot_uid,
-                "cot_type":  track.cot_type,
-                "sidc":      cot_type_to_sidc(track.cot_type),
-                "callsign":  track.callsign,
-                "latitude":  track.latitude,
-                "longitude": track.longitude,
-                "hae":       track.hae,
-                "speed":     track.speed,
-                "course":    track.course,
-                "team":      track.team,
-                "remarks":   track.remarks or "",
-                "last_seen": track.last_seen.isoformat(),
-            },
-        })
+        await broadcaster.broadcast(
+            {
+                "channel": "cot-track",
+                "event": "update",
+                "data": {
+                    "id": track.id,
+                    "cot_uid": track.cot_uid,
+                    "cot_type": track.cot_type,
+                    "sidc": cot_type_to_sidc(track.cot_type),
+                    "callsign": track.callsign,
+                    "latitude": track.latitude,
+                    "longitude": track.longitude,
+                    "hae": track.hae,
+                    "speed": track.speed,
+                    "course": track.course,
+                    "team": track.team,
+                    "remarks": track.remarks or "",
+                    "last_seen": track.last_seen.isoformat(),
+                },
+            }
+        )
 
     # Always ack with the operator's current snapshot
     ack_type = role_to_cot_type(current.role)
     ack = CotEvent(
-        uid      = own_uid,
-        cot_type = ack_type,
-        lat      = current.latitude or evt.lat,
-        lon      = current.longitude or evt.lon,
-        hae      = current.altitude  or evt.hae,
-        callsign = current.callsign,
-        role     = current.role,
+        uid=own_uid,
+        cot_type=ack_type,
+        lat=current.latitude or evt.lat,
+        lon=current.longitude or evt.lon,
+        hae=current.altitude or evt.hae,
+        callsign=current.callsign,
+        role=current.role,
     )
     return Response(content=ack.to_xml(), media_type="application/xml")
 
@@ -160,6 +165,7 @@ def list_cot_clients(
 ) -> list[dict]:
     """Return list of currently connected ATAK TCP clients."""
     from backend.cot.tcp_server import _Pool
+
     return _Pool.client_list()
 
 
@@ -179,12 +185,17 @@ def list_atak_shapes(
 ) -> list[dict]:
     """Return all persisted ATAK drawn shapes."""
     from backend.storage.models import AtakShape
+
     shapes = db.query(AtakShape).all()
     return [
         {
-            "id": s.id, "uid": s.uid, "cot_type": s.cot_type,
-            "shape_type": s.shape_type, "title": s.title,
-            "callsign": s.callsign, "geometry_json": s.geometry_json,
+            "id": s.id,
+            "uid": s.uid,
+            "cot_type": s.cot_type,
+            "shape_type": s.shape_type,
+            "title": s.title,
+            "callsign": s.callsign,
+            "geometry_json": s.geometry_json,
             "last_seen": s.last_seen.isoformat() if s.last_seen else None,
         }
         for s in shapes
@@ -208,18 +219,19 @@ def get_cot_snapshot(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
     evt = CotEvent(
-        uid      = uid,
-        cot_type = role_to_cot_type(op.role),
-        lat      = op.latitude,
-        lon      = op.longitude,
-        hae      = op.altitude or 0.0,
-        callsign = op.callsign,
-        role     = op.role,
+        uid=uid,
+        cot_type=role_to_cot_type(op.role),
+        lat=op.latitude,
+        lon=op.longitude or 0.0,
+        hae=op.altitude or 0.0,
+        callsign=op.callsign,
+        role=op.role,
     )
     return Response(content=evt.to_xml(), media_type="application/xml")
 
 
 # ── TAK / CoT TCP server admin endpoints ─────────────────────────────────────
+
 
 @router.get("/tcp/status")
 def tcp_status(
@@ -227,6 +239,7 @@ def tcp_status(
 ) -> dict:
     """Return CoT TCP server status + list of connected ATAK devices."""
     from backend.cot.tcp_server import get_status
+
     return get_status()
 
 
@@ -236,6 +249,7 @@ def tcp_get_config(
 ) -> dict:
     """Return current CoT TCP server configuration."""
     from backend.cot.tcp_server import get_config
+
     return get_config()
 
 
@@ -250,6 +264,7 @@ async def tcp_update_config(
     take effect — use POST /cot/tcp/restart after updating.
     """
     from backend.cot.tcp_server import update_config
+
     return update_config(patch)
 
 
@@ -259,6 +274,7 @@ async def tcp_restart(
 ) -> dict:
     """Stop and restart the CoT TCP server (picks up new host/port config)."""
     from backend.cot import tcp_server
+
     await tcp_server.stop()
     await tcp_server.start()
     return {"status": "restarted", **tcp_server.get_status()}
@@ -266,12 +282,14 @@ async def tcp_restart(
 
 # ── TLS / SSL certificate management (for ATAK SSL connections) ───────────────
 
+
 @router.get("/tcp/tls/info")
 def tcp_tls_info(
     _: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
 ) -> dict:
     """Report which TLS artifacts exist, the truststore password, and cert SANs."""
     from backend.cot.tls_cert import info
+
     return info()
 
 
@@ -285,6 +303,7 @@ async def tcp_tls_generate(
     scratch (new CA — existing ATAK truststores must be re-imported)."""
     from backend.cot import tcp_server
     from backend.cot.tls_cert import ensure_cot_tls, info, regenerate
+
     if force:
         regenerate()
     else:
@@ -301,10 +320,12 @@ def tcp_tls_download(
 ) -> Response:
     """Download a generated TLS artifact (truststore / client / ca / server-cert)."""
     from backend.cot.tls_cert import artifact
+
     got = artifact(name)
     if not got:
-        raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            "Unknown or not-yet-generated TLS artifact")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "Unknown or not-yet-generated TLS artifact"
+        )
     data, fname, mime = got
     return Response(
         content=data,
@@ -324,7 +345,10 @@ async def delete_cot_track(
     if track:
         db.delete(track)
         db.commit()
-        await broadcaster.broadcast({
-            "channel": "cot-track", "event": "deleted",
-            "data": {"id": track_id},
-        })
+        await broadcaster.broadcast(
+            {
+                "channel": "cot-track",
+                "event": "deleted",
+                "data": {"id": track_id},
+            }
+        )

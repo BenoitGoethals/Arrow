@@ -1,10 +1,19 @@
 """Chat-room manager dialog for Arrow Front — create rooms, add/remove members."""
+
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QLabel, QInputDialog, QMessageBox, QWidget,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QLabel,
+    QInputDialog,
+    QMessageBox,
+    QWidget,
 )
 
 
@@ -44,14 +53,19 @@ class RoomManagerDialog(QDialog):
         new_btn.clicked.connect(self._new_room)
         del_btn = QPushButton("🗑 Delete")
         del_btn.clicked.connect(self._delete_room)
-        row.addWidget(new_btn); row.addWidget(del_btn)
+        row.addWidget(new_btn)
+        row.addWidget(del_btn)
         left.addLayout(row)
-        lw = QWidget(); lw.setLayout(left); lw.setFixedWidth(220)
+        lw = QWidget()
+        lw.setLayout(left)
+        lw.setFixedWidth(220)
         root.addWidget(lw)
 
         # Right — members
         right = QVBoxLayout()
-        self._members_label = QLabel("Members", styleSheet="font-weight:700;color:#8b949e")
+        self._members_label = QLabel(
+            "Members", styleSheet="font-weight:700;color:#8b949e"
+        )
         right.addWidget(self._members_label)
         self._member_list = QListWidget()
         right.addWidget(self._member_list, 1)
@@ -75,7 +89,9 @@ class RoomManagerDialog(QDialog):
         self._room_list.clear()
         target_row = 0
         for i, r in enumerate(self._rooms):
-            item = QListWidgetItem(f"# {r.get('name', '?')}  ({len(r.get('member_ids', []))})")
+            item = QListWidgetItem(
+                f"# {r.get('name', '?')}  ({len(r.get('member_ids', []))})"
+            )
             item.setData(Qt.ItemDataRole.UserRole, r.get("id"))
             self._room_list.addItem(item)
             if select_id is not None and r.get("id") == select_id:
@@ -106,7 +122,9 @@ class RoomManagerDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, op.get("id"))
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             item.setCheckState(
-                Qt.CheckState.Checked if op.get("id") in members else Qt.CheckState.Unchecked
+                Qt.CheckState.Checked
+                if op.get("id") in members
+                else Qt.CheckState.Unchecked
             )
             self._member_list.addItem(item)
 
@@ -125,8 +143,12 @@ class RoomManagerDialog(QDialog):
         room = self._current_room()
         if not room:
             return
-        if QMessageBox.question(self, "Delete Room",
-                                f"Delete room '{room.get('name')}'?") != QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self, "Delete Room", f"Delete room '{room.get('name')}'?"
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
             return
         try:
             self._client.delete_chatroom(room["id"])

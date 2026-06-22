@@ -33,7 +33,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import math
 import os
 import random
 from dataclasses import dataclass, field
@@ -47,54 +46,86 @@ from sim_utils import LAT_DEG_PER_M, lon_deg_per_m, dist_m, step_towards, jitter
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(description="Arrow Sluis-attack scenario simulator")
-parser.add_argument("--backend",
-                    default=(os.environ.get("ARROW_BACKEND_URL")
-                             or sim_utils.load_saved_backend()
-                             or "https://78.21.255.210:6200/api"),
-                    help="Backend URL (e.g. http://host:6200/api or http://localhost:6001)")
-parser.add_argument("--speed", type=float, default=None,
-                    help="Time multiplier (1 = real time, 6 = 6× faster)")
-parser.add_argument("--reset", action="store_true",
-                    help="Delete sim operators before starting")
-parser.add_argument("--seed-admin", default="benoit",
-                    help="Pre-seeded ADMIN callsign (default: benoit)")
-parser.add_argument("--seed-admin-password", default="ranger14",
-                    help="Password for --seed-admin (default: ranger14)")
-parser.add_argument("--mission-name", default="Operation Sluis",
-                    help="Mission name to create or adopt (default: Operation Sluis)")
-parser.add_argument("--admin",    default=None,
-                    help="Alias for --seed-admin (ADMIN callsign)")
-parser.add_argument("--password", default=None,
-                    help="Alias for --seed-admin-password (ADMIN password)")
-parser.add_argument("--no-move",  action="store_true",
-                    help="Plant OPORD and enemies only, skip the movement simulation")
-parser.add_argument("--steps",    type=int, default=None,
-                    help="Movement steps. If given with --dt, derives speed and limits run duration.")
-parser.add_argument("--dt",       type=float, default=None,
-                    help="Seconds between steps. If given with --steps, derives speed and total duration.")
+parser.add_argument(
+    "--backend",
+    default=(
+        os.environ.get("ARROW_BACKEND_URL")
+        or sim_utils.load_saved_backend()
+        or "https://78.21.255.210:6200/api"
+    ),
+    help="Backend URL (e.g. http://host:6200/api or http://localhost:6001)",
+)
+parser.add_argument(
+    "--speed",
+    type=float,
+    default=None,
+    help="Time multiplier (1 = real time, 6 = 6× faster)",
+)
+parser.add_argument(
+    "--reset", action="store_true", help="Delete sim operators before starting"
+)
+parser.add_argument(
+    "--seed-admin", default="benoit", help="Pre-seeded ADMIN callsign (default: benoit)"
+)
+parser.add_argument(
+    "--seed-admin-password",
+    default="ranger14",
+    help="Password for --seed-admin (default: ranger14)",
+)
+parser.add_argument(
+    "--mission-name",
+    default="Operation Sluis",
+    help="Mission name to create or adopt (default: Operation Sluis)",
+)
+parser.add_argument(
+    "--admin", default=None, help="Alias for --seed-admin (ADMIN callsign)"
+)
+parser.add_argument(
+    "--password", default=None, help="Alias for --seed-admin-password (ADMIN password)"
+)
+parser.add_argument(
+    "--no-move",
+    action="store_true",
+    help="Plant OPORD and enemies only, skip the movement simulation",
+)
+parser.add_argument(
+    "--steps",
+    type=int,
+    default=None,
+    help="Movement steps. If given with --dt, derives speed and limits run duration.",
+)
+parser.add_argument(
+    "--dt",
+    type=float,
+    default=None,
+    help="Seconds between steps. If given with --steps, derives speed and total duration.",
+)
 ARGS = parser.parse_args()
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s  %(levelname)-7s %(message)s",
-                    datefmt="%H:%M:%S")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s %(message)s",
+    datefmt="%H:%M:%S",
+)
 log = logging.getLogger("sluis")
 
-SIM_PASSWORD  = "Arrow2525!"
-_CTX          = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"), SIM_PASSWORD)
-api           = _CTX.api
-login         = _CTX.login
-WALK_MS       = 5000 / 3600
-INFIL_MS      = 1500 / 3600
-UPDATE_S      = 10.0
-ENEMY_S       = 25.0
-FM_S          = 75.0
-CAS_S         = 90.0
-MEDEVAC_S     = 110.0
-CBRN_S        = 240.0
+SIM_PASSWORD = "Arrow2525!"
+_CTX = sim_utils.AsyncSimContext(ARGS.backend.rstrip("/"), SIM_PASSWORD)
+api = _CTX.api
+login = _CTX.login
+WALK_MS = 5000 / 3600
+INFIL_MS = 1500 / 3600
+UPDATE_S = 10.0
+ENEMY_S = 25.0
+FM_S = 75.0
+CAS_S = 90.0
+MEDEVAC_S = 110.0
+CBRN_S = 240.0
 SECTION_STAGGER_S = 90.0
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
+
 
 @dataclass
 class SimOp:
@@ -119,21 +150,30 @@ class SimSection:
 
 # Section formation: 6 soldiers in wedge, ~12 m frontage
 _FORMATION = [
-    (  8,  0), (  0, -8), (  0,  8),
-    (-12, -4), (-12,  4), (-20,  0),
+    (8, 0),
+    (0, -8),
+    (0, 8),
+    (-12, -4),
+    (-12, 4),
+    (-20, 0),
 ]
 
 
 def _build_sections() -> tuple[list[SimOp], list[SimSection]]:
     all_ops: list[SimOp] = []
     sections: list[SimSection] = []
-    platoons = [("ALPHA", "1st Platoon (Alpha)"),
-                ("BRAVO", "2nd Platoon (Bravo)"),
-                ("CHARLIE", "3rd Platoon (Charlie)")]
+    platoons = [
+        ("ALPHA", "1st Platoon (Alpha)"),
+        ("BRAVO", "2nd Platoon (Bravo)"),
+        ("CHARLIE", "3rd Platoon (Charlie)"),
+    ]
     for plt_code, _ in platoons:
         for sec_num in (1, 2):
-            sec = SimSection(name=f"{sec_num}st Section {plt_code.capitalize()}",
-                             platoon_code=plt_code, section_num=sec_num)
+            sec = SimSection(
+                name=f"{sec_num}st Section {plt_code.capitalize()}",
+                platoon_code=plt_code,
+                section_num=sec_num,
+            )
             for team_num in (1, 2):
                 for mbr_num in (1, 2, 3):
                     form_idx = (team_num - 1) * 3 + (mbr_num - 1)
@@ -141,15 +181,28 @@ def _build_sections() -> tuple[list[SimOp], list[SimSection]]:
                     is_tl = mbr_num == 1 and not is_sl
                     callsign = f"{plt_code}-{sec_num}{team_num}{mbr_num}"
                     rank = "OR-6" if is_sl else ("OR-5" if is_tl else "OR-3")
-                    op = SimOp(callsign=callsign, rank=rank, role="OPERATOR",
-                               formation_idx=form_idx)
-                    sec.operators.append(op); all_ops.append(op)
+                    op = SimOp(
+                        callsign=callsign,
+                        rank=rank,
+                        role="OPERATOR",
+                        formation_idx=form_idx,
+                    )
+                    sec.operators.append(op)
+                    all_ops.append(op)
             sections.append(sec)
 
     for plt_code, _ in platoons:
-        all_ops.append(SimOp(callsign=f"{plt_code}-6", rank="OF-1",
-                             role="BATTLE_CAPTAIN", formation_idx=0))
-    all_ops.append(SimOp(callsign="DELTA-6", rank="OF-3", role="ADMIN", formation_idx=0))
+        all_ops.append(
+            SimOp(
+                callsign=f"{plt_code}-6",
+                rank="OF-1",
+                role="BATTLE_CAPTAIN",
+                formation_idx=0,
+            )
+        )
+    all_ops.append(
+        SimOp(callsign="DELTA-6", rank="OF-3", role="ADMIN", formation_idx=0)
+    )
     return all_ops, sections
 
 
@@ -161,40 +214,40 @@ ROUTES: dict[str, dict] = {
     "ALPHA": {  # Western axis — via Retranchement / Cadzand approach
         "phase_infil_start": 3,
         "waypoints": [
-            (51.2700, 3.3460),   # 0  Staging (Aardenburg fields)
-            (51.2820, 3.3520),   # 1  Crossing border, N58
-            (51.2940, 3.3640),   # 2  Polders, hedge cover
-            (51.3030, 3.3760),   # 3  Edge of Sluis west  ← infil
-            (51.3080, 3.3835),   # 4  Western perimeter / Kaai
-            (51.3093, 3.3878),   # 5  Objective: Sluis Markt
-            (51.3070, 3.3850),   # 6  Consolidation
-            (51.2700, 3.3460),   # 7  Loop
+            (51.2700, 3.3460),  # 0  Staging (Aardenburg fields)
+            (51.2820, 3.3520),  # 1  Crossing border, N58
+            (51.2940, 3.3640),  # 2  Polders, hedge cover
+            (51.3030, 3.3760),  # 3  Edge of Sluis west  ← infil
+            (51.3080, 3.3835),  # 4  Western perimeter / Kaai
+            (51.3093, 3.3878),  # 5  Objective: Sluis Markt
+            (51.3070, 3.3850),  # 6  Consolidation
+            (51.2700, 3.3460),  # 7  Loop
         ],
     },
     "BRAVO": {  # Centre axis — N376 Sluis-zuid
         "phase_infil_start": 3,
         "waypoints": [
-            (51.2680, 3.3870),   # 0  Staging (south of border post)
-            (51.2810, 3.3880),   # 1  N376 northbound
-            (51.2950, 3.3900),   # 2  Open polder approach
-            (51.3050, 3.3900),   # 3  Zuiddijk / Sluis south  ← infil
-            (51.3080, 3.3895),   # 4  South gate / canal
-            (51.3093, 3.3878),   # 5  Objective: Sluis Markt
-            (51.3075, 3.3895),   # 6  Consolidation
-            (51.2680, 3.3870),   # 7  Loop
+            (51.2680, 3.3870),  # 0  Staging (south of border post)
+            (51.2810, 3.3880),  # 1  N376 northbound
+            (51.2950, 3.3900),  # 2  Open polder approach
+            (51.3050, 3.3900),  # 3  Zuiddijk / Sluis south  ← infil
+            (51.3080, 3.3895),  # 4  South gate / canal
+            (51.3093, 3.3878),  # 5  Objective: Sluis Markt
+            (51.3075, 3.3895),  # 6  Consolidation
+            (51.2680, 3.3870),  # 7  Loop
         ],
     },
     "CHARLIE": {  # Eastern axis — via St. Anna ter Muiden
         "phase_infil_start": 3,
         "waypoints": [
-            (51.2700, 3.4300),   # 0  Staging east (Heille area)
-            (51.2830, 3.4220),   # 1  Crossing border east
-            (51.2960, 3.4080),   # 2  Approach from SE
-            (51.3050, 3.3980),   # 3  St. Anna ter Muiden  ← infil
-            (51.3088, 3.3925),   # 4  Eastern perimeter
-            (51.3093, 3.3878),   # 5  Objective: Sluis Markt
-            (51.3075, 3.3905),   # 6  Consolidation
-            (51.2700, 3.4300),   # 7  Loop
+            (51.2700, 3.4300),  # 0  Staging east (Heille area)
+            (51.2830, 3.4220),  # 1  Crossing border east
+            (51.2960, 3.4080),  # 2  Approach from SE
+            (51.3050, 3.3980),  # 3  St. Anna ter Muiden  ← infil
+            (51.3088, 3.3925),  # 4  Eastern perimeter
+            (51.3093, 3.3878),  # 5  Objective: Sluis Markt
+            (51.3075, 3.3905),  # 6  Consolidation
+            (51.2700, 3.4300),  # 7  Loop
         ],
     },
 }
@@ -213,16 +266,17 @@ CMD_WAYPOINTS = [
 # Each: (name, lat, lon, type).
 ENEMY_LAYDOWN: list[tuple[str, float, float, str]] = [
     ("Sluis south checkpoint", 51.3055, 3.3890, "INFANTRY"),
-    ("Hedgerow MG nest",        51.3045, 3.3815, "INFANTRY"),
-    ("Mortar baseplate",        51.3015, 3.3955, "ARTILLERY"),
-    ("Armoured technical",      51.3072, 3.3970, "ARMOR"),
-    ("Sniper in church tower",  51.3097, 3.3870, "SNIPER"),
-    ("Recce team woods east",   51.3030, 3.4030, "VEHICLE"),
-    ("Rear depot — N376 farm",  51.2960, 3.3905, "POI"),
+    ("Hedgerow MG nest", 51.3045, 3.3815, "INFANTRY"),
+    ("Mortar baseplate", 51.3015, 3.3955, "ARTILLERY"),
+    ("Armoured technical", 51.3072, 3.3970, "ARMOR"),
+    ("Sniper in church tower", 51.3097, 3.3870, "SNIPER"),
+    ("Recce team woods east", 51.3030, 3.4030, "VEHICLE"),
+    ("Rear depot — N376 farm", 51.2960, 3.3905, "POI"),
 ]
 
 
 # ── Bootstrap (mirrors simulate.py) ──────────────────────────────────────────
+
 
 async def bootstrap(client, all_ops, sections) -> str:
     log.info("── Bootstrap ─────────────────────────────────────────")
@@ -238,9 +292,18 @@ async def bootstrap(client, all_ops, sections) -> str:
     admin_op = next(o for o in all_ops if o.role == "ADMIN")
     sim_admin_token = await login(client, admin_op.callsign)
     if not sim_admin_token:
-        r = await api(client, "POST", "/auth/register/admin", token=seed_token, json={
-            "callsign": admin_op.callsign, "password": SIM_PASSWORD,
-            "rank": admin_op.rank, "role": "ADMIN"})
+        r = await api(
+            client,
+            "POST",
+            "/auth/register/admin",
+            token=seed_token,
+            json={
+                "callsign": admin_op.callsign,
+                "password": SIM_PASSWORD,
+                "rank": admin_op.rank,
+                "role": "ADMIN",
+            },
+        )
         if r and r.get("access_token"):
             sim_admin_token = r["access_token"]
             log.info("Registered %s (ADMIN)", admin_op.callsign)
@@ -248,8 +311,13 @@ async def bootstrap(client, all_ops, sections) -> str:
         ops = await api(client, "GET", "/operators", token=seed_token) or []
         row = next((o for o in ops if o["callsign"] == admin_op.callsign), None)
         if row and row.get("role") != "ADMIN":
-            await api(client, "PATCH", f"/operators/{row['id']}",
-                      token=seed_token, json={"role": "ADMIN"})
+            await api(
+                client,
+                "PATCH",
+                f"/operators/{row['id']}",
+                token=seed_token,
+                json={"role": "ADMIN"},
+            )
             log.info("Promoted %s to ADMIN", admin_op.callsign)
             sim_admin_token = await login(client, admin_op.callsign) or sim_admin_token
     admin_op.token = sim_admin_token or seed_token
@@ -257,8 +325,13 @@ async def bootstrap(client, all_ops, sections) -> str:
     companies = await api(client, "GET", "/companies", token=admin_token) or []
     company = next((c for c in companies if c["name"] == "Delta Company"), None)
     if not company:
-        company = await api(client, "POST", "/companies", token=admin_token,
-                            json={"name": "Delta Company"})
+        company = await api(
+            client,
+            "POST",
+            "/companies",
+            token=admin_token,
+            json={"name": "Delta Company"},
+        )
         if not company:
             raise RuntimeError("Failed to create Delta Company")
         log.info("Created Delta Company (id=%d)", company["id"])
@@ -266,22 +339,29 @@ async def bootstrap(client, all_ops, sections) -> str:
 
     plt_ids: dict[str, int] = {}
     sec_ids: dict[str, int] = {}
-    for code, name in [("ALPHA", "1st Platoon (Alpha)"),
-                       ("BRAVO", "2nd Platoon (Bravo)"),
-                       ("CHARLIE", "3rd Platoon (Charlie)")]:
+    for code, name in [
+        ("ALPHA", "1st Platoon (Alpha)"),
+        ("BRAVO", "2nd Platoon (Bravo)"),
+        ("CHARLIE", "3rd Platoon (Charlie)"),
+    ]:
         plt = await api(client, "GET", "/platoons", token=admin_token) or []
         existing = next((p for p in plt if p["name"] == name), None)
         if existing:
             plt_ids[code] = existing["id"]
         else:
-            r = await api(client, "POST", "/platoons", token=admin_token,
-                          json={"name": name, "company_id": company_id})
+            r = await api(
+                client,
+                "POST",
+                "/platoons",
+                token=admin_token,
+                json={"name": name, "company_id": company_id},
+            )
             if r:
                 plt_ids[code] = r["id"]
                 log.info("  Created platoon %s", name)
 
     sections_resp = await api(client, "GET", "/sections", token=admin_token) or []
-    teams_resp    = await api(client, "GET", "/teams", token=admin_token) or []
+    teams_resp = await api(client, "GET", "/teams", token=admin_token) or []
     team_name_to_id = {t["name"]: t["id"] for t in teams_resp}
     for s in sections_resp:
         for sec in sections:
@@ -291,8 +371,13 @@ async def bootstrap(client, all_ops, sections) -> str:
     for sec in sections:
         key = f"{sec.platoon_code}-{sec.section_num}"
         if key not in sec_ids:
-            r = await api(client, "POST", "/sections", token=admin_token,
-                          json={"name": sec.name, "platoon_id": plt_ids[sec.platoon_code]})
+            r = await api(
+                client,
+                "POST",
+                "/sections",
+                token=admin_token,
+                json={"name": sec.name, "platoon_id": plt_ids[sec.platoon_code]},
+            )
             if r:
                 sec_ids[key] = r["id"]
                 log.info("    Created section %s", sec.name)
@@ -302,13 +387,20 @@ async def bootstrap(client, all_ops, sections) -> str:
         for team_num in (1, 2):
             tname = f"Team {sec.platoon_code}-{sec.section_num}{team_num}"
             if tname not in team_name_to_id:
-                r = await api(client, "POST", "/teams", token=admin_token,
-                              json={"name": tname, "section_id": sec_id})
+                r = await api(
+                    client,
+                    "POST",
+                    "/teams",
+                    token=admin_token,
+                    json={"name": tname, "section_id": sec_id},
+                )
                 if r:
                     team_name_to_id[tname] = r["id"]
 
-    existing_ops = {o["callsign"]: o for o in
-                    (await api(client, "GET", "/operators", token=admin_token) or [])}
+    existing_ops = {
+        o["callsign"]: o
+        for o in (await api(client, "GET", "/operators", token=admin_token) or [])
+    }
 
     for sec in sections:
         for idx, op in enumerate(sec.operators):
@@ -317,24 +409,47 @@ async def bootstrap(client, all_ops, sections) -> str:
             team_id = team_name_to_id.get(tname)
             ex = existing_ops.get(op.callsign)
             if not ex:
-                r = await api(client, "POST", "/auth/register/admin",
-                              token=admin_token, json={
-                    "callsign": op.callsign, "password": SIM_PASSWORD,
-                    "rank": op.rank, "role": op.role, "team_id": team_id})
+                r = await api(
+                    client,
+                    "POST",
+                    "/auth/register/admin",
+                    token=admin_token,
+                    json={
+                        "callsign": op.callsign,
+                        "password": SIM_PASSWORD,
+                        "rank": op.rank,
+                        "role": op.role,
+                        "team_id": team_id,
+                    },
+                )
                 if r:
                     log.info("  Registered %-14s → %s", op.callsign, tname)
             else:
                 op.op_id = ex.get("id", 0)
                 if team_id and ex.get("team_id") != team_id:
-                    await api(client, "PATCH", f"/operators/{ex['id']}",
-                              token=admin_token, json={"team_id": team_id})
+                    await api(
+                        client,
+                        "PATCH",
+                        f"/operators/{ex['id']}",
+                        token=admin_token,
+                        json={"team_id": team_id},
+                    )
 
     for plt_code in ("ALPHA", "BRAVO", "CHARLIE"):
         cs = f"{plt_code}-6"
         if cs not in existing_ops:
-            await api(client, "POST", "/auth/register/admin", token=admin_token, json={
-                "callsign": cs, "password": SIM_PASSWORD,
-                "rank": "OF-1", "role": "BATTLE_CAPTAIN"})
+            await api(
+                client,
+                "POST",
+                "/auth/register/admin",
+                token=admin_token,
+                json={
+                    "callsign": cs,
+                    "password": SIM_PASSWORD,
+                    "rank": "OF-1",
+                    "role": "BATTLE_CAPTAIN",
+                },
+            )
             log.info("  Registered %-14s (BATTLE_CAPTAIN)", cs)
 
     log.info("── Bootstrap complete ────────────────────────────────")
@@ -346,8 +461,11 @@ async def login_all(client, all_ops):
     tokens = await asyncio.gather(*(login(client, o.callsign) for o in all_ops))
     ok = fail = 0
     for op, tok in zip(all_ops, tokens):
-        if tok: op.token = tok; ok += 1
-        else:   fail += 1
+        if tok:
+            op.token = tok
+            ok += 1
+        else:
+            fail += 1
     log.info("  %d OK  %d failed", ok, fail)
 
     admin_op = next((o for o in all_ops if o.role == "ADMIN"), None)
@@ -359,6 +477,7 @@ async def login_all(client, all_ops):
 
 
 # ── Movement ──────────────────────────────────────────────────────────────────
+
 
 async def run_section(client, sec, speed_mult, stagger_s):
     route = ROUTES[sec.platoon_code]
@@ -382,7 +501,9 @@ async def run_section(client, sec, speed_mult, stagger_s):
         speed = INFIL_MS if wp_idx >= infil_start else WALK_MS
         while True:
             clat, clon = sec.operators[0].lat, sec.operators[0].lon
-            nclat, nclon = step_towards(clat, clon, tlat, tlon, speed, real_dt * speed_mult)
+            nclat, nclon = step_towards(
+                clat, clon, tlat, tlon, speed, real_dt * speed_mult
+            )
             dlat = nclat - clat
             dlon = nclon - clon
             tasks = []
@@ -391,9 +512,19 @@ async def run_section(client, sec, speed_mult, stagger_s):
                     continue
                 op.lat += dlat + random.gauss(0, 0.2) * LAT_DEG_PER_M
                 op.lon += dlon + random.gauss(0, 0.2) * lon_deg_per_m(op.lat)
-                tasks.append(api(client, "POST", "/tracking/position", token=op.token,
-                                 json={"latitude": op.lat, "longitude": op.lon,
-                                       "altitude": round(random.uniform(2, 8), 1)}))
+                tasks.append(
+                    api(
+                        client,
+                        "POST",
+                        "/tracking/position",
+                        token=op.token,
+                        json={
+                            "latitude": op.lat,
+                            "longitude": op.lon,
+                            "altitude": round(random.uniform(2, 8), 1),
+                        },
+                    )
+                )
             if tasks:
                 await asyncio.gather(*tasks)
             await asyncio.sleep(real_dt)
@@ -401,9 +532,13 @@ async def run_section(client, sec, speed_mult, stagger_s):
                 break
         wp_idx = (wp_idx + 1) % len(waypoints)
         nlat, nlon = waypoints[wp_idx]
-        log.info("Section %-22s → WP%d  %s  (%s)",
-                 sec.name, wp_idx, mgrs(nlat, nlon),
-                 "infil" if wp_idx >= infil_start else "walk")
+        log.info(
+            "Section %-22s → WP%d  %s  (%s)",
+            sec.name,
+            wp_idx,
+            mgrs(nlat, nlon),
+            "infil" if wp_idx >= infil_start else "walk",
+        )
 
 
 async def run_command(client, all_ops, speed_mult):
@@ -419,14 +554,24 @@ async def run_command(client, all_ops, speed_mult):
         while True:
             tasks = []
             for op in cmd_ops:
-                if not op.token: continue
-                op.lat, op.lon = step_towards(op.lat, op.lon, tlat, tlon,
-                                              WALK_MS, real_dt * speed_mult)
+                if not op.token:
+                    continue
+                op.lat, op.lon = step_towards(
+                    op.lat, op.lon, tlat, tlon, WALK_MS, real_dt * speed_mult
+                )
                 op.lat += random.gauss(0, 0.3) * LAT_DEG_PER_M
                 op.lon += random.gauss(0, 0.3) * lon_deg_per_m(op.lat)
-                tasks.append(api(client, "POST", "/tracking/position", token=op.token,
-                                 json={"latitude": op.lat, "longitude": op.lon}))
-            if tasks: await asyncio.gather(*tasks)
+                tasks.append(
+                    api(
+                        client,
+                        "POST",
+                        "/tracking/position",
+                        token=op.token,
+                        json={"latitude": op.lat, "longitude": op.lon},
+                    )
+                )
+            if tasks:
+                await asyncio.gather(*tasks)
             await asyncio.sleep(real_dt)
             if dist_m(op.lat, op.lon, tlat, tlon) < 10:
                 break
@@ -439,8 +584,9 @@ SPOT_DIRECTIONS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
 
 def _pick_forward_op(sections) -> Optional[SimOp]:
-    candidates = [o for sec in sections for o in sec.operators
-                  if o.token and o.lat != 0]
+    candidates = [
+        o for sec in sections for o in sec.operators if o.token and o.lat != 0
+    ]
     return random.choice(candidates) if candidates else None
 
 
@@ -455,20 +601,20 @@ def _pick_enemy_target() -> tuple[str, float, float, str]:
 # ── Enemy contacts (tactical objects + broadcast chatter) ────────────────────
 
 _ENEMY_NOTES = {
-    "INFANTRY":  "Squad-strength infantry observed",
-    "ARMOR":     "Armoured vehicle, direction of movement unknown",
+    "INFANTRY": "Squad-strength infantry observed",
+    "ARMOR": "Armoured vehicle, direction of movement unknown",
     "ARTILLERY": "Indirect fire baseplate suspected",
-    "SNIPER":    "Sniper fire received from elevated position",
-    "VEHICLE":   "Unknown vehicle, possible recce",
-    "POI":       "Point of interest — possible cache / ORP",
+    "SNIPER": "Sniper fire received from elevated position",
+    "VEHICLE": "Unknown vehicle, possible recce",
+    "POI": "Point of interest — possible cache / ORP",
 }
 _SIDC = {
-    "INFANTRY":  "SHGPUCI-----",
-    "ARMOR":     "SHGPUCA-----",
+    "INFANTRY": "SHGPUCI-----",
+    "ARMOR": "SHGPUCA-----",
     "ARTILLERY": "SHGPUCF-----",
-    "SNIPER":    "SHGPUCIS----",
-    "VEHICLE":   "SHGPEV------",
-    "POI":       "SNGPI-------",
+    "SNIPER": "SHGPUCIS----",
+    "VEHICLE": "SHGPEV------",
+    "POI": "SNGPI-------",
 }
 
 
@@ -484,21 +630,44 @@ async def run_enemy_marker(client, sections, speed_mult):
         name, elat, elon, etype = _pick_enemy_target()
         notes = f"{_ENEMY_NOTES.get(etype, etype)}  ({name})  MGRS: {mgrs(elat, elon)}"
         n += 1
-        await api(client, "POST", "/tactical-objects", token=op.token,
-                  json={"type": etype, "symbol_code": _SIDC.get(etype, ""),
-                        "latitude": round(elat, 6), "longitude": round(elon, 6),
-                        "notes": notes, "visibility": "COMPANY"})
-        log.info("⚠️  %s  CONTACT  %-12s  %-22s  %s  (#%d)",
-                 op.callsign, etype, name[:22], mgrs(elat, elon), n)
-        await api(client, "POST", "/messages", token=op.token,
-                  json={"content": f"CONTACT — {etype} ({name}) grid {mgrs(elat, elon)}",
-                        "message_type": "BROADCAST"})
+        await api(
+            client,
+            "POST",
+            "/tactical-objects",
+            token=op.token,
+            json={
+                "type": etype,
+                "symbol_code": _SIDC.get(etype, ""),
+                "latitude": round(elat, 6),
+                "longitude": round(elon, 6),
+                "notes": notes,
+                "visibility": "COMPANY",
+            },
+        )
+        log.info(
+            "⚠️  %s  CONTACT  %-12s  %-22s  %s  (#%d)",
+            op.callsign,
+            etype,
+            name[:22],
+            mgrs(elat, elon),
+            n,
+        )
+        await api(
+            client,
+            "POST",
+            "/messages",
+            token=op.token,
+            json={
+                "content": f"CONTACT — {etype} ({name}) grid {mgrs(elat, elon)}",
+                "message_type": "BROADCAST",
+            },
+        )
 
 
 # ── Fire missions ─────────────────────────────────────────────────────────────
 
 _AMMUNITION = ["HE", "ILLUM", "SMOKE", "WP"]
-_MISSIONS   = ["ADJUST_FIRE", "FIRE_FOR_EFFECT", "SUPPRESSION", "DESTRUCTION"]
+_MISSIONS = ["ADJUST_FIRE", "FIRE_FOR_EFFECT", "SUPPRESSION", "DESTRUCTION"]
 
 
 async def run_fire_missions(client, sections, speed_mult):
@@ -511,33 +680,52 @@ async def run_fire_missions(client, sections, speed_mult):
         if not op:
             continue
         name, tlat, tlon, _etype = _pick_enemy_target()
-        ammo  = random.choice(_AMMUNITION)
+        ammo = random.choice(_AMMUNITION)
         mtype = random.choice(_MISSIONS)
-        qty   = random.choice([3, 4, 6, 8])
+        qty = random.choice([3, 4, 6, 8])
         bearing = random.randint(0, 359)
         n += 1
-        r = await api(client, "POST", "/fire-missions", token=op.token, json={
-            "latitude":     round(tlat, 6),
-            "longitude":    round(tlon, 6),
-            "altitude":     round(random.uniform(0, 5), 1),
-            "direction":    bearing,
-            "mission_type": mtype,
-            "ammunition":   ammo,
-            "quantity":     qty,
-            "description":  f"FFE on {name}",
-            "notes":        f"Requested by {op.callsign}",
-        })
+        r = await api(
+            client,
+            "POST",
+            "/fire-missions",
+            token=op.token,
+            json={
+                "latitude": round(tlat, 6),
+                "longitude": round(tlon, 6),
+                "altitude": round(random.uniform(0, 5), 1),
+                "direction": bearing,
+                "mission_type": mtype,
+                "ammunition": ammo,
+                "quantity": qty,
+                "description": f"FFE on {name}",
+                "notes": f"Requested by {op.callsign}",
+            },
+        )
         if r:
-            log.info("🎯 %s  FIRE MISSION  %-16s  %s ×%d  on %-22s  %s  (#%d)",
-                     op.callsign, mtype, ammo, qty, name[:22],
-                     mgrs(tlat, tlon), n)
+            log.info(
+                "🎯 %s  FIRE MISSION  %-16s  %s ×%d  on %-22s  %s  (#%d)",
+                op.callsign,
+                mtype,
+                ammo,
+                qty,
+                name[:22],
+                mgrs(tlat, tlon),
+                n,
+            )
 
 
 # ── CAS 9-line ────────────────────────────────────────────────────────────────
 
 _CAS_AIRCRAFT = ["F-16C", "F-35A", "A-10C", "AH-64D", "AH-1Z", "EUROFIGHTER"]
-_CAS_ORDNANCE = ["GBU-12 LGB", "AGM-65 MAVERICK", "20MM CANNON", "HELLFIRE", "GBU-39 SDB"]
-_CAS_MARK     = ["IR STROBE", "VS-17 PANEL", "SMOKE GREEN", "LASER 1688", "GLINT TAPE"]
+_CAS_ORDNANCE = [
+    "GBU-12 LGB",
+    "AGM-65 MAVERICK",
+    "20MM CANNON",
+    "HELLFIRE",
+    "GBU-39 SDB",
+]
+_CAS_MARK = ["IR STROBE", "VS-17 PANEL", "SMOKE GREEN", "LASER 1688", "GLINT TAPE"]
 
 
 async def run_cas(client, sections, speed_mult):
@@ -552,48 +740,71 @@ async def run_cas(client, sections, speed_mult):
         name, tlat, tlon, etype = _pick_enemy_target()
         grid = mgrs(tlat, tlon)
         aircraft = random.choice(_CAS_AIRCRAFT)
-        ord_     = random.choice(_CAS_ORDNANCE)
-        mark     = random.choice(_CAS_MARK)
+        ord_ = random.choice(_CAS_ORDNANCE)
+        mark = random.choice(_CAS_MARK)
         friend_m = random.choice([200, 300, 400, 500])
-        bearing  = random.choice(SPOT_DIRECTIONS)
+        bearing = random.choice(SPOT_DIRECTIONS)
         n += 1
         payload = {
-            "line_1_ip":               f"IP {random.choice(['ALPHA','BRAVO','CHARLIE','DELTA'])}",
-            "line_2_heading":          random.randint(0, 359),
-            "line_3_distance_m":       random.randint(2000, 8000),
+            "line_1_ip": f"IP {random.choice(['ALPHA','BRAVO','CHARLIE','DELTA'])}",
+            "line_2_heading": random.randint(0, 359),
+            "line_3_distance_m": random.randint(2000, 8000),
             "line_4_target_elevation": random.randint(2, 30),
-            "line_5_target_desc":      f"{etype} — {name}",
-            "line_6_target_location": {"latitude": round(tlat, 5),
-                                       "longitude": round(tlon, 5),
-                                       "mgrs": grid},
-            "line_7_marking":          mark,
-            "line_8_friendlies":       f"{friend_m}m {bearing}",
-            "line_9_egress":           random.choice(["NORTH", "SOUTH", "EAST", "WEST"]),
-            "aircraft_requested":      aircraft,
-            "ordnance_requested":      ord_,
-            "remarks":                 f"Type 2. CAS on {name}.",
-            "latitude":  round(tlat, 5),
+            "line_5_target_desc": f"{etype} — {name}",
+            "line_6_target_location": {
+                "latitude": round(tlat, 5),
+                "longitude": round(tlon, 5),
+                "mgrs": grid,
+            },
+            "line_7_marking": mark,
+            "line_8_friendlies": f"{friend_m}m {bearing}",
+            "line_9_egress": random.choice(["NORTH", "SOUTH", "EAST", "WEST"]),
+            "aircraft_requested": aircraft,
+            "ordnance_requested": ord_,
+            "remarks": f"Type 2. CAS on {name}.",
+            "latitude": round(tlat, 5),
             "longitude": round(tlon, 5),
-            "grid":      grid,
+            "grid": grid,
         }
-        r = await api(client, "POST", "/reports", token=op.token,
-                      json={"type": "CAS", "payload": payload})
+        r = await api(
+            client,
+            "POST",
+            "/reports",
+            token=op.token,
+            json={"type": "CAS", "payload": payload},
+        )
         if r:
-            log.info("✈️  %s  CAS REQ  %-22s  %s  %s/%s  (#%d)",
-                     op.callsign, name[:22], grid, aircraft, ord_, n)
+            log.info(
+                "✈️  %s  CAS REQ  %-22s  %s  %s/%s  (#%d)",
+                op.callsign,
+                name[:22],
+                grid,
+                aircraft,
+                ord_,
+                n,
+            )
 
 
 # ── MEDEVAC 9-line ────────────────────────────────────────────────────────────
 
-_PRECEDENCE   = ["A — URGENT", "B — URGENT SURGICAL", "C — PRIORITY", "D — ROUTINE"]
-_EQUIPMENT    = ["A — NONE", "B — HOIST", "C — EXTRACTION", "D — VENTILATOR"]
+_PRECEDENCE = ["A — URGENT", "B — URGENT SURGICAL", "C — PRIORITY", "D — ROUTINE"]
+_EQUIPMENT = ["A — NONE", "B — HOIST", "C — EXTRACTION", "D — VENTILATOR"]
 _PATIENT_TYPE = ["A — LITTER", "B — AMBULATORY"]
-_SECURITY     = ["N — NO ENEMY", "P — POSSIBLE ENEMY", "E — ENEMY IN AREA",
-                 "X — ENEMY IN AREA — ARMED ESCORT REQUIRED"]
-_NATIONALITY  = ["A — US MILITARY", "B — US CIVILIAN",
-                 "C — NON-US MILITARY", "D — NON-US CIVILIAN", "E — EPW"]
-_NBC          = ["N — NUCLEAR", "B — BIOLOGICAL", "C — CHEMICAL", "0 — NONE"]
-_INJURIES     = [
+_SECURITY = [
+    "N — NO ENEMY",
+    "P — POSSIBLE ENEMY",
+    "E — ENEMY IN AREA",
+    "X — ENEMY IN AREA — ARMED ESCORT REQUIRED",
+]
+_NATIONALITY = [
+    "A — US MILITARY",
+    "B — US CIVILIAN",
+    "C — NON-US MILITARY",
+    "D — NON-US CIVILIAN",
+    "E — EPW",
+]
+_NBC = ["N — NUCLEAR", "B — BIOLOGICAL", "C — CHEMICAL", "0 — NONE"]
+_INJURIES = [
     "GSW chest, conscious, rapid breathing",
     "Frag wounds bilateral lower extremities",
     "Blast injury, suspected TBI",
@@ -625,42 +836,63 @@ async def run_medevac(client, sections, speed_mult):
         injury = random.choice(_INJURIES)
         n += 1
         payload = {
-            "line_1_location":     {"latitude": round(plat, 5),
-                                    "longitude": round(plon, 5),
-                                    "mgrs": grid},
+            "line_1_location": {
+                "latitude": round(plat, 5),
+                "longitude": round(plon, 5),
+                "mgrs": grid,
+            },
             "line_2_callsign_freq": f"{op.callsign} / 32.450 MHz",
-            "line_3_precedence":    precedence,
-            "line_4_equipment":     random.choice(_EQUIPMENT),
-            "line_5_patients":      {"litter": litter, "ambulatory": ambulatory},
-            "line_6_security":      random.choice(_SECURITY),
-            "line_7_marking":       random.choice(_CAS_MARK),
-            "line_8_nationality":   random.choice(_NATIONALITY),
-            "line_9_nbc":           random.choice(_NBC),
-            "remarks":              injury,
-            "latitude":  round(plat, 5),
+            "line_3_precedence": precedence,
+            "line_4_equipment": random.choice(_EQUIPMENT),
+            "line_5_patients": {"litter": litter, "ambulatory": ambulatory},
+            "line_6_security": random.choice(_SECURITY),
+            "line_7_marking": random.choice(_CAS_MARK),
+            "line_8_nationality": random.choice(_NATIONALITY),
+            "line_9_nbc": random.choice(_NBC),
+            "remarks": injury,
+            "latitude": round(plat, 5),
             "longitude": round(plon, 5),
-            "grid":      grid,
+            "grid": grid,
         }
-        r = await api(client, "POST", "/reports", token=op.token,
-                      json={"type": "MEDEVAC", "payload": payload})
+        r = await api(
+            client,
+            "POST",
+            "/reports",
+            token=op.token,
+            json={"type": "MEDEVAC", "payload": payload},
+        )
         if r:
-            log.info("🚑 %s  MEDEVAC  %s  L%d/A%d  %s  %-40s  (#%d)",
-                     op.callsign, precedence.split(" — ")[0],
-                     litter, ambulatory, grid, injury[:40], n)
+            log.info(
+                "🚑 %s  MEDEVAC  %s  L%d/A%d  %s  %-40s  (#%d)",
+                op.callsign,
+                precedence.split(" — ")[0],
+                litter,
+                ambulatory,
+                grid,
+                injury[:40],
+                n,
+            )
         # Audible call on broadcast
-        await api(client, "POST", "/messages", token=op.token,
-                  json={"content": f"MEDEVAC {precedence.split(' — ')[0]} — "
-                                   f"{litter}L/{ambulatory}A — grid {grid}",
-                        "message_type": "BROADCAST"})
+        await api(
+            client,
+            "POST",
+            "/messages",
+            token=op.token,
+            json={
+                "content": f"MEDEVAC {precedence.split(' — ')[0]} — "
+                f"{litter}L/{ambulatory}A — grid {grid}",
+                "message_type": "BROADCAST",
+            },
+        )
 
 
 # ── CBRN around objective ────────────────────────────────────────────────────
 
 _CBRN_AGENTS = [
-    ("C", "CBRN_4", "CHLORINE",        "Industrial chemical release"),
-    ("C", "CBRN_4", "SARIN (GB)",      "Suspected nerve-agent munition"),
-    ("R", "CBRN_3", "DIRTY-BOMB",      "RDD detonation reported"),
-    ("B", "CBRN_4", "ANTHRAX",         "Suspected biological dispersal"),
+    ("C", "CBRN_4", "CHLORINE", "Industrial chemical release"),
+    ("C", "CBRN_4", "SARIN (GB)", "Suspected nerve-agent munition"),
+    ("R", "CBRN_3", "DIRTY-BOMB", "RDD detonation reported"),
+    ("B", "CBRN_4", "ANTHRAX", "Suspected biological dispersal"),
 ]
 
 
@@ -674,30 +906,51 @@ async def run_cbrn(client, admin_op, speed_mult):
             continue
         # Anchor near Sluis but offset up to ~3 km
         lat = 51.3093 + random.uniform(-0.030, 0.030)
-        lon = 3.3878  + random.uniform(-0.040, 0.040)
+        lon = 3.3878 + random.uniform(-0.040, 0.040)
         cat, mtype, agent, notes = random.choice(_CBRN_AGENTS)
-        wind_dir   = random.randint(0, 359)
+        wind_dir = random.randint(0, 359)
         wind_speed = random.randint(5, 35)
         zi = {"C": 800, "B": 1500, "R": 1200, "N": 4000}[cat]
         zd = zi * random.randint(3, 7)
         n += 1
         payload = {
             "msg_type": mtype,
-            "agent_category": cat, "agent": agent,
-            "latitude": round(lat, 5), "longitude": round(lon, 5),
-            "wind_direction": wind_dir, "wind_speed": wind_speed,
-            "zone_inner_m": zi, "zone_downwind_m": zd,
+            "agent_category": cat,
+            "agent": agent,
+            "latitude": round(lat, 5),
+            "longitude": round(lon, 5),
+            "wind_direction": wind_dir,
+            "wind_speed": wind_speed,
+            "zone_inner_m": zi,
+            "zone_downwind_m": zd,
             "zone_downwind_angle_deg": 30,
-            "dtg": "", "serial": f"SLUIS{n:03d}", "notes": notes, "lines": {},
+            "dtg": "",
+            "serial": f"SLUIS{n:03d}",
+            "notes": notes,
+            "lines": {},
         }
-        r = await api(client, "POST", "/reports", token=admin_op.token,
-                      json={"type": mtype, "payload": payload})
+        r = await api(
+            client,
+            "POST",
+            "/reports",
+            token=admin_op.token,
+            json={"type": mtype, "payload": payload},
+        )
         if r:
-            log.info("☣️  CBRN %s  %-14s  %.4f,%.4f  wind %d°@%dkm/h  (#%d)",
-                     mtype, agent, lat, lon, wind_dir, wind_speed, n)
+            log.info(
+                "☣️  CBRN %s  %-14s  %.4f,%.4f  wind %d°@%dkm/h  (#%d)",
+                mtype,
+                agent,
+                lat,
+                lon,
+                wind_dir,
+                wind_speed,
+                n,
+            )
 
 
 # ── Reset helper ──────────────────────────────────────────────────────────────
+
 
 async def reset_sim(client, all_ops):
     log.info("── Reset: deleting sim operators ─────────────────────")
@@ -714,6 +967,7 @@ async def reset_sim(client, all_ops):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 async def main() -> None:
     # Apply --admin/--password aliases
@@ -734,21 +988,40 @@ async def main() -> None:
 
     log.info("=== Arrow Tactical Simulator — Operation Sluis ===")
     log.info("Backend : %s", _CTX.base)
-    log.info("Operators: %d  |  Sections: %d  |  Speed: %.1f×",
-             len(all_ops), len(sections), speed_mult)
-    log.info("Walk %.1f km/h  Infil %.1f km/h  Update every %gs",
-             WALK_MS * 3.6, INFIL_MS * 3.6, UPDATE_S / speed_mult)
-    log.info("Enemy %gs  FM %gs  CAS %gs  MEDEVAC %gs  CBRN %gs",
-             ENEMY_S / speed_mult, FM_S / speed_mult,
-             CAS_S / speed_mult, MEDEVAC_S / speed_mult, CBRN_S / speed_mult)
+    log.info(
+        "Operators: %d  |  Sections: %d  |  Speed: %.1f×",
+        len(all_ops),
+        len(sections),
+        speed_mult,
+    )
+    log.info(
+        "Walk %.1f km/h  Infil %.1f km/h  Update every %gs",
+        WALK_MS * 3.6,
+        INFIL_MS * 3.6,
+        UPDATE_S / speed_mult,
+    )
+    log.info(
+        "Enemy %gs  FM %gs  CAS %gs  MEDEVAC %gs  CBRN %gs",
+        ENEMY_S / speed_mult,
+        FM_S / speed_mult,
+        CAS_S / speed_mult,
+        MEDEVAC_S / speed_mult,
+        CBRN_S / speed_mult,
+    )
 
     async with httpx.AsyncClient(verify=False) as client:
         if ARGS.reset:
             await reset_sim(client, all_ops)
         admin_token = await bootstrap(client, all_ops, sections)
         _CTX.mission_id = await sim_utils.create_mission_async(
-            client, _CTX.base, admin_token, ARGS.mission_name,
-            map_center_lat=51.3093, map_center_lng=3.3878, map_zoom=14)
+            client,
+            _CTX.base,
+            admin_token,
+            ARGS.mission_name,
+            map_center_lat=51.3093,
+            map_center_lng=3.3878,
+            map_zoom=14,
+        )
         await login_all(client, all_ops)
 
         coros = []
@@ -777,9 +1050,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     _timeout: float | None = (
-        ARGS.steps * ARGS.dt
-        if ARGS.steps is not None and ARGS.dt is not None
-        else None
+        ARGS.steps * ARGS.dt if ARGS.steps is not None and ARGS.dt is not None else None
     )
 
     async def _run() -> None:

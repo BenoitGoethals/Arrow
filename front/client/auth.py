@@ -1,4 +1,5 @@
 """JWT credential storage — uses keyring when available, falls back to memory."""
+
 from typing import Optional
 import keyring
 

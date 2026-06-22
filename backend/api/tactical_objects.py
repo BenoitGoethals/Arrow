@@ -22,8 +22,12 @@ def list_objects(
     if mission:
         # Always include global objects (mission_id=NULL) alongside mission-scoped ones
         # so CBRN overlays, reference graphics, and KML-derived markers are always visible.
-        q = q.filter(or_(TacticalObject.mission_id == mission.id,
-                         TacticalObject.mission_id.is_(None)))
+        q = q.filter(
+            or_(
+                TacticalObject.mission_id == mission.id,
+                TacticalObject.mission_id.is_(None),
+            )
+        )
     return q.all()
 
 
@@ -43,20 +47,24 @@ async def create_object(
     db.commit()
     db.refresh(obj)
 
-    await broadcaster.broadcast({
-        "channel": "tactical-object",
-        "event": "created",
-        "mission_id": mission.id if mission else None,
-        "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "tactical-object",
+            "event": "created",
+            "mission_id": mission.id if mission else None,
+            "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
+        }
+    )
 
     # Bridge the tactical object to connected ATAK devices as a CoT event.
     from backend.cot.tcp_server import broadcast_tactical_object_to_atak
+
     await broadcast_tactical_object_to_atak(obj)
 
     # Bridge geo-pinned photos to connected ATAK devices as an image CoT.
     if obj.photo_id:
         from backend.cot.tcp_server import broadcast_photo_to_atak
+
         await broadcast_photo_to_atak(obj, current)
 
     return obj
@@ -78,15 +86,18 @@ async def patch_object(
         setattr(obj, field, value)
     db.commit()
     db.refresh(obj)
-    await broadcaster.broadcast({
-        "channel": "tactical-object",
-        "event": "updated",
-        "mission_id": obj.mission_id,
-        "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "tactical-object",
+            "event": "updated",
+            "mission_id": obj.mission_id,
+            "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
+        }
+    )
 
     # Re-broadcast the updated CoT (same UID — ATAK treats it as a move).
     from backend.cot.tcp_server import broadcast_tactical_object_to_atak
+
     await broadcast_tactical_object_to_atak(obj)
     return obj
 
@@ -105,16 +116,20 @@ async def delete_object(
     mid = obj.mission_id
     # Snapshot the object so we can emit a stale-CoT to ATAK after the row is gone.
     from copy import copy
+
     obj_snapshot = copy(obj)
     db.delete(obj)
     db.commit()
-    await broadcaster.broadcast({
-        "channel": "tactical-object",
-        "event": "deleted",
-        "mission_id": mid,
-        "data": {"id": object_id},
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "tactical-object",
+            "event": "deleted",
+            "mission_id": mid,
+            "data": {"id": object_id},
+        }
+    )
 
     # Tell connected ATAK clients to drop this marker.
     from backend.cot.tcp_server import broadcast_tactical_object_delete_to_atak
+
     await broadcast_tactical_object_delete_to_atak(obj_snapshot)

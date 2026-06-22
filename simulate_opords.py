@@ -19,9 +19,15 @@ from backend.storage.models import Operator, Opord, Photo
 PHOTO_DIR = Path("data/photos")
 
 
-
-def _attach_snapshot(db, opord: Opord, label: str, bbox: list[float],
-                     zoom: int, annotations: str, author_id: int) -> None:
+def _attach_snapshot(
+    db,
+    opord: Opord,
+    label: str,
+    bbox: list[float],
+    zoom: int,
+    annotations: str,
+    author_id: int,
+) -> None:
     """Render OSM tiles for ``bbox`` and append the snapshot to the OPORD."""
     PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     try:
@@ -31,20 +37,28 @@ def _attach_snapshot(db, opord: Opord, label: str, bbox: list[float],
         return
     fn = f"opord_{opord.id}_{uuid.uuid4().hex}.png"
     (PHOTO_DIR / fn).write_bytes(png)
-    photo = Photo(filename=fn, original_name=f"{label}.png",
-                  mime_type="image/png", uploaded_by=author_id)
-    db.add(photo); db.commit(); db.refresh(photo)
+    photo = Photo(
+        filename=fn,
+        original_name=f"{label}.png",
+        mime_type="image/png",
+        uploaded_by=author_id,
+    )
+    db.add(photo)
+    db.commit()
+    db.refresh(photo)
     snaps = json.loads(opord.map_snapshots or "[]")
     s, w, n, e = bbox
-    snaps.append({
-        "id": (max((x.get("id", 0) for x in snaps), default=0)) + 1,
-        "label": label,
-        "bbox": bbox,
-        "center": [(s + n) / 2, (w + e) / 2],
-        "zoom": zoom,
-        "photo_id": photo.id,
-        "annotations": annotations,
-    })
+    snaps.append(
+        {
+            "id": (max((x.get("id", 0) for x in snaps), default=0)) + 1,
+            "label": label,
+            "bbox": bbox,
+            "center": [(s + n) / 2, (w + e) / 2],
+            "zoom": zoom,
+            "photo_id": photo.id,
+            "annotations": annotations,
+        }
+    )
     opord.map_snapshots = json.dumps(snaps)
     db.commit()
 
@@ -493,16 +507,28 @@ OPORD_STABILITY = dict(
 # Each OPORD includes a small AOI snapshot. Coords are illustrative — change to your AO.
 SNAPSHOTS = {
     "OPORD 26-001": [
-        ("OBJ BRAVO + Hill 412", [50.84, 4.30, 50.88, 4.40], 13,
-         "Assault axis along Route RED; SBF on Hill 401 ridgeline."),
+        (
+            "OBJ BRAVO + Hill 412",
+            [50.84, 4.30, 50.88, 4.40],
+            13,
+            "Assault axis along Route RED; SBF on Hill 401 ridgeline.",
+        ),
     ],
     "OPORD 26-002": [
-        ("EA TIGER along Wadi BLUE", [50.78, 4.20, 50.84, 4.32], 13,
-         "BP-2 controls saddle; obstacles emplaced 200m S of PL IRON."),
+        (
+            "EA TIGER along Wadi BLUE",
+            [50.78, 4.20, 50.84, 4.32],
+            13,
+            "BP-2 controls saddle; obstacles emplaced 200m S of PL IRON.",
+        ),
     ],
     "OPORD 26-003": [
-        ("Village ZULU + Route AMBER", [50.86, 4.36, 50.89, 4.42], 14,
-         "Single ingress W; outer cordon 200m offset; mosque on N edge."),
+        (
+            "Village ZULU + Route AMBER",
+            [50.86, 4.36, 50.89, 4.42],
+            14,
+            "Single ingress W; outer cordon 200m offset; mosque on N edge.",
+        ),
     ],
 }
 
@@ -511,17 +537,30 @@ def main() -> int:
     init_db()
     db = SessionLocal()
     try:
-        author = (db.query(Operator).filter(Operator.role.in_(("ADMIN", "BATTLE_CAPTAIN"))).first()
-                  or db.query(Operator).first())
+        author = (
+            db.query(Operator)
+            .filter(Operator.role.in_(("ADMIN", "BATTLE_CAPTAIN")))
+            .first()
+            or db.query(Operator).first()
+        )
         if not author:
-            print("No operators in DB — seed first with: uv run arrow-seed", file=sys.stderr)
+            print(
+                "No operators in DB — seed first with: uv run arrow-seed",
+                file=sys.stderr,
+            )
             return 1
         print(f"Authoring 3 OPORDs as {author.callsign} ({author.role})")
 
         for tmpl in (OPORD_OFFENSIVE, OPORD_DEFENSIVE, OPORD_STABILITY):
-            existing = db.query(Opord).filter(Opord.opord_number == tmpl["opord_number"]).first()
+            existing = (
+                db.query(Opord)
+                .filter(Opord.opord_number == tmpl["opord_number"])
+                .first()
+            )
             if existing:
-                print(f"  · skipping (already exists): {tmpl['opord_number']} — {tmpl['title']}")
+                print(
+                    f"  · skipping (already exists): {tmpl['opord_number']} — {tmpl['title']}"
+                )
                 continue
             o = Opord(
                 title=tmpl["title"],
@@ -543,7 +582,9 @@ def main() -> int:
                 created_at=datetime.now(timezone.utc),
                 updated_at=datetime.now(timezone.utc),
             )
-            db.add(o); db.commit(); db.refresh(o)
+            db.add(o)
+            db.commit()
+            db.refresh(o)
             print(f"  ✓ created: id={o.id}  {tmpl['opord_number']} — {tmpl['title']}")
 
             for label, bbox, zoom, ann in SNAPSHOTS.get(tmpl["opord_number"], []):

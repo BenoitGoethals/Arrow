@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Arrow is a TAK-style situational awareness platform (see `README.md` for the full spec).
 The repo contains two Python apps that share a single `pyproject.toml`:
 
-- `backend/` — **FastAPI** REST + WebSocket services, SQLAlchemy on SQLite, JWT auth, CoT messaging.
+- `backend/` — **FastAPI** REST + WebSocket services, SQLAlchemy on PostgreSQL 16 + PostGIS 3.4, JWT auth, CoT messaging. MapServer serves OGC WMS/WFS from PostGIS views (`ms_*`).
 - `web/` — **Flask** operational dashboard (Battle Captain / Admin UI) that talks to the backend over HTTP/WS.
 - `android/` — **Kotlin / Jetpack Compose** tactical operator client. Standalone Gradle project (open `android/` in Android Studio, or run `gradle wrapper && ./gradlew :app:assembleDebug`). Uses OkHttp + kotlinx.serialization, OSMdroid for the map, Fused Location Provider in a foreground service. Module split mirrors §12 (`auth/`, `tracking/`, `map/`, `messaging/`, `alerts/`, `reports/`, `cot/`, `offline/`, `settings/`). Composition root is `di/AppContainer.kt`.
 
@@ -73,3 +73,29 @@ APIRouter and is wired into `backend.main:create_app`:
 - The `Report.payload` column stores JSON as text; serialise with `json.dumps` on write and parse on read.
 - New realtime events: emit via `broadcaster.broadcast({"channel": "...", "event": "...", "data": {...}})`. Existing channels: `presence`, `tracking`, `tactical-object`, `alert`, `chat`, `report`.
 - New roles must be added to the `Operator.role` set used by `require_role` callers (`ADMIN`, `BATTLE_CAPTAIN`, `OPERATOR`).
+
+## Project Conventions
+
+- Run modules via their package (`python -m backend.storage.seed`), never by file path. File-path execution breaks absolute imports.
+- Avoid relative imports — both `backend` and `web` are installed wheel packages; relative imports break `python -m` invocation.
+
+## SQL & Database Conventions
+
+- Before writing any SQL file or production DB artifact, confirm whether the user wants a **full schema + creation script** (DDL for all tables, indexes, extensions) or a **seed-only / generator script**. These are different deliverables; defaulting to the wrong one costs iterations.
+- Use ANSI SQL (`CURRENT_TIMESTAMP`, `ON CONFLICT … DO NOTHING`) in migration statements so they work in both the SQLite test fixture and PostgreSQL production. Never use dialect-specific functions (`NOW()`, `datetime('now')`) in shared migration code.
+
+## Testing
+
+- Always run the full test suite (`uv run pytest`) after any database or schema change and confirm all tests pass before declaring the work complete.
+- The test fixture in `tests/conftest.py` overrides `_dbmod.engine` and `_dbmod.SessionLocal` with a StaticPool in-memory SQLite engine. Any module that captures `SessionLocal` at import time (e.g. `from backend.storage.database import SessionLocal`) will bypass this override and connect to the wrong database. Always import via the module (`import backend.storage.database as _db; _db.SessionLocal()`), never bind it at module level in production code.
+- `seed_db` is stubbed out in tests — do not rely on seeded accounts; use `_seed_admin()` and `register()` from `conftest.py` to set up test data explicitly.
+
+## Code Quality
+
+- Before finishing any task, run `uv run ruff check --fix .`, `uv run black .`, and `uv run mypy .` and ensure zero errors, then run `uv run pytest` and confirm all tests pass. Do not declare a task complete while any of these are red.
+
+## Debugging UI Issues
+
+- When fixing a UI bug (especially the recurring Leaflet map blackout), **set up real diagnostics first**: open the browser console, capture network logs, or drive a headless browser to reproduce the failure before touching any code.
+- Common root causes to check before guessing: missing `maxZoom` on the Leaflet `TileLayer`, a blanket `select` override in `military.css` that silently swallows CSS, and Metal/GPU layer promotion caused by overlay `display` toggling (fix: toggle `visibility`, not `display`).
+- Never make more than one speculative CSS/repaint fix without a confirmed reproduction. If the first blind fix doesn't resolve it, stop and reproduce.

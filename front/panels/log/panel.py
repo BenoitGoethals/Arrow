@@ -1,12 +1,18 @@
 """Log viewer panel — shows recent Arrow Front log entries in real time."""
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPlainTextEdit,
-    QPushButton, QComboBox, QLabel,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPlainTextEdit,
+    QPushButton,
+    QComboBox,
+    QLabel,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QColor, QTextCharFormat, QTextCursor
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QFont, QColor, QTextCharFormat
 
 from front.utils.log_setup import get_recent_lines, log_file_path
 
@@ -101,7 +107,14 @@ class LogPanel(QWidget):
         if self._paused:
             return
         level = self._level_filter.currentText()
-        _ORDER = {"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4, "ALL": -1}
+        _ORDER = {
+            "DEBUG": 0,
+            "INFO": 1,
+            "WARNING": 2,
+            "ERROR": 3,
+            "CRITICAL": 4,
+            "ALL": -1,
+        }
         min_level = _ORDER.get(level, -1)
 
         lines = get_recent_lines(500)
@@ -147,7 +160,9 @@ class LogPanel(QWidget):
         self._last_count = 0
 
     def _open_file(self):
-        import subprocess, sys
+        import subprocess
+        import sys
+
         path = str(log_file_path())
         if sys.platform == "darwin":
             subprocess.Popen(["open", "-a", "Console", path])

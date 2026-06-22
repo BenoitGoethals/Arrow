@@ -1,20 +1,28 @@
 """Reports Panel — incoming tactical report queue with detail viewer."""
+
 from __future__ import annotations
 import json
-from datetime import datetime
 from typing import List
 
 from front.utils.mgrs_util import to_mgrs
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QComboBox, QTextEdit, QPushButton, QDialog, QDialogButtonBox,
-    QSplitter, QFrame,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QLabel,
+    QComboBox,
+    QTextEdit,
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 
-from front.models.report import Report, PRIORITY_COLORS
+from front.models.report import Report
 
 
 class ReportItem(QListWidgetItem):
@@ -24,7 +32,11 @@ class ReportItem(QListWidgetItem):
         self._render()
 
     def _render(self):
-        ts = self.report.timestamp[:16] if len(self.report.timestamp) >= 16 else self.report.timestamp
+        ts = (
+            self.report.timestamp[:16]
+            if len(self.report.timestamp) >= 16
+            else self.report.timestamp
+        )
         pin = "📍" if self.report.has_position else "  "
         self.setText(
             f"{pin}{self.report.icon}  {self.report.type:<12}  {self.report.sender:<10}  {ts}"
@@ -39,7 +51,7 @@ class ReportItem(QListWidgetItem):
 class ReportsPanel(QWidget):
     """Right-dock reports queue."""
 
-    report_selected  = pyqtSignal(object)        # Report
+    report_selected = pyqtSignal(object)  # Report
     locate_requested = pyqtSignal(float, float)  # lat, lon
 
     def __init__(self, parent=None):
@@ -57,8 +69,20 @@ class ReportsPanel(QWidget):
         filter_row.setContentsMargins(6, 4, 6, 4)
         filter_row.setSpacing(4)
         self._type_filter = QComboBox()
-        self._type_filter.addItems(["ALL", "CASEVAC", "MEDEVAC", "CAS", "SALUTE",
-                                    "SITREP", "ACE", "CBRN_1", "DRONE_SPOT", "CONTACT"])
+        self._type_filter.addItems(
+            [
+                "ALL",
+                "CASEVAC",
+                "MEDEVAC",
+                "CAS",
+                "SALUTE",
+                "SITREP",
+                "ACE",
+                "CBRN_1",
+                "DRONE_SPOT",
+                "CONTACT",
+            ]
+        )
         self._type_filter.currentTextChanged.connect(self._apply_filter)
         filter_row.addWidget(QLabel("TYPE"))
         filter_row.addWidget(self._type_filter, 1)
@@ -89,12 +113,12 @@ class ReportsPanel(QWidget):
 
     def add_report(self, data: dict):
         report = Report(
-            id        = data.get("id", 0),
-            type      = data.get("type", "UNKNOWN"),
-            sender    = data.get("sender") or data.get("callsign", "?"),
-            timestamp = data.get("timestamp") or data.get("created_at", ""),
-            payload   = data.get("payload", {}),
-            read      = False,
+            id=data.get("id", 0),
+            type=data.get("type", "UNKNOWN"),
+            sender=data.get("sender") or data.get("callsign", "?"),
+            timestamp=data.get("timestamp") or data.get("created_at", ""),
+            payload=data.get("payload", {}),
+            read=False,
         )
         self._reports.insert(0, report)
         self._apply_filter(self._type_filter.currentText())
@@ -103,14 +127,17 @@ class ReportsPanel(QWidget):
     def load_reports(self, reports: list):
         self._reports.clear()
         for d in reversed(reports):
-            self._reports.insert(0, Report(
-                id        = d.get("id", 0),
-                type      = d.get("type", "UNKNOWN"),
-                sender    = d.get("sender") or d.get("callsign", "?"),
-                timestamp = d.get("timestamp") or d.get("created_at", ""),
-                payload   = d.get("payload", {}),
-                read      = True,
-            ))
+            self._reports.insert(
+                0,
+                Report(
+                    id=d.get("id", 0),
+                    type=d.get("type", "UNKNOWN"),
+                    sender=d.get("sender") or d.get("callsign", "?"),
+                    timestamp=d.get("timestamp") or d.get("created_at", ""),
+                    payload=d.get("payload", {}),
+                    read=True,
+                ),
+            )
         self._apply_filter(self._type_filter.currentText())
         self._update_counter()
 
@@ -124,7 +151,7 @@ class ReportsPanel(QWidget):
 
     def _update_counter(self):
         unread = sum(1 for r in self._reports if not r.read)
-        total  = len(self._reports)
+        total = len(self._reports)
         self._counter.setText(f"{unread} unread  ·  {total} total")
 
     def _on_click(self, item: QListWidgetItem):
@@ -150,16 +177,24 @@ class ReportsPanel(QWidget):
 _LAT_KEYS = {"latitude", "lat", "observer_lat", "event_lat", "target_lat"}
 _LON_KEYS = {"longitude", "lon", "observer_lon", "event_lon", "target_lon"}
 
+
 def _coords_to_mgrs(d: dict) -> dict:
     """Return a copy of d with lat/lon float pairs replaced by MGRS strings."""
     out = {}
     skip = set()
     # Pair up lat/lon keys and replace with MGRS
-    lat_keys = {k for k in d if k.lower() in _LAT_KEYS and isinstance(d[k], (int, float))}
+    lat_keys = {
+        k for k in d if k.lower() in _LAT_KEYS and isinstance(d[k], (int, float))
+    }
     for lk in lat_keys:
         base = lk.lower().replace("lat", "").replace("itude", "").strip("_")
-        lon_candidates = [k for k in d if k.lower().replace("lon", "").replace("gitude", "").strip("_") == base
-                          and k.lower() in _LON_KEYS and isinstance(d[k], (int, float))]
+        lon_candidates = [
+            k
+            for k in d
+            if k.lower().replace("lon", "").replace("gitude", "").strip("_") == base
+            and k.lower() in _LON_KEYS
+            and isinstance(d[k], (int, float))
+        ]
         if lon_candidates:
             lonk = lon_candidates[0]
             mgrs_str = to_mgrs(d[lk], d[lonk])

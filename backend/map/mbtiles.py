@@ -100,7 +100,12 @@ def read_tile(path: Path, z: int, x: int, y: int) -> bytes | None:
                 params,
             ).fetchone()
             return row[0] if row else None
-        except (sqlite3.InterfaceError, sqlite3.ProgrammingError, sqlite3.OperationalError):
+        except (
+            sqlite3.InterfaceError,
+            sqlite3.ProgrammingError,
+            sqlite3.OperationalError,
+        ):
             if attempt == 1:
                 raise
             _open.cache_clear()
+    return None

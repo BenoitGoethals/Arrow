@@ -1,25 +1,73 @@
 """Map Visibility panel — grid of layer toggles with labels and badges."""
+
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QLabel, QCheckBox, QFrame, QPushButton, QWidget,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QGridLayout,
+    QLabel,
+    QCheckBox,
+    QFrame,
+    QPushButton,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QFont
-
 
 # layer_key, icon, display_name, description, default_visible
 MAP_LAYERS = [
-    ("operators",    "🎖", "Operators",      "Friendly position markers (live tracking).",               True),
-    ("enemies",      "⚔",  "Enemy units",    "Hostile forces & tactical objects (ENEMY / HOSTILE).",    True),
-    ("tactObjs",     "📍", "Tactical objects","POIs, objectives, markers, tactical control graphics.",   True),
-    ("fireMissions", "🎯", "Fire missions",  "CFF markers and impact splashes on the map.",              True),
-    ("alerts",       "🚨", "Alerts",         "TIC / MEDICAL / EVAC / LOST_COMMS pulse rings.",          True),
-    ("cotTracks",    "📡", "CoT tracks",     "Foreign-UID Cursor-on-Target tracks (ATAK / simulator).", True),
-    ("kml",          "🗺", "KML layers",     "Imported KML/KMZ overlay features.",                      True),
-    ("cbrn",         "☢",  "CBRN zones",     "Chemical, biological, radiological, nuclear overlays.",   True),
-    ("operTrails",   "〰", "Operator trails","Movement trail lines drawn behind operator tracks.",       True),
-    ("graphics",     "✏",  "Drawn graphics", "Lines, polygons, and other drawn tactical graphics.",     True),
+    ("operators", "🎖", "Operators", "Friendly position markers (live tracking).", True),
+    (
+        "enemies",
+        "⚔",
+        "Enemy units",
+        "Hostile forces & tactical objects (ENEMY / HOSTILE).",
+        True,
+    ),
+    (
+        "tactObjs",
+        "📍",
+        "Tactical objects",
+        "POIs, objectives, markers, tactical control graphics.",
+        True,
+    ),
+    (
+        "fireMissions",
+        "🎯",
+        "Fire missions",
+        "CFF markers and impact splashes on the map.",
+        True,
+    ),
+    ("alerts", "🚨", "Alerts", "TIC / MEDICAL / EVAC / LOST_COMMS pulse rings.", True),
+    (
+        "cotTracks",
+        "📡",
+        "CoT tracks",
+        "Foreign-UID Cursor-on-Target tracks (ATAK / simulator).",
+        True,
+    ),
+    ("kml", "🗺", "KML layers", "Imported KML/KMZ overlay features.", True),
+    (
+        "cbrn",
+        "☢",
+        "CBRN zones",
+        "Chemical, biological, radiological, nuclear overlays.",
+        True,
+    ),
+    (
+        "operTrails",
+        "〰",
+        "Operator trails",
+        "Movement trail lines drawn behind operator tracks.",
+        True,
+    ),
+    (
+        "graphics",
+        "✏",
+        "Drawn graphics",
+        "Lines, polygons, and other drawn tactical graphics.",
+        True,
+    ),
 ]
 
 

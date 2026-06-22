@@ -10,7 +10,9 @@ from backend.config.xml_config import load_config
 _cfg = load_config()
 engine = create_engine(
     _cfg.database.url,
-    connect_args={"check_same_thread": False} if _cfg.database.url.startswith("sqlite") else {},
+    connect_args=(
+        {"check_same_thread": False} if _cfg.database.url.startswith("sqlite") else {}
+    ),
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -117,7 +119,7 @@ def _migrate(conn: object) -> None:
         "  overlays         BOOLEAN DEFAULT 1,"
         "  updated_at       DATETIME"
         ")",
-        "INSERT INTO map_visibility (id, updated_at) VALUES (1, NOW()) ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO map_visibility (id, updated_at) VALUES (1, CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING",
         # Notification-axis flags — added on top of the original map-axis row
         "ALTER TABLE map_visibility ADD COLUMN notif_chat          BOOLEAN DEFAULT 1",
         "ALTER TABLE map_visibility ADD COLUMN notif_fire_missions BOOLEAN DEFAULT 1",
@@ -237,7 +239,7 @@ def _migrate(conn: object) -> None:
     ]
     for sql in migrations:
         try:
-            conn.execute(__import__("sqlalchemy").text(sql))
+            conn.execute(__import__("sqlalchemy").text(sql))  # type: ignore[attr-defined]
         except Exception:
             pass  # column/table already exists — safe to skip
 
@@ -278,7 +280,7 @@ def _postgis_views(conn: object) -> None:
            FROM logcop_supply_points""",
     ]
     for sql in stmts:
-        conn.execute(_text(sql))
+        conn.execute(_text(sql))  # type: ignore[attr-defined]
 
 
 def init_db() -> None:

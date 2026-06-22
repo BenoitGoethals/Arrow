@@ -14,14 +14,14 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+import backend.storage.database as _db
 from backend.auth.jwt_auth import hash_password
-from backend.storage.database import SessionLocal
 from backend.storage.models import Operator
 
 DEFAULT_PASSWORD = "ranger14"
 
-ADMIN   = {"callsign": "benoit", "rank": "OF-3", "role": "ADMIN"}
-CAPTAIN = {"callsign": "capt",   "rank": "OF-2", "role": "BATTLE_CAPTAIN"}
+ADMIN = {"callsign": "benoit", "rank": "OF-3", "role": "ADMIN"}
+CAPTAIN = {"callsign": "capt", "rank": "OF-2", "role": "BATTLE_CAPTAIN"}
 OPS = [
     {"callsign": "ops1", "rank": "OR-1", "role": "OPERATOR"},
     {"callsign": "ops2", "rank": "OR-1", "role": "OPERATOR"},
@@ -29,7 +29,9 @@ OPS = [
 ]
 
 
-def _ensure(db: Session, callsign: str, password: str, rank: str, role: str) -> tuple[Operator, bool]:
+def _ensure(
+    db: Session, callsign: str, password: str, rank: str, role: str
+) -> tuple[Operator, bool]:
     """Insert a default account if it isn't there yet. Returns (operator, created)."""
     existing = db.query(Operator).filter(Operator.callsign == callsign).first()
     if existing:
@@ -55,7 +57,7 @@ def seed(force: bool = False) -> dict[str, list[str]]:
     created: list[str] = []
     skipped: list[str] = []
 
-    with SessionLocal() as db:
+    with _db.SessionLocal() as db:
         for entry in [ADMIN, CAPTAIN, *OPS]:
             _, was_created = _ensure(
                 db,
@@ -77,7 +79,11 @@ def main() -> None:
     from backend.storage.database import init_db
 
     parser = argparse.ArgumentParser(description="Seed Arrow's operator table.")
-    parser.add_argument("--force", action="store_true", help="(legacy) re-checks all entries; default behaviour now.")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="(legacy) re-checks all entries; default behaviour now.",
+    )
     args = parser.parse_args()
 
     init_db()

@@ -1,43 +1,50 @@
 """Main toolbar — map tools, layer controls, alert button."""
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QToolBar, QToolButton, QLabel, QComboBox, QMenu, QSizePolicy,
-    QCheckBox, QWidgetAction, QWidget, QVBoxLayout, QFileDialog, QMessageBox,
+    QToolBar,
+    QToolButton,
+    QLabel,
+    QMenu,
+    QSizePolicy,
+    QWidget,
+    QMessageBox,
     # QFileDialog kept for potential future use
 )
 import sys
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QFont, QIcon
+from PyQt6.QtCore import pyqtSignal
 
 from front.panels.layers.panel import LayersDialog
 
 
 class MainToolbar(QToolBar):
     # Emitted when the user picks a map tool/draw mode
-    mode_changed    = pyqtSignal(str)        # 'pointer','measure', or graphic type
+    mode_changed = pyqtSignal(str)  # 'pointer','measure', or graphic type
     # Emitted when layer visibility toggles
-    layer_toggled   = pyqtSignal(str, bool)  # layer name, visible
+    layer_toggled = pyqtSignal(str, bool)  # layer name, visible
     # Base layer selection
-    base_changed    = pyqtSignal(str)        # 'OSM','DARK','SATELLITE','TOPO'
+    base_changed = pyqtSignal(str)  # 'OSM','DARK','SATELLITE','TOPO'
     # MBTiles manager requested
-    mbtiles_manage = pyqtSignal()            # open CRUD dialog
+    mbtiles_manage = pyqtSignal()  # open CRUD dialog
     # Fit all tracks
-    fit_requested    = pyqtSignal()
-    weather_fetch    = pyqtSignal()
-    weather_toggled  = pyqtSignal(str, bool)  # layer name, visible
+    fit_requested = pyqtSignal()
+    weather_fetch = pyqtSignal()
+    weather_toggled = pyqtSignal(str, bool)  # layer name, visible
     # Emergency alert
-    alert_requested  = pyqtSignal(str)        # alert type
+    alert_requested = pyqtSignal(str)  # alert type
     # Screenshot
     screenshot_requested = pyqtSignal()
-    config_requested     = pyqtSignal()
+    config_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMovable(False)
         self.setObjectName("mainToolbar")
         self._mode_btns: dict[str, QToolButton] = {}
-        self.popup_menus: list[QMenu] = []  # all InstantPopup menus — wire aboutToHide for repaint
+        self.popup_menus: list[QMenu] = (
+            []
+        )  # all InstantPopup menus — wire aboutToHide for repaint
         self._build()
 
     def _build(self):
@@ -52,10 +59,14 @@ class MainToolbar(QToolBar):
         meas_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         meas_menu = QMenu(self)
         for label, mode, tip in [
-            ("⟷  Distance chain",    "measure_dist",  "Click points to measure distance"),
-            ("↗  Azimuth (2 points)", "measure_az",    "Click 2 points for bearing + mils"),
-            ("⊙  Range circles",      "measure_range", "Draw range rings from a center"),
-            ("✕  Clear measurements", "meas_clear",    "Remove all measurements"),
+            ("⟷  Distance chain", "measure_dist", "Click points to measure distance"),
+            (
+                "↗  Azimuth (2 points)",
+                "measure_az",
+                "Click 2 points for bearing + mils",
+            ),
+            ("⊙  Range circles", "measure_range", "Draw range rings from a center"),
+            ("✕  Clear measurements", "meas_clear", "Remove all measurements"),
         ]:
             act = meas_menu.addAction(label)
             act.setToolTip(tip)
@@ -74,21 +85,21 @@ class MainToolbar(QToolBar):
 
         LINES = [
             ("PHASE_LINE", "PL  Phase Line"),
-            ("BOUNDARY",   "BD  Boundary"),
-            ("FSCL",       "FSCL  Fire Support Coord Line"),
-            ("CFL",        "CFL  Coordinated Fire Line"),
-            ("NFL",        "NFL  No-Fire Line"),
-            ("AXIS",       "AX  Axis of Advance"),
-            ("ROUTE",      "RT  Route"),
+            ("BOUNDARY", "BD  Boundary"),
+            ("FSCL", "FSCL  Fire Support Coord Line"),
+            ("CFL", "CFL  Coordinated Fire Line"),
+            ("NFL", "NFL  No-Fire Line"),
+            ("AXIS", "AX  Axis of Advance"),
+            ("ROUTE", "RT  Route"),
         ]
         AREAS = [
-            ("NFA",             "NFA  No-Fire Area"),
-            ("FFA",             "FFA  Free-Fire Area"),
-            ("OBJECTIVE",       "OBJ  Objective"),
+            ("NFA", "NFA  No-Fire Area"),
+            ("FFA", "FFA  Free-Fire Area"),
+            ("OBJECTIVE", "OBJ  Objective"),
             ("ENGAGEMENT_AREA", "EA   Engagement Area"),
-            ("NAI",             "NAI  Named Area of Interest"),
-            ("TAI",             "TAI  Targeted Area of Interest"),
-            ("ASSEMBLY_AREA",   "AA   Assembly Area"),
+            ("NAI", "NAI  Named Area of Interest"),
+            ("TAI", "TAI  Targeted Area of Interest"),
+            ("ASSEMBLY_AREA", "AA   Assembly Area"),
         ]
 
         draw_menu.addSection("Lines")
@@ -160,10 +171,18 @@ class MainToolbar(QToolBar):
         wx_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         wx_menu = QMenu(self)
         wx_menu.addSection("Overlay")
-        for layer, label in [("rain_radar","🌧 Rain Radar (live)"),("precipitation_new","🌂 Precipitation"),("clouds_new","☁ Cloud Cover"),("wind_new","💨 Wind Speed"),("temp_new","🌡 Temperature")]:
+        for layer, label in [
+            ("rain_radar", "🌧 Rain Radar (live)"),
+            ("precipitation_new", "🌂 Precipitation"),
+            ("clouds_new", "☁ Cloud Cover"),
+            ("wind_new", "💨 Wind Speed"),
+            ("temp_new", "🌡 Temperature"),
+        ]:
             act = wx_menu.addAction(label)
             act.setCheckable(True)
-            act.triggered.connect(lambda checked, l=layer: self.weather_toggled.emit(l, checked))
+            act.triggered.connect(
+                lambda checked, l=layer: self.weather_toggled.emit(l, checked)
+            )
         wx_menu.addSeparator()
         wx_fetch = wx_menu.addAction("⟳  Fetch current weather")
         wx_fetch.triggered.connect(self.weather_fetch.emit)
@@ -249,9 +268,10 @@ class MainToolbar(QToolBar):
 
     def _confirm_exit(self):
         ans = QMessageBox.question(
-            None, "Exit Arrow Front", "Exit Arrow Front?",
+            None,
+            "Exit Arrow Front",
+            "Exit Arrow Front?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
         if ans == QMessageBox.StandardButton.Yes:
             sys.exit(0)
-

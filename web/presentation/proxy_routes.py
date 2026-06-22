@@ -22,6 +22,8 @@ def build_blueprint(client: BackendClient, prefix: str) -> Blueprint:
             body=request.get_data(),
             headers={k: v for k, v in request.headers.items()},
         )
-        return Response(result.content, status=result.status_code, headers=result.headers)
+        return Response(
+            result.content, status=result.status_code, headers=result.headers
+        )
 
     return bp

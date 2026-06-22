@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-
 REPORT_PRIORITY = {
     "DRONE_SPOT": "FLASH",
     "CASEVAC": "IMMEDIATE",
@@ -16,23 +15,23 @@ REPORT_PRIORITY = {
 }
 
 PRIORITY_COLORS = {
-    "FLASH":     "#f85149",
+    "FLASH": "#f85149",
     "IMMEDIATE": "#ff9e64",
-    "PRIORITY":  "#d29922",
-    "ROUTINE":   "#3fb950",
+    "PRIORITY": "#d29922",
+    "ROUTINE": "#3fb950",
 }
 
 REPORT_ICON = {
-    "DRONE_SPOT":  "🛸",
-    "CASEVAC":     "🚁",
-    "MEDEVAC":     "🚁",
-    "CAS":         "✈",
-    "CONTACT":     "⚠",
-    "SALUTE":      "📋",
-    "SITREP":      "📊",
-    "ACE":         "📦",
-    "CBRN_1":      "☢",
-    "IED":         "💣",
+    "DRONE_SPOT": "🛸",
+    "CASEVAC": "🚁",
+    "MEDEVAC": "🚁",
+    "CAS": "✈",
+    "CONTACT": "⚠",
+    "SALUTE": "📋",
+    "SITREP": "📊",
+    "ACE": "📦",
+    "CBRN_1": "☢",
+    "IED": "💣",
 }
 
 
@@ -53,11 +52,12 @@ class Report:
             if isinstance(p, str):
                 try:
                     import json as _json
+
                     p = _json.loads(p)
                 except Exception:
                     p = {}
             if isinstance(p, dict):
-                self.latitude  = p.get("latitude")  or p.get("lat")
+                self.latitude = p.get("latitude") or p.get("lat")
                 self.longitude = p.get("longitude") or p.get("lon")
 
     @property

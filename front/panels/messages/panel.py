@@ -1,28 +1,37 @@
 """Messaging Panel — broadcast / direct / mission-scoped chat."""
+
 from __future__ import annotations
 import base64
 import urllib.request
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-    QPushButton, QLabel, QComboBox, QFrame, QFileDialog,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QTextEdit,
+    QPushButton,
+    QLabel,
+    QComboBox,
+    QFrame,
+    QFileDialog,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QKeyEvent
 
 SCOPE_BROADCAST = "BROADCAST"
-SCOPE_DIRECT    = "DIRECT"
-SCOPE_ROOM      = "ROOM"
+SCOPE_DIRECT = "DIRECT"
+SCOPE_ROOM = "ROOM"
 
 
 class _ImageFetchThread(QThread):
     """Download one image with Bearer auth; emit raw bytes on the main thread."""
-    loaded = pyqtSignal(str, bytes)   # url, data
+
+    loaded = pyqtSignal(str, bytes)  # url, data
 
     def __init__(self, url: str, token: str):
         super().__init__()
-        self._url   = url
+        self._url = url
         self._token = token
 
     def run(self):
@@ -32,6 +41,7 @@ class _ImageFetchThread(QThread):
                 headers={"Authorization": f"Bearer {self._token}"},
             )
             from front.utils.ssl_utils import NO_VERIFY_CTX
+
             with urllib.request.urlopen(req, timeout=15, context=NO_VERIFY_CTX) as resp:
                 data = resp.read()
             self.loaded.emit(self._url, data)
@@ -50,8 +60,8 @@ class MessagesPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._operators: list[dict] = []
-        self._missions:  list[dict] = []
-        self._rooms:     list[dict] = []
+        self._missions: list[dict] = []
+        self._rooms: list[dict] = []
         self._my_callsign: str = ""
         self._pending_file: str | None = None
         self._server_url: str = ""
@@ -77,7 +87,10 @@ class MessagesPanel(QWidget):
         scope_layout.setSpacing(4)
 
         scope_layout.addWidget(
-            QLabel("TO:", styleSheet="color:#6e7681;font-size:12px;font-weight:700;letter-spacing:1px;")
+            QLabel(
+                "TO:",
+                styleSheet="color:#6e7681;font-size:12px;font-weight:700;letter-spacing:1px;",
+            )
         )
 
         self._scope_combo = QComboBox()
@@ -226,7 +239,7 @@ class MessagesPanel(QWidget):
     # ---- Image fetching ---------------------------------------------------
 
     def _maybe_fetch_image(self, data: dict):
-        photo_id  = data.get("photo_id")
+        photo_id = data.get("photo_id")
         mime_type = data.get("photo_mime_type", "")
         if not photo_id or not self._server_url or not self._token:
             return
@@ -247,11 +260,11 @@ class MessagesPanel(QWidget):
         if not data:
             return
         # Detect image type from magic bytes
-        if data[:4] == b'\x89PNG':
+        if data[:4] == b"\x89PNG":
             mime = "image/png"
-        elif data[:3] == b'GIF':
+        elif data[:3] == b"GIF":
             mime = "image/gif"
-        elif data[:4] in (b'RIFF', b'WEBP') or b'WEBP' in data[:12]:
+        elif data[:4] in (b"RIFF", b"WEBP") or b"WEBP" in data[:12]:
             mime = "image/webp"
         else:
             mime = "image/jpeg"
@@ -265,9 +278,7 @@ class MessagesPanel(QWidget):
         sb = self._history.verticalScrollBar()
         was_at_bottom = sb.value() >= sb.maximum() - 4
 
-        parts = [
-            "<html><body style='background:#0d1117;margin:0;padding:4px;'>"
-        ]
+        parts = ["<html><body style='background:#0d1117;margin:0;padding:4px;'>"]
         for m in self._msg_data:
             parts.append(self._render_msg(m))
         parts.append("</body></html>")
@@ -278,13 +289,13 @@ class MessagesPanel(QWidget):
             sb.setValue(sb.maximum())
 
     def _render_msg(self, data: dict) -> str:
-        sender    = data.get("sender") or data.get("callsign") or "?"
-        content   = data.get("content", "")
-        ts_raw    = data.get("timestamp") or data.get("created_at") or ""
-        ts        = ts_raw[11:16] if len(ts_raw) >= 16 else ts_raw
-        scope     = data.get("message_type", "BROADCAST")
-        is_mine   = (sender == self._my_callsign)
-        photo_id  = data.get("photo_id")
+        sender = data.get("sender") or data.get("callsign") or "?"
+        content = data.get("content", "")
+        ts_raw = data.get("timestamp") or data.get("created_at") or ""
+        ts = ts_raw[11:16] if len(ts_raw) >= 16 else ts_raw
+        scope = data.get("message_type", "BROADCAST")
+        is_mine = sender == self._my_callsign
+        photo_id = data.get("photo_id")
         mime_type = data.get("photo_mime_type", "")
 
         scope_tag = ""
@@ -292,7 +303,9 @@ class MessagesPanel(QWidget):
             scope_tag = " [DM]"
         elif scope == "ROOM":
             rid = data.get("chatroom_id")
-            rname = next((r.get("name") for r in self._rooms if r.get("id") == rid), None)
+            rname = next(
+                (r.get("name") for r in self._rooms if r.get("id") == rid), None
+            )
             scope_tag = f" [# {rname}]" if rname else " [ROOM]"
 
         color_sender = "#388bfd" if is_mine else "#3fb950"
@@ -305,7 +318,7 @@ class MessagesPanel(QWidget):
                 media_html = (
                     f'<br><span style="color:#8b949e;font-size:12px">'
                     f'&#9654; <a href="{_esc(url)}" style="color:#58a6ff;">Video attachment</a>'
-                    f'</span>'
+                    f"</span>"
                 )
             else:
                 data_uri = self._img_cache.get(url, "")
@@ -317,7 +330,7 @@ class MessagesPanel(QWidget):
                 else:
                     media_html = (
                         '<br><span style="color:#484f58;font-size:12px;">'
-                        '[image loading…]</span>'
+                        "[image loading…]</span>"
                     )
 
         return (
@@ -325,10 +338,10 @@ class MessagesPanel(QWidget):
             f'<span style="color:#484f58;font-size:12px">{ts}{scope_tag}&nbsp;</span>'
             f'<b style="color:{color_sender}">{_esc(sender)}</b>'
             f'<br><span style="color:#c9d1d9;font-size:13px">'
-            f'&nbsp;&nbsp;{_esc(content)}'
-            f'</span>'
-            f'{media_html}'
-            f'</div>'
+            f"&nbsp;&nbsp;{_esc(content)}"
+            f"</span>"
+            f"{media_html}"
+            f"</div>"
         )
 
     # ---- Private ----------------------------------------------------------
@@ -354,8 +367,10 @@ class MessagesPanel(QWidget):
 
     def _pick_attachment(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Attach Photo or Video", "",
-            "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)"
+            self,
+            "Attach Photo or Video",
+            "",
+            "Media (*.jpg *.jpeg *.png *.gif *.webp *.mp4 *.webm *.mov *.ogv);;All Files (*)",
         )
         if path:
             self._pending_file = path
@@ -367,13 +382,13 @@ class MessagesPanel(QWidget):
         self._attach_bar.setVisible(False)
 
     def _send(self):
-        content   = self._input.toPlainText().strip()
+        content = self._input.toPlainText().strip()
         file_path = self._pending_file
         if not content and file_path is None:
             return
-        scope       = self._scope_combo.currentText()
+        scope = self._scope_combo.currentText()
         receiver_id = None
-        target_id   = None   # chatroom_id for ROOM scope
+        target_id = None  # chatroom_id for ROOM scope
 
         if scope == SCOPE_DIRECT:
             receiver_id = self._recipient_combo.currentData()
@@ -384,7 +399,9 @@ class MessagesPanel(QWidget):
             if target_id is None:
                 return
 
-        self.message_send_requested.emit(content, scope, receiver_id, target_id, file_path)
+        self.message_send_requested.emit(
+            content, scope, receiver_id, target_id, file_path
+        )
         self._input.clear()
         self._clear_attachment()
 
@@ -393,13 +410,18 @@ class _ComposeField(QTextEdit):
     send_triggered = pyqtSignal()
 
     def keyPressEvent(self, e: QKeyEvent):
-        if (e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
-                and not (e.modifiers() & Qt.KeyboardModifier.ShiftModifier)):
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and not (
+            e.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        ):
             self.send_triggered.emit()
         else:
             super().keyPressEvent(e)
 
 
 def _esc(s: str) -> str:
-    return (s.replace("&", "&amp;").replace("<", "&lt;")
-             .replace(">", "&gt;").replace('"', "&quot;"))
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )

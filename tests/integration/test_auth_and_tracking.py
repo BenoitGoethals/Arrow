@@ -49,4 +49,7 @@ def test_tactical_object_lifecycle(client) -> None:
     listed = client.get("/tactical-objects", headers=auth(token)).json()
     assert any(o["id"] == obj_id for o in listed)
 
-    assert client.delete(f"/tactical-objects/{obj_id}", headers=auth(token)).status_code == 204
+    assert (
+        client.delete(f"/tactical-objects/{obj_id}", headers=auth(token)).status_code
+        == 204
+    )

@@ -22,21 +22,30 @@ class Mission(Base):
     Lifecycle: PLANNING → ACTIVE → ENDED.
     On end or reset a full JSON snapshot of all mission objects is saved.
     """
+
     __tablename__ = "missions"
 
-    id:             Mapped[int]           = mapped_column(primary_key=True)
-    name:           Mapped[str]           = mapped_column(String(160))
-    description:    Mapped[str]           = mapped_column(Text, default="")
-    status:         Mapped[str]           = mapped_column(String(20), default="PLANNING")
-    created_by:     Mapped[int]           = mapped_column(ForeignKey("operators.id"))
-    created_at:     Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
-    started_at:     Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
-    ended_at:       Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
-    snapshot:       Mapped[str]           = mapped_column(Text, default="")
-    snapshot_at:    Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
-    map_center_lat: Mapped[float|None]    = mapped_column(Float, nullable=True)
-    map_center_lng: Mapped[float|None]    = mapped_column(Float, nullable=True)
-    map_zoom:       Mapped[int]           = mapped_column(Integer, default=13)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="PLANNING")
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    snapshot: Mapped[str] = mapped_column(Text, default="")
+    snapshot_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    map_center_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    map_center_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    map_zoom: Mapped[int] = mapped_column(Integer, default=13)
 
 
 class Company(Base):
@@ -45,7 +54,9 @@ class Company(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), unique=True)
 
-    platoons: Mapped[list["Platoon"]] = relationship(back_populates="company", cascade="all, delete-orphan")
+    platoons: Mapped[list["Platoon"]] = relationship(
+        back_populates="company", cascade="all, delete-orphan"
+    )
 
 
 class Platoon(Base):
@@ -56,7 +67,9 @@ class Platoon(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
 
     company: Mapped[Company] = relationship(back_populates="platoons")
-    sections: Mapped[list["Section"]] = relationship(back_populates="platoon", cascade="all, delete-orphan")
+    sections: Mapped[list["Section"]] = relationship(
+        back_populates="platoon", cascade="all, delete-orphan"
+    )
 
 
 class Section(Base):
@@ -67,7 +80,9 @@ class Section(Base):
     platoon_id: Mapped[int] = mapped_column(ForeignKey("platoons.id"))
 
     platoon: Mapped[Platoon] = relationship(back_populates="sections")
-    teams: Mapped[list["Team"]] = relationship(back_populates="section", cascade="all, delete-orphan")
+    teams: Mapped[list["Team"]] = relationship(
+        back_populates="section", cascade="all, delete-orphan"
+    )
 
 
 class Team(Base):
@@ -87,27 +102,37 @@ class Operator(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     callsign: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     rank: Mapped[str] = mapped_column(String(40), default="OR-1")
-    status: Mapped[str] = mapped_column(String(20), default="OFFLINE")  # presence: ONLINE/OFFLINE
+    status: Mapped[str] = mapped_column(
+        String(20), default="OFFLINE"
+    )  # presence: ONLINE/OFFLINE
     # Operational status, independent of presence — set by BC/ADMIN.
     # OPS (mission-capable) | INOPS (out of action) | KIA | MIA
     ops_status: Mapped[str] = mapped_column(String(10), default="OPS")
-    role: Mapped[str] = mapped_column(String(20), default="OPERATOR")  # ADMIN, BATTLE_CAPTAIN, OPERATOR, LOG, FO, CAS, INTEL, OPS, MED, CBRN, FBC
+    role: Mapped[str] = mapped_column(
+        String(20), default="OPERATOR"
+    )  # ADMIN, BATTLE_CAPTAIN, OPERATOR, LOG, FO, CAS, INTEL, OPS, MED, CBRN, FBC
     password_hash: Mapped[str] = mapped_column(String(255))
 
-    team_id:    Mapped[int | None] = mapped_column(ForeignKey("teams.id"),    nullable=True)
-    team_role:  Mapped[str | None] = mapped_column(String(40), nullable=True)
-    mission_id: Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    team_role: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
 
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Source of the last position fix: "ATAK" (device via CoT TCP), "APP" (mobile/web GPS), or None.
     position_source: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
 
     # Account lockout (A04)
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
-    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # TOTP MFA (PR.AA)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -119,7 +144,9 @@ class Operator(Base):
 
     team: Mapped[Team | None] = relationship(back_populates="operators")
     positions: Mapped[list["OperatorPosition"]] = relationship(
-        back_populates="operator", cascade="all, delete-orphan", passive_deletes=True,
+        back_populates="operator",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
@@ -129,17 +156,21 @@ class OperatorPosition(Base):
     The Operator row still holds the *current* position for fast live queries.
     This table keeps the full history for track visualisation and behaviour analytics.
     """
+
     __tablename__ = "operator_positions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     operator_id: Mapped[int] = mapped_column(
-        ForeignKey("operators.id", ondelete="CASCADE"), index=True,
+        ForeignKey("operators.id", ondelete="CASCADE"),
+        index=True,
     )
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
     altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow, index=True,
+        DateTime(timezone=True),
+        default=_utcnow,
+        index=True,
     )
 
     operator: Mapped["Operator"] = relationship(back_populates="positions")
@@ -158,23 +189,32 @@ class Vehicle(Base):
     ``ops_status`` mirrors the operator set: OPS | INOPS | KIA | MIA
     (KIA/MIA read as destroyed/missing for materiel).
     """
+
     __tablename__ = "vehicles"
 
-    id:          Mapped[int]           = mapped_column(primary_key=True)
-    callsign:    Mapped[str]           = mapped_column(String(60))
-    vehicle_type: Mapped[str]          = mapped_column(String(80), default="")
+    id: Mapped[int] = mapped_column(primary_key=True)
+    callsign: Mapped[str] = mapped_column(String(60))
+    vehicle_type: Mapped[str] = mapped_column(String(80), default="")
     # MIL-STD-2525 equipment SIDC (rendered on the map); empty = generic equipment.
-    symbol_code: Mapped[str]           = mapped_column(String(40), default="")
-    affiliation: Mapped[str]           = mapped_column(String(12), default="FRIENDLY")
-    ops_status:  Mapped[str]           = mapped_column(String(10), default="OPS")
-    team_id:     Mapped[int | None]    = mapped_column(ForeignKey("teams.id"), nullable=True)
-    operator_id: Mapped[int | None]    = mapped_column(ForeignKey("operators.id"), nullable=True)
-    mission_id:  Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
-    notes:       Mapped[str]           = mapped_column(Text, default="")
-    created_by:  Mapped[int]           = mapped_column(ForeignKey("operators.id"))
-    created_at:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at:  Mapped[datetime]      = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    symbol_code: Mapped[str] = mapped_column(String(40), default="")
+    affiliation: Mapped[str] = mapped_column(String(12), default="FRIENDLY")
+    ops_status: Mapped[str] = mapped_column(String(10), default="OPS")
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    operator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
     )
 
 
@@ -186,7 +226,9 @@ class Photo(Base):
     original_name: Mapped[str] = mapped_column(String(255), default="")
     mime_type: Mapped[str] = mapped_column(String(80), default="image/jpeg")
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
     # SHA-256 of the plaintext bytes — used by the TAK Marti file-share API so
     # ATAK can fetch the binary by hash (GET /Marti/sync/content?hash=...).
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -204,26 +246,29 @@ class MapVisibility(Base):
     An ADMIN can hide e.g. CoT tracks on the map without silencing the
     fire-mission radio toasts, and vice versa. Defaults are all-on.
     """
+
     __tablename__ = "map_visibility"
 
-    id:               Mapped[int]  = mapped_column(primary_key=True, default=1)
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
     # Map axis — what shows on the map canvas.
     tactical_objects: Mapped[bool] = mapped_column(default=True)
-    operators:        Mapped[bool] = mapped_column(default=True)
-    fire_missions:    Mapped[bool] = mapped_column(default=True)
-    alerts:           Mapped[bool] = mapped_column(default=True)
-    reports:          Mapped[bool] = mapped_column(default=True)
-    cot_tracks:       Mapped[bool] = mapped_column(default=True)
-    kml_layers:       Mapped[bool] = mapped_column(default=True)
-    overlays:         Mapped[bool] = mapped_column(default=True)
-    vehicles:         Mapped[bool] = mapped_column(default=True)
+    operators: Mapped[bool] = mapped_column(default=True)
+    fire_missions: Mapped[bool] = mapped_column(default=True)
+    alerts: Mapped[bool] = mapped_column(default=True)
+    reports: Mapped[bool] = mapped_column(default=True)
+    cot_tracks: Mapped[bool] = mapped_column(default=True)
+    kml_layers: Mapped[bool] = mapped_column(default=True)
+    overlays: Mapped[bool] = mapped_column(default=True)
+    vehicles: Mapped[bool] = mapped_column(default=True)
     # Notification axis — what pops up as a toast card on the right.
-    notif_chat:          Mapped[bool] = mapped_column(default=True)
+    notif_chat: Mapped[bool] = mapped_column(default=True)
     notif_fire_missions: Mapped[bool] = mapped_column(default=True)
-    notif_alerts:        Mapped[bool] = mapped_column(default=True)
-    notif_streams:       Mapped[bool] = mapped_column(default=True)
-    updated_at:       Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    notif_alerts: Mapped[bool] = mapped_column(default=True)
+    notif_streams: Mapped[bool] = mapped_column(default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
     )
 
 
@@ -241,10 +286,16 @@ class TacticalObject(Base):
     # — if any — lives in `geometry` as a JSON string.
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
     notes: Mapped[str] = mapped_column(Text, default="")
-    visibility: Mapped[str] = mapped_column(String(20), default="COMPANY")  # TEAM, SECTION, PLATOON, COMPANY
-    photo_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("photos.id"), nullable=True)
+    visibility: Mapped[str] = mapped_column(
+        String(20), default="COMPANY"
+    )  # TEAM, SECTION, PLATOON, COMPANY
+    photo_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("photos.id"), nullable=True
+    )
     # Heading in degrees clockwise from north (0..360) for oriented point symbols
     # (attack axis, ambush V, defense U). 0 = symbol points north.
     rotation: Mapped[float] = mapped_column(Float, default=0.0)
@@ -257,8 +308,10 @@ class TacticalObject(Base):
     echelon: Mapped[str] = mapped_column(String(8), default="")
     # NATO affiliation for tactical control graphics colour rule.
     # FRIENDLY (blue), ENEMY (red), UNKNOWN (yellow). Default FRIENDLY.
-    affiliation: Mapped[str]           = mapped_column(String(12), default="FRIENDLY")
-    mission_id:  Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
+    affiliation: Mapped[str] = mapped_column(String(12), default="FRIENDLY")
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
 
 
 class CotTrack(Base):
@@ -268,34 +321,40 @@ class CotTrack(Base):
     (e.g. "SIM.HOT-INF-1").  Shown on the tactical map with the NATO
     mil-symbol that matches the CoT type.
     """
+
     __tablename__ = "cot_tracks"
 
-    id:         Mapped[int]           = mapped_column(primary_key=True)
-    cot_uid:    Mapped[str]           = mapped_column(String(120), unique=True, index=True)
-    cot_type:   Mapped[str]           = mapped_column(String(40))
-    callsign:   Mapped[str]           = mapped_column(String(60),  default="")
-    latitude:   Mapped[float]         = mapped_column(Float)
-    longitude:  Mapped[float]         = mapped_column(Float)
-    hae:        Mapped[float]         = mapped_column(Float,        default=0.0)
-    speed:      Mapped[float]         = mapped_column(Float,        default=0.0)
-    course:     Mapped[float]         = mapped_column(Float,        default=0.0)
-    team:       Mapped[str]           = mapped_column(String(60),  default="")
-    remarks:    Mapped[str | None]   = mapped_column(Text,          nullable=True)
-    last_seen:  Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cot_uid: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    cot_type: Mapped[str] = mapped_column(String(40))
+    callsign: Mapped[str] = mapped_column(String(60), default="")
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    hae: Mapped[float] = mapped_column(Float, default=0.0)
+    speed: Mapped[float] = mapped_column(Float, default=0.0)
+    course: Mapped[float] = mapped_column(Float, default=0.0)
+    team: Mapped[str] = mapped_column(String(60), default="")
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
 
 
 class AtakShape(Base):
     """ATAK-drawn map annotation (route, line, area) received over CoT TCP."""
+
     __tablename__ = "atak_shapes"
 
-    id:            Mapped[int]       = mapped_column(primary_key=True)
-    uid:           Mapped[str]       = mapped_column(String(160), unique=True, index=True)
-    cot_type:      Mapped[str]       = mapped_column(String(40),  default="")
-    shape_type:    Mapped[str]       = mapped_column(String(20),  default="LINE")
-    title:         Mapped[str]       = mapped_column(String(200), default="")
-    callsign:      Mapped[str]       = mapped_column(String(80),  default="")
-    geometry_json: Mapped[str]       = mapped_column(Text,        default="")
-    last_seen:     Mapped[datetime]  = mapped_column(DateTime(timezone=True), default=_utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uid: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    cot_type: Mapped[str] = mapped_column(String(40), default="")
+    shape_type: Mapped[str] = mapped_column(String(20), default="LINE")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    callsign: Mapped[str] = mapped_column(String(80), default="")
+    geometry_json: Mapped[str] = mapped_column(Text, default="")
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
 
 
 class Alert(Base):
@@ -307,9 +366,13 @@ class Alert(Base):
     operator: Mapped["Operator"] = relationship()
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    status:     Mapped[str]         = mapped_column(String(20), default="ACTIVE")
-    mission_id: Mapped[int | None]  = mapped_column(ForeignKey("missions.id"), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
 
 
 class Message(Base):
@@ -317,15 +380,25 @@ class Message(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sender_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
-    receiver_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    receiver_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
     group_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
     content: Mapped[str] = mapped_column(Text)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    message_type: Mapped[str]         = mapped_column(String(30), default="DIRECT")
-    photo_id:     Mapped[int | None]  = mapped_column(Integer, ForeignKey("photos.id"), nullable=True)
-    mission_id:   Mapped[int | None]  = mapped_column(ForeignKey("missions.id"), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    message_type: Mapped[str] = mapped_column(String(30), default="DIRECT")
+    photo_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("photos.id"), nullable=True
+    )
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
     # ROOM messages target a ChatRoom; DIRECT uses receiver_id; BROADCAST targets all.
-    chatroom_id:  Mapped[int | None]  = mapped_column(ForeignKey("chatrooms.id"), nullable=True)
+    chatroom_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chatrooms.id"), nullable=True
+    )
 
 
 class ChatRoom(Base):
@@ -334,26 +407,35 @@ class ChatRoom(Base):
     Maps 1:1 to an ATAK GeoChat named chatroom (room name == ChatRoom.name).
     Messages with message_type=ROOM are delivered to the room's members.
     """
+
     __tablename__ = "chatrooms"
 
-    id:         Mapped[int]            = mapped_column(primary_key=True)
-    name:       Mapped[str]            = mapped_column(String(120), index=True)
-    created_by: Mapped[int]            = mapped_column(ForeignKey("operators.id"))
-    created_at: Mapped[datetime]       = mapped_column(DateTime(timezone=True), default=_utcnow)
-    mission_id: Mapped[int | None]     = mapped_column(ForeignKey("missions.id"), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
     # Origin tag so an ATAK-created room is distinguishable from a native one.
-    origin:     Mapped[str]            = mapped_column(String(10), default="ARROW")  # ARROW | ATAK
+    origin: Mapped[str] = mapped_column(String(10), default="ARROW")  # ARROW | ATAK
 
     members: Mapped[list["ChatRoomMember"]] = relationship(
-        back_populates="chatroom", cascade="all, delete-orphan", passive_deletes=True,
+        back_populates="chatroom",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
 class ChatRoomMember(Base):
     __tablename__ = "chatroom_members"
 
-    id:          Mapped[int] = mapped_column(primary_key=True)
-    chatroom_id: Mapped[int] = mapped_column(ForeignKey("chatrooms.id", ondelete="CASCADE"), index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chatroom_id: Mapped[int] = mapped_column(
+        ForeignKey("chatrooms.id", ondelete="CASCADE"), index=True
+    )
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"), index=True)
 
     chatroom: Mapped["ChatRoom"] = relationship(back_populates="members")
@@ -365,46 +447,65 @@ class Battle(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(Text, default="")
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
 
 
 class FireMission(Base):
     """Artillery / mortar call-for-fire request."""
+
     __tablename__ = "fire_missions"
 
-    id:             Mapped[int]         = mapped_column(primary_key=True)
-    operator_id:    Mapped[int]         = mapped_column(ForeignKey("operators.id"))
-    latitude:       Mapped[float]       = mapped_column(Float)
-    longitude:      Mapped[float]       = mapped_column(Float)
-    altitude:       Mapped[float]       = mapped_column(Float, default=0.0)   # metres MSL
-    direction:      Mapped[float]       = mapped_column(Float)                # azimuth °
-    mission_type:   Mapped[str]         = mapped_column(String(30))           # ADJUST_FIRE etc.
-    ammunition:     Mapped[str]         = mapped_column(String(40))           # HE / ILLUM / SMOKE …
-    quantity:       Mapped[int]         = mapped_column(default=1)
-    description:    Mapped[str]         = mapped_column(Text, default="")
-    status:         Mapped[str]         = mapped_column(String(20), default="PENDING")
-    fdc_operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
-    timestamp:      Mapped[datetime]    = mapped_column(DateTime(timezone=True), default=_utcnow)
-    notes:          Mapped[str]         = mapped_column(Text, default="")
-    mission_id:     Mapped[int | None]  = mapped_column(ForeignKey("missions.id"), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    latitude: Mapped[float] = mapped_column(Float)
+    longitude: Mapped[float] = mapped_column(Float)
+    altitude: Mapped[float] = mapped_column(Float, default=0.0)  # metres MSL
+    direction: Mapped[float] = mapped_column(Float)  # azimuth °
+    mission_type: Mapped[str] = mapped_column(String(30))  # ADJUST_FIRE etc.
+    ammunition: Mapped[str] = mapped_column(String(40))  # HE / ILLUM / SMOKE …
+    quantity: Mapped[int] = mapped_column(default=1)
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    fdc_operator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    notes: Mapped[str] = mapped_column(Text, default="")
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
 
 
 class Report(Base):
     __tablename__ = "reports"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    type: Mapped[str] = mapped_column(String(40))  # CONTACT, SPOT, CASEVAC, MEDEVAC, CAS
+    type: Mapped[str] = mapped_column(
+        String(40)
+    )  # CONTACT, SPOT, CASEVAC, MEDEVAC, CAS
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
     payload: Mapped[str] = mapped_column(Text)  # JSON-encoded structured data
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
     # Status lifecycle managed by BC/ADMIN; sent back to originating operator via WS
     status: Mapped[str] = mapped_column(String(20), default="RECEIVED")
-    reviewer_note: Mapped[str]        = mapped_column(Text, default="")
-    mission_id:    Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
+    reviewer_note: Mapped[str] = mapped_column(Text, default="")
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
     # CAS-specific: Forward Observer assignment and Troops-In-Contact priority flag
-    fo_operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    fo_operator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
     tic: Mapped[bool] = mapped_column(default=False)
 
 
@@ -415,38 +516,58 @@ class CasAsset(Base):
     BC/ADMIN creates and updates assets; operators read the list to pick an asset
     when submitting a CAS 9-liner request.
     """
+
     __tablename__ = "cas_assets"
 
-    id:            Mapped[int]           = mapped_column(primary_key=True)
-    callsign:      Mapped[str]           = mapped_column(String(60))
-    aircraft_type: Mapped[str]           = mapped_column(String(60), default="")   # A-10, F-16, AH-64 …
-    ordnance:      Mapped[str]           = mapped_column(Text, default="")          # e.g. "2×GBU-12, 20mm×500"
-    frequency:     Mapped[str]           = mapped_column(String(40), default="")   # primary radio freq
-    status:        Mapped[str]           = mapped_column(String(20), default="AVAILABLE")
+    id: Mapped[int] = mapped_column(primary_key=True)
+    callsign: Mapped[str] = mapped_column(String(60))
+    aircraft_type: Mapped[str] = mapped_column(
+        String(60), default=""
+    )  # A-10, F-16, AH-64 …
+    ordnance: Mapped[str] = mapped_column(Text, default="")  # e.g. "2×GBU-12, 20mm×500"
+    frequency: Mapped[str] = mapped_column(String(40), default="")  # primary radio freq
+    status: Mapped[str] = mapped_column(String(20), default="AVAILABLE")
     # Availability window — both nullable (open-ended slot)
-    available_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    available_to:   Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    notes:         Mapped[str]           = mapped_column(Text, default="")
-    mission_id:    Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
-    created_by:    Mapped[int]           = mapped_column(ForeignKey("operators.id"))
-    created_at:    Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at:    Mapped[datetime]      = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    available_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    available_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    notes: Mapped[str] = mapped_column(Text, default="")
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
     )
 
 
 class AuditLog(Base):
     """Immutable security event log — CSF 2.0 DE.CM / GV.OV."""
+
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_type: Mapped[str] = mapped_column(String(50), index=True)
-    outcome: Mapped[str] = mapped_column(String(10))          # SUCCESS | FAILURE
-    operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
-    resource: Mapped[str | None] = mapped_column(String(120), nullable=True)  # e.g. "operator:5"
+    outcome: Mapped[str] = mapped_column(String(10))  # SUCCESS | FAILURE
+    operator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
+    resource: Mapped[str | None] = mapped_column(
+        String(120), nullable=True
+    )  # e.g. "operator:5"
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     detail: Mapped[str] = mapped_column(Text, default="")
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, index=True
+    )
 
 
 class MapSnapshot(Base):
@@ -455,14 +576,17 @@ class MapSnapshot(Base):
     Used by `POST /admin/map/reset` so admins can wipe the live map and
     later restore any past state with `POST /admin/map/snapshots/{id}/restore`.
     """
+
     __tablename__ = "map_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
     object_count: Mapped[int] = mapped_column(Integer, default=0)
-    payload: Mapped[str] = mapped_column(Text)   # JSON list of TacticalObjectOut dicts
+    payload: Mapped[str] = mapped_column(Text)  # JSON list of TacticalObjectOut dicts
 
 
 class Opord(Base):
@@ -474,30 +598,41 @@ class Opord(Base):
     holds a list of {id, label, bbox, center, zoom, photo_id, annotations}
     where ``photo_id`` references the existing ``photos`` table for the PNG.
     """
+
     __tablename__ = "opords"
 
-    id:                Mapped[int]      = mapped_column(primary_key=True)
-    title:             Mapped[str]      = mapped_column(String(200))
-    opord_number:      Mapped[str]      = mapped_column(String(40), default="")
-    dtg:               Mapped[str]      = mapped_column(String(40), default="")
-    time_zone:         Mapped[str]      = mapped_column(String(8), default="ZULU")
-    classification:    Mapped[str]      = mapped_column(String(40), default="UNCLASSIFIED")
-    references:        Mapped[str]      = mapped_column(Text, default="")
-    task_organization: Mapped[str]      = mapped_column(Text, default="")
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    opord_number: Mapped[str] = mapped_column(String(40), default="")
+    dtg: Mapped[str] = mapped_column(String(40), default="")
+    time_zone: Mapped[str] = mapped_column(String(8), default="ZULU")
+    classification: Mapped[str] = mapped_column(String(40), default="UNCLASSIFIED")
+    references: Mapped[str] = mapped_column(Text, default="")
+    task_organization: Mapped[str] = mapped_column(Text, default="")
 
-    situation:      Mapped[str]         = mapped_column(Text, default="{}")     # JSON
-    mission:        Mapped[str]         = mapped_column(Text, default="")
-    execution:      Mapped[str]         = mapped_column(Text, default="{}")     # JSON
-    sustainment:    Mapped[str]         = mapped_column(Text, default="{}")     # JSON
-    command_signal: Mapped[str]         = mapped_column(Text, default="{}")     # JSON
-    map_snapshots:  Mapped[str]         = mapped_column(Text, default="[]")     # JSON list
+    situation: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    mission: Mapped[str] = mapped_column(Text, default="")
+    execution: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    sustainment: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    command_signal: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    map_snapshots: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
 
-    status:        Mapped[str]          = mapped_column(String(20), default="DRAFT")  # DRAFT | PUBLISHED
-    author_id:     Mapped[int]          = mapped_column(ForeignKey("operators.id"))
-    battle_id:     Mapped[int | None]   = mapped_column(ForeignKey("battles.id"), nullable=True)
-    recipient_ids: Mapped[str]          = mapped_column(Text, default="[]")  # JSON list of operator ids
-    created_at:    Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at:    Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    status: Mapped[str] = mapped_column(
+        String(20), default="DRAFT"
+    )  # DRAFT | PUBLISHED
+    author_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    battle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("battles.id"), nullable=True
+    )
+    recipient_ids: Mapped[str] = mapped_column(
+        Text, default="[]"
+    )  # JSON list of operator ids
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class ApkDistConfig(Base):
@@ -507,17 +642,24 @@ class ApkDistConfig(Base):
     (LOCAL — covers OS-mounted NFS shares) or on an SMB server reached
     directly over the wire (SMB — requires ``smbprotocol``).
     """
+
     __tablename__ = "apk_dist_config"
 
-    id:        Mapped[int]   = mapped_column(primary_key=True, default=1)
-    kind:      Mapped[str]   = mapped_column(String(10), default="LOCAL")   # LOCAL | SMB
-    host:      Mapped[str]   = mapped_column(String(255), default="")       # SMB only
-    share:     Mapped[str]   = mapped_column(String(255), default="")       # SMB only
-    path:      Mapped[str]   = mapped_column(String(1024), default="")      # LOCAL: filesystem path (file or dir); SMB: path within share
-    filename:  Mapped[str]   = mapped_column(String(255), default="arrow.apk")
-    username:  Mapped[str]   = mapped_column(String(255), default="")       # SMB only
-    password:  Mapped[str]   = mapped_column(String(255), default="")       # SMB only (stored as-is — admin-only access)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    kind: Mapped[str] = mapped_column(String(10), default="LOCAL")  # LOCAL | SMB
+    host: Mapped[str] = mapped_column(String(255), default="")  # SMB only
+    share: Mapped[str] = mapped_column(String(255), default="")  # SMB only
+    path: Mapped[str] = mapped_column(
+        String(1024), default=""
+    )  # LOCAL: filesystem path (file or dir); SMB: path within share
+    filename: Mapped[str] = mapped_column(String(255), default="arrow.apk")
+    username: Mapped[str] = mapped_column(String(255), default="")  # SMB only
+    password: Mapped[str] = mapped_column(
+        String(255), default=""
+    )  # SMB only (stored as-is — admin-only access)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class Overlay(Base):
@@ -530,17 +672,22 @@ class Overlay(Base):
     member ids. ``object_ids`` is JSON to avoid an N-row join-table for what is
     typically a small membership list.
     """
+
     __tablename__ = "overlays"
 
-    id:          Mapped[int]      = mapped_column(primary_key=True)
-    name:        Mapped[str]      = mapped_column(String(160))
-    description: Mapped[str]      = mapped_column(Text, default="")
-    created_by:  Mapped[int]      = mapped_column(ForeignKey("operators.id"))
-    created_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at:  Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
     )
-    object_ids:  Mapped[str]      = mapped_column(Text, default="[]")   # JSON list of int
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+    )
+    object_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of int
 
 
 class KmlLayer(Base):
@@ -550,18 +697,25 @@ class KmlLayer(Base):
     entries shared verbatim by the web (Leaflet) and Android (OSMdroid)
     clients so neither needs to parse XML.
     """
+
     __tablename__ = "kml_layers"
 
-    id:           Mapped[int]      = mapped_column(primary_key=True)
-    name:         Mapped[str]      = mapped_column(String(160))
-    description:  Mapped[str]      = mapped_column(Text, default="")
-    visible:      Mapped[bool]     = mapped_column(default=True)
-    uploaded_by:  Mapped[int]      = mapped_column(ForeignKey("operators.id"))
-    uploaded_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    feature_count: Mapped[int]     = mapped_column(Integer, default=0)
-    features:     Mapped[str]      = mapped_column(Text, default="[]")    # JSON array
-    bbox:         Mapped[str]      = mapped_column(Text, default="")      # "minLon,minLat,maxLon,maxLat" or ""
-    raw_kml:      Mapped[str]      = mapped_column(Text, default="")      # original XML for re-download
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    visible: Mapped[bool] = mapped_column(default=True)
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    feature_count: Mapped[int] = mapped_column(Integer, default=0)
+    features: Mapped[str] = mapped_column(Text, default="[]")  # JSON array
+    bbox: Mapped[str] = mapped_column(
+        Text, default=""
+    )  # "minLon,minLat,maxLon,maxLat" or ""
+    raw_kml: Mapped[str] = mapped_column(
+        Text, default=""
+    )  # original XML for re-download
 
 
 class SystemSetting(Base):
@@ -570,27 +724,33 @@ class SystemSetting(Base):
     Keys are namespaced by convention: ``octopus.url``, ``octopus.api_key``, …
     Values stored in DB always override the same key from config.xml.
     """
+
     __tablename__ = "system_settings"
 
-    key:        Mapped[str]      = mapped_column(String(120), primary_key=True)
-    value:      Mapped[str]      = mapped_column(Text, default="")
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
 
 class OctopusDetection(Base):
     """Detection event received from the Octopus webhook."""
+
     __tablename__ = "octopus_detections"
 
-    id:           Mapped[int]   = mapped_column(primary_key=True)
-    event_id:     Mapped[str]   = mapped_column(String(80), unique=True, index=True)
-    stream_id:    Mapped[str]   = mapped_column(String(120), index=True)
-    label:        Mapped[str]   = mapped_column(String(80))
-    confidence:   Mapped[float] = mapped_column(default=0.0)
-    description:  Mapped[str]   = mapped_column(Text, default="")
-    bbox:         Mapped[str]   = mapped_column(Text, default="[]")   # JSON [x1,y1,x2,y2]
-    snapshot_url: Mapped[str]   = mapped_column(Text, default="")
-    occurred_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    received_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    stream_id: Mapped[str] = mapped_column(String(120), index=True)
+    label: Mapped[str] = mapped_column(String(80))
+    confidence: Mapped[float] = mapped_column(default=0.0)
+    description: Mapped[str] = mapped_column(Text, default="")
+    bbox: Mapped[str] = mapped_column(Text, default="[]")  # JSON [x1,y1,x2,y2]
+    snapshot_url: Mapped[str] = mapped_column(Text, default="")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
 
 
 class ExternalStream(Base):
@@ -598,15 +758,16 @@ class ExternalStream(Base):
 
     Types: ``mjpeg`` (HTTP MJPEG), ``hls`` (HLS .m3u8), ``video`` (direct MP4/WebM URL).
     """
+
     __tablename__ = "external_streams"
 
-    id:          Mapped[int]  = mapped_column(primary_key=True)
-    name:        Mapped[str]  = mapped_column(String(120))
-    url:         Mapped[str]  = mapped_column(String(500))
-    stream_type: Mapped[str]  = mapped_column(String(20))   # mjpeg | hls | video
-    description: Mapped[str]  = mapped_column(String(300), default="")
-    added_by:    Mapped[int]  = mapped_column(ForeignKey("operators.id"))
-    added_at:    Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    url: Mapped[str] = mapped_column(String(500))
+    stream_type: Mapped[str] = mapped_column(String(20))  # mjpeg | hls | video
+    description: Mapped[str] = mapped_column(String(300), default="")
+    added_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class StreamRecording(Base):
@@ -617,17 +778,24 @@ class StreamRecording(Base):
 
     Always replayable as motion-JPEG via /streams/recordings/{id}/playback.
     """
+
     __tablename__ = "stream_recordings"
 
-    id:          Mapped[int]      = mapped_column(primary_key=True)
-    stream_id:   Mapped[str]      = mapped_column(String(120), index=True)
-    callsign:    Mapped[str]      = mapped_column(String(40))
-    operator_id: Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
-    started_at:  Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    ended_at:    Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    frame_count: Mapped[int]      = mapped_column(Integer, default=0)
-    byte_size:   Mapped[int]      = mapped_column(Integer, default=0)
-    file_path:   Mapped[str]      = mapped_column(String(255))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stream_id: Mapped[str] = mapped_column(String(120), index=True)
+    callsign: Mapped[str] = mapped_column(String(40))
+    operator_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    frame_count: Mapped[int] = mapped_column(Integer, default=0)
+    byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    file_path: Mapped[str] = mapped_column(String(255))
 
 
 class LogrepRoute(Base):
@@ -638,17 +806,22 @@ class LogrepRoute(Base):
     any order of battle can be represented without schema changes.
     Lifecycle: PENDING → ACKNOWLEDGED → FEEDBACK.
     """
+
     __tablename__ = "logrep_routes"
 
-    id:            Mapped[int]           = mapped_column(primary_key=True)
-    report_id:     Mapped[int]           = mapped_column(ForeignKey("reports.id"), index=True)
-    destination:   Mapped[str]           = mapped_column(String(40))   # S1, S2, COY_A …
-    routed_by:     Mapped[int]           = mapped_column(ForeignKey("operators.id"))
-    routed_at:     Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
-    status:        Mapped[str]           = mapped_column(String(20), default="PENDING")
-    feedback_text: Mapped[str]           = mapped_column(Text, default="")
-    feedback_by:   Mapped[str]           = mapped_column(String(80), default="")  # callsign
-    feedback_at:   Mapped[datetime|None] = mapped_column(DateTime(timezone=True), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True)
+    destination: Mapped[str] = mapped_column(String(40))  # S1, S2, COY_A …
+    routed_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    routed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    feedback_text: Mapped[str] = mapped_column(Text, default="")
+    feedback_by: Mapped[str] = mapped_column(String(80), default="")  # callsign
+    feedback_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class StrikePackage(Base):
@@ -661,28 +834,35 @@ class StrikePackage(Base):
 
     Lifecycle: PLANNING → ACTIVE → COMPLETE (or ABORTED).
     """
+
     __tablename__ = "strike_packages"
 
-    id:                 Mapped[int]           = mapped_column(primary_key=True)
-    name:               Mapped[str]           = mapped_column(String(160))
-    status:             Mapped[str]           = mapped_column(String(20), default="PLANNING")
-    mission_id:         Mapped[int | None]    = mapped_column(ForeignKey("missions.id"), nullable=True)
-    created_by:         Mapped[int]           = mapped_column(ForeignKey("operators.id"))
-    created_at:         Mapped[datetime]      = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at:         Mapped[datetime]      = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(20), default="PLANNING")
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
     )
-    target_lat:         Mapped[float | None]  = mapped_column(Float, nullable=True)
-    target_lon:         Mapped[float | None]  = mapped_column(Float, nullable=True)
-    target_description: Mapped[str]           = mapped_column(Text, default="")
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+    )
+    target_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_description: Mapped[str] = mapped_column(Text, default="")
     # JSON id lists — links to existing Arrow objects in the same mission
-    operator_ids:        Mapped[str]          = mapped_column(Text, default="[]")
-    tactical_object_ids: Mapped[str]          = mapped_column(Text, default="[]")
-    fire_mission_ids:    Mapped[str]          = mapped_column(Text, default="[]")
-    report_ids:          Mapped[str]          = mapped_column(Text, default="[]")
-    vehicle_ids:         Mapped[str]          = mapped_column(Text, default="[]")
+    operator_ids: Mapped[str] = mapped_column(Text, default="[]")
+    tactical_object_ids: Mapped[str] = mapped_column(Text, default="[]")
+    fire_mission_ids: Mapped[str] = mapped_column(Text, default="[]")
+    report_ids: Mapped[str] = mapped_column(Text, default="[]")
+    vehicle_ids: Mapped[str] = mapped_column(Text, default="[]")
     # Full asset manifest — JSON-encoded PackageAssets structure
-    assets:             Mapped[str]           = mapped_column(Text, default="{}")
+    assets: Mapped[str] = mapped_column(Text, default="{}")
 
 
 class CopDocument(Base):
@@ -692,88 +872,121 @@ class CopDocument(Base):
     no external filesystem dependency is introduced. TXT content is also
     mirrored in ``text_preview`` for in-browser display without a download.
     """
+
     __tablename__ = "cop_documents"
 
-    id:           Mapped[int]          = mapped_column(primary_key=True)
-    title:        Mapped[str]          = mapped_column(String(200))
-    filename:     Mapped[str]          = mapped_column(String(255))
-    content_type: Mapped[str]          = mapped_column(String(20))   # TXT or WORD
-    file_data:    Mapped[bytes]        = mapped_column(LargeBinary)
-    text_preview: Mapped[str]          = mapped_column(Text, default="")
-    uploaded_by:  Mapped[int]          = mapped_column(ForeignKey("operators.id"))
-    uploaded_at:  Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow)
-    mission_id:   Mapped[int | None]   = mapped_column(ForeignKey("missions.id"), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(20))  # TXT or WORD
+    file_data: Mapped[bytes] = mapped_column(LargeBinary)
+    text_preview: Mapped[str] = mapped_column(Text, default="")
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
 
 
 # ── LOGCOP ────────────────────────────────────────────────────────────────────
 
+
 class LogcopSupply(Base):
     """Supply status for one NATO Class of Supply, scoped to a mission."""
+
     __tablename__ = "logcop_supply"
 
-    id:              Mapped[int]        = mapped_column(primary_key=True)
-    mission_id:      Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
-    class_code:      Mapped[str]        = mapped_column(String(6))   # I II III IIIA IV V VI VII VIII IX X
-    label:           Mapped[str]        = mapped_column(String(120))
-    current_qty:     Mapped[float]      = mapped_column(Float, default=0.0)
-    unit:            Mapped[str]        = mapped_column(String(20), default="DOS")
-    threshold_amber: Mapped[float]      = mapped_column(Float, default=2.0)
-    threshold_red:   Mapped[float]      = mapped_column(Float, default=1.0)
-    notes:           Mapped[str]        = mapped_column(Text, default="")
-    updated_at:      Mapped[datetime]   = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
-    updated_by:      Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    class_code: Mapped[str] = mapped_column(
+        String(6)
+    )  # I II III IIIA IV V VI VII VIII IX X
+    label: Mapped[str] = mapped_column(String(120))
+    current_qty: Mapped[float] = mapped_column(Float, default=0.0)
+    unit: Mapped[str] = mapped_column(String(20), default="DOS")
+    threshold_amber: Mapped[float] = mapped_column(Float, default=2.0)
+    threshold_red: Mapped[float] = mapped_column(Float, default=1.0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
 
 
 class LogcopVehicle(Base):
     """FMC / PMC / NMC vehicle status per unit."""
+
     __tablename__ = "logcop_vehicles"
 
-    id:           Mapped[int]        = mapped_column(primary_key=True)
-    mission_id:   Mapped[int | None] = mapped_column(ForeignKey("missions.id"), nullable=True)
-    unit_name:    Mapped[str]        = mapped_column(String(80))
-    vehicle_type: Mapped[str]        = mapped_column(String(80))
-    total:        Mapped[int]        = mapped_column(Integer, default=0)
-    fmc:          Mapped[int]        = mapped_column(Integer, default=0)  # Fully Mission Capable
-    pmc:          Mapped[int]        = mapped_column(Integer, default=0)  # Partially Mission Capable
-    notes:        Mapped[str]        = mapped_column(Text, default="")
-    updated_at:   Mapped[datetime]   = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
-    updated_by:   Mapped[int | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    unit_name: Mapped[str] = mapped_column(String(80))
+    vehicle_type: Mapped[str] = mapped_column(String(80))
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    fmc: Mapped[int] = mapped_column(Integer, default=0)  # Fully Mission Capable
+    pmc: Mapped[int] = mapped_column(Integer, default=0)  # Partially Mission Capable
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+    updated_by: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
 
 
 class LogcopConvoy(Base):
     """LOGPAC / convoy status."""
+
     __tablename__ = "logcop_convoys"
 
-    id:          Mapped[int]          = mapped_column(primary_key=True)
-    mission_id:  Mapped[int | None]   = mapped_column(ForeignKey("missions.id"), nullable=True)
-    callsign:    Mapped[str]          = mapped_column(String(60))
-    status:      Mapped[str]          = mapped_column(String(20), default="LOADING")
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    callsign: Mapped[str] = mapped_column(String(60))
+    status: Mapped[str] = mapped_column(String(20), default="LOADING")
     # EN_ROUTE | LOADING | DELIVERED | DELAYED | CANCELLED
-    cargo:       Mapped[str]          = mapped_column(Text, default="")
-    origin:      Mapped[str]          = mapped_column(String(120), default="")
-    destination: Mapped[str]          = mapped_column(String(120), default="")
-    eta:         Mapped[str]          = mapped_column(String(20), default="")  # "HH:MMZ"
-    lat:         Mapped[float | None] = mapped_column(Float, nullable=True)
-    lng:         Mapped[float | None] = mapped_column(Float, nullable=True)
-    notes:       Mapped[str]          = mapped_column(Text, default="")
-    updated_at:  Mapped[datetime]     = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
-    created_by:  Mapped[int | None]   = mapped_column(ForeignKey("operators.id"), nullable=True)
+    cargo: Mapped[str] = mapped_column(Text, default="")
+    origin: Mapped[str] = mapped_column(String(120), default="")
+    destination: Mapped[str] = mapped_column(String(120), default="")
+    eta: Mapped[str] = mapped_column(String(20), default="")  # "HH:MMZ"
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lng: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )
 
 
 class LogcopSupplyPoint(Base):
     """Geographic supply point on the LOGCOP map (BSA, FARP, AMMO dump, etc.)."""
+
     __tablename__ = "logcop_supply_points"
 
-    id:         Mapped[int]          = mapped_column(primary_key=True)
-    mission_id: Mapped[int | None]   = mapped_column(ForeignKey("missions.id"), nullable=True)
-    name:       Mapped[str]          = mapped_column(String(120))
-    point_type: Mapped[str]          = mapped_column(String(20))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    point_type: Mapped[str] = mapped_column(String(20))
     # BSA | FARP | CTCP | AMMO_DUMP | FUEL_POINT | MED_POST | FSC | MSR
-    lat:        Mapped[float]        = mapped_column(Float)
-    lng:        Mapped[float]        = mapped_column(Float)
-    notes:      Mapped[str]          = mapped_column(Text, default="")
-    created_at: Mapped[datetime]     = mapped_column(DateTime(timezone=True), default=_utcnow)
-    created_by: Mapped[int | None]   = mapped_column(ForeignKey("operators.id"), nullable=True)
+    lat: Mapped[float] = mapped_column(Float)
+    lng: Mapped[float] = mapped_column(Float)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("operators.id"), nullable=True
+    )

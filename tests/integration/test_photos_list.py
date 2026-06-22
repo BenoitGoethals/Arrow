@@ -9,7 +9,9 @@ from tests.conftest import auth, register
 
 def _upload_photo(client, tok, name="test.jpg") -> int:
     # Tiny JPEG header — enough for the photos endpoint to accept.
-    data = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+    data = (
+        b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9"
+    )
     r = client.post(
         "/photos",
         files={"file": (name, io.BytesIO(data), "image/jpeg")},
@@ -35,25 +37,41 @@ def test_list_photos_returns_metadata_with_back_refs(client) -> None:
     #   1. a tactical object (photo_id field)
     #   2. a chat message  (photo_id field)
     #   3. a report        (payload contains "photo_id": N as JSON)
-    pid_to  = _upload_photo(client, tok, "obj.jpg")
+    pid_to = _upload_photo(client, tok, "obj.jpg")
     pid_msg = _upload_photo(client, tok, "msg.jpg")
     pid_rep = _upload_photo(client, tok, "rep.jpg")
     pid_orph = _upload_photo(client, tok, "orph.jpg")
 
-    to_id = client.post("/tactical-objects", headers=auth(tok), json={
-        "type": "POI", "latitude": 50.85, "longitude": 4.35,
-        "photo_id": pid_to, "notes": "obj attached",
-    }).json()["id"]
+    to_id = client.post(
+        "/tactical-objects",
+        headers=auth(tok),
+        json={
+            "type": "POI",
+            "latitude": 50.85,
+            "longitude": 4.35,
+            "photo_id": pid_to,
+            "notes": "obj attached",
+        },
+    ).json()["id"]
 
-    msg_id = client.post("/messages", headers=auth(tok), json={
-        "content": "with photo", "message_type": "BROADCAST",
-        "photo_id": pid_msg,
-    }).json()["id"]
+    msg_id = client.post(
+        "/messages",
+        headers=auth(tok),
+        json={
+            "content": "with photo",
+            "message_type": "BROADCAST",
+            "photo_id": pid_msg,
+        },
+    ).json()["id"]
 
-    rep_id = client.post("/reports", headers=auth(tok), json={
-        "type": "SPOT",
-        "payload": {"grid": "31UFS123456", "photo_id": pid_rep},
-    }).json()["id"]
+    rep_id = client.post(
+        "/reports",
+        headers=auth(tok),
+        json={
+            "type": "SPOT",
+            "payload": {"grid": "31UFS123456", "photo_id": pid_rep},
+        },
+    ).json()["id"]
 
     listed = client.get("/photos", headers=auth(tok)).json()
     by_id = {p["id"]: p for p in listed}
@@ -70,7 +88,7 @@ def test_list_photos_returns_metadata_with_back_refs(client) -> None:
     # Orphan photo: still listed, but no back-refs
     orph = by_id[pid_orph]
     assert orph["tactical_object_id"] is None
-    assert orph["message_id"]         is None
-    assert orph["report_id"]          is None
-    assert orph["mime_type"]          == "image/jpeg"
-    assert orph["url"]                == f"/photos/{pid_orph}"
+    assert orph["message_id"] is None
+    assert orph["report_id"] is None
+    assert orph["mime_type"] == "image/jpeg"
+    assert orph["url"] == f"/photos/{pid_orph}"

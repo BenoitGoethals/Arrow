@@ -1,17 +1,29 @@
 """Mumble voice panel — channel tree, user list, PTT / mute / deafen controls."""
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QSlider, QFrame, QSizePolicy,
-    QLineEdit, QSpinBox, QFormLayout, QDialog, QDialogButtonBox,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QSlider,
+    QFrame,
+    QLineEdit,
+    QSpinBox,
+    QFormLayout,
+    QDialog,
+    QDialogButtonBox,
     QComboBox,
 )
 import socket
 import threading
 import time as _time
 
-from PyQt6.QtCore import Qt, QSettings, pyqtSignal, pyqtSlot, QTimer, QMetaObject, Q_ARG
+from PyQt6.QtCore import Qt, QSettings, pyqtSlot, QTimer, QMetaObject, Q_ARG
 from PyQt6.QtGui import QFont, QColor
 
 from front.mumble.client import MumbleClient, list_audio_devices
@@ -24,6 +36,7 @@ _MONO = QFont("Courier New", 12)
 # ─────────────────────────────────────────────────────────────────────────────
 # Quick-connect dialog
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class _ConnectDialog(QDialog):
     def __init__(self, parent=None):
@@ -60,10 +73,10 @@ class _ConnectDialog(QDialog):
 
         # Audio device pickers
         ins, outs = list_audio_devices()
-        in_lbl  = _lbl("Mic")
+        in_lbl = _lbl("Mic")
         out_lbl = _lbl("Speaker")
 
-        self._in_dev  = QComboBox()
+        self._in_dev = QComboBox()
         self._out_dev = QComboBox()
         self._in_dev.addItem("System default", None)
         self._out_dev.addItem("System default", None)
@@ -72,14 +85,14 @@ class _ConnectDialog(QDialog):
         for idx, name in outs:
             self._out_dev.addItem(name, idx)
 
-        saved_in  = _S.value("mumble/in_device",  None)
+        saved_in = _S.value("mumble/in_device", None)
         saved_out = _S.value("mumble/out_device", None)
-        self._restore_combo(self._in_dev,  saved_in)
+        self._restore_combo(self._in_dev, saved_in)
         self._restore_combo(self._out_dev, saved_out)
 
         form2 = QFormLayout()
         form2.setSpacing(8)
-        form2.addRow(in_lbl,  self._in_dev)
+        form2.addRow(in_lbl, self._in_dev)
         form2.addRow(out_lbl, self._out_dev)
         lay.addLayout(form2)
 
@@ -96,8 +109,7 @@ class _ConnectDialog(QDialog):
         lay.addLayout(test_row)
 
         btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok |
-            QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
@@ -122,13 +134,14 @@ class _ConnectDialog(QDialog):
                 result = (True, f"✓  {host}:{port}  —  {ms} ms")
             except OSError as exc:
                 result = (False, f"✗  {exc}")
-            # marshal back to Qt main thread via a QTimer zero-shot
+                # marshal back to Qt main thread via a QTimer zero-shot
                 QMetaObject.invokeMethod(
-                self, "_apply_test_result",
-                Qt.ConnectionType.QueuedConnection,
-                Q_ARG(bool, result[0]),
-                Q_ARG(str, result[1]),
-            )
+                    self,
+                    "_apply_test_result",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(bool, result[0]),
+                    Q_ARG(str, result[1]),
+                )
 
         threading.Thread(target=_probe, daemon=True).start()
 
@@ -148,24 +161,24 @@ class _ConnectDialog(QDialog):
                 return
 
     def _accept(self):
-        _S.setValue("mumble/host",       self._host.text().strip())
-        _S.setValue("mumble/port",       self._port.value())
-        _S.setValue("mumble/username",   self._user.text().strip())
-        _S.setValue("mumble/password",   self._pwd.text())
-        _S.setValue("mumble/channel",    self._chan.text().strip())
-        _S.setValue("mumble/in_device",  self._in_dev.currentData())
+        _S.setValue("mumble/host", self._host.text().strip())
+        _S.setValue("mumble/port", self._port.value())
+        _S.setValue("mumble/username", self._user.text().strip())
+        _S.setValue("mumble/password", self._pwd.text())
+        _S.setValue("mumble/channel", self._chan.text().strip())
+        _S.setValue("mumble/in_device", self._in_dev.currentData())
         _S.setValue("mumble/out_device", self._out_dev.currentData())
         self.accept()
 
     @property
     def params(self) -> dict:
         return {
-            "host":       _S.value("mumble/host", ""),
-            "port":       int(_S.value("mumble/port", 64738)),
-            "username":   _S.value("mumble/username", ""),
-            "password":   _S.value("mumble/password", ""),
-            "channel":    _S.value("mumble/channel", ""),
-            "in_device":  _S.value("mumble/in_device",  None),
+            "host": _S.value("mumble/host", ""),
+            "port": int(_S.value("mumble/port", 64738)),
+            "username": _S.value("mumble/username", ""),
+            "password": _S.value("mumble/password", ""),
+            "channel": _S.value("mumble/channel", ""),
+            "in_device": _S.value("mumble/in_device", None),
             "out_device": _S.value("mumble/out_device", None),
         }
 
@@ -174,16 +187,17 @@ class _ConnectDialog(QDialog):
 # Main panel
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class MumblePanel(QWidget):
     """Mumble voice panel — embeds in the right info strip."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._client  = MumbleClient(self)
+        self._client = MumbleClient(self)
         self._channels: list[dict] = []
-        self._users:    list[dict] = []
+        self._users: list[dict] = []
         self._ptt_held = False
-        self._server_addr:    str  = ""
+        self._server_addr: str = ""
         self._handshake_done: bool = False
 
         self._build()
@@ -198,7 +212,9 @@ class MumblePanel(QWidget):
 
         # ── Status header ────────────────────────────────────────────────
         hdr = QFrame()
-        hdr.setStyleSheet("background:#161b22;border:1px solid #21262d;border-radius:2px;")
+        hdr.setStyleSheet(
+            "background:#161b22;border:1px solid #21262d;border-radius:2px;"
+        )
         hl = QHBoxLayout(hdr)
         hl.setContentsMargins(8, 6, 8, 6)
 
@@ -252,7 +268,9 @@ class MumblePanel(QWidget):
 
         # ── Controls ─────────────────────────────────────────────────────
         ctrl = QFrame()
-        ctrl.setStyleSheet("background:#161b22;border:1px solid #21262d;border-radius:2px;")
+        ctrl.setStyleSheet(
+            "background:#161b22;border:1px solid #21262d;border-radius:2px;"
+        )
         cl = QVBoxLayout(ctrl)
         cl.setContentsMargins(8, 8, 8, 8)
         cl.setSpacing(6)
@@ -385,7 +403,9 @@ class MumblePanel(QWidget):
             if self_user:
                 n = len(users)
                 ch = len(self._channels)
-                self._status.setText(f"✓ comms OK · {n} user{'s' if n>1 else ''} · {ch} ch")
+                self._status.setText(
+                    f"✓ comms OK · {n} user{'s' if n>1 else ''} · {ch} ch"
+                )
                 self._status.setStyleSheet("color:#3fb950;")
                 QTimer.singleShot(5000, self._restore_status)
             else:
@@ -451,9 +471,9 @@ class MumblePanel(QWidget):
         id_map: dict[int, QTreeWidgetItem] = {}
         # Sort channels root-first
         for ch in sorted(self._channels, key=lambda c: c.get("parent_id", -1)):
-            cid     = ch["id"]
-            name    = ch["name"]
-            parent  = ch.get("parent_id", -1)
+            cid = ch["id"]
+            name = ch["name"]
+            parent = ch.get("parent_id", -1)
 
             item = QTreeWidgetItem([f"📁 {name}"])
             item.setData(0, Qt.ItemDataRole.UserRole, cid)
@@ -497,6 +517,7 @@ class MumblePanel(QWidget):
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_user_item(parent: QTreeWidgetItem, u: dict) -> QTreeWidgetItem:
     item = QTreeWidgetItem(parent, [_user_label(u)])
     item.setFont(0, _MONO)
@@ -507,9 +528,12 @@ def _make_user_item(parent: QTreeWidgetItem, u: dict) -> QTreeWidgetItem:
 
 def _user_label(u: dict) -> str:
     icons = ""
-    if u.get("self"):     icons += " ◆"
-    if u.get("muted"):    icons += " 🔴"
-    if u.get("deafened"): icons += " 🔇"
+    if u.get("self"):
+        icons += " ◆"
+    if u.get("muted"):
+        icons += " 🔴"
+    if u.get("deafened"):
+        icons += " 🔇"
     return f"{'🔊 ' if u.get('speaking') else '  '}{u['name']}{icons}"
 
 

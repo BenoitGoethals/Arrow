@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 """Mumble stack smoke-test — run with:  uv run python test_mumble.py"""
-import sys, os
+
+import sys
+import os
 
 PASS = "\033[32m✓\033[0m"
 FAIL = "\033[31m✗\033[0m"
@@ -24,16 +26,18 @@ print("════════════════════════�
 # ── 1. Python / venv ──────────────────────────────────────────────────────────
 print("① Python environment")
 check("Python version", lambda: sys.version.split()[0])
-check("Venv prefix",    lambda: sys.prefix)
+check("Venv prefix", lambda: sys.prefix)
 print()
 
 # ── 2. System opus library ───────────────────────────────────────────────────
 print("② System libopus")
 opus_path = None
-for _p in ("/opt/homebrew/lib/libopus.dylib",
-           "/usr/local/lib/libopus.dylib",
-           "/usr/lib/x86_64-linux-gnu/libopus.so.0",
-           "/usr/lib/aarch64-linux-gnu/libopus.so.0"):
+for _p in (
+    "/opt/homebrew/lib/libopus.dylib",
+    "/usr/local/lib/libopus.dylib",
+    "/usr/lib/x86_64-linux-gnu/libopus.so.0",
+    "/usr/lib/aarch64-linux-gnu/libopus.so.0",
+):
     if os.path.exists(_p):
         opus_path = _p
         break
@@ -43,9 +47,9 @@ if opus_path:
 else:
     print(f"  {FAIL}  libopus NOT found")
     if sys.platform == "darwin":
-        print(f"        → run:  brew install opus")
+        print("        → run:  brew install opus")
     else:
-        print(f"        → run:  apt install libopus0")
+        print("        → run:  apt install libopus0")
 print()
 
 # ── 3. Set DYLD path (macOS) and test opuslib ────────────────────────────────
@@ -60,8 +64,7 @@ print()
 
 # ── 4. pymumble ──────────────────────────────────────────────────────────────
 print("④ pymumble_py3")
-check("import pymumble_py3",
-      lambda: str(__import__("pymumble_py3").Mumble))
+check("import pymumble_py3", lambda: str(__import__("pymumble_py3").Mumble))
 print()
 
 # ── 5. sounddevice + audio devices ───────────────────────────────────────────
@@ -69,8 +72,9 @@ print("⑤ sounddevice + audio devices")
 ok = check("import sounddevice", lambda: __import__("sounddevice") and "OK")
 if ok:
     import sounddevice as sd
+
     devs = sd.query_devices()
-    ins  = [d for d in devs if d["max_input_channels"]  > 0]
+    ins = [d for d in devs if d["max_input_channels"] > 0]
     outs = [d for d in devs if d["max_output_channels"] > 0]
     print(f"  {PASS}  Input  devices: {len(ins)}")
     for d in ins:
@@ -87,22 +91,34 @@ print()
 
 # ── 7. Backend mumble monitor ────────────────────────────────────────────────
 print("⑦ Backend mumble monitor (backend.mumble.monitor)")
-check("import monitor",
-      lambda: str(__import__("backend.mumble.monitor",
-                             fromlist=["monitor"]).monitor))
-check("_AVAILABLE flag",
-      lambda: str(__import__("backend.mumble.monitor",
-                             fromlist=["_AVAILABLE"])._AVAILABLE))
+check(
+    "import monitor",
+    lambda: str(__import__("backend.mumble.monitor", fromlist=["monitor"]).monitor),
+)
+check(
+    "_AVAILABLE flag",
+    lambda: str(
+        __import__("backend.mumble.monitor", fromlist=["_AVAILABLE"])._AVAILABLE
+    ),
+)
 print()
 
 # ── 8. Front mumble client ────────────────────────────────────────────────────
 print("⑧ Front desktop mumble client (front.mumble.client)")
-check("import MumbleClient",
-      lambda: str(__import__("front.mumble.client",
-                             fromlist=["MumbleClient"]).MumbleClient))
-check("MUMBLE_AVAILABLE flag",
-      lambda: str(__import__("front.mumble.client",
-                             fromlist=["MUMBLE_AVAILABLE"]).MUMBLE_AVAILABLE))
+check(
+    "import MumbleClient",
+    lambda: str(
+        __import__("front.mumble.client", fromlist=["MumbleClient"]).MumbleClient
+    ),
+)
+check(
+    "MUMBLE_AVAILABLE flag",
+    lambda: str(
+        __import__(
+            "front.mumble.client", fromlist=["MUMBLE_AVAILABLE"]
+        ).MUMBLE_AVAILABLE
+    ),
+)
 print()
 
 # ── 9. Quick connectivity test (optional) ────────────────────────────────────
@@ -113,7 +129,9 @@ if not host:
 else:
     port = int(os.environ.get("MUMBLE_PORT", 64738))
     user = os.environ.get("MUMBLE_USER", "ArrowTest")
-    import pymumble_py3 as pymumble, threading
+    import pymumble_py3 as pymumble
+    import threading
+
     result = {"ok": False, "err": ""}
     ev = threading.Event()
 
@@ -124,16 +142,20 @@ else:
     try:
         m = pymumble.Mumble(host, user, port=port, reconnect=False)
         m.set_application_string("Arrow smoke-test")
-        m.callbacks.set_callback(pymumble.PYMUMBLE_CLBK_CONNECTED,
-                                  lambda: (result.__setitem__("ok", True), ev.set()))
+        m.callbacks.set_callback(
+            pymumble.PYMUMBLE_CLBK_CONNECTED,
+            lambda: (result.__setitem__("ok", True), ev.set()),
+        )
         m.start()
         ev.wait(timeout=10)
         channels = len(m.channels)
-        users    = len(m.users)
+        users = len(m.users)
         m.stop()
         if result["ok"]:
-            print(f"  {PASS}  Connected to {host}:{port} — "
-                  f"{channels} channels, {users} users")
+            print(
+                f"  {PASS}  Connected to {host}:{port} — "
+                f"{channels} channels, {users} users"
+            )
         else:
             print(f"  {FAIL}  Connected but ready signal not received")
     except Exception as exc:

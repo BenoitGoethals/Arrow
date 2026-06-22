@@ -28,25 +28,25 @@ _CHUNK = 64 * 1024
 
 # ── Schemas ──────────────────────────────────────────────────────────────
 class ApkConfigIn(BaseModel):
-    kind:     str = Field("LOCAL", description="LOCAL or SMB")
-    host:     str = ""
-    share:    str = ""
-    path:     str = ""
+    kind: str = Field("LOCAL", description="LOCAL or SMB")
+    host: str = ""
+    share: str = ""
+    path: str = ""
     filename: str = "arrow.apk"
     username: str = ""
     password: str = ""
 
 
 class ApkConfigOut(BaseModel):
-    kind:     str
-    host:     str
-    share:    str
-    path:     str
+    kind: str
+    host: str
+    share: str
+    path: str
     filename: str
     username: str
-    has_password: bool = False     # never echo the password back
-    configured:   bool = False
-    updated_at:   str | None = None
+    has_password: bool = False  # never echo the password back
+    configured: bool = False
+    updated_at: str | None = None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -54,14 +54,20 @@ def _get_or_create(db: Session) -> ApkDistConfig:
     row = db.get(ApkDistConfig, 1)
     if row is None:
         row = ApkDistConfig(id=1)
-        db.add(row); db.commit(); db.refresh(row)
+        db.add(row)
+        db.commit()
+        db.refresh(row)
     return row
 
 
 def _to_out(row: ApkDistConfig) -> ApkConfigOut:
     return ApkConfigOut(
-        kind=row.kind, host=row.host, share=row.share, path=row.path,
-        filename=row.filename, username=row.username,
+        kind=row.kind,
+        host=row.host,
+        share=row.share,
+        path=row.path,
+        filename=row.filename,
+        username=row.username,
         has_password=bool(row.password),
         configured=bool(row.path),
         updated_at=row.updated_at.isoformat() if row.updated_at else None,
@@ -107,10 +113,11 @@ def _stream_smb(row: ApkDistConfig) -> tuple[Iterator[bytes], int]:
     descriptive ``detail`` so the operator can fix the misconfiguration.
     """
     import logging
+
     log = logging.getLogger(__name__)
 
     try:
-        import smbclient                                          # type: ignore
+        import smbclient  # type: ignore
     except ImportError as exc:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -119,8 +126,10 @@ def _stream_smb(row: ApkDistConfig) -> tuple[Iterator[bytes], int]:
         ) from exc
 
     if not row.host or not row.share:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "SMB mode requires host and share to be set.")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "SMB mode requires host and share to be set.",
+        )
 
     # Build the UNC path. `path` may be a directory inside the share or the
     # full file path; if it doesn't already end in `.apk`, treat it as a
@@ -167,9 +176,12 @@ def _stream_smb(row: ApkDistConfig) -> tuple[Iterator[bytes], int]:
         # the error mentions authentication, return 401 instead of 404 so
         # the admin gets pointed at the credentials.
         msg = str(exc)
-        is_auth = "SMBAuthenticationError" in type(exc).__name__ \
-                  or "auth" in msg.lower() or "credential" in msg.lower() \
-                  or "Spnego" in msg
+        is_auth = (
+            "SMBAuthenticationError" in type(exc).__name__
+            or "auth" in msg.lower()
+            or "credential" in msg.lower()
+            or "Spnego" in msg
+        )
         if is_auth:
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED,
@@ -226,19 +238,22 @@ def put_apk_config(
 ) -> ApkConfigOut:
     kind = (payload.kind or "LOCAL").upper()
     if kind not in _VALID_KINDS:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"kind must be one of {sorted(_VALID_KINDS)}")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"kind must be one of {sorted(_VALID_KINDS)}",
+        )
     row = _get_or_create(db)
-    row.kind     = kind
-    row.host     = payload.host.strip()
-    row.share    = payload.share.strip()
-    row.path     = payload.path.strip()
+    row.kind = kind
+    row.host = payload.host.strip()
+    row.share = payload.share.strip()
+    row.path = payload.path.strip()
     row.filename = (payload.filename or "arrow.apk").strip() or "arrow.apk"
     row.username = payload.username.strip()
     # Empty password means "leave unchanged" so admins don't have to retype it
     if payload.password:
         row.password = payload.password
-    db.commit(); db.refresh(row)
+    db.commit()
+    db.refresh(row)
     return _to_out(row)
 
 
@@ -254,6 +269,7 @@ def download_apk(
     from the configured ``filename``.
     """
     import logging
+
     log = logging.getLogger(__name__)
 
     row = _get_or_create(db)
@@ -271,7 +287,9 @@ def download_apk(
             gen, size = _stream_smb(row)
             headers["Content-Length"] = str(size)
             return StreamingResponse(
-                gen, media_type="application/vnd.android.package-archive", headers=headers,
+                gen,
+                media_type="application/vnd.android.package-archive",
+                headers=headers,
             )
 
         # LOCAL (includes OS-mounted NFS / SMB shares)
@@ -285,8 +303,9 @@ def download_apk(
     except HTTPException:
         raise
     except Exception as exc:
-        log.exception("Unexpected APK download error (kind=%s path=%r)",
-                      row.kind, row.path)
+        log.exception(
+            "Unexpected APK download error (kind=%s path=%r)", row.kind, row.path
+        )
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             f"APK download failed: {type(exc).__name__}: {exc}",

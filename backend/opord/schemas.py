@@ -15,17 +15,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class MapSnapshotIn(BaseModel):
     label: str = ""
-    bbox: list[float] = Field(default_factory=list)        # [south, west, north, east]
-    center: list[float] = Field(default_factory=list)      # [lat, lon]
+    bbox: list[float] = Field(default_factory=list)  # [south, west, north, east]
+    center: list[float] = Field(default_factory=list)  # [lat, lon]
     zoom: float = 0.0
-    image_b64: str = ""                                    # base64 PNG (without data: prefix)
+    image_b64: str = ""  # base64 PNG (without data: prefix)
     annotations: str = ""
 
 
 class MapSnapshotRenderIn(BaseModel):
     """Server-side tile-stitched snapshot — no client-side canvas needed."""
+
     label: str = ""
-    bbox: list[float]                                      # [south, west, north, east]
+    bbox: list[float]  # [south, west, north, east]
     zoom: int = 14
     annotations: str = ""
 

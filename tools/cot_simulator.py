@@ -40,8 +40,9 @@ from tools.sim import SimFrame, JsonFileCotProvider, registry
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Arrow CoT Simulator (wxPython)")
-    parser.add_argument("--backend", default="http://localhost:6001",
-                        help="Arrow backend base URL")
+    parser.add_argument(
+        "--backend", default="http://localhost:6001", help="Arrow backend base URL"
+    )
     args = parser.parse_args()
 
     # Optional: load extra CoT messages from a JSON file at startup.

@@ -28,13 +28,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from pydantic import BaseModel
 
-from backend.auth.infrastructure import token_service as _token_service  # JWT config read at call-time
+from backend.auth.infrastructure import (
+    token_service as _token_service,
+)  # JWT config read at call-time
 from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.storage import database as _db  # SessionLocal accessed at call-time
 from backend.storage.database import get_db
@@ -50,38 +60,40 @@ REC_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── In-memory stream registry ─────────────────────────────────────────────────
 
+
 @dataclass
 class ActiveStream:
-    stream_id:   str
-    callsign:    str
+    stream_id: str
+    callsign: str
     operator_id: int
-    started_at:  datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    consumers:   list[WebSocket] = field(default_factory=list)
-    rec_id:      int | None = None
-    rec_file:    IO[bytes] | None = None
-    rec_path:    Path | None = None
-    rec_t0:      float | None = None    # monotonic start, for ts_ms offsets
-    rec_frames:  int = 0
-    rec_bytes:   int = 0
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    consumers: list[WebSocket] = field(default_factory=list)
+    rec_id: int | None = None
+    rec_file: IO[bytes] | None = None
+    rec_path: Path | None = None
+    rec_t0: float | None = None  # monotonic start, for ts_ms offsets
+    rec_frames: int = 0
+    rec_bytes: int = 0
 
 
-_registry: dict[str, ActiveStream] = {}   # stream_id → ActiveStream
+_registry: dict[str, ActiveStream] = {}  # stream_id → ActiveStream
 
 
 def list_streams() -> list[dict]:
     return [
         {
-            "id":          s.stream_id,
-            "callsign":    s.callsign,
+            "id": s.stream_id,
+            "callsign": s.callsign,
             "operator_id": s.operator_id,
-            "started_at":  s.started_at.isoformat(),
-            "viewers":     len(s.consumers),
+            "started_at": s.started_at.isoformat(),
+            "viewers": len(s.consumers),
         }
         for s in _registry.values()
     ]
 
 
 # ── Auth helper ───────────────────────────────────────────────────────────────
+
 
 def _verify_token(token: str) -> dict | None:
     """Return JWT payload or None.
@@ -91,6 +103,7 @@ def _verify_token(token: str) -> dict | None:
     stale captured reference would silently keep verifying against the default.
     """
     from jose import JWTError, jwt
+
     cfg = _token_service._cfg
     try:
         return jwt.decode(token, cfg.secret, algorithms=[cfg.algorithm])
@@ -101,12 +114,14 @@ def _verify_token(token: str) -> dict | None:
 
 # ── REST: list active streams ─────────────────────────────────────────────────
 
+
 @router.get("")
 def get_streams(_: Operator = Depends(get_current_operator)) -> list[dict]:
     return list_streams()
 
 
 # ── Recording helpers ────────────────────────────────────────────────────────
+
 
 def _safe_filename(stream_id: str) -> str:
     """Reduce to ASCII alphanumerics + a few separators to keep paths sane."""
@@ -119,12 +134,12 @@ def _safe_filename(stream_id: str) -> str:
 def _open_recording(stream: ActiveStream) -> None:
     """Open the disk file + register a StreamRecording row."""
     fname = f"{int(time.time())}-{_safe_filename(stream.stream_id)}.bin"
-    path  = REC_DIR / fname
+    path = REC_DIR / fname
     stream.rec_path = path
     stream.rec_file = path.open("wb")
-    stream.rec_t0   = time.monotonic()
+    stream.rec_t0 = time.monotonic()
     stream.rec_frames = 0
-    stream.rec_bytes  = 0
+    stream.rec_bytes = 0
 
     db = _db.SessionLocal()
     try:
@@ -135,7 +150,9 @@ def _open_recording(stream: ActiveStream) -> None:
             started_at=stream.started_at,
             file_path=str(path),
         )
-        db.add(rec); db.commit(); db.refresh(rec)
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
         stream.rec_id = rec.id
     finally:
         db.close()
@@ -149,7 +166,7 @@ def _append_frame(stream: ActiveStream, frame: bytes) -> None:
         stream.rec_file.write(struct.pack(">II", ts_ms, len(frame)))
         stream.rec_file.write(frame)
         stream.rec_frames += 1
-        stream.rec_bytes  += 8 + len(frame)
+        stream.rec_bytes += 8 + len(frame)
     except Exception as exc:
         log.warning("recording write failed: %s", exc)
 
@@ -158,7 +175,8 @@ def _close_recording(stream: ActiveStream) -> None:
     """Flush the file and finalise the DB row with end timestamp + counts."""
     if stream.rec_file:
         try:
-            stream.rec_file.flush(); stream.rec_file.close()
+            stream.rec_file.flush()
+            stream.rec_file.close()
         except Exception:
             pass
     if stream.rec_id is None:
@@ -167,9 +185,9 @@ def _close_recording(stream: ActiveStream) -> None:
     try:
         rec = db.get(StreamRecording, stream.rec_id)
         if rec:
-            rec.ended_at    = datetime.now(timezone.utc)
+            rec.ended_at = datetime.now(timezone.utc)
             rec.frame_count = stream.rec_frames
-            rec.byte_size   = stream.rec_bytes
+            rec.byte_size = stream.rec_bytes
             db.commit()
     finally:
         db.close()
@@ -191,29 +209,31 @@ def _iter_frames(path: Path):
 
 # ── REST: list / delete recordings ──────────────────────────────────────────
 
+
 @router.get("/recordings")
 def list_recordings(
     db: Session = Depends(get_db),
     _: Operator = Depends(get_current_operator),
 ) -> list[dict]:
-    rows = (
-        db.query(StreamRecording)
-          .order_by(StreamRecording.started_at.desc())
-          .all()
-    )
+    rows = db.query(StreamRecording).order_by(StreamRecording.started_at.desc()).all()
     return [
         {
-            "id":          r.id,
-            "stream_id":   r.stream_id,
-            "callsign":    r.callsign,
+            "id": r.id,
+            "stream_id": r.stream_id,
+            "callsign": r.callsign,
             "operator_id": r.operator_id,
-            "started_at":  r.started_at.isoformat() if r.started_at else None,
-            "ended_at":    r.ended_at.isoformat() if r.ended_at else None,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "ended_at": r.ended_at.isoformat() if r.ended_at else None,
             "frame_count": r.frame_count,
-            "byte_size":   r.byte_size,
-            "duration_ms": int(((r.ended_at or r.started_at) - r.started_at).total_seconds() * 1000)
-                            if r.ended_at and r.started_at else 0,
-            "live":        r.ended_at is None,
+            "byte_size": r.byte_size,
+            "duration_ms": (
+                int(
+                    ((r.ended_at or r.started_at) - r.started_at).total_seconds() * 1000
+                )
+                if r.ended_at and r.started_at
+                else 0
+            ),
+            "live": r.ended_at is None,
         }
         for r in rows
     ]
@@ -265,10 +285,14 @@ def recording_playback(
                 await asyncio.sleep(delay)
             last_ts = ts_ms
             chunk = (
-                f"{boundary}\r\n"
-                f"Content-Type: image/jpeg\r\n"
-                f"Content-Length: {len(jpeg)}\r\n\r\n"
-            ).encode() + jpeg + b"\r\n"
+                (
+                    f"{boundary}\r\n"
+                    f"Content-Type: image/jpeg\r\n"
+                    f"Content-Length: {len(jpeg)}\r\n\r\n"
+                ).encode()
+                + jpeg
+                + b"\r\n"
+            )
             yield chunk
 
     return StreamingResponse(
@@ -290,7 +314,9 @@ def recording_download(
     path = Path(rec.file_path)
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Recording file missing")
-    fname = f"arrow-{rec.callsign}-{rec.started_at.strftime('%Y%m%d-%H%M%S')}.arrowmjpeg"
+    fname = (
+        f"arrow-{rec.callsign}-{rec.started_at.strftime('%Y%m%d-%H%M%S')}.arrowmjpeg"
+    )
     return FileResponse(path, filename=fname, media_type="application/octet-stream")
 
 
@@ -307,7 +333,8 @@ def recording_delete(
         Path(rec.file_path).unlink(missing_ok=True)
     except Exception:
         pass
-    db.delete(rec); db.commit()
+    db.delete(rec)
+    db.commit()
 
 
 # ── External streams ────────────────────────────────────────────────────────
@@ -316,8 +343,8 @@ _VALID_TYPES = {"mjpeg", "hls", "video"}
 
 
 class _ExtStreamIn(BaseModel):
-    name:        str
-    url:         str
+    name: str
+    url: str
     stream_type: str
     description: str = ""
 
@@ -330,13 +357,13 @@ def list_external_streams(
     rows = db.query(ExternalStream).order_by(ExternalStream.added_at.desc()).all()
     return [
         {
-            "id":          r.id,
-            "name":        r.name,
-            "url":         r.url,
+            "id": r.id,
+            "name": r.name,
+            "url": r.url,
             "stream_type": r.stream_type,
             "description": r.description,
-            "added_by":    r.added_by,
-            "added_at":    r.added_at.isoformat() if r.added_at else None,
+            "added_by": r.added_by,
+            "added_at": r.added_at.isoformat() if r.added_at else None,
         }
         for r in rows
     ]
@@ -349,8 +376,10 @@ def add_external_stream(
     current: Operator = Depends(get_current_operator),
 ) -> dict:
     if body.stream_type not in _VALID_TYPES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"stream_type must be one of: {', '.join(sorted(_VALID_TYPES))}")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"stream_type must be one of: {', '.join(sorted(_VALID_TYPES))}",
+        )
     row = ExternalStream(
         name=body.name.strip(),
         url=body.url.strip(),
@@ -358,9 +387,16 @@ def add_external_stream(
         description=body.description.strip(),
         added_by=current.id,
     )
-    db.add(row); db.commit(); db.refresh(row)
-    return {"id": row.id, "name": row.name, "url": row.url,
-            "stream_type": row.stream_type, "description": row.description}
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id,
+        "name": row.name,
+        "url": row.url,
+        "stream_type": row.stream_type,
+        "description": row.description,
+    }
 
 
 @router.delete("/external/{ext_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -374,10 +410,12 @@ def delete_external_stream(
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if row.added_by != current.id and current.role not in ("ADMIN", "BATTLE_CAPTAIN"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your stream")
-    db.delete(row); db.commit()
+    db.delete(row)
+    db.commit()
 
 
 # ── WebSocket: Android producer ───────────────────────────────────────────────
+
 
 @router.websocket("/{stream_id}/produce")
 async def produce(websocket: WebSocket, stream_id: str, token: str = Query(...)):
@@ -387,25 +425,30 @@ async def produce(websocket: WebSocket, stream_id: str, token: str = Query(...))
         return
 
     await websocket.accept()
-    callsign    = payload.get("sub", "unknown")
+    callsign = payload.get("sub", "unknown")
     operator_id = payload.get("id", 0)
 
-    stream = ActiveStream(stream_id=stream_id, callsign=callsign, operator_id=operator_id)
+    stream = ActiveStream(
+        stream_id=stream_id, callsign=callsign, operator_id=operator_id
+    )
     _registry[stream_id] = stream
     _open_recording(stream)
-    log.info("Stream started: %s by %s (recording id=%s)",
-             stream_id, callsign, stream.rec_id)
+    log.info(
+        "Stream started: %s by %s (recording id=%s)", stream_id, callsign, stream.rec_id
+    )
 
-    await broadcaster.broadcast({
-        "channel": "stream",
-        "event":   "started",
-        "data": {
-            "id":          stream_id,
-            "callsign":    callsign,
-            "operator_id": operator_id,
-            "recording_id": stream.rec_id,
-        },
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "stream",
+            "event": "started",
+            "data": {
+                "id": stream_id,
+                "callsign": callsign,
+                "operator_id": operator_id,
+                "recording_id": stream.rec_id,
+            },
+        }
+    )
 
     try:
         while True:
@@ -434,18 +477,24 @@ async def produce(websocket: WebSocket, stream_id: str, token: str = Query(...))
     finally:
         _registry.pop(stream_id, None)
         _close_recording(stream)
-        log.info("Stream ended: %s — %d frames, %d bytes",
-                 stream_id, stream.rec_frames, stream.rec_bytes)
-        await broadcaster.broadcast({
-            "channel": "stream",
-            "event":   "ended",
-            "data": {
-                "id":           stream_id,
-                "callsign":     callsign,
-                "recording_id": stream.rec_id,
-                "frame_count":  stream.rec_frames,
-            },
-        })
+        log.info(
+            "Stream ended: %s — %d frames, %d bytes",
+            stream_id,
+            stream.rec_frames,
+            stream.rec_bytes,
+        )
+        await broadcaster.broadcast(
+            {
+                "channel": "stream",
+                "event": "ended",
+                "data": {
+                    "id": stream_id,
+                    "callsign": callsign,
+                    "recording_id": stream.rec_id,
+                    "frame_count": stream.rec_frames,
+                },
+            }
+        )
         # Notify all consumers the stream is over
         for c in stream.consumers:
             try:
@@ -456,6 +505,7 @@ async def produce(websocket: WebSocket, stream_id: str, token: str = Query(...))
 
 
 # ── WebSocket: web consumer ───────────────────────────────────────────────────
+
 
 @router.websocket("/{stream_id}/consume")
 async def consume(websocket: WebSocket, stream_id: str, token: str = Query(...)):
