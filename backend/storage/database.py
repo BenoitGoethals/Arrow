@@ -251,6 +251,45 @@ def _migrate() -> None:
             pass  # column/table already exists — safe to skip
 
 
+def _postgis_views(conn: object) -> None:
+    """Create PostGIS extension and MapServer-readable views (PostgreSQL only)."""
+    from sqlalchemy import text as _text
+
+    stmts = [
+        "CREATE EXTENSION IF NOT EXISTS postgis",
+        """CREATE OR REPLACE VIEW ms_operators AS
+           SELECT id, callsign, rank, status, ops_status, role, altitude,
+                  last_seen, mission_id,
+                  ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS geom
+           FROM operators
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL""",
+        """CREATE OR REPLACE VIEW ms_tactical_objects AS
+           SELECT id, type, symbol_code, echelon, affiliation, notes, mission_id, timestamp,
+                  ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS geom
+           FROM tactical_objects""",
+        """CREATE OR REPLACE VIEW ms_cot_tracks AS
+           SELECT id, cot_uid, cot_type, callsign, hae, speed, course, last_seen,
+                  ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS geom
+           FROM cot_tracks""",
+        """CREATE OR REPLACE VIEW ms_alerts AS
+           SELECT id, type, operator_id, status, timestamp, mission_id,
+                  ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS geom
+           FROM alerts
+           WHERE latitude IS NOT NULL AND longitude IS NOT NULL""",
+        """CREATE OR REPLACE VIEW ms_fire_missions AS
+           SELECT id, operator_id, altitude, direction, mission_type, ammunition, status,
+                  timestamp, mission_id,
+                  ST_SetSRID(ST_MakePoint(longitude, latitude), 4326) AS geom
+           FROM fire_missions""",
+        """CREATE OR REPLACE VIEW ms_supply_points AS
+           SELECT id, name, point_type, notes, mission_id,
+                  ST_SetSRID(ST_MakePoint(lng, lat), 4326) AS geom
+           FROM logcop_supply_points""",
+    ]
+    for sql in stmts:
+        conn.execute(_text(sql))  # type: ignore[attr-defined]
+
+
 def init_db() -> None:
     from backend.storage import models  # noqa: F401  — register mappers
 
