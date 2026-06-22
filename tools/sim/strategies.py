@@ -47,14 +47,15 @@ class AutoSend:
 
     def __init__(self, interval: float) -> None:
         self._interval = max(0.1, interval)
-        self._stop_ev  = threading.Event()
+        self._stop_ev = threading.Event()
 
-    def start(self, trigger_fn: Callable[[], None],
-              on_done: Callable[[], None]) -> None:
+    def start(
+        self, trigger_fn: Callable[[], None], on_done: Callable[[], None]
+    ) -> None:
         self._stop_ev.clear()
 
         def _loop() -> None:
-            trigger_fn()                               # immediate first fire
+            trigger_fn()  # immediate first fire
             while not self._stop_ev.wait(self._interval):
                 trigger_fn()
             on_done()

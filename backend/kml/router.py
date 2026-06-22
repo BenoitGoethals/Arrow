@@ -24,8 +24,8 @@ from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/kml-layers", tags=["kml"])
 
-# 20 MB cap — keeps a single rogue upload from blowing through SQLite's row
-# size limit and the per-request memory budget. A tactical AO worth of
+# 20 MB cap — keeps a single rogue upload from blowing through the per-request
+# memory budget. A tactical AO worth of
 # placemarks is typically a few hundred kilobytes; 20 MB covers everything
 # short of nation-scale gazetteers.
 _MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -64,9 +64,13 @@ def _to_summary(row: KmlLayer) -> KmlLayerSummary:
         except ValueError:
             bbox_list = None
     return KmlLayerSummary(
-        id=row.id, name=row.name, description=row.description,
-        visible=row.visible, uploaded_by=row.uploaded_by,
-        uploaded_at=row.uploaded_at, feature_count=row.feature_count,
+        id=row.id,
+        name=row.name,
+        description=row.description,
+        visible=row.visible,
+        uploaded_by=row.uploaded_by,
+        uploaded_at=row.uploaded_at,
+        feature_count=row.feature_count,
         bbox=bbox_list,
     )
 
@@ -123,8 +127,9 @@ async def upload_layer(
     filename = (file.filename or "layer.kml").strip() or "layer.kml"
     lower = filename.lower()
     if not (lower.endswith(".kml") or lower.endswith(".kmz")):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "Filename must end in .kml or .kmz")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Filename must end in .kml or .kmz"
+        )
 
     # Stream-read with a hard cap so a multi-GB upload can't OOM the worker.
     chunks: list[bytes] = []
@@ -135,8 +140,10 @@ async def upload_layer(
             break
         total += len(chunk)
         if total > _MAX_UPLOAD_BYTES:
-            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                                f"File exceeds {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                f"File exceeds {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+            )
         chunks.append(chunk)
     if total == 0:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Empty upload body")
@@ -147,8 +154,9 @@ async def upload_layer(
     except KmlParseError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
     if not features:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "KML contains no recognisable Placemarks")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "KML contains no recognisable Placemarks"
+        )
 
     # Derive a human name from the filename stem. Operators can rename it
     # afterwards via PATCH if the auto-name is ugly.
@@ -160,6 +168,7 @@ async def upload_layer(
     raw_xml = data
     if lower.endswith(".kmz"):
         from backend.kml.parser import _read_kml_bytes  # noqa: PLC0415
+
         try:
             raw_xml = _read_kml_bytes(data)
         except KmlParseError:
@@ -178,11 +187,13 @@ async def upload_layer(
     db.refresh(layer)
 
     summary = _to_summary(layer)
-    await broadcaster.broadcast({
-        "channel": "kml-layer",
-        "event": "created",
-        "data": summary.model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "kml-layer",
+            "event": "created",
+            "data": summary.model_dump(mode="json"),
+        }
+    )
     return KmlLayerOut(**summary.model_dump(), features=features)
 
 
@@ -205,11 +216,13 @@ async def patch_layer(
     db.commit()
     db.refresh(row)
     summary = _to_summary(row)
-    await broadcaster.broadcast({
-        "channel": "kml-layer",
-        "event": "updated",
-        "data": summary.model_dump(mode="json"),
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "kml-layer",
+            "event": "updated",
+            "data": summary.model_dump(mode="json"),
+        }
+    )
     return summary
 
 
@@ -224,9 +237,11 @@ async def delete_layer(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown layer")
     db.delete(row)
     db.commit()
-    await broadcaster.broadcast({
-        "channel": "kml-layer",
-        "event": "deleted",
-        "data": {"id": layer_id},
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "kml-layer",
+            "event": "deleted",
+            "data": {"id": layer_id},
+        }
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

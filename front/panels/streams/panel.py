@@ -1,8 +1,16 @@
 """Streams Panel — live Android streams, Octopus, external, recordings."""
+
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QPushButton, QFrame, QTabWidget,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QTabWidget,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush, QFont
@@ -12,10 +20,10 @@ _TYPE_KEY = "__arrow_stream_type__"
 
 
 class StreamsPanel(QWidget):
-    stream_open_requested    = pyqtSignal(dict, str)   # stream_info, stream_type
+    stream_open_requested = pyqtSignal(dict, str)  # stream_info, stream_type
     recording_open_requested = pyqtSignal(dict)
-    external_add_requested   = pyqtSignal()
-    refresh_requested        = pyqtSignal()
+    external_add_requested = pyqtSignal()
+    refresh_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,26 +36,35 @@ class StreamsPanel(QWidget):
 
         hdr = QHBoxLayout()
         hdr.setContentsMargins(8, 6, 8, 4)
-        hdr.addWidget(QLabel("STREAMS",
-            styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;"))
+        hdr.addWidget(
+            QLabel(
+                "STREAMS",
+                styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;",
+            )
+        )
         hdr.addStretch()
         r = QPushButton("⟳")
         r.setFixedSize(26, 24)
         r.setToolTip("Reload streams from server")
-        r.setStyleSheet("QPushButton{background:#21262d;border:1px solid #30363d;"
-                        "color:#8b949e;font-size:15px;border-radius:2px;}"
-                        "QPushButton:hover{color:#c9d1d9;}")
+        r.setStyleSheet(
+            "QPushButton{background:#21262d;border:1px solid #30363d;"
+            "color:#8b949e;font-size:15px;border-radius:2px;}"
+            "QPushButton:hover{color:#c9d1d9;}"
+        )
         r.clicked.connect(self.refresh_requested.emit)
         hdr.addWidget(r)
         root.addLayout(hdr)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine); sep.setFixedHeight(1)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFixedHeight(1)
         root.addWidget(sep)
 
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
         self._tabs.setStyleSheet(
-            "QTabBar::tab{font-size:11px;padding:4px 8px;letter-spacing:1px;}")
+            "QTabBar::tab{font-size:11px;padding:4px 8px;letter-spacing:1px;}"
+        )
 
         # LIVE
         self._live_list = self._make_list()
@@ -55,14 +72,17 @@ class StreamsPanel(QWidget):
         self._tabs.addTab(self._live_list, "LIVE")
 
         # EXTERNAL
-        ext_w = QWidget(); ev = QVBoxLayout(ext_w); ev.setContentsMargins(0, 0, 0, 0)
+        ext_w = QWidget()
+        ev = QVBoxLayout(ext_w)
+        ev.setContentsMargins(0, 0, 0, 0)
         add_btn = QPushButton("+ Add Stream")
         add_btn.setFixedHeight(28)
         add_btn.setStyleSheet(
             "QPushButton{background:#1f6feb;border:1px solid #388bfd;"
             "color:#fff;font-size:12px;font-weight:700;padding:0 10px;"
             "border-radius:2px;margin:4px 6px;}"
-            "QPushButton:hover{background:#388bfd;}")
+            "QPushButton:hover{background:#388bfd;}"
+        )
         add_btn.clicked.connect(self.external_add_requested.emit)
         ev.addWidget(add_btn)
         self._ext_list = self._make_list()
@@ -104,8 +124,9 @@ class StreamsPanel(QWidget):
             for s in streams:
                 viewers = s.get("viewers", 0)
                 text = f"  📡  {s.get('callsign','?')}   [{viewers} viewer{'s' if viewers!=1 else ''}]"
-                self._add_item(self._live_list, text, "#3fb950",
-                               {**s, _TYPE_KEY: "ws_jpeg"})
+                self._add_item(
+                    self._live_list, text, "#3fb950", {**s, _TYPE_KEY: "ws_jpeg"}
+                )
         n = len(streams)
         self._counter.setText(f"{n} live  ·  double-click to view")
 
@@ -116,9 +137,10 @@ class StreamsPanel(QWidget):
         else:
             for s in streams:
                 stype = s.get("stream_type", "?").upper()
-                text  = f"  📺  {s.get('name','?')}   [{stype}]"
-                self._add_item(self._ext_list, text, "#79c0ff",
-                               {**s, _TYPE_KEY: "external"})
+                text = f"  📺  {s.get('name','?')}   [{stype}]"
+                self._add_item(
+                    self._ext_list, text, "#79c0ff", {**s, _TYPE_KEY: "external"}
+                )
 
     def load_octopus_streams(self, streams: list[dict]):
         self._oct_list.clear()
@@ -127,8 +149,7 @@ class StreamsPanel(QWidget):
         else:
             for s in streams:
                 text = f"  🎥  {s.get('name') or s.get('id','?')}"
-                self._add_item(self._oct_list, text, "#d2a8ff",
-                               {**s, _TYPE_KEY: "hls"})
+                self._add_item(self._oct_list, text, "#d2a8ff", {**s, _TYPE_KEY: "hls"})
 
     def load_recordings(self, recs: list[dict]):
         self._rec_list.clear()
@@ -136,11 +157,12 @@ class StreamsPanel(QWidget):
             self._placeholder(self._rec_list, "No recordings")
             return
         for r in recs:
-            ts  = (r.get("started_at") or "")[:16]
+            ts = (r.get("started_at") or "")[:16]
             dur = _duration(r)
             text = f"  ⏺  {r.get('callsign','?')}   {ts}  {dur}"
-            self._add_item(self._rec_list, text, "#8b949e",
-                           {**r, _TYPE_KEY: "recording"})
+            self._add_item(
+                self._rec_list, text, "#8b949e", {**r, _TYPE_KEY: "recording"}
+            )
 
     def add_live_stream(self, stream: dict):
         """Called on WS stream.started event."""
@@ -157,14 +179,15 @@ class StreamsPanel(QWidget):
                     self._live_list.takeItem(i)
                     break
             text = f"  📡  {stream.get('callsign','?')}   [LIVE]"
-            self._add_item(self._live_list, text, "#3fb950",
-                           {**stream, _TYPE_KEY: "ws_jpeg"})
+            self._add_item(
+                self._live_list, text, "#3fb950", {**stream, _TYPE_KEY: "ws_jpeg"}
+            )
             self._counter.setText(f"{self._live_list.count()} live")
 
     def remove_live_stream(self, stream_id: str):
         for i in range(self._live_list.count()):
             it = self._live_list.item(i)
-            d  = it.data(Qt.ItemDataRole.UserRole)
+            d = it.data(Qt.ItemDataRole.UserRole)
             if isinstance(d, dict) and d.get("id") == stream_id:
                 self._live_list.takeItem(i)
                 return
@@ -175,7 +198,9 @@ class StreamsPanel(QWidget):
     def _add_item(lst: QListWidget, text: str, color: str, data: dict):
         item = QListWidgetItem(text)
         item.setForeground(QBrush(QColor(color)))
-        item.setData(Qt.ItemDataRole.UserRole, data)   # single role — type embedded in dict
+        item.setData(
+            Qt.ItemDataRole.UserRole, data
+        )  # single role — type embedded in dict
         lst.addItem(item)
 
     @staticmethod
@@ -194,10 +219,16 @@ class StreamsPanel(QWidget):
         stype = d.get(_TYPE_KEY, "unknown")
         self.stream_open_requested.emit(d, stype)
 
-    def _on_live_click(self, item: QListWidgetItem): self._emit(item)
-    def _on_ext_click(self,  item: QListWidgetItem): self._emit(item)
-    def _on_oct_click(self,  item: QListWidgetItem): self._emit(item)
-    def _on_rec_click(self,  item: QListWidgetItem):
+    def _on_live_click(self, item: QListWidgetItem):
+        self._emit(item)
+
+    def _on_ext_click(self, item: QListWidgetItem):
+        self._emit(item)
+
+    def _on_oct_click(self, item: QListWidgetItem):
+        self._emit(item)
+
+    def _on_rec_click(self, item: QListWidgetItem):
         d = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(d, dict):
             self.recording_open_requested.emit(d)
@@ -208,8 +239,9 @@ def _duration(rec: dict) -> str:
         return ""
     try:
         from datetime import datetime
-        s = datetime.fromisoformat(rec["started_at"].replace("Z",""))
-        e = datetime.fromisoformat(rec["ended_at"].replace("Z",""))
+
+        s = datetime.fromisoformat(rec["started_at"].replace("Z", ""))
+        e = datetime.fromisoformat(rec["ended_at"].replace("Z", ""))
         secs = int((e - s).total_seconds())
         return f"{secs//60}m{secs%60:02d}s"
     except Exception:

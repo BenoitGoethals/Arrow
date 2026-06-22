@@ -4,6 +4,7 @@ All endpoints are mission-scoped via the X-Mission-ID header.
 Supply, vehicles, convoys, and supply-point CRUD.
 ADMIN / BATTLE_CAPTAIN can write; all authenticated operators can read.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -16,25 +17,29 @@ from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
 from backend.storage.models import (
-    LogcopConvoy, LogcopSupply, LogcopSupplyPoint, LogcopVehicle,
-    Mission, Operator,
+    LogcopConvoy,
+    LogcopSupply,
+    LogcopSupplyPoint,
+    LogcopVehicle,
+    Mission,
+    Operator,
 )
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/logcop", tags=["logcop"])
 
 _SUPPLY_DEFAULTS = [
-    ("I",    "Food & Rations",              3.0, 2.0, 1.0, "DOS"),
-    ("II",   "Clothing & Equipment",        5.0, 3.0, 1.5, "DOS"),
-    ("III",  "POL — Fuel & Lubricants",     4.0, 2.0, 1.0, "DOS"),
+    ("I", "Food & Rations", 3.0, 2.0, 1.0, "DOS"),
+    ("II", "Clothing & Equipment", 5.0, 3.0, 1.5, "DOS"),
+    ("III", "POL — Fuel & Lubricants", 4.0, 2.0, 1.0, "DOS"),
     ("IIIA", "Aviation Fuel (Jet A-1/JP8)", 3.0, 2.0, 0.5, "DOS"),
-    ("IV",   "Construction Material",       7.0, 4.0, 2.0, "DOS"),
-    ("V",    "Ammunition",                  3.0, 2.0, 1.0, "DOS"),
-    ("VI",   "Personal Demand Items",       7.0, 5.0, 2.0, "DOS"),
-    ("VII",  "Major End Items",             0.0, 0.0, 0.0, "units"),
-    ("VIII", "Medical Supplies",            5.0, 3.0, 1.0, "DOS"),
-    ("IX",   "Repair Parts & Equip",        4.0, 2.0, 1.0, "DOS"),
-    ("X",    "Non-military Programs",       0.0, 0.0, 0.0, "units"),
+    ("IV", "Construction Material", 7.0, 4.0, 2.0, "DOS"),
+    ("V", "Ammunition", 3.0, 2.0, 1.0, "DOS"),
+    ("VI", "Personal Demand Items", 7.0, 5.0, 2.0, "DOS"),
+    ("VII", "Major End Items", 0.0, 0.0, 0.0, "units"),
+    ("VIII", "Medical Supplies", 5.0, 3.0, 1.0, "DOS"),
+    ("IX", "Repair Parts & Equip", 4.0, 2.0, 1.0, "DOS"),
+    ("X", "Non-military Programs", 0.0, 0.0, 0.0, "units"),
 ]
 
 
@@ -51,6 +56,7 @@ async def _broadcast(event: str, data: dict) -> None:
 
 
 # ── Supply ────────────────────────────────────────────────────────────────────
+
 
 class SupplyOut(BaseModel):
     id: int
@@ -80,18 +86,26 @@ def list_supply(
     mission: Mission | None = Depends(get_active_mission),
     _: Operator = Depends(get_current_operator),
 ) -> list[LogcopSupply]:
-    rows = db.query(LogcopSupply).filter(
-        LogcopSupply.mission_id == _mission_id(mission)
-    ).order_by(LogcopSupply.id).all()
+    rows = (
+        db.query(LogcopSupply)
+        .filter(LogcopSupply.mission_id == _mission_id(mission))
+        .order_by(LogcopSupply.id)
+        .all()
+    )
     if not rows:
         # Seed defaults on first access
         for code, label, qty, amber, red, unit in _SUPPLY_DEFAULTS:
-            rows.append(LogcopSupply(
-                mission_id=_mission_id(mission),
-                class_code=code, label=label,
-                current_qty=qty, unit=unit,
-                threshold_amber=amber, threshold_red=red,
-            ))
+            rows.append(
+                LogcopSupply(
+                    mission_id=_mission_id(mission),
+                    class_code=code,
+                    label=label,
+                    current_qty=qty,
+                    unit=unit,
+                    threshold_amber=amber,
+                    threshold_red=red,
+                )
+            )
         db.add_all(rows)
         db.commit()
         for r in rows:
@@ -119,14 +133,20 @@ async def update_supply(
     row.updated_by = current.id
     db.commit()
     db.refresh(row)
-    await _broadcast("supply_updated", {
-        "id": row.id, "class_code": row.class_code,
-        "current_qty": row.current_qty, "unit": row.unit,
-    })
+    await _broadcast(
+        "supply_updated",
+        {
+            "id": row.id,
+            "class_code": row.class_code,
+            "current_qty": row.current_qty,
+            "unit": row.unit,
+        },
+    )
     return row
 
 
 # ── Vehicles ──────────────────────────────────────────────────────────────────
+
 
 class VehicleOut(BaseModel):
     id: int
@@ -157,12 +177,17 @@ def list_vehicles(
     mission: Mission | None = Depends(get_active_mission),
     _: Operator = Depends(get_current_operator),
 ) -> list[LogcopVehicle]:
-    return db.query(LogcopVehicle).filter(
-        LogcopVehicle.mission_id == _mission_id(mission)
-    ).order_by(LogcopVehicle.unit_name).all()
+    return (
+        db.query(LogcopVehicle)
+        .filter(LogcopVehicle.mission_id == _mission_id(mission))
+        .order_by(LogcopVehicle.unit_name)
+        .all()
+    )
 
 
-@router.post("/vehicles", response_model=VehicleOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/vehicles", response_model=VehicleOut, status_code=status.HTTP_201_CREATED
+)
 async def create_vehicle(
     payload: VehicleIn,
     db: Session = Depends(get_db),
@@ -171,9 +196,13 @@ async def create_vehicle(
 ) -> LogcopVehicle:
     row = LogcopVehicle(
         mission_id=_mission_id(mission),
-        unit_name=payload.unit_name, vehicle_type=payload.vehicle_type,
-        total=payload.total, fmc=payload.fmc, pmc=payload.pmc,
-        notes=payload.notes, updated_by=current.id,
+        unit_name=payload.unit_name,
+        vehicle_type=payload.vehicle_type,
+        total=payload.total,
+        fmc=payload.fmc,
+        pmc=payload.pmc,
+        notes=payload.notes,
+        updated_by=current.id,
     )
     db.add(row)
     db.commit()
@@ -219,6 +248,7 @@ async def delete_vehicle(
 
 # ── Convoys ───────────────────────────────────────────────────────────────────
 
+
 class ConvoyOut(BaseModel):
     id: int
     callsign: str
@@ -254,9 +284,12 @@ def list_convoys(
     mission: Mission | None = Depends(get_active_mission),
     _: Operator = Depends(get_current_operator),
 ) -> list[LogcopConvoy]:
-    return db.query(LogcopConvoy).filter(
-        LogcopConvoy.mission_id == _mission_id(mission)
-    ).order_by(LogcopConvoy.updated_at.desc()).all()
+    return (
+        db.query(LogcopConvoy)
+        .filter(LogcopConvoy.mission_id == _mission_id(mission))
+        .order_by(LogcopConvoy.updated_at.desc())
+        .all()
+    )
 
 
 @router.post("/convoys", response_model=ConvoyOut, status_code=status.HTTP_201_CREATED)
@@ -267,7 +300,8 @@ async def create_convoy(
     mission: Mission | None = Depends(get_active_mission),
 ) -> LogcopConvoy:
     row = LogcopConvoy(
-        mission_id=_mission_id(mission), created_by=current.id,
+        mission_id=_mission_id(mission),
+        created_by=current.id,
         **payload.model_dump(),
     )
     db.add(row)
@@ -313,6 +347,7 @@ async def delete_convoy(
 
 # ── Supply points ─────────────────────────────────────────────────────────────
 
+
 class SupplyPointOut(BaseModel):
     id: int
     name: str
@@ -340,12 +375,16 @@ def list_supply_points(
     mission: Mission | None = Depends(get_active_mission),
     _: Operator = Depends(get_current_operator),
 ) -> list[LogcopSupplyPoint]:
-    return db.query(LogcopSupplyPoint).filter(
-        LogcopSupplyPoint.mission_id == _mission_id(mission)
-    ).all()
+    return (
+        db.query(LogcopSupplyPoint)
+        .filter(LogcopSupplyPoint.mission_id == _mission_id(mission))
+        .all()
+    )
 
 
-@router.post("/supply-points", response_model=SupplyPointOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/supply-points", response_model=SupplyPointOut, status_code=status.HTTP_201_CREATED
+)
 async def create_supply_point(
     payload: SupplyPointIn,
     db: Session = Depends(get_db),
@@ -353,7 +392,8 @@ async def create_supply_point(
     mission: Mission | None = Depends(get_active_mission),
 ) -> LogcopSupplyPoint:
     row = LogcopSupplyPoint(
-        mission_id=_mission_id(mission), created_by=current.id,
+        mission_id=_mission_id(mission),
+        created_by=current.id,
         **payload.model_dump(),
     )
     db.add(row)

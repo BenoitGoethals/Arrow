@@ -19,6 +19,7 @@ The server cert's SAN must include the address ATAK dials. Add your public IP
 via ``ARROW_COT_EXTRA_IPS=78.21.255.210`` (``ARROW_WEB_EXTRA_IPS`` is also
 honoured) — otherwise ATAK may reject the cert on hostname mismatch.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -30,14 +31,14 @@ from pathlib import Path
 
 log = logging.getLogger("backend.cot.tls")
 
-_DIR        = Path("data/cot_tls")
-_CA_CERT    = _DIR / "ca.pem"
-_CA_KEY     = _DIR / "ca.key"
-_SRV_CERT   = _DIR / "cot-server.pem"
-_SRV_KEY    = _DIR / "cot-server.key"
+_DIR = Path("data/cot_tls")
+_CA_CERT = _DIR / "ca.pem"
+_CA_KEY = _DIR / "ca.key"
+_SRV_CERT = _DIR / "cot-server.pem"
+_SRV_KEY = _DIR / "cot-server.key"
 _TRUSTSTORE = _DIR / "atak-truststore.p12"
 _CLIENT_P12 = _DIR / "atak-client.p12"
-_VALIDITY   = datetime.timedelta(days=3650)
+_VALIDITY = datetime.timedelta(days=3650)
 
 PASSWORD = os.environ.get("ARROW_COT_TLS_PASSWORD", "atakatak")
 
@@ -64,10 +65,15 @@ def _collect_sans() -> tuple[list[str], list]:
         except ValueError:
             pass
 
-    extra = ",".join(filter(None, (
-        os.environ.get("ARROW_COT_EXTRA_IPS", ""),
-        os.environ.get("ARROW_WEB_EXTRA_IPS", ""),
-    )))
+    extra = ",".join(
+        filter(
+            None,
+            (
+                os.environ.get("ARROW_COT_EXTRA_IPS", ""),
+                os.environ.get("ARROW_WEB_EXTRA_IPS", ""),
+            ),
+        )
+    )
     for token in (t.strip() for t in extra.split(",") if t.strip()):
         try:
             ips.append(ipaddress.ip_address(token))
@@ -81,8 +87,9 @@ def _covers_current(cert_path: Path) -> bool:
     """True if the existing server cert's SAN already includes all current IPs."""
     try:
         from cryptography import x509
+
         cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
-        san  = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
         have = {str(n.value) for n in san.value if isinstance(n, x509.IPAddress)}
         _, needed = _collect_sans()
         return all(str(ip) in have for ip in needed)
@@ -96,109 +103,154 @@ def ensure_cot_tls() -> tuple[str, str]:
     Returns ``(server_cert_path, server_key_path)`` for the TLS listener.
     """
     from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives.serialization import (
-        BestAvailableEncryption, Encoding, NoEncryption, PrivateFormat, pkcs12,
+        BestAvailableEncryption,
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        pkcs12,
     )
     from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
     _DIR.mkdir(parents=True, exist_ok=True)
 
-    if (_SRV_CERT.exists() and _SRV_KEY.exists() and _CA_CERT.exists()
-            and _covers_current(_SRV_CERT)):
+    if (
+        _SRV_CERT.exists()
+        and _SRV_KEY.exists()
+        and _CA_CERT.exists()
+        and _covers_current(_SRV_CERT)
+    ):
         return str(_SRV_CERT), str(_SRV_KEY)
 
     now = datetime.datetime.now(datetime.timezone.utc)
     dns_names, ip_addrs = _collect_sans()
-    log.info("Generating CoT TLS PKI — SAN: %s + %s",
-             dns_names, [str(i) for i in ip_addrs])
+    log.info(
+        "Generating CoT TLS PKI — SAN: %s + %s", dns_names, [str(i) for i in ip_addrs]
+    )
 
     def _new_key():
         return rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
     def _name(cn: str) -> "x509.Name":
-        return x509.Name([
-            x509.NameAttribute(NameOID.COMMON_NAME, cn),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Arrow"),
-        ])
+        return x509.Name(
+            [
+                x509.NameAttribute(NameOID.COMMON_NAME, cn),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Arrow"),
+            ]
+        )
 
     # ── Certificate authority ──────────────────────────────────────────────
-    ca_key  = _new_key()
+    ca_key = _new_key()
     ca_name = _name("Arrow CoT CA")
     ca_cert = (
         x509.CertificateBuilder()
-        .subject_name(ca_name).issuer_name(ca_name)
+        .subject_name(ca_name)
+        .issuer_name(ca_name)
         .public_key(ca_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now).not_valid_after(now + _VALIDITY)
+        .not_valid_before(now)
+        .not_valid_after(now + _VALIDITY)
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .add_extension(x509.KeyUsage(
-            digital_signature=True, key_cert_sign=True, crl_sign=True,
-            key_encipherment=False, content_commitment=False,
-            data_encipherment=False, key_agreement=False,
-            encipher_only=False, decipher_only=False), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                key_cert_sign=True,
+                crl_sign=True,
+                key_encipherment=False,
+                content_commitment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
         .sign(ca_key, hashes.SHA256())
     )
 
     # ── Server certificate (SAN-covered, signed by the CA) ─────────────────
-    srv_key  = _new_key()
-    srv_san  = [x509.DNSName(d) for d in dns_names] + [x509.IPAddress(ip) for ip in ip_addrs]
+    srv_key = _new_key()
+    srv_san = [x509.DNSName(d) for d in dns_names] + [
+        x509.IPAddress(ip) for ip in ip_addrs
+    ]
     srv_cert = (
         x509.CertificateBuilder()
         .subject_name(_name(dns_names[0] if dns_names else "arrow-cot"))
         .issuer_name(ca_name)
         .public_key(srv_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now).not_valid_after(now + _VALIDITY)
+        .not_valid_before(now)
+        .not_valid_after(now + _VALIDITY)
         .add_extension(x509.SubjectAlternativeName(srv_san), critical=False)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
+        )
         .sign(ca_key, hashes.SHA256())
     )
 
     # ── Client certificate (optional convenience for ATAK keystores) ───────
-    cli_key  = _new_key()
+    cli_key = _new_key()
     cli_cert = (
         x509.CertificateBuilder()
         .subject_name(_name("arrow-atak-client"))
         .issuer_name(ca_name)
         .public_key(cli_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now).not_valid_after(now + _VALIDITY)
+        .not_valid_before(now)
+        .not_valid_after(now + _VALIDITY)
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]), critical=False)
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]), critical=False
+        )
         .sign(ca_key, hashes.SHA256())
     )
 
     # ── Write PEMs (server PEM carries the CA so ATAK gets the full chain) ──
     _CA_CERT.write_bytes(ca_cert.public_bytes(Encoding.PEM))
-    _CA_KEY.write_bytes(ca_key.private_bytes(
-        Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))
+    _CA_KEY.write_bytes(
+        ca_key.private_bytes(
+            Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
+        )
+    )
     _SRV_CERT.write_bytes(
-        srv_cert.public_bytes(Encoding.PEM) + ca_cert.public_bytes(Encoding.PEM))
-    _SRV_KEY.write_bytes(srv_key.private_bytes(
-        Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()))
+        srv_cert.public_bytes(Encoding.PEM) + ca_cert.public_bytes(Encoding.PEM)
+    )
+    _SRV_KEY.write_bytes(
+        srv_key.private_bytes(
+            Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
+        )
+    )
 
     # ── PKCS12 bundles for ATAK ────────────────────────────────────────────
     enc = BestAvailableEncryption(PASSWORD.encode())
-    _TRUSTSTORE.write_bytes(pkcs12.serialize_key_and_certificates(
-        b"arrow-cot-ca", None, None, [ca_cert], enc))
-    _CLIENT_P12.write_bytes(pkcs12.serialize_key_and_certificates(
-        b"arrow-atak-client", cli_key, cli_cert, [ca_cert], enc))
+    _TRUSTSTORE.write_bytes(
+        pkcs12.serialize_key_and_certificates(
+            b"arrow-cot-ca", None, None, [ca_cert], enc
+        )
+    )
+    _CLIENT_P12.write_bytes(
+        pkcs12.serialize_key_and_certificates(
+            b"arrow-atak-client", cli_key, cli_cert, [ca_cert], enc
+        )
+    )
 
     log.info("CoT TLS PKI written to %s (truststore password: %s)", _DIR, PASSWORD)
-    print(f"[Arrow CoT] TLS truststore for ATAK: {_TRUSTSTORE}  (password: {PASSWORD})",
-          flush=True)
+    print(
+        f"[Arrow CoT] TLS truststore for ATAK: {_TRUSTSTORE}  (password: {PASSWORD})",
+        flush=True,
+    )
     return str(_SRV_CERT), str(_SRV_KEY)
 
 
 # Logical artifact name → (path, suggested download filename, mime type)
 ARTIFACTS: dict[str, tuple[Path, str, str]] = {
-    "truststore":  (_TRUSTSTORE, "atak-truststore.p12", "application/x-pkcs12"),
-    "client":      (_CLIENT_P12, "atak-client.p12",     "application/x-pkcs12"),
-    "ca":          (_CA_CERT,    "arrow-cot-ca.pem",    "application/x-pem-file"),
-    "server-cert": (_SRV_CERT,   "cot-server.pem",      "application/x-pem-file"),
+    "truststore": (_TRUSTSTORE, "atak-truststore.p12", "application/x-pkcs12"),
+    "client": (_CLIENT_P12, "atak-client.p12", "application/x-pkcs12"),
+    "ca": (_CA_CERT, "arrow-cot-ca.pem", "application/x-pem-file"),
+    "server-cert": (_SRV_CERT, "cot-server.pem", "application/x-pem-file"),
 }
 
 
@@ -208,18 +260,18 @@ def info() -> dict:
     files = {
         name: {
             "filename": fname,
-            "exists":   path.exists(),
-            "size":     (path.stat().st_size if path.exists() else 0),
+            "exists": path.exists(),
+            "size": (path.stat().st_size if path.exists() else 0),
         }
         for name, (path, fname, _mime) in ARTIFACTS.items()
     }
     return {
-        "dir":       str(_DIR),
-        "password":  PASSWORD,
+        "dir": str(_DIR),
+        "password": PASSWORD,
         "generated": _SRV_CERT.exists() and _CA_CERT.exists(),
-        "san_dns":   dns,
-        "san_ips":   [str(i) for i in ips],
-        "files":     files,
+        "san_dns": dns,
+        "san_ips": [str(i) for i in ips],
+        "files": files,
     }
 
 

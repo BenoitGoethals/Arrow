@@ -10,14 +10,18 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import redis
 
 log = logging.getLogger(__name__)
 
 # Module-level Redis client — set in app lifespan, None in dev without Redis.
-_redis: "redis.Redis | None" = None   # type: ignore[name-defined]
+_redis: redis.Redis | None = None  # type: ignore[name-defined]
 
 # In-memory fallback (single-process dev only).
-_mem: dict[str, float] = {}          # jti → expiry unix timestamp
+_mem: dict[str, float] = {}  # jti → expiry unix timestamp
 
 
 def init(url: str | None = None) -> None:
@@ -26,12 +30,17 @@ def init(url: str | None = None) -> None:
     url = url or os.environ.get("ARROW_REDIS_URL", "redis://localhost:6379/0")
     try:
         import redis as _redislib
-        client = _redislib.Redis.from_url(url, decode_responses=True, socket_connect_timeout=2)
+
+        client = _redislib.Redis.from_url(
+            url, decode_responses=True, socket_connect_timeout=2
+        )
         client.ping()
         _redis = client
         log.info("Token blacklist: connected to Redis at %s", url)
     except Exception as exc:
-        log.warning("Token blacklist: Redis unavailable (%s) — using in-memory fallback", exc)
+        log.warning(
+            "Token blacklist: Redis unavailable (%s) — using in-memory fallback", exc
+        )
         _redis = None
 
 

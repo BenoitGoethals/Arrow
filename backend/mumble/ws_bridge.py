@@ -17,6 +17,7 @@ Backend → browser (text / JSON):
 Backend → browser (binary): decoded PCM int16 LE, 48 kHz, mono
 Browser → backend (binary): PCM int16 LE, 48 kHz, mono  (when PTT active)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -30,31 +31,32 @@ from typing import Optional
 log = logging.getLogger(__name__)
 
 # Audio constants — must match pymumble / Opus standard
-SAMPLE_RATE  = 48_000
-CHUNK_MS     = 20
-CHUNK_FRAMES = SAMPLE_RATE * CHUNK_MS // 1000   # 960 samples per 20 ms frame
+SAMPLE_RATE = 48_000
+CHUNK_MS = 20
+CHUNK_FRAMES = SAMPLE_RATE * CHUNK_MS // 1000  # 960 samples per 20 ms frame
 
 
 class MumbleVoiceSession:
     """Manages one browser WebSocket ↔ one Mumble connection."""
 
     def __init__(self, ws, username: str):
-        self._ws       = ws
+        self._ws = ws
         self._username = username
-        self._mumble   = None
+        self._mumble = None
         self._audio_q: queue.Queue[bytes] = queue.Queue(maxsize=300)
-        self._ptt      = False
-        self._stop     = threading.Event()
+        self._ptt = False
+        self._stop = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Speaking detection
         self._last_audio: dict[int, float] = {}
-        self._speaking:   dict[int, bool]  = {}
+        self._speaking: dict[int, bool] = {}
 
     # ── Public entry point ────────────────────────────────────────────────────
 
-    async def run(self, host: str, port: int,
-                  username: str, password: str = "") -> None:
+    async def run(
+        self, host: str, port: int, username: str, password: str = ""
+    ) -> None:
         self._loop = asyncio.get_event_loop()
         await self._send_json({"type": "state", "state": "connecting"})
 
@@ -63,13 +65,16 @@ class MumbleVoiceSession:
 
         def _connect_thread():
             try:
-                import backend.mumble.opus_fix  # noqa: ensure patches applied
                 import pymumble_py3 as pymumble
                 from pymumble_py3.callbacks import PYMUMBLE_CLBK_SOUNDRECEIVED
 
                 m = pymumble.Mumble(
-                    host, username, password=password,
-                    port=port, reconnect=False, certfile=None,
+                    host,
+                    username,
+                    password=password,
+                    port=port,
+                    reconnect=False,
+                    certfile=None,
                 )
                 m.set_application_string("Arrow Web")
                 m.set_receive_sound(True)
@@ -116,14 +121,13 @@ class MumbleVoiceSession:
 
     async def _recv_loop(self):
         """Receive messages from the browser WebSocket."""
-        from fastapi import WebSocketDisconnect
         try:
             while True:
                 msg = await self._ws.receive()
                 if msg.get("type") == "websocket.disconnect":
                     break
                 raw_bytes = msg.get("bytes")
-                raw_text  = msg.get("text")
+                raw_text = msg.get("text")
                 if raw_bytes:
                     # PTT audio: PCM int16 from browser
                     if self._ptt and self._mumble:
@@ -155,11 +159,13 @@ class MumbleVoiceSession:
         while not self._stop.is_set():
             if self._mumble:
                 try:
-                    await self._send_json({
-                        "type":     "update",
-                        "channels": self._snapshot_channels(),
-                        "users":    self._snapshot_users(),
-                    })
+                    await self._send_json(
+                        {
+                            "type": "update",
+                            "channels": self._snapshot_channels(),
+                            "users": self._snapshot_users(),
+                        }
+                    )
                 except Exception:
                     pass
             await asyncio.sleep(1)
@@ -179,10 +185,14 @@ class MumbleVoiceSession:
                         except Exception:
                             pass
                     try:
-                        await self._send_json({
-                            "type": "speaking", "session": session,
-                            "name": name, "speaking": speaking,
-                        })
+                        await self._send_json(
+                            {
+                                "type": "speaking",
+                                "session": session,
+                                "name": name,
+                                "speaking": speaking,
+                            }
+                        )
                     except Exception:
                         pass
             await asyncio.sleep(0.15)
@@ -201,8 +211,8 @@ class MumbleVoiceSession:
 
     async def _handle_cmd(self, data: dict):
         cmd = data.get("type", "")
-        m   = self._mumble
-        myself = (m.users.myself if m else None)
+        m = self._mumble
+        myself = m.users.myself if m else None
 
         if cmd == "ptt_start":
             self._ptt = True
@@ -216,17 +226,25 @@ class MumbleVoiceSession:
                     pass
 
         elif cmd == "mute" and myself:
-            try: myself.mute()
-            except Exception: pass
+            try:
+                myself.mute()
+            except Exception:
+                pass
         elif cmd == "unmute" and myself:
-            try: myself.unmute()
-            except Exception: pass
+            try:
+                myself.unmute()
+            except Exception:
+                pass
         elif cmd == "deafen" and myself:
-            try: myself.deafen()
-            except Exception: pass
+            try:
+                myself.deafen()
+            except Exception:
+                pass
         elif cmd == "undeafen" and myself:
-            try: myself.undeafen()
-            except Exception: pass
+            try:
+                myself.undeafen()
+            except Exception:
+                pass
 
         elif cmd == "join" and m:
             cid = data.get("channel_id")
@@ -243,7 +261,11 @@ class MumbleVoiceSession:
             return []
         try:
             return [
-                {"id": cid, "name": ch.get("name", "?"), "parent_id": ch.get("parent", -1)}
+                {
+                    "id": cid,
+                    "name": ch.get("name", "?"),
+                    "parent_id": ch.get("parent", -1),
+                }
                 for cid, ch in self._mumble.channels.items()
             ]
         except Exception:
@@ -256,13 +278,13 @@ class MumbleVoiceSession:
             my_s = self._mumble.users.myself_session
             return [
                 {
-                    "session":    s,
-                    "name":       u.get("name", "?"),
+                    "session": s,
+                    "name": u.get("name", "?"),
                     "channel_id": u.get("channel_id", 0),
-                    "muted":      bool(u.get("mute") or u.get("self_mute")),
-                    "deafened":   bool(u.get("deaf") or u.get("self_deaf")),
-                    "speaking":   self._speaking.get(s, False),
-                    "self":       s == my_s,
+                    "muted": bool(u.get("mute") or u.get("self_mute")),
+                    "deafened": bool(u.get("deaf") or u.get("self_deaf")),
+                    "speaking": self._speaking.get(s, False),
+                    "self": s == my_s,
                 }
                 for s, u in self._mumble.users.items()
             ]

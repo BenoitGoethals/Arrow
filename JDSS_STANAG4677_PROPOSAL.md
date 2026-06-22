@@ -97,8 +97,9 @@ The first three rows are the **high-value core**; overlays/imagery/tasking are l
 Same discipline as the CoT bridge:
 - Tag the **origin** of every entity (`external_id` / origin field) so a message that came *from*
   4677 is never re-emitted *back* to 4677, and vice-versa.
-- `state/` keeps a stable bidirectional map **4677 URN/UUID ⇄ Arrow id** (small SQLite), so updates
-  correlate instead of creating duplicates, and identity is consistent across restarts.
+- `state/` keeps a stable bidirectional map **4677 URN/UUID ⇄ Arrow id** (backed by the Arrow
+  PostgreSQL database), so updates correlate instead of creating duplicates, and identity is
+  consistent across restarts.
 
 ## 5. Proposed module layout (`jdss/`, sibling of `backend/` `web/` `front/`)
 
@@ -115,7 +116,7 @@ jdss/
       alerts.py      # warnings         ⇄  alert
       reports.py     # reports/9-liners ⇄  report
       overlays.py    # graphics         ⇄  tactical-object
-  state/             # correlation store (SQLite): UUID ⇄ Arrow id, origin tags
+  state/             # correlation store (PostgreSQL): UUID ⇄ Arrow id, origin tags
   arrow_io/
       rest.py        # authenticated REST client (service JWT)
       ws.py          # resilient WS subscriber (auto-reconnect, backpressure)

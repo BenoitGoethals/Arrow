@@ -50,5 +50,10 @@ def log_event(
     _log.log(
         level,
         "AUDIT event=%s outcome=%s op_id=%s resource=%s ip=%s detail=%s",
-        event_type, outcome, operator_id, resource, ip_address, detail,
+        event_type,
+        outcome,
+        operator_id,
+        resource,
+        ip_address,
+        detail,
     )

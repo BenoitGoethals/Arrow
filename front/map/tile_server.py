@@ -8,13 +8,14 @@ Routes
 /qwebchannel.js             → qwebchannel.js
 /{mbt_id}/{z}/{x}/{y}.png   → MBTiles tile for the given layer id
 """
+
 from __future__ import annotations
 
 import mimetypes
 import sqlite3
 import threading
 import uuid
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Optional
 
@@ -42,9 +43,9 @@ class _Handler(BaseHTTPRequestHandler):
             parts = path.strip("/").split("/")
             if len(parts) == 4:
                 mbt_id = parts[0]
-                z, x   = int(parts[1]), int(parts[2])
-                y      = int(parts[3].split(".")[0])
-                tms_y  = (1 << z) - 1 - y
+                z, x = int(parts[1]), int(parts[2])
+                y = int(parts[3].split(".")[0])
+                tms_y = (1 << z) - 1 - y
                 srv: MBTilesServer = self.server._mbtiles_server  # type: ignore
                 tile = srv.get_tile(mbt_id, z, x, tms_y)
                 if tile:
@@ -83,7 +84,7 @@ class _Handler(BaseHTTPRequestHandler):
             # the threading server dump a traceback.
             try:
                 self.wfile.write(body)
-            except (ConnectionError, OSError):
+            except ConnectionError, OSError:
                 pass
 
     def log_message(self, *args):
@@ -96,10 +97,10 @@ class MBTilesDB:
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._lock = threading.Lock()
         meta = dict(self._conn.execute("SELECT name, value FROM metadata").fetchall())
-        self.name     = meta.get("name", Path(path).stem)
+        self.name = meta.get("name", Path(path).stem)
         self.min_zoom = int(meta.get("minzoom", 0))
         self.max_zoom = int(meta.get("maxzoom", 18))
-        self.format   = meta.get("format", "png")
+        self.format = meta.get("format", "png")
 
     def get_tile(self, z: int, x: int, tms_y: int) -> Optional[bytes]:
         with self._lock:
@@ -125,9 +126,9 @@ class MBTilesServer:
     """
 
     def __init__(self, port: int = 8743):
-        self._port   = port
-        self._dbs:   dict[str, MBTilesDB]    = {}  # mbt_id → db
-        self._httpd: Optional[HTTPServer]    = None
+        self._port = port
+        self._dbs: dict[str, MBTilesDB] = {}  # mbt_id → db
+        self._httpd: Optional[HTTPServer] = None
         self._thread: Optional[threading.Thread] = None
 
     # ── MBTiles ──────────────────────────────────────────────────────────────
@@ -175,8 +176,8 @@ class MBTilesServer:
         # connection keeps asset loads from stalling each other.
         server = ThreadingHTTPServer(("127.0.0.1", self._port), _Handler)
         server.daemon_threads = True
-        server._mbtiles_server = self   # type: ignore[attr-defined]
-        self._httpd  = server
+        server._mbtiles_server = self  # type: ignore[attr-defined]
+        self._httpd = server
         self._thread = threading.Thread(
             target=server.serve_forever, daemon=True, name="map-http"
         )

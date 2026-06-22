@@ -170,15 +170,23 @@ class AlertOut(ORMModel):
     timestamp: datetime
     status: str
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def _pull_callsign(cls, data):
-        if not isinstance(data, dict) and hasattr(data, 'operator') and data.operator is not None:
+        if (
+            not isinstance(data, dict)
+            and hasattr(data, "operator")
+            and data.operator is not None
+        ):
             return {
-                'id': data.id, 'type': data.type, 'operator_id': data.operator_id,
-                'callsign': data.operator.callsign,
-                'latitude': data.latitude, 'longitude': data.longitude,
-                'timestamp': data.timestamp, 'status': data.status,
+                "id": data.id,
+                "type": data.type,
+                "operator_id": data.operator_id,
+                "callsign": data.operator.callsign,
+                "latitude": data.latitude,
+                "longitude": data.longitude,
+                "timestamp": data.timestamp,
+                "status": data.status,
             }
         return data
 
@@ -188,7 +196,7 @@ class MessageIn(BaseModel):
     group_id: str | None = None
     chatroom_id: int | None = None
     content: str = ""
-    message_type: str = "DIRECT"   # DIRECT | BROADCAST | ROOM
+    message_type: str = "DIRECT"  # DIRECT | BROADCAST | ROOM
     photo_id: int | None = None
 
 
@@ -270,14 +278,19 @@ class DroneSpotIn(BaseModel):
     Stored as a Report with `type="DRONE_SPOT"` and an Alert with
     `type="DRONE_SPOTTED"` so map + alerts both pick it up.
     """
-    latitude:      float
-    longitude:     float
-    drone_type:    str   = "UNKNOWN"   # QUADCOPTER | FIXED_WING | FPV | LOITERING_MUNITION | ISR | UNKNOWN | <model>
-    altitude_m:    float | None = None
+
+    latitude: float
+    longitude: float
+    drone_type: str = (
+        "UNKNOWN"  # QUADCOPTER | FIXED_WING | FPV | LOITERING_MUNITION | ISR | UNKNOWN | <model>
+    )
+    altitude_m: float | None = None
     direction_deg: float | None = None  # 0..359, bearing of travel
-    speed_kts:     float | None = None
-    behavior:      str   = "UNKNOWN"   # HOVERING | TRANSITING | ATTACK_RUN | RECONNAISSANCE | LOITERING | EVADING | UNKNOWN
-    notes:         str   = ""
+    speed_kts: float | None = None
+    behavior: str = (
+        "UNKNOWN"  # HOVERING | TRANSITING | ATTACK_RUN | RECONNAISSANCE | LOITERING | EVADING | UNKNOWN
+    )
+    notes: str = ""
 
 
 class ReportUpdate(BaseModel):
@@ -299,24 +312,24 @@ class ReportOut(ORMModel):
 
 
 class LogrepRouteIn(BaseModel):
-    destinations: list[str]   # ["S1", "S2", "COY_A", …]
+    destinations: list[str]  # ["S1", "S2", "COY_A", …]
 
 
 class LogrepRouteFeedbackIn(BaseModel):
     feedback_text: str
-    feedback_by:   str = ""   # callsign of the responder
+    feedback_by: str = ""  # callsign of the responder
 
 
 class LogrepRouteOut(ORMModel):
-    id:            int
-    report_id:     int
-    destination:   str
-    routed_by:     int
-    routed_at:     datetime
-    status:        str
+    id: int
+    report_id: int
+    destination: str
+    routed_by: int
+    routed_at: datetime
+    status: str
     feedback_text: str
-    feedback_by:   str
-    feedback_at:   datetime | None
+    feedback_by: str
+    feedback_at: datetime | None
 
 
 class CasNineLinerIn(BaseModel):
@@ -325,125 +338,127 @@ class CasNineLinerIn(BaseModel):
     Line 5 carries both the human-readable MGRS string and the exact WGS-84
     coordinates so the backend can geocode and broadcast a map marker.
     """
+
     # Standard 9-liner lines
-    line_1: str = ""   # IP (Initial Point)
-    line_2: str = ""   # Heading / Distance from IP to target
-    line_3: str = ""   # Target elevation MSL
-    line_4: str = ""   # Target description
+    line_1: str = ""  # IP (Initial Point)
+    line_2: str = ""  # Heading / Distance from IP to target
+    line_3: str = ""  # Target elevation MSL
+    line_4: str = ""  # Target description
     # Line 5: target location — provided as MGRS + optional precise lat/lon
     line_5_mgrs: str = ""
-    line_5_lat:  float | None = None
-    line_5_lon:  float | None = None
-    line_6: str = ""   # Type of mark (Laser / Smoke / IR pointer / Mark-63 / None)
-    line_7: str = ""   # Friendly location relative to target
-    line_8: str = ""   # Egress direction
-    line_9: str = ""   # Remarks / Threats / TOT
+    line_5_lat: float | None = None
+    line_5_lon: float | None = None
+    line_6: str = ""  # Type of mark (Laser / Smoke / IR pointer / Mark-63 / None)
+    line_7: str = ""  # Friendly location relative to target
+    line_8: str = ""  # Egress direction
+    line_9: str = ""  # Remarks / Threats / TOT
     # CAS request metadata
-    tic: bool = False               # Troops In Contact — triggers priority WS event
-    fo_operator_id: int | None = None   # Forward Observer assigned to this request
-    asset_id: int | None = None         # CAS asset nominated for the mission
+    tic: bool = False  # Troops In Contact — triggers priority WS event
+    fo_operator_id: int | None = None  # Forward Observer assigned to this request
+    asset_id: int | None = None  # CAS asset nominated for the mission
 
 
 class CasAssetIn(BaseModel):
-    callsign:      str
+    callsign: str
     aircraft_type: str = ""
-    ordnance:      str = ""
-    frequency:     str = ""
-    status:        str = "AVAILABLE"
+    ordnance: str = ""
+    frequency: str = ""
+    status: str = "AVAILABLE"
     available_from: datetime | None = None
-    available_to:   datetime | None = None
-    notes:          str = ""
-    mission_id:     int | None = None
+    available_to: datetime | None = None
+    notes: str = ""
+    mission_id: int | None = None
 
 
 class CasAssetUpdate(BaseModel):
-    callsign:      str | None = None
+    callsign: str | None = None
     aircraft_type: str | None = None
-    ordnance:      str | None = None
-    frequency:     str | None = None
-    status:        str | None = None
+    ordnance: str | None = None
+    frequency: str | None = None
+    status: str | None = None
     available_from: datetime | None = None
-    available_to:   datetime | None = None
-    notes:          str | None = None
+    available_to: datetime | None = None
+    notes: str | None = None
 
 
 class CasAssetOut(ORMModel):
-    id:            int
-    callsign:      str
+    id: int
+    callsign: str
     aircraft_type: str
-    ordnance:      str
-    frequency:     str
-    status:        str
+    ordnance: str
+    frequency: str
+    status: str
     available_from: datetime | None
-    available_to:   datetime | None
-    notes:          str
-    mission_id:     int | None
-    created_by:     int
-    created_at:     datetime
-    updated_at:     datetime
+    available_to: datetime | None
+    notes: str
+    mission_id: int | None
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
 
 
 class FireMissionIn(BaseModel):
-    latitude:     float
-    longitude:    float
-    altitude:     float  = 0.0
-    direction:    float               # azimuth ° (observer → target)
-    mission_type: str                 # ADJUST_FIRE | FIRE_FOR_EFFECT | SUPPRESSION | ILLUMINATION
-    ammunition:   str                 # HE | ILLUM | SMOKE | WP | ICM | MIXED
-    quantity:     int    = 1
-    description:  str    = ""
+    latitude: float
+    longitude: float
+    altitude: float = 0.0
+    direction: float  # azimuth ° (observer → target)
+    mission_type: str  # ADJUST_FIRE | FIRE_FOR_EFFECT | SUPPRESSION | ILLUMINATION
+    ammunition: str  # HE | ILLUM | SMOKE | WP | ICM | MIXED
+    quantity: int = 1
+    description: str = ""
 
 
 class FireMissionUpdate(BaseModel):
-    status:          str | None = None
+    status: str | None = None
     fdc_operator_id: int | None = None
-    notes:           str | None = None
+    notes: str | None = None
 
 
 class FireMissionOut(ORMModel):
-    id:              int
-    operator_id:     int
-    latitude:        float
-    longitude:       float
-    altitude:        float
-    direction:       float
-    mission_type:    str
-    ammunition:      str
-    quantity:        int
-    description:     str
-    status:          str
+    id: int
+    operator_id: int
+    latitude: float
+    longitude: float
+    altitude: float
+    direction: float
+    mission_type: str
+    ammunition: str
+    quantity: int
+    description: str
+    status: str
     fdc_operator_id: int | None
-    timestamp:       datetime
-    notes:           str
+    timestamp: datetime
+    notes: str
 
 
 class CotTrackOut(ORMModel):
-    id:        int
-    cot_uid:   str
-    cot_type:  str
-    callsign:  str
-    latitude:  float
+    id: int
+    cot_uid: str
+    cot_type: str
+    callsign: str
+    latitude: float
     longitude: float
-    hae:       float
-    speed:     float
-    course:    float
-    team:      str
-    remarks:   str | None = None
+    hae: float
+    speed: float
+    course: float
+    team: str
+    remarks: str | None = None
     last_seen: datetime
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def sidc(self) -> str:
         from backend.cot.cot import cot_type_to_sidc  # noqa: PLC0415
+
         return cot_type_to_sidc(self.cot_type)
 
 
 class AtakShapeOut(ORMModel):
-    id:            int
-    uid:           str
-    cot_type:      str
-    shape_type:    str
-    title:         str
-    callsign:      str
+    id: int
+    uid: str
+    cot_type: str
+    shape_type: str
+    title: str
+    callsign: str
     geometry_json: str
-    last_seen:     datetime
+    last_seen: datetime

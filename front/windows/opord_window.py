@@ -4,23 +4,37 @@ Opens in view mode for existing OPORDs or edit mode for new ones.
 Paragraphs: Header · 1.Situation · 2.Mission · 3.Execution ·
             4.Sustainment · 5.Command & Signal · Snapshots · Distribution
 """
+
 from __future__ import annotations
 import base64
 import json
 import urllib.request
-from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QTextEdit, QLineEdit, QComboBox,
-    QListWidget, QListWidgetItem, QFrame, QScrollArea,
-    QStackedWidget, QSplitter, QMessageBox, QCheckBox,
-    QFormLayout, QSizePolicy, QFileDialog, QInputDialog,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTextEdit,
+    QLineEdit,
+    QComboBox,
+    QListWidget,
+    QListWidgetItem,
+    QFrame,
+    QScrollArea,
+    QStackedWidget,
+    QSplitter,
+    QMessageBox,
+    QSizePolicy,
+    QFileDialog,
+    QInputDialog,
     QGridLayout,
 )
 from PyQt6.QtCore import Qt, QThread, QBuffer, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QShortcut, QFont, QColor, QPixmap
+from PyQt6.QtGui import QKeySequence, QShortcut, QFont, QPixmap
 
 
 def _pixmap_to_b64(px: "QPixmap") -> str:
@@ -33,7 +47,8 @@ def _pixmap_to_b64(px: "QPixmap") -> str:
 
 class _SnapCard(QFrame):
     """Thumbnail card for a single OPORD snapshot."""
-    delete_requested = pyqtSignal(int)   # snap_id
+
+    delete_requested = pyqtSignal(int)  # snap_id
 
     _CARD_W = 240
     _THUMB_H = 160
@@ -68,7 +83,9 @@ class _SnapCard(QFrame):
 
         label_text = snap.get("label") or snap.get("annotations") or "Snapshot"
         lbl = QLabel(label_text)
-        lbl.setStyleSheet("color:#c9d1d9;font-size:9px;border:none;background:transparent;")
+        lbl.setStyleSheet(
+            "color:#c9d1d9;font-size:9px;border:none;background:transparent;"
+        )
         lbl.setWordWrap(True)
         row.addWidget(lbl, 1)
 
@@ -84,7 +101,8 @@ class _SnapCard(QFrame):
 
     def set_pixmap(self, px: "QPixmap"):
         scaled = px.scaled(
-            self._CARD_W - 2, self._THUMB_H,
+            self._CARD_W - 2,
+            self._THUMB_H,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -94,13 +112,14 @@ class _SnapCard(QFrame):
 
 class _ThumbLoader(QThread):
     """Download one image with Bearer auth; emit raw bytes on main thread."""
-    loaded = pyqtSignal(int, bytes)   # snap_id, data
+
+    loaded = pyqtSignal(int, bytes)  # snap_id, data
 
     def __init__(self, snap_id: int, url: str, token: str):
         super().__init__()
         self._snap_id = snap_id
-        self._url     = url
-        self._token   = token
+        self._url = url
+        self._token = token
 
     def run(self):
         try:
@@ -109,6 +128,7 @@ class _ThumbLoader(QThread):
                 headers={"Authorization": f"Bearer {self._token}"},
             )
             from front.utils.ssl_utils import NO_VERIFY_CTX
+
             with urllib.request.urlopen(req, timeout=10, context=NO_VERIFY_CTX) as resp:
                 data = resp.read()
             self.loaded.emit(self._snap_id, data)
@@ -120,20 +140,26 @@ class _ThumbLoader(QThread):
 
 _MONO = QFont("Courier New", 10)
 _SANS = QFont("Segoe UI", 10)
-_SEP_STYLE  = "background:#21262d;max-height:1px;"
-_HDR_STYLE  = ("color:#8b949e;font-size:9px;font-weight:700;"
-               "letter-spacing:2px;text-transform:uppercase;"
-               "padding:8px 0 3px;")
-_FIELD_STYLE = ("QLineEdit,QTextEdit,QComboBox{"
-                "background:#161b22;border:1px solid #30363d;"
-                "color:#c9d1d9;border-radius:2px;padding:4px 6px;}"
-                "QLineEdit:focus,QTextEdit:focus{border-color:#388bfd;}"
-                "QComboBox QAbstractItemView{background:#161b22;color:#c9d1d9;}")
+_SEP_STYLE = "background:#21262d;max-height:1px;"
+_HDR_STYLE = (
+    "color:#8b949e;font-size:9px;font-weight:700;"
+    "letter-spacing:2px;text-transform:uppercase;"
+    "padding:8px 0 3px;"
+)
+_FIELD_STYLE = (
+    "QLineEdit,QTextEdit,QComboBox{"
+    "background:#161b22;border:1px solid #30363d;"
+    "color:#c9d1d9;border-radius:2px;padding:4px 6px;}"
+    "QLineEdit:focus,QTextEdit:focus{border-color:#388bfd;}"
+    "QComboBox QAbstractItemView{background:#161b22;color:#c9d1d9;}"
+)
+
 
 def _make_label(text: str) -> QLabel:
     l = QLabel(text)
     l.setStyleSheet(_HDR_STYLE)
     return l
+
 
 def _make_field(placeholder: str = "", height: int = 0) -> QTextEdit:
     f = QTextEdit()
@@ -146,6 +172,7 @@ def _make_field(placeholder: str = "", height: int = 0) -> QTextEdit:
         f.setMinimumHeight(80)
     return f
 
+
 def _make_line(placeholder: str = "") -> QLineEdit:
     f = QLineEdit()
     f.setPlaceholderText(placeholder)
@@ -153,10 +180,14 @@ def _make_line(placeholder: str = "") -> QLineEdit:
     f.setStyleSheet(_FIELD_STYLE)
     return f
 
+
 def _sep() -> QFrame:
-    f = QFrame(); f.setFrameShape(QFrame.Shape.HLine)
-    f.setStyleSheet(_SEP_STYLE); f.setFixedHeight(1)
+    f = QFrame()
+    f.setFrameShape(QFrame.Shape.HLine)
+    f.setStyleSheet(_SEP_STYLE)
+    f.setFixedHeight(1)
     return f
+
 
 def _scroll_wrap(widget: QWidget) -> QScrollArea:
     sa = QScrollArea()
@@ -166,19 +197,27 @@ def _scroll_wrap(widget: QWidget) -> QScrollArea:
     sa.setWidget(widget)
     return sa
 
+
 def _to_str(v) -> str:
-    if v is None: return ""
-    if isinstance(v, dict): return json.dumps(v, indent=2, ensure_ascii=False)
+    if v is None:
+        return ""
+    if isinstance(v, dict):
+        return json.dumps(v, indent=2, ensure_ascii=False)
     return str(v)
+
 
 def _from_json(text: str):
     text = text.strip()
-    if not text: return {}
-    try: return json.loads(text)
-    except Exception: return text
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except Exception:
+        return text
 
 
 # ── Sidebar nav button ─────────────────────────────────────────────────────────
+
 
 class _NavBtn(QPushButton):
     def __init__(self, text: str):
@@ -197,22 +236,28 @@ class _NavBtn(QPushButton):
 
 # ── OPORD Window ───────────────────────────────────────────────────────────────
 
+
 class OpordWindow(QMainWindow):
     """View or edit an OPORD. Pass opord_data=None to create a new one."""
 
-    saved    = pyqtSignal(dict)    # emitted after successful save
-    published = pyqtSignal(dict)   # emitted after publish
+    saved = pyqtSignal(dict)  # emitted after successful save
+    published = pyqtSignal(dict)  # emitted after publish
 
-    def __init__(self, client, opord_data: Optional[dict] = None,
-                 map_capture_fn: Optional[Callable] = None, parent=None):
+    def __init__(
+        self,
+        client,
+        opord_data: Optional[dict] = None,
+        map_capture_fn: Optional[Callable] = None,
+        parent=None,
+    ):
         super().__init__(parent)
-        self._client         = client
-        self._opord          = opord_data or {}
+        self._client = client
+        self._opord = opord_data or {}
         self._opord_id: Optional[int] = opord_data.get("id") if opord_data else None
-        self._is_new         = self._opord_id is None
-        self._map_capture_fn = map_capture_fn   # callable → QPixmap | None
+        self._is_new = self._opord_id is None
+        self._map_capture_fn = map_capture_fn  # callable → QPixmap | None
         self._thumb_loaders: list[_ThumbLoader] = []
-        self._snap_cards: dict[int, _SnapCard] = {}   # snap_id → card widget
+        self._snap_cards: dict[int, _SnapCard] = {}  # snap_id → card widget
 
         title = self._opord.get("title", "New OPORD") if opord_data else "New OPORD"
         self.setWindowTitle(f"OPORD — {title}")
@@ -250,14 +295,16 @@ class OpordWindow(QMainWindow):
         self._status_badge = QLabel("DRAFT")
         self._status_badge.setStyleSheet(
             "background:#1a1208;color:#d29922;border:1px solid #d29922;"
-            "font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:1px;")
+            "font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:1px;"
+        )
         tb.addWidget(self._status_badge)
 
         self._save_btn = QPushButton("💾  SAVE")
         self._save_btn.setStyleSheet(
             "QPushButton{background:#1f6feb;border:1px solid #388bfd;"
             "color:#fff;font-weight:700;padding:5px 14px;border-radius:2px;}"
-            "QPushButton:hover{background:#388bfd;}")
+            "QPushButton:hover{background:#388bfd;}"
+        )
         self._save_btn.clicked.connect(self._save)
         tb.addWidget(self._save_btn)
 
@@ -267,7 +314,8 @@ class OpordWindow(QMainWindow):
             "QPushButton{background:#1a3020;border:1px solid #3fb950;"
             "color:#3fb950;font-weight:700;padding:5px 14px;border-radius:2px;}"
             "QPushButton:hover:!disabled{background:#3fb950;color:#0d1117;}"
-            "QPushButton:disabled{color:#30363d;border-color:#21262d;}")
+            "QPushButton:disabled{color:#30363d;border-color:#21262d;}"
+        )
         self._pub_btn.clicked.connect(self._publish)
         tb.addWidget(self._pub_btn)
 
@@ -277,7 +325,8 @@ class OpordWindow(QMainWindow):
             "QPushButton{background:#21262d;border:1px solid #30363d;"
             "color:#8b949e;font-weight:700;padding:5px 14px;border-radius:2px;}"
             "QPushButton:hover:!disabled{background:#30363d;color:#c9d1d9;}"
-            "QPushButton:disabled{color:#30363d;border-color:#21262d;}")
+            "QPushButton:disabled{color:#30363d;border-color:#21262d;}"
+        )
         self._send_btn.clicked.connect(self._send)
         tb.addWidget(self._send_btn)
 
@@ -294,18 +343,18 @@ class OpordWindow(QMainWindow):
         sb.setContentsMargins(0, 8, 0, 8)
         sb.setSpacing(2)
 
-        self._stack   = QStackedWidget()
+        self._stack = QStackedWidget()
         self._nav_btns: list[_NavBtn] = []
 
         pages = [
-            ("📑  HEADER",         self._build_header()),
-            ("1.  SITUATION",       self._build_situation()),
-            ("2.  MISSION",         self._build_mission()),
-            ("3.  EXECUTION",       self._build_execution()),
-            ("4.  SUSTAINMENT",     self._build_sustainment()),
-            ("5.  CMD & SIGNAL",    self._build_cs()),
-            ("📸  SNAPSHOTS",       self._build_snapshots()),
-            ("📤  DISTRIBUTION",   self._build_distribution()),
+            ("📑  HEADER", self._build_header()),
+            ("1.  SITUATION", self._build_situation()),
+            ("2.  MISSION", self._build_mission()),
+            ("3.  EXECUTION", self._build_execution()),
+            ("4.  SUSTAINMENT", self._build_sustainment()),
+            ("5.  CMD & SIGNAL", self._build_cs()),
+            ("📸  SNAPSHOTS", self._build_snapshots()),
+            ("📤  DISTRIBUTION", self._build_distribution()),
         ]
         for i, (label, page) in enumerate(pages):
             btn = _NavBtn(label)
@@ -337,31 +386,38 @@ class OpordWindow(QMainWindow):
     # ── Page builders ──────────────────────────────────────────────────────────
 
     def _build_header(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(8)
 
         lay.addWidget(_make_label("Title"))
         self._f_title = _make_line("e.g. OPORD 01 — OPERATION STEEL TIDE")
         lay.addWidget(self._f_title)
 
-        row = QHBoxLayout(); row.setSpacing(8)
-        col1 = QVBoxLayout(); col1.setSpacing(4)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        col1 = QVBoxLayout()
+        col1.setSpacing(4)
         col1.addWidget(_make_label("OPORD Number"))
         self._f_num = _make_line("01")
         col1.addWidget(self._f_num)
 
-        col2 = QVBoxLayout(); col2.setSpacing(4)
+        col2 = QVBoxLayout()
+        col2.setSpacing(4)
         col2.addWidget(_make_label("DTG"))
         self._f_dtg = _make_line("011800ZJUN2026")
         col2.addWidget(self._f_dtg)
 
-        col3 = QVBoxLayout(); col3.setSpacing(4)
+        col3 = QVBoxLayout()
+        col3.setSpacing(4)
         col3.addWidget(_make_label("Time Zone"))
         self._f_tz = _make_line("Z")
         self._f_tz.setFixedWidth(60)
         col3.addWidget(self._f_tz)
 
-        col4 = QVBoxLayout(); col4.setSpacing(4)
+        col4 = QVBoxLayout()
+        col4.setSpacing(4)
         col4.addWidget(_make_label("Classification"))
         self._f_class = QComboBox()
         self._f_class.addItems(["UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET"])
@@ -379,23 +435,35 @@ class OpordWindow(QMainWindow):
 
         lay.addWidget(_make_label("Task Organization"))
         self._f_taskorg = _make_field(
-            "List assigned/attached units, OPCON/TACON arrangements, effective times…", 120)
+            "List assigned/attached units, OPCON/TACON arrangements, effective times…",
+            120,
+        )
         lay.addWidget(self._f_taskorg)
         lay.addStretch()
         return w
 
     def _build_situation(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
-        lay.addWidget(QLabel("PARAGRAPH 1 — SITUATION",
-            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(8)
+        lay.addWidget(
+            QLabel(
+                "PARAGRAPH 1 — SITUATION",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
 
         lay.addWidget(_make_label("a. Enemy Forces"))
-        self._f_enemy = _make_field("Enemy order of battle, disposition, strengths, capabilities, COAs…", 120)
+        self._f_enemy = _make_field(
+            "Enemy order of battle, disposition, strengths, capabilities, COAs…", 120
+        )
         lay.addWidget(self._f_enemy)
 
         lay.addWidget(_make_label("b. Friendly Forces"))
-        self._f_friendly = _make_field("Higher HQ mission, adjacent units, supporting units…", 100)
+        self._f_friendly = _make_field(
+            "Higher HQ mission, adjacent units, supporting units…", 100
+        )
         lay.addWidget(self._f_friendly)
 
         lay.addWidget(_make_label("c. Attachments & Detachments"))
@@ -403,43 +471,71 @@ class OpordWindow(QMainWindow):
         lay.addWidget(self._f_attach)
 
         lay.addWidget(_make_label("d. Terrain & Weather"))
-        self._f_terrain = _make_field("Key terrain, obstacles, avenues of approach, weather impact…", 80)
+        self._f_terrain = _make_field(
+            "Key terrain, obstacles, avenues of approach, weather impact…", 80
+        )
         lay.addWidget(self._f_terrain)
 
         lay.addStretch()
         return w
 
     def _build_mission(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
-        lay.addWidget(QLabel("PARAGRAPH 2 — MISSION",
-            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
-        lay.addWidget(QLabel(
-            "Who · What · When · Where · Why (5W format)\n"
-            "e.g. A COY / 1-75 RGR conducts an air-assault raid on OBJ HAMMER NLT H+45 to DESTROY…",
-            styleSheet="color:#6e7681;font-size:9px;"))
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(8)
+        lay.addWidget(
+            QLabel(
+                "PARAGRAPH 2 — MISSION",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
+        lay.addWidget(
+            QLabel(
+                "Who · What · When · Where · Why (5W format)\n"
+                "e.g. A COY / 1-75 RGR conducts an air-assault raid on OBJ HAMMER NLT H+45 to DESTROY…",
+                styleSheet="color:#6e7681;font-size:9px;",
+            )
+        )
         self._f_mission = _make_field("", 200)
         lay.addWidget(self._f_mission)
         lay.addStretch()
         return w
 
     def _build_execution(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
-        lay.addWidget(QLabel("PARAGRAPH 3 — EXECUTION",
-            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(8)
+        lay.addWidget(
+            QLabel(
+                "PARAGRAPH 3 — EXECUTION",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
 
         for attr, label, ph in [
-            ("_f_intent",     "a. Commander's Intent",
-             "End state, key tasks, risk…"),
-            ("_f_concept",    "b. Concept of Operations",
-             "Scheme of manoeuvre, phase plan, main/supporting efforts…"),
-            ("_f_tasks",      "c. Tasks to Manoeuvre Units",
-             "By unit: task and purpose for each subordinate element…"),
-            ("_f_fires",      "d. Fire Support Plan",
-             "Pre-planned fires, CFL/NFL, on-call targets, restrictions…"),
-            ("_f_roe",        "e. Rules of Engagement",
-             "Positive ID, restricted areas, escalation of force…"),
+            ("_f_intent", "a. Commander's Intent", "End state, key tasks, risk…"),
+            (
+                "_f_concept",
+                "b. Concept of Operations",
+                "Scheme of manoeuvre, phase plan, main/supporting efforts…",
+            ),
+            (
+                "_f_tasks",
+                "c. Tasks to Manoeuvre Units",
+                "By unit: task and purpose for each subordinate element…",
+            ),
+            (
+                "_f_fires",
+                "d. Fire Support Plan",
+                "Pre-planned fires, CFL/NFL, on-call targets, restrictions…",
+            ),
+            (
+                "_f_roe",
+                "e. Rules of Engagement",
+                "Positive ID, restricted areas, escalation of force…",
+            ),
         ]:
             lay.addWidget(_make_label(label))
             field = _make_field(ph, 100)
@@ -450,16 +546,38 @@ class OpordWindow(QMainWindow):
         return w
 
     def _build_sustainment(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
-        lay.addWidget(QLabel("PARAGRAPH 4 — SUSTAINMENT",
-            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(8)
+        lay.addWidget(
+            QLabel(
+                "PARAGRAPH 4 — SUSTAINMENT",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
 
         for attr, label, ph in [
-            ("_f_supply",  "a. Supply",        "Class I–X, POL, ammunition plan, resupply points…"),
-            ("_f_maint",   "b. Maintenance",   "Vehicle recovery, equipment serviceability SOP…"),
-            ("_f_medical", "c. Medical",        "9-liner procedures, CASEVAC plan, CCP locations, MEDEVAC strip-alert…"),
-            ("_f_trans",   "d. Transportation", "Lift plan, serial manifests, chalk load plans…"),
+            (
+                "_f_supply",
+                "a. Supply",
+                "Class I–X, POL, ammunition plan, resupply points…",
+            ),
+            (
+                "_f_maint",
+                "b. Maintenance",
+                "Vehicle recovery, equipment serviceability SOP…",
+            ),
+            (
+                "_f_medical",
+                "c. Medical",
+                "9-liner procedures, CASEVAC plan, CCP locations, MEDEVAC strip-alert…",
+            ),
+            (
+                "_f_trans",
+                "d. Transportation",
+                "Lift plan, serial manifests, chalk load plans…",
+            ),
         ]:
             lay.addWidget(_make_label(label))
             field = _make_field(ph, 80)
@@ -470,17 +588,39 @@ class OpordWindow(QMainWindow):
         return w
 
     def _build_cs(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
-        lay.addWidget(QLabel("PARAGRAPH 5 — COMMAND & SIGNAL",
-            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(8)
+        lay.addWidget(
+            QLabel(
+                "PARAGRAPH 5 — COMMAND & SIGNAL",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
 
         for attr, label, ph in [
-            ("_f_cp",        "a. Command Posts",    "CP locations, jump CP, TAC CP…"),
-            ("_f_succession","b. Succession",        "CO → XO → OPS → PLT LDR order of succession…"),
-            ("_f_freqs",     "c. Radio Frequencies", "Primary, alternate, CASEVAC, CAS frequencies…"),
-            ("_f_signals",   "d. Signals",           "Pyros, IR strobes, CEOI references, challenge/password…"),
-            ("_f_pace",      "e. PACE Plan",         "Primary / Alternate / Contingency / Emergency comms…"),
+            ("_f_cp", "a. Command Posts", "CP locations, jump CP, TAC CP…"),
+            (
+                "_f_succession",
+                "b. Succession",
+                "CO → XO → OPS → PLT LDR order of succession…",
+            ),
+            (
+                "_f_freqs",
+                "c. Radio Frequencies",
+                "Primary, alternate, CASEVAC, CAS frequencies…",
+            ),
+            (
+                "_f_signals",
+                "d. Signals",
+                "Pyros, IR strobes, CEOI references, challenge/password…",
+            ),
+            (
+                "_f_pace",
+                "e. PACE Plan",
+                "Primary / Alternate / Contingency / Emergency comms…",
+            ),
         ]:
             lay.addWidget(_make_label(label))
             field = _make_field(ph, 70)
@@ -496,8 +636,12 @@ class OpordWindow(QMainWindow):
         lay.setContentsMargins(24, 16, 24, 16)
         lay.setSpacing(10)
 
-        lay.addWidget(QLabel("MAP SNAPSHOTS & ATTACHMENTS",
-            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
+        lay.addWidget(
+            QLabel(
+                "MAP SNAPSHOTS & ATTACHMENTS",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
 
         # ── Action buttons ────────────────────────────────────────────
         btn_row = QHBoxLayout()
@@ -532,11 +676,13 @@ class OpordWindow(QMainWindow):
         btn_row.addWidget(self._snap_refresh_btn)
         lay.addLayout(btn_row)
 
-        lay.addWidget(QLabel(
-            "Save the OPORD first before adding snapshots.",
-            styleSheet="color:#6e7681;font-size:9px;",
-            objectName="snap_hint",
-        ))
+        lay.addWidget(
+            QLabel(
+                "Save the OPORD first before adding snapshots.",
+                styleSheet="color:#6e7681;font-size:9px;",
+                objectName="snap_hint",
+            )
+        )
         lay.addWidget(_sep())
 
         # ── Scrollable snapshot grid ──────────────────────────────────
@@ -561,13 +707,15 @@ class OpordWindow(QMainWindow):
         if not self._opord_id:
             if not self._f_title.text().strip():
                 QMessageBox.information(
-                    self, "Title Required",
-                    "Please fill in the OPORD title (Header page) before saving."
+                    self,
+                    "Title Required",
+                    "Please fill in the OPORD title (Header page) before saving.",
                 )
-                self._switch(0)   # jump to HEADER
+                self._switch(0)  # jump to HEADER
                 return False
             ans = QMessageBox.question(
-                self, "Save First",
+                self,
+                "Save First",
                 "The OPORD must be saved before adding snapshots. Save now?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             )
@@ -579,7 +727,9 @@ class OpordWindow(QMainWindow):
     def _capture_map(self):
         if not self._ensure_saved():
             return
-        label, ok = QInputDialog.getText(self, "Snapshot Label", "Label for this snapshot:")
+        label, ok = QInputDialog.getText(
+            self, "Snapshot Label", "Label for this snapshot:"
+        )
         if not ok:
             return
         label = label.strip() or "Map Snapshot"
@@ -602,13 +752,17 @@ class OpordWindow(QMainWindow):
         if not self._ensure_saved():
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Attach Image", "",
-            "Images (*.png *.jpg *.jpeg *.gif *.webp);;All Files (*)"
+            self,
+            "Attach Image",
+            "",
+            "Images (*.png *.jpg *.jpeg *.gif *.webp);;All Files (*)",
         )
         if not path:
             return
         label, ok = QInputDialog.getText(
-            self, "Attachment Label", "Label for this attachment:",
+            self,
+            "Attachment Label",
+            "Label for this attachment:",
             text=path.split("/")[-1].rsplit(".", 1)[0],
         )
         if not ok:
@@ -627,7 +781,8 @@ class OpordWindow(QMainWindow):
 
     def _delete_snapshot(self, snap_id: int):
         ans = QMessageBox.question(
-            self, "Delete Snapshot",
+            self,
+            "Delete Snapshot",
             "Delete this snapshot? This cannot be undone.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
@@ -658,14 +813,11 @@ class OpordWindow(QMainWindow):
         hint = self.findChild(QLabel, "snap_hint")
         if hint:
             hint.setVisible(not has_id)
-        self._snap_capture_btn.setEnabled(
-            has_id and self._map_capture_fn is not None
-        )
+        self._snap_capture_btn.setEnabled(has_id and self._map_capture_fn is not None)
         self._snap_file_btn.setEnabled(has_id)
 
         if not snaps:
-            empty = QLabel("No snapshots yet." if has_id
-                           else "Save the OPORD first.")
+            empty = QLabel("No snapshots yet." if has_id else "Save the OPORD first.")
             empty.setStyleSheet("color:#6e7681;font-size:10px;padding:12px 0;")
             self._snap_grid.addWidget(empty, 0, 0)
             return
@@ -676,7 +828,7 @@ class OpordWindow(QMainWindow):
             card = _SnapCard(snap)
             card.delete_requested.connect(self._delete_snapshot)
             self._snap_grid.addWidget(card, i // cols, i % cols)
-            snap_id  = snap.get("id", i)
+            snap_id = snap.get("id", i)
             photo_id = snap.get("photo_id")
             if photo_id and token:
                 url = self._client.photo_url(photo_id)
@@ -695,12 +847,22 @@ class OpordWindow(QMainWindow):
                 card.set_pixmap(px)
 
     def _build_distribution(self) -> QWidget:
-        w = QWidget(); lay = QVBoxLayout(w)
-        lay.setContentsMargins(24, 16, 24, 16); lay.setSpacing(8)
-        lay.addWidget(QLabel("DISTRIBUTION LIST",
-            styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;"))
-        lay.addWidget(QLabel("Select operators to receive this OPORD:",
-            styleSheet="color:#6e7681;font-size:9px;"))
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(8)
+        lay.addWidget(
+            QLabel(
+                "DISTRIBUTION LIST",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
+        lay.addWidget(
+            QLabel(
+                "Select operators to receive this OPORD:",
+                styleSheet="color:#6e7681;font-size:9px;",
+            )
+        )
 
         # Select/deselect all
         btns = QHBoxLayout()
@@ -708,14 +870,26 @@ class OpordWindow(QMainWindow):
         clr_all = QPushButton("Clear All")
         for b in (sel_all, clr_all):
             b.setFixedHeight(24)
-            b.setStyleSheet("QPushButton{background:#21262d;border:1px solid #30363d;"
-                            "color:#8b949e;font-size:9px;padding:0 8px;border-radius:2px;}"
-                            "QPushButton:hover{color:#c9d1d9;}")
-        sel_all.clicked.connect(lambda: [self._dist_list.item(i).setCheckState(Qt.CheckState.Checked)
-                                          for i in range(self._dist_list.count())])
-        clr_all.clicked.connect(lambda: [self._dist_list.item(i).setCheckState(Qt.CheckState.Unchecked)
-                                          for i in range(self._dist_list.count())])
-        btns.addWidget(sel_all); btns.addWidget(clr_all); btns.addStretch()
+            b.setStyleSheet(
+                "QPushButton{background:#21262d;border:1px solid #30363d;"
+                "color:#8b949e;font-size:9px;padding:0 8px;border-radius:2px;}"
+                "QPushButton:hover{color:#c9d1d9;}"
+            )
+        sel_all.clicked.connect(
+            lambda: [
+                self._dist_list.item(i).setCheckState(Qt.CheckState.Checked)
+                for i in range(self._dist_list.count())
+            ]
+        )
+        clr_all.clicked.connect(
+            lambda: [
+                self._dist_list.item(i).setCheckState(Qt.CheckState.Unchecked)
+                for i in range(self._dist_list.count())
+            ]
+        )
+        btns.addWidget(sel_all)
+        btns.addWidget(clr_all)
+        btns.addStretch()
         lay.addLayout(btns)
 
         self._dist_list = QListWidget()
@@ -738,15 +912,18 @@ class OpordWindow(QMainWindow):
         self._f_tz.setText(o.get("time_zone", "Z"))
         cls = o.get("classification", "UNCLASSIFIED")
         idx = self._f_class.findText(cls)
-        if idx >= 0: self._f_class.setCurrentIndex(idx)
+        if idx >= 0:
+            self._f_class.setCurrentIndex(idx)
         self._f_refs.setPlainText(_to_str(o.get("references", "")))
         self._f_taskorg.setPlainText(_to_str(o.get("task_organization", "")))
 
         # Paragraph 1 — Situation (nested dict or string)
         sit = o.get("situation") or {}
         if isinstance(sit, str):
-            try: sit = json.loads(sit)
-            except Exception: sit = {"enemy": sit}
+            try:
+                sit = json.loads(sit)
+            except Exception:
+                sit = {"enemy": sit}
         self._f_enemy.setPlainText(_to_str(sit.get("enemy", "")))
         self._f_friendly.setPlainText(_to_str(sit.get("friendly", "")))
         self._f_attach.setPlainText(_to_str(sit.get("attachments", "")))
@@ -758,19 +935,33 @@ class OpordWindow(QMainWindow):
         # Paragraph 3 — Execution
         ex = o.get("execution") or {}
         if isinstance(ex, str):
-            try: ex = json.loads(ex)
-            except Exception: ex = {"concept_of_operations": ex}
-        self._f_intent.setPlainText(_to_str(ex.get("commanders_intent", ex.get("commander_intent", ""))))
-        self._f_concept.setPlainText(_to_str(ex.get("concept_of_operations", ex.get("concept", ""))))
-        self._f_tasks.setPlainText(_to_str(ex.get("tasks_by_element", ex.get("tasks", ""))))
-        self._f_fires.setPlainText(_to_str(ex.get("fire_support", ex.get("fire_plan", ""))))
-        self._f_roe.setPlainText(_to_str(ex.get("rules_of_engagement", ex.get("roe", ""))))
+            try:
+                ex = json.loads(ex)
+            except Exception:
+                ex = {"concept_of_operations": ex}
+        self._f_intent.setPlainText(
+            _to_str(ex.get("commanders_intent", ex.get("commander_intent", "")))
+        )
+        self._f_concept.setPlainText(
+            _to_str(ex.get("concept_of_operations", ex.get("concept", "")))
+        )
+        self._f_tasks.setPlainText(
+            _to_str(ex.get("tasks_by_element", ex.get("tasks", "")))
+        )
+        self._f_fires.setPlainText(
+            _to_str(ex.get("fire_support", ex.get("fire_plan", "")))
+        )
+        self._f_roe.setPlainText(
+            _to_str(ex.get("rules_of_engagement", ex.get("roe", "")))
+        )
 
         # Paragraph 4 — Sustainment
         sus = o.get("sustainment") or {}
         if isinstance(sus, str):
-            try: sus = json.loads(sus)
-            except Exception: sus = {"supply": sus}
+            try:
+                sus = json.loads(sus)
+            except Exception:
+                sus = {"supply": sus}
         self._f_supply.setPlainText(_to_str(sus.get("supply", "")))
         self._f_maint.setPlainText(_to_str(sus.get("maintenance", "")))
         self._f_medical.setPlainText(_to_str(sus.get("medical", "")))
@@ -779,11 +970,15 @@ class OpordWindow(QMainWindow):
         # Paragraph 5 — C&S
         cs = o.get("command_signal") or {}
         if isinstance(cs, str):
-            try: cs = json.loads(cs)
-            except Exception: cs = {"radio_freqs": cs}
+            try:
+                cs = json.loads(cs)
+            except Exception:
+                cs = {"radio_freqs": cs}
         self._f_cp.setPlainText(_to_str(cs.get("command_post", "")))
         self._f_succession.setPlainText(_to_str(cs.get("succession", "")))
-        self._f_freqs.setPlainText(_to_str(cs.get("radio_freqs", cs.get("frequencies", ""))))
+        self._f_freqs.setPlainText(
+            _to_str(cs.get("radio_freqs", cs.get("frequencies", "")))
+        )
         self._f_signals.setPlainText(_to_str(cs.get("signals", "")))
         self._f_pace.setPlainText(_to_str(cs.get("pace_plan", "")))
 
@@ -793,20 +988,22 @@ class OpordWindow(QMainWindow):
 
     def _update_title_bar(self):
         status = self._opord.get("status", "DRAFT")
-        title  = self._opord.get("title", "New OPORD")
+        title = self._opord.get("title", "New OPORD")
         self._title_label.setText(f"📋  {title}")
         self.setWindowTitle(f"OPORD — {title}")
         if status == "PUBLISHED":
             self._status_badge.setText("PUBLISHED")
             self._status_badge.setStyleSheet(
                 "background:#0d2b0d;color:#3fb950;border:1px solid #3fb950;"
-                "font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:1px;")
+                "font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:1px;"
+            )
         else:
             self._status_badge.setText("DRAFT")
             self._status_badge.setStyleSheet(
                 "background:#1a1208;color:#d29922;border:1px solid #d29922;"
-                "font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:1px;")
-        can_publish = (self._opord_id is not None and status == "DRAFT")
+                "font-size:9px;font-weight:700;padding:2px 8px;border-radius:2px;letter-spacing:1px;"
+            )
+        can_publish = self._opord_id is not None and status == "DRAFT"
         self._pub_btn.setEnabled(can_publish)
         self._send_btn.setEnabled(self._opord_id is not None and status == "PUBLISHED")
 
@@ -817,9 +1014,15 @@ class OpordWindow(QMainWindow):
             ops = self._client.live_operators()
             recipient_ids = set(self._opord.get("recipient_ids") or [])
             for op in ops:
-                item = QListWidgetItem(f"  {op.get('callsign','?')}  [{op.get('role','')}]")
+                item = QListWidgetItem(
+                    f"  {op.get('callsign','?')}  [{op.get('role','')}]"
+                )
                 item.setData(Qt.ItemDataRole.UserRole, op.get("id"))
-                checked = Qt.CheckState.Checked if op.get("id") in recipient_ids else Qt.CheckState.Unchecked
+                checked = (
+                    Qt.CheckState.Checked
+                    if op.get("id") in recipient_ids
+                    else Qt.CheckState.Unchecked
+                )
                 item.setCheckState(checked)
                 self._dist_list.addItem(item)
         except Exception:
@@ -837,39 +1040,39 @@ class OpordWindow(QMainWindow):
                     recipient_ids.append(rid)
 
         return {
-            "title":           self._f_title.text().strip(),
-            "opord_number":    self._f_num.text().strip(),
-            "dtg":             self._f_dtg.text().strip(),
-            "time_zone":       self._f_tz.text().strip() or "Z",
-            "classification":  self._f_class.currentText(),
-            "references":      self._f_refs.toPlainText().strip(),
+            "title": self._f_title.text().strip(),
+            "opord_number": self._f_num.text().strip(),
+            "dtg": self._f_dtg.text().strip(),
+            "time_zone": self._f_tz.text().strip() or "Z",
+            "classification": self._f_class.currentText(),
+            "references": self._f_refs.toPlainText().strip(),
             "task_organization": self._f_taskorg.toPlainText().strip(),
             "situation": {
-                "enemy":          self._f_enemy.toPlainText().strip(),
-                "friendly":       self._f_friendly.toPlainText().strip(),
-                "attachments":    self._f_attach.toPlainText().strip(),
+                "enemy": self._f_enemy.toPlainText().strip(),
+                "friendly": self._f_friendly.toPlainText().strip(),
+                "attachments": self._f_attach.toPlainText().strip(),
                 "terrain_weather": self._f_terrain.toPlainText().strip(),
             },
             "mission": self._f_mission.toPlainText().strip(),
             "execution": {
-                "commanders_intent":    self._f_intent.toPlainText().strip(),
+                "commanders_intent": self._f_intent.toPlainText().strip(),
                 "concept_of_operations": self._f_concept.toPlainText().strip(),
-                "tasks_by_element":     self._f_tasks.toPlainText().strip(),
-                "fire_support":         self._f_fires.toPlainText().strip(),
-                "rules_of_engagement":  self._f_roe.toPlainText().strip(),
+                "tasks_by_element": self._f_tasks.toPlainText().strip(),
+                "fire_support": self._f_fires.toPlainText().strip(),
+                "rules_of_engagement": self._f_roe.toPlainText().strip(),
             },
             "sustainment": {
-                "supply":       self._f_supply.toPlainText().strip(),
-                "maintenance":  self._f_maint.toPlainText().strip(),
-                "medical":      self._f_medical.toPlainText().strip(),
+                "supply": self._f_supply.toPlainText().strip(),
+                "maintenance": self._f_maint.toPlainText().strip(),
+                "medical": self._f_medical.toPlainText().strip(),
                 "transportation": self._f_trans.toPlainText().strip(),
             },
             "command_signal": {
                 "command_post": self._f_cp.toPlainText().strip(),
-                "succession":   self._f_succession.toPlainText().strip(),
-                "radio_freqs":  self._f_freqs.toPlainText().strip(),
-                "signals":      self._f_signals.toPlainText().strip(),
-                "pace_plan":    self._f_pace.toPlainText().strip(),
+                "succession": self._f_succession.toPlainText().strip(),
+                "radio_freqs": self._f_freqs.toPlainText().strip(),
+                "signals": self._f_signals.toPlainText().strip(),
+                "pace_plan": self._f_pace.toPlainText().strip(),
             },
             "recipient_ids": recipient_ids,
             "status": "DRAFT",
@@ -886,7 +1089,7 @@ class OpordWindow(QMainWindow):
             if self._is_new:
                 result = self._client.create_opord(data)
                 self._opord_id = result["id"]
-                self._is_new   = False
+                self._is_new = False
             else:
                 result = self._client.update_opord(self._opord_id, data)
             self._opord = result
@@ -897,15 +1100,18 @@ class OpordWindow(QMainWindow):
         except Exception as e:
             msg = str(e)
             if "403" in msg:
-                msg = ("Permission denied — creating and editing OPORDs requires "
-                       "BATTLE_CAPTAIN or ADMIN role.")
+                msg = (
+                    "Permission denied — creating and editing OPORDs requires "
+                    "BATTLE_CAPTAIN or ADMIN role."
+                )
             QMessageBox.critical(self, "Save Failed", msg)
 
     def _publish(self):
         if not self._opord_id:
             return
         ans = QMessageBox.question(
-            self, "Publish OPORD",
+            self,
+            "Publish OPORD",
             "Publish this OPORD? Recipients will be able to receive it.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
         )
@@ -931,6 +1137,8 @@ class OpordWindow(QMainWindow):
                     recipient_ids.append(rid)
         try:
             self._client.send_opord(self._opord_id, recipient_ids)
-            self.statusBar().showMessage(f"OPORD sent to {len(recipient_ids)} operators", 4000)
+            self.statusBar().showMessage(
+                f"OPORD sent to {len(recipient_ids)} operators", 4000
+            )
         except Exception as e:
             QMessageBox.critical(self, "Send Failed", str(e))

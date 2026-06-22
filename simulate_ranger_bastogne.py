@@ -38,22 +38,21 @@ import json
 import logging
 import math
 import os
-import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-import httpx
 
 import sim_utils
 
 log = logging.getLogger("nuts")
 
-BASTOGNE = (50.0028, 5.7178)   # OBJ centre (McAuliffe Sq vicinity)
-ATTACK_BEARING_FROM = 90.0     # enemy faces east; we attack westward
+BASTOGNE = (50.0028, 5.7178)  # OBJ centre (McAuliffe Sq vicinity)
+ATTACK_BEARING_FROM = 90.0  # enemy faces east; we attack westward
 H_HOUR = "191100ZMAY26"
 
 
 # ── Geometry helpers ─────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class LL:
@@ -62,14 +61,14 @@ class LL:
 
     def offset(self, north_m: float, east_m: float) -> "LL":
         d_lat = north_m / 111_320.0
-        d_lon = east_m  / (111_320.0 * math.cos(math.radians(self.lat)))
+        d_lon = east_m / (111_320.0 * math.cos(math.radians(self.lat)))
         return LL(self.lat + d_lat, self.lon + d_lon)
 
     def bearing(self, bearing_deg: float, distance_m: float) -> "LL":
         rad = math.radians(bearing_deg)
         return self.offset(
             north_m=distance_m * math.cos(rad),
-            east_m =distance_m * math.sin(rad),
+            east_m=distance_m * math.sin(rad),
         )
 
     def pair(self) -> list[float]:
@@ -87,54 +86,57 @@ Api = sim_utils.Api
 
 # ── Org structure & roster ───────────────────────────────────────────────────
 
+
 @dataclass
 class OpRoster:
     callsign: str
     rank: str
-    role: str          # OPERATOR | BATTLE_CAPTAIN | ADMIN
-    team_name: str     # which Team in hierarchy
-    duty: str          # PL, PSG, SQD, FO, ...
+    role: str  # OPERATOR | BATTLE_CAPTAIN | ADMIN
+    team_name: str  # which Team in hierarchy
+    duty: str  # PL, PSG, SQD, FO, ...
     token: str = ""
     op_id: int = 0
     team_id: int = 0
+
 
 # COY HQ
 HQ = "HHC"
 # Platoon name → list of (callsign, rank, role, team, duty)
 ROSTER: list[OpRoster] = [
     # COY HQ
-    OpRoster("RANGER-6",  "OF-3", "BATTLE_CAPTAIN", "HHC-CMD", "CO"),
-    OpRoster("RANGER-5",  "OF-2", "BATTLE_CAPTAIN", "HHC-CMD", "XO"),
-    OpRoster("RANGER-7",  "OR-8", "OPERATOR",       "HHC-CMD", "1SG"),
-    OpRoster("RANGER-FO", "OF-1", "OPERATOR",       "HHC-FIRES", "FO"),
+    OpRoster("RANGER-6", "OF-3", "BATTLE_CAPTAIN", "HHC-CMD", "CO"),
+    OpRoster("RANGER-5", "OF-2", "BATTLE_CAPTAIN", "HHC-CMD", "XO"),
+    OpRoster("RANGER-7", "OR-8", "OPERATOR", "HHC-CMD", "1SG"),
+    OpRoster("RANGER-FO", "OF-1", "OPERATOR", "HHC-FIRES", "FO"),
     # 1 PLT — supporting attack (NORTH)
-    OpRoster("1-6",   "OF-1", "OPERATOR", "1PLT-HQ",  "PL"),
-    OpRoster("1-7",   "OR-7", "OPERATOR", "1PLT-HQ",  "PSG"),
-    OpRoster("1-1",   "OR-6", "OPERATOR", "1PLT-SQ1", "SL"),
-    OpRoster("1-2",   "OR-6", "OPERATOR", "1PLT-SQ2", "SL"),
-    OpRoster("1-3",   "OR-6", "OPERATOR", "1PLT-SQ3", "SL"),
+    OpRoster("1-6", "OF-1", "OPERATOR", "1PLT-HQ", "PL"),
+    OpRoster("1-7", "OR-7", "OPERATOR", "1PLT-HQ", "PSG"),
+    OpRoster("1-1", "OR-6", "OPERATOR", "1PLT-SQ1", "SL"),
+    OpRoster("1-2", "OR-6", "OPERATOR", "1PLT-SQ2", "SL"),
+    OpRoster("1-3", "OR-6", "OPERATOR", "1PLT-SQ3", "SL"),
     # 2 PLT — RESERVE (initially holds at AA WOLF, then advances after H+30)
-    OpRoster("2-6",   "OF-1", "OPERATOR", "2PLT-HQ",  "PL"),
-    OpRoster("2-7",   "OR-7", "OPERATOR", "2PLT-HQ",  "PSG"),
-    OpRoster("2-1",   "OR-6", "OPERATOR", "2PLT-SQ1", "SL"),
-    OpRoster("2-2",   "OR-6", "OPERATOR", "2PLT-SQ2", "SL"),
-    OpRoster("2-3",   "OR-6", "OPERATOR", "2PLT-SQ3", "SL"),
+    OpRoster("2-6", "OF-1", "OPERATOR", "2PLT-HQ", "PL"),
+    OpRoster("2-7", "OR-7", "OPERATOR", "2PLT-HQ", "PSG"),
+    OpRoster("2-1", "OR-6", "OPERATOR", "2PLT-SQ1", "SL"),
+    OpRoster("2-2", "OR-6", "OPERATOR", "2PLT-SQ2", "SL"),
+    OpRoster("2-3", "OR-6", "OPERATOR", "2PLT-SQ3", "SL"),
     # 3 PLT — MAIN EFFORT (CENTER)
-    OpRoster("3-6",   "OF-1", "OPERATOR", "3PLT-HQ",  "PL"),
-    OpRoster("3-7",   "OR-7", "OPERATOR", "3PLT-HQ",  "PSG"),
-    OpRoster("3-1",   "OR-6", "OPERATOR", "3PLT-SQ1", "SL"),
-    OpRoster("3-2",   "OR-6", "OPERATOR", "3PLT-SQ2", "SL"),
-    OpRoster("3-3",   "OR-6", "OPERATOR", "3PLT-SQ3", "SL"),
+    OpRoster("3-6", "OF-1", "OPERATOR", "3PLT-HQ", "PL"),
+    OpRoster("3-7", "OR-7", "OPERATOR", "3PLT-HQ", "PSG"),
+    OpRoster("3-1", "OR-6", "OPERATOR", "3PLT-SQ1", "SL"),
+    OpRoster("3-2", "OR-6", "OPERATOR", "3PLT-SQ2", "SL"),
+    OpRoster("3-3", "OR-6", "OPERATOR", "3PLT-SQ3", "SL"),
     # WPNS PLT — SBF / mortars
-    OpRoster("W-6",   "OF-1", "OPERATOR", "WPLT-HQ",   "PL"),
-    OpRoster("W-MTR1","OR-5", "OPERATOR", "WPLT-MTR",  "Mortar 1"),
-    OpRoster("W-MTR2","OR-5", "OPERATOR", "WPLT-MTR",  "Mortar 2"),
-    OpRoster("W-MMG1","OR-5", "OPERATOR", "WPLT-MMG",  "MMG 1"),
-    OpRoster("W-MMG2","OR-5", "OPERATOR", "WPLT-MMG",  "MMG 2"),
+    OpRoster("W-6", "OF-1", "OPERATOR", "WPLT-HQ", "PL"),
+    OpRoster("W-MTR1", "OR-5", "OPERATOR", "WPLT-MTR", "Mortar 1"),
+    OpRoster("W-MTR2", "OR-5", "OPERATOR", "WPLT-MTR", "Mortar 2"),
+    OpRoster("W-MMG1", "OR-5", "OPERATOR", "WPLT-MMG", "MMG 1"),
+    OpRoster("W-MMG2", "OR-5", "OPERATOR", "WPLT-MMG", "MMG 2"),
 ]
 
 
 # ── Hierarchy: idempotent get-or-create ──────────────────────────────────────
+
 
 def ensure_company(api: Api, tok: str, name: str) -> int:
     for c in api.get("/companies", tok):
@@ -142,17 +144,20 @@ def ensure_company(api: Api, tok: str, name: str) -> int:
             return c["id"]
     return api.post("/companies", tok, {"name": name})["id"]
 
+
 def ensure_platoon(api: Api, tok: str, name: str, company_id: int) -> int:
     for p in api.get("/platoons", tok):
         if p["name"] == name and p["company_id"] == company_id:
             return p["id"]
     return api.post("/platoons", tok, {"name": name, "company_id": company_id})["id"]
 
+
 def ensure_section(api: Api, tok: str, name: str, platoon_id: int) -> int:
     for s in api.get("/sections", tok):
         if s["name"] == name and s["platoon_id"] == platoon_id:
             return s["id"]
     return api.post("/sections", tok, {"name": name, "platoon_id": platoon_id})["id"]
+
 
 def ensure_team(api: Api, tok: str, name: str, section_id: int) -> int:
     for t in api.get("/teams", tok):
@@ -166,7 +171,7 @@ def build_hierarchy(api: Api, admin_tok: str) -> dict[str, int]:
     coy_id = ensure_company(api, admin_tok, "RANGER COY")
 
     plts = {
-        "HHC":  ensure_platoon(api, admin_tok, "HHC",  coy_id),
+        "HHC": ensure_platoon(api, admin_tok, "HHC", coy_id),
         "1PLT": ensure_platoon(api, admin_tok, "1 PLT", coy_id),
         "2PLT": ensure_platoon(api, admin_tok, "2 PLT", coy_id),
         "3PLT": ensure_platoon(api, admin_tok, "3 PLT", coy_id),
@@ -178,23 +183,23 @@ def build_hierarchy(api: Api, admin_tok: str) -> dict[str, int]:
 
     teams_def = [
         # (team_name, parent platoon)
-        ("HHC-CMD",   "HHC"),
+        ("HHC-CMD", "HHC"),
         ("HHC-FIRES", "HHC"),
-        ("1PLT-HQ",   "1PLT"),
-        ("1PLT-SQ1",  "1PLT"),
-        ("1PLT-SQ2",  "1PLT"),
-        ("1PLT-SQ3",  "1PLT"),
-        ("2PLT-HQ",   "2PLT"),
-        ("2PLT-SQ1",  "2PLT"),
-        ("2PLT-SQ2",  "2PLT"),
-        ("2PLT-SQ3",  "2PLT"),
-        ("3PLT-HQ",   "3PLT"),
-        ("3PLT-SQ1",  "3PLT"),
-        ("3PLT-SQ2",  "3PLT"),
-        ("3PLT-SQ3",  "3PLT"),
-        ("WPLT-HQ",   "WPLT"),
-        ("WPLT-MTR",  "WPLT"),
-        ("WPLT-MMG",  "WPLT"),
+        ("1PLT-HQ", "1PLT"),
+        ("1PLT-SQ1", "1PLT"),
+        ("1PLT-SQ2", "1PLT"),
+        ("1PLT-SQ3", "1PLT"),
+        ("2PLT-HQ", "2PLT"),
+        ("2PLT-SQ1", "2PLT"),
+        ("2PLT-SQ2", "2PLT"),
+        ("2PLT-SQ3", "2PLT"),
+        ("3PLT-HQ", "3PLT"),
+        ("3PLT-SQ1", "3PLT"),
+        ("3PLT-SQ2", "3PLT"),
+        ("3PLT-SQ3", "3PLT"),
+        ("WPLT-HQ", "WPLT"),
+        ("WPLT-MTR", "WPLT"),
+        ("WPLT-MMG", "WPLT"),
     ]
     teams: dict[str, int] = {}
     for name, plt in teams_def:
@@ -205,8 +210,10 @@ def build_hierarchy(api: Api, admin_tok: str) -> dict[str, int]:
 
 # ── Operators ────────────────────────────────────────────────────────────────
 
-def register_operators(api: Api, admin_tok: str, teams: dict[str, int],
-                       password: str) -> None:
+
+def register_operators(
+    api: Api, admin_tok: str, teams: dict[str, int], password: str
+) -> None:
     """Register every callsign in ROSTER via admin-elevated registration.
 
     Existing callsigns fall back to /auth/login so re-runs of the simulator
@@ -217,12 +224,13 @@ def register_operators(api: Api, admin_tok: str, teams: dict[str, int],
         body = {
             "callsign": r.callsign,
             "password": password,
-            "rank":     r.rank,
-            "role":     r.role,
-            "team_id":  r.team_id,
+            "rank": r.rank,
+            "role": r.role,
+            "team_id": r.team_id,
         }
         resp = api.c.post(
-            api._p("/auth/register/admin"), json=body,
+            api._p("/auth/register/admin"),
+            json=body,
             headers={"Authorization": f"Bearer {admin_tok}"},
         )
         if resp.status_code == 201:
@@ -241,13 +249,14 @@ def register_operators(api: Api, admin_tok: str, teams: dict[str, int],
 
 # ── OPORD ────────────────────────────────────────────────────────────────────
 
+
 def build_opord(team_callsigns: dict[str, list[str]]) -> dict:
     """Return a 5-paragraph OPORD as the /opord endpoint expects."""
     return {
-        "title":          "OPORD 26-001 — OPERATION NUTS",
-        "opord_number":   "26-001",
-        "dtg":            H_HOUR,
-        "time_zone":      "ZULU",
+        "title": "OPORD 26-001 — OPERATION NUTS",
+        "opord_number": "26-001",
+        "dtg": H_HOUR,
+        "time_zone": "ZULU",
         "classification": "UNCLASSIFIED // FOUO",
         "references": (
             "(a) Map: NATO 1:50,000 Belgium Sheet 3513 BASTOGNE\n"
@@ -427,42 +436,57 @@ def build_opord(team_callsigns: dict[str, list[str]]) -> dict:
 
 # ── Tactical graphics, enemies, POIs ─────────────────────────────────────────
 
+
 def build_graphics() -> list[dict]:
     centre = LL(*BASTOGNE)
     # Attack heading 270° = bearing toward west; AA is east of OBJ
-    attack_heading = (ATTACK_BEARING_FROM + 180.0) % 360.0   # 270
-    perp_left  = (attack_heading - 90.0) % 360.0             # 180 (south)
-    perp_right = (attack_heading + 90.0) % 360.0             # 0 (north)
+    attack_heading = (ATTACK_BEARING_FROM + 180.0) % 360.0  # 270
+    perp_left = (attack_heading - 90.0) % 360.0  # 180 (south)
+    perp_right = (attack_heading + 90.0) % 360.0  # 0 (north)
 
     # Friendly anchors
-    aa        = centre.bearing(ATTACK_BEARING_FROM, 6500)     # 6.5 km east
-    aa_north  = aa.bearing(perp_right, 1200)
-    aa_south  = aa.bearing(perp_left,  1200)
-    ld_north  = centre.bearing(ATTACK_BEARING_FROM, 4500).bearing(perp_right, 1500)
-    ld_south  = centre.bearing(ATTACK_BEARING_FROM, 4500).bearing(perp_left,  1500)
+    aa = centre.bearing(ATTACK_BEARING_FROM, 6500)  # 6.5 km east
+    aa_north = aa.bearing(perp_right, 1200)
+    aa_south = aa.bearing(perp_left, 1200)
+    ld_north = centre.bearing(ATTACK_BEARING_FROM, 4500).bearing(perp_right, 1500)
+    ld_south = centre.bearing(ATTACK_BEARING_FROM, 4500).bearing(perp_left, 1500)
     pl_eagle_n = centre.bearing(ATTACK_BEARING_FROM, 2500).bearing(perp_right, 1500)
-    pl_eagle_s = centre.bearing(ATTACK_BEARING_FROM, 2500).bearing(perp_left,  1500)
+    pl_eagle_s = centre.bearing(ATTACK_BEARING_FROM, 2500).bearing(perp_left, 1500)
     pl_dagger_n = centre.bearing(attack_heading, 1500).bearing(perp_right, 1500)
-    pl_dagger_s = centre.bearing(attack_heading, 1500).bearing(perp_left,  1500)
-    bdy_e      = aa.bearing(perp_left, 0)
-    bdy_w      = centre.bearing(attack_heading, 500)
+    pl_dagger_s = centre.bearing(attack_heading, 1500).bearing(perp_left, 1500)
+    bdy_e = aa.bearing(perp_left, 0)
+    bdy_w = centre.bearing(attack_heading, 500)
 
     # OBJ polygon
     obj_poly = [
-        centre.offset(  400, -400),
-        centre.offset(  400,  400),
-        centre.offset( -300,  500),
-        centre.offset( -300, -500),
+        centre.offset(400, -400),
+        centre.offset(400, 400),
+        centre.offset(-300, 500),
+        centre.offset(-300, -500),
     ]
 
-    def tg(type_: str, ll: LL, *, affiliation: str = "FRIENDLY",
-           echelon: str = "", notes: str = "", rotation: float = 0.0,
-           geometry: str = "", symbol_code: str = "") -> dict:
+    def tg(
+        type_: str,
+        ll: LL,
+        *,
+        affiliation: str = "FRIENDLY",
+        echelon: str = "",
+        notes: str = "",
+        rotation: float = 0.0,
+        geometry: str = "",
+        symbol_code: str = "",
+    ) -> dict:
         return {
-            "type": type_, "latitude": ll.lat, "longitude": ll.lon,
-            "affiliation": affiliation, "echelon": echelon, "notes": notes,
-            "rotation": rotation, "geometry": geometry,
-            "symbol_code": symbol_code, "visibility": "COMPANY",
+            "type": type_,
+            "latitude": ll.lat,
+            "longitude": ll.lon,
+            "affiliation": affiliation,
+            "echelon": echelon,
+            "notes": notes,
+            "rotation": rotation,
+            "geometry": geometry,
+            "symbol_code": symbol_code,
+            "visibility": "COMPANY",
         }
 
     def line(type_: str, pts: list[LL], **kw) -> dict:
@@ -476,168 +500,259 @@ def build_graphics() -> list[dict]:
     items: list[dict] = []
 
     # OBJ
-    items.append(poly("OBJ_AREA", obj_poly, echelon="COY",
-                      notes="OBJ BASTOGNE — RANGER COY objective"))
+    items.append(
+        poly(
+            "OBJ_AREA",
+            obj_poly,
+            echelon="COY",
+            notes="OBJ BASTOGNE — RANGER COY objective",
+        )
+    )
 
     # Phase lines
-    items.append(line("PHASE_LINE", [ld_north, ld_south],
-                      echelon="COY", notes="LD — line of departure (H-Hour)"))
-    items.append(line("PHASE_LINE", [pl_eagle_n, pl_eagle_s],
-                      echelon="COY", notes="PL EAGLE — intermediate phase line"))
-    items.append(line("PHASE_LINE", [pl_dagger_n, pl_dagger_s],
-                      echelon="COY", notes="PL DAGGER — LOA / limit of advance"))
+    items.append(
+        line(
+            "PHASE_LINE",
+            [ld_north, ld_south],
+            echelon="COY",
+            notes="LD — line of departure (H-Hour)",
+        )
+    )
+    items.append(
+        line(
+            "PHASE_LINE",
+            [pl_eagle_n, pl_eagle_s],
+            echelon="COY",
+            notes="PL EAGLE — intermediate phase line",
+        )
+    )
+    items.append(
+        line(
+            "PHASE_LINE",
+            [pl_dagger_n, pl_dagger_s],
+            echelon="COY",
+            notes="PL DAGGER — LOA / limit of advance",
+        )
+    )
 
     # Boundaries (between PLTs at 50.005N)
-    items.append(line("BOUNDARY",
-                      [LL(50.0050, aa.lon), LL(50.0050, centre.lon - 0.04)],
-                      echelon="PL", notes="1 PLT / 3 PLT boundary"))
+    items.append(
+        line(
+            "BOUNDARY",
+            [LL(50.0050, aa.lon), LL(50.0050, centre.lon - 0.04)],
+            echelon="PL",
+            notes="1 PLT / 3 PLT boundary",
+        )
+    )
 
     # FLOT / FLET
-    items.append(line("FLOT", [aa_north, aa_south],
-                      echelon="COY", notes="FLOT — TF DAGGER"))
-    items.append(line("FLET", [pl_eagle_n.bearing(attack_heading, 800),
-                               pl_eagle_s.bearing(attack_heading, 800)],
-                      affiliation="ENEMY", echelon="COY",
-                      notes="FLET — enemy forward edge"))
+    items.append(
+        line("FLOT", [aa_north, aa_south], echelon="COY", notes="FLOT — TF DAGGER")
+    )
+    items.append(
+        line(
+            "FLET",
+            [
+                pl_eagle_n.bearing(attack_heading, 800),
+                pl_eagle_s.bearing(attack_heading, 800),
+            ],
+            affiliation="ENEMY",
+            echelon="COY",
+            notes="FLET — enemy forward edge",
+        )
+    )
 
     # Friendly axes of advance — three platoons
     axis_offsets = [
-        ("1 PLT (NORTH)",   perp_right, 1100, "Supporting effort — N flank"),
-        ("3 PLT (CENTER)",  perp_right,    0, "MAIN EFFORT — centre, on N4"),
-        ("2 PLT (SOUTH)",   perp_left,  1100, "Reserve / BPT reinforce S flank"),
+        ("1 PLT (NORTH)", perp_right, 1100, "Supporting effort — N flank"),
+        ("3 PLT (CENTER)", perp_right, 0, "MAIN EFFORT — centre, on N4"),
+        ("2 PLT (SOUTH)", perp_left, 1100, "Reserve / BPT reinforce S flank"),
     ]
     for label, perp, off, note in axis_offsets:
         # Place arrow midway between LD and OBJ at the right cross-track offset
         anchor = centre.bearing(ATTACK_BEARING_FROM, 3000).bearing(perp, off)
-        items.append(tg("ATK_AXIS", anchor, echelon="PL", rotation=attack_heading,
-                        notes=f"{label} axis — {note}"))
+        items.append(
+            tg(
+                "ATK_AXIS",
+                anchor,
+                echelon="PL",
+                rotation=attack_heading,
+                notes=f"{label} axis — {note}",
+            )
+        )
 
     # WPNS PLT SBF position (east of AA WOLF)
-    items.append(tg("DEF_AREA",
-                    aa.bearing(ATTACK_BEARING_FROM, 800),
-                    echelon="PL", rotation=attack_heading,
-                    notes="WPNS PLT SBF — 81mm + M240B overwatch"))
+    items.append(
+        tg(
+            "DEF_AREA",
+            aa.bearing(ATTACK_BEARING_FROM, 800),
+            echelon="PL",
+            rotation=attack_heading,
+            notes="WPNS PLT SBF — 81mm + M240B overwatch",
+        )
+    )
 
     # Enemy graphics
-    items.append(tg("DEF_AREA", centre, affiliation="ENEMY", echelon="COY",
-                    rotation=ATTACK_BEARING_FROM,
-                    notes="Enemy mech inf COY (-) defends BASTOGNE"))
-    items.append(tg("AMBUSH",
-                    centre.bearing(ATTACK_BEARING_FROM, 1600).bearing(perp_right, 300),
-                    affiliation="ENEMY", echelon="SEC", rotation=attack_heading,
-                    notes="Suspected enemy ambush on N4 approach"))
-    items.append(tg("AMBUSH",
-                    centre.bearing(ATTACK_BEARING_FROM, 1800).bearing(perp_left, 250),
-                    affiliation="ENEMY", echelon="TM", rotation=attack_heading,
-                    notes="Suspected sniper screen S of N4"))
+    items.append(
+        tg(
+            "DEF_AREA",
+            centre,
+            affiliation="ENEMY",
+            echelon="COY",
+            rotation=ATTACK_BEARING_FROM,
+            notes="Enemy mech inf COY (-) defends BASTOGNE",
+        )
+    )
+    items.append(
+        tg(
+            "AMBUSH",
+            centre.bearing(ATTACK_BEARING_FROM, 1600).bearing(perp_right, 300),
+            affiliation="ENEMY",
+            echelon="SEC",
+            rotation=attack_heading,
+            notes="Suspected enemy ambush on N4 approach",
+        )
+    )
+    items.append(
+        tg(
+            "AMBUSH",
+            centre.bearing(ATTACK_BEARING_FROM, 1800).bearing(perp_left, 250),
+            affiliation="ENEMY",
+            echelon="TM",
+            rotation=attack_heading,
+            notes="Suspected sniper screen S of N4",
+        )
+    )
 
     # Enemy units (SIDC MIL-STD-2525C hostile)
     enemies = [
-        ("Enemy mech inf platoon (-)", "SHGPUCIZ----", centre.offset( 100,  -50)),
-        ("Enemy BMP-2 section",        "SHGPUCAA----", centre.offset(  50,  150)),
-        ("Enemy 120mm mortar",         "SHGPUCFHE---", centre.offset(  200, -800)),
-        ("Enemy ATGM team",            "SHGPUCAA---F", centre.offset(  300, -300)),
-        ("Enemy sniper (church)",      "SHGPUCFS----", centre.offset(  -50,  -30)),
-        ("Enemy MANPADS team",         "SHGPUCDS----", centre.offset(  -80,   80)),
-        ("Enemy MMG bunker",           "SHGPUCFW----", centre.offset(  150, -180)),
-        ("Enemy technical w/ DShK",    "SHGPEVAT----", centre.offset(  -200, -200)),
+        ("Enemy mech inf platoon (-)", "SHGPUCIZ----", centre.offset(100, -50)),
+        ("Enemy BMP-2 section", "SHGPUCAA----", centre.offset(50, 150)),
+        ("Enemy 120mm mortar", "SHGPUCFHE---", centre.offset(200, -800)),
+        ("Enemy ATGM team", "SHGPUCAA---F", centre.offset(300, -300)),
+        ("Enemy sniper (church)", "SHGPUCFS----", centre.offset(-50, -30)),
+        ("Enemy MANPADS team", "SHGPUCDS----", centre.offset(-80, 80)),
+        ("Enemy MMG bunker", "SHGPUCFW----", centre.offset(150, -180)),
+        ("Enemy technical w/ DShK", "SHGPEVAT----", centre.offset(-200, -200)),
     ]
     for name, sidc, ll in enemies:
-        items.append({
-            "type": "ENEMY", "symbol_code": sidc,
-            "latitude": ll.lat, "longitude": ll.lon,
-            "affiliation": "ENEMY",
-            "notes": name,
-            "echelon": "", "rotation": 0.0, "geometry": "",
-            "visibility": "COMPANY",
-        })
+        items.append(
+            {
+                "type": "ENEMY",
+                "symbol_code": sidc,
+                "latitude": ll.lat,
+                "longitude": ll.lon,
+                "affiliation": "ENEMY",
+                "notes": name,
+                "echelon": "",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     # Friendly POIs / OIs (objectives of interest)
     pois = [
-        ("CCP — AA WOLF",          "SFGPIME-----", aa),
-        ("BAS / Role 1",           "SFGPIMS-----", aa.bearing(perp_left, 300)),
-        ("LZ ALPHA (DUSTOFF)",     "SFGPIBA-----", aa.bearing(perp_right, 600)),
-        ("AMMO point",             "SFGPIRP-----", aa.bearing(perp_left, 500)),
-        ("POL point",              "SFGPIRP-----", aa.bearing(ATTACK_BEARING_FROM, 200)),
-        ("MAIN CP / TOC",          "SFGPUH------", aa.bearing(attack_heading, 100)),
-        ("N4 bridge (key terrain)", "SFGPIBE-----", centre.bearing(ATTACK_BEARING_FROM, 2800)),
-        ("McAuliffe Sq (HVT)",     "SFGPIMG-----", centre),
-        ("Hospital — NO FIRE",     "SFGPIMH-----", centre.offset(-150, -100)),
+        ("CCP — AA WOLF", "SFGPIME-----", aa),
+        ("BAS / Role 1", "SFGPIMS-----", aa.bearing(perp_left, 300)),
+        ("LZ ALPHA (DUSTOFF)", "SFGPIBA-----", aa.bearing(perp_right, 600)),
+        ("AMMO point", "SFGPIRP-----", aa.bearing(perp_left, 500)),
+        ("POL point", "SFGPIRP-----", aa.bearing(ATTACK_BEARING_FROM, 200)),
+        ("MAIN CP / TOC", "SFGPUH------", aa.bearing(attack_heading, 100)),
+        (
+            "N4 bridge (key terrain)",
+            "SFGPIBE-----",
+            centre.bearing(ATTACK_BEARING_FROM, 2800),
+        ),
+        ("McAuliffe Sq (HVT)", "SFGPIMG-----", centre),
+        ("Hospital — NO FIRE", "SFGPIMH-----", centre.offset(-150, -100)),
     ]
     for name, sidc, ll in pois:
-        items.append({
-            "type": "POI", "symbol_code": sidc,
-            "latitude": ll.lat, "longitude": ll.lon,
-            "affiliation": "FRIENDLY",
-            "notes": name,
-            "echelon": "", "rotation": 0.0, "geometry": "",
-            "visibility": "COMPANY",
-        })
+        items.append(
+            {
+                "type": "POI",
+                "symbol_code": sidc,
+                "latitude": ll.lat,
+                "longitude": ll.lon,
+                "affiliation": "FRIENDLY",
+                "notes": name,
+                "echelon": "",
+                "rotation": 0.0,
+                "geometry": "",
+                "visibility": "COMPANY",
+            }
+        )
 
     return items
 
 
 # ── Fire plan ────────────────────────────────────────────────────────────────
 
+
 def build_fire_plan() -> list[dict]:
     centre = LL(*BASTOGNE)
     return [
         # FM-001 — destroy enemy mortar
         {
-            "latitude":  centre.offset(200, -800).lat,
+            "latitude": centre.offset(200, -800).lat,
             "longitude": centre.offset(200, -800).lon,
-            "altitude":  450.0,
+            "altitude": 450.0,
             "direction": 270.0,
             "mission_type": "FIRE_FOR_EFFECT",
-            "ammunition":   "HE",
-            "quantity":     12,
-            "description":  "FM-001 TRP-001 — destroy ENY 120mm mortar (priority target, H-15)",
+            "ammunition": "HE",
+            "quantity": 12,
+            "description": "FM-001 TRP-001 — destroy ENY 120mm mortar (priority target, H-15)",
         },
         # FM-002 — destroy ATGM
         {
-            "latitude":  centre.offset(300, -300).lat,
+            "latitude": centre.offset(300, -300).lat,
             "longitude": centre.offset(300, -300).lon,
-            "altitude":  450.0,
+            "altitude": 450.0,
             "direction": 270.0,
             "mission_type": "FIRE_FOR_EFFECT",
-            "ammunition":   "HE",
-            "quantity":     8,
-            "description":  "FM-002 TRP-002 — destroy ENY ATGM team (H-10)",
+            "ammunition": "HE",
+            "quantity": 8,
+            "description": "FM-002 TRP-002 — destroy ENY ATGM team (H-10)",
         },
         # FM-003 — suppress DEF AREA, H-5 to H+0
         {
-            "latitude":  centre.lat,
+            "latitude": centre.lat,
             "longitude": centre.lon,
-            "altitude":  450.0,
+            "altitude": 450.0,
             "direction": 270.0,
             "mission_type": "SUPPRESSION",
-            "ammunition":   "MIXED",
-            "quantity":     24,
-            "description":  "FM-003 TRP-003 — suppress ENY DEF in BASTOGNE (H-5 to H+0)",
+            "ammunition": "MIXED",
+            "quantity": 24,
+            "description": "FM-003 TRP-003 — suppress ENY DEF in BASTOGNE (H-5 to H+0)",
         },
         # FM-004 — SMOKE screen N flank for 1 PLT crossing PL EAGLE
         {
-            "latitude":  centre.bearing(ATTACK_BEARING_FROM, 2200).offset(800, 0).lat,
+            "latitude": centre.bearing(ATTACK_BEARING_FROM, 2200).offset(800, 0).lat,
             "longitude": centre.bearing(ATTACK_BEARING_FROM, 2200).offset(800, 0).lon,
-            "altitude":  450.0,
+            "altitude": 450.0,
             "direction": 270.0,
             "mission_type": "ADJUST_FIRE",
-            "ammunition":   "SMOKE",
-            "quantity":     6,
-            "description":  "FM-004 TRP-004 — SMOKE screen N flank (H-2 to H+10)",
+            "ammunition": "SMOKE",
+            "quantity": 6,
+            "description": "FM-004 TRP-004 — SMOKE screen N flank (H-2 to H+10)",
         },
     ]
 
 
 # ── Movement simulation ─────────────────────────────────────────────────────
 
+
 def axis_for(callsign: str) -> tuple[str, float]:
     """Map a callsign to (axis label, perpendicular cross-track offset metres
     relative to the COY centre line). Negative = south, positive = north."""
-    if callsign.startswith("1-"):  return "1 PLT N", +1100
-    if callsign.startswith("3-"):  return "3 PLT C", 0
-    if callsign.startswith("2-"):  return "2 PLT S", -1100   # reserve, follows centre
-    if callsign.startswith("W-"):  return "WPNS SBF", -200
+    if callsign.startswith("1-"):
+        return "1 PLT N", +1100
+    if callsign.startswith("3-"):
+        return "3 PLT C", 0
+    if callsign.startswith("2-"):
+        return "2 PLT S", -1100  # reserve, follows centre
+    if callsign.startswith("W-"):
+        return "WPNS SBF", -200
     # COY HQ — moves with main effort (3 PLT)
     return "COY HQ", -50
 
@@ -656,13 +771,15 @@ def simulate_movement(api: Api, steps: int, dt: float) -> None:
     for r in ROSTER:
         axis, cross_off = axis_for(r.callsign)
         start = centre.bearing(ATTACK_BEARING_FROM, 6500).bearing(perp_right, cross_off)
-        if r.callsign.startswith(("W-",)):           # SBF — stays back, advances 1.5 km
+        if r.callsign.startswith(("W-",)):  # SBF — stays back, advances 1.5 km
             end = start.bearing(attack_heading, 1500)
-        elif r.callsign.startswith("2-"):            # reserve — moves halfway then halts
+        elif r.callsign.startswith("2-"):  # reserve — moves halfway then halts
             end = start.bearing(attack_heading, 3000)
         else:
             # 1 PLT / 3 PLT / COY HQ → onto OBJ
-            end = centre.bearing(perp_right, cross_off).bearing(ATTACK_BEARING_FROM, 100)
+            end = centre.bearing(perp_right, cross_off).bearing(
+                ATTACK_BEARING_FROM, 100
+            )
         plan[r.callsign] = (start, end)
 
     log.info("H-HOUR — operators stepping off (%d steps × %.1fs)", steps, dt)
@@ -675,13 +792,13 @@ def simulate_movement(api: Api, steps: int, dt: float) -> None:
             jitter_lat = (hash(r.callsign + str(i)) % 7 - 3) * 1e-5
             jitter_lon = (hash(r.callsign + str(i + 1)) % 7 - 3) * 1e-5
             body = {
-                "latitude":  here.lat + jitter_lat,
+                "latitude": here.lat + jitter_lat,
                 "longitude": here.lon + jitter_lon,
-                "altitude":  450.0,
+                "altitude": 450.0,
             }
             try:
                 api.post("/tracking/position", r.token, body)
-            except Exception as exc:        # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 log.warning("%s position update failed: %s", r.callsign, exc)
         if i % 10 == 0:
             log.info("  step %d/%d — t=%.2f", i, steps, t)
@@ -690,6 +807,7 @@ def simulate_movement(api: Api, steps: int, dt: float) -> None:
 
 
 # ── Reset helper ─────────────────────────────────────────────────────────────
+
 
 def reset_objects(api: Api, admin_tok: str) -> int:
     """Delete every tactical object so a re-run starts on a clean canvas."""
@@ -704,37 +822,62 @@ def reset_objects(api: Api, admin_tok: str) -> int:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="OPERATION NUTS — RANGER COY attack on Bastogne")
+    parser = argparse.ArgumentParser(
+        description="OPERATION NUTS — RANGER COY attack on Bastogne"
+    )
     # Falls back to ARROW_BACKEND_URL so deployments share the same env var
     # the Flask side uses; explicit --backend always wins.
-    parser.add_argument("--backend",
-                        default=os.environ.get("ARROW_BACKEND_URL", "https://78.21.255.210:6200/api"),
-                        help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, "
-                             "then localhost. e.g. https://78.21.255.210:6001")
-    parser.add_argument("--admin",    default="benoit", help="ADMIN callsign")
+    parser.add_argument(
+        "--backend",
+        default=os.environ.get("ARROW_BACKEND_URL", "https://78.21.255.210:6200/api"),
+        help="Backend base URL. Defaults to ARROW_BACKEND_URL env var, "
+        "then localhost. e.g. https://78.21.255.210:6001",
+    )
+    parser.add_argument("--admin", default="benoit", help="ADMIN callsign")
     parser.add_argument("--password", default="ranger14", help="ADMIN password")
-    parser.add_argument("--op-password", default="rangers!", help="Password used for every simulated operator")
-    parser.add_argument("--reset",    action="store_true",
-                        help="Wipe all existing tactical objects before planting")
-    parser.add_argument("--no-move",  action="store_true",
-                        help="Set up the plan only — skip the movement loop")
-    parser.add_argument("--steps",    type=int, default=80, help="Movement steps")
-    parser.add_argument("--dt",       type=float, default=2.0, help="Seconds between steps")
-    parser.add_argument("--mission-name", default="Operation NUTS",
-                        help="Mission name to create or adopt (default: Operation NUTS)")
+    parser.add_argument(
+        "--op-password",
+        default="rangers!",
+        help="Password used for every simulated operator",
+    )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Wipe all existing tactical objects before planting",
+    )
+    parser.add_argument(
+        "--no-move",
+        action="store_true",
+        help="Set up the plan only — skip the movement loop",
+    )
+    parser.add_argument("--steps", type=int, default=80, help="Movement steps")
+    parser.add_argument("--dt", type=float, default=2.0, help="Seconds between steps")
+    parser.add_argument(
+        "--mission-name",
+        default="Operation NUTS",
+        help="Mission name to create or adopt (default: Operation NUTS)",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s  %(levelname)-7s %(message)s",
-                        datefmt="%H:%M:%S")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-7s %(message)s",
+        datefmt="%H:%M:%S",
+    )
     api = Api(args.backend)
 
     log.info("OPERATION NUTS — RANGER COY attack on BASTOGNE")
     log.info("backend=%s admin=%s", args.backend, args.admin)
     admin_tok = api.login(args.admin, args.password)
-    api.create_mission(admin_tok, args.mission_name,
-                       map_center_lat=50.0028, map_center_lng=5.7178, map_zoom=14)
+    api.create_mission(
+        admin_tok,
+        args.mission_name,
+        map_center_lat=50.0028,
+        map_center_lng=5.7178,
+        map_zoom=14,
+    )
 
     if args.reset:
         reset_objects(api, admin_tok)
@@ -755,10 +898,13 @@ def main() -> None:
     # Optional: publish + send to every operator so they receive it
     try:
         api.post(f"/opord/{opord['id']}/publish", admin_tok, {})
-        api.post(f"/opord/{opord['id']}/send", admin_tok,
-                 {"operator_ids": [r.op_id for r in ROSTER]})
+        api.post(
+            f"/opord/{opord['id']}/send",
+            admin_tok,
+            {"operator_ids": [r.op_id for r in ROSTER]},
+        )
         log.info("OPORD published and pushed to %d operators", len(ROSTER))
-    except Exception as exc:        # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         log.warning("OPORD publish/send skipped: %s", exc)
 
     # 4. Tactical graphics + enemies + POIs
@@ -766,7 +912,7 @@ def main() -> None:
     for o in objs:
         try:
             api.post("/tactical-objects", admin_tok, o)
-        except Exception as exc:        # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             log.warning("TG post failed for %s: %s", o.get("type"), exc)
     log.info("tactical graphics + enemies + POIs planted: %d items", len(objs))
 
@@ -774,7 +920,7 @@ def main() -> None:
     for fm in build_fire_plan():
         try:
             api.post("/fire-missions", admin_tok, fm)
-        except Exception as exc:        # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             log.warning("FM post failed: %s", exc)
     log.info("fire plan submitted: 4 missions")
 

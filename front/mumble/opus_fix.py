@@ -19,6 +19,7 @@ Layer 4 — vararg calling convention (ARM64 / Python 3.14)
   Wraps libopus_ctl so ctypes sets explicit argtypes before each variadic C call,
   preventing OPUS_BAD_ARG on Apple Silicon.
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -91,27 +92,36 @@ def _patch_opus_path() -> bool:
             ctypes.util._arrow_opus_patched = True
             return True
 
-    return False   # libopus not available → use stub
+    return False  # libopus not available → use stub
 
 
 # ── Layer 2: ssl ─────────────────────────────────────────────────────────────
+
 
 def _patch_ssl() -> None:
     if getattr(ssl, "_arrow_ssl_patched", False):
         return
     for attr, alias in [
-        ("PROTOCOL_TLS",    "PROTOCOL_TLS_CLIENT"),
-        ("PROTOCOL_TLSv1",  "PROTOCOL_TLS_CLIENT"),
+        ("PROTOCOL_TLS", "PROTOCOL_TLS_CLIENT"),
+        ("PROTOCOL_TLSv1", "PROTOCOL_TLS_CLIENT"),
         ("PROTOCOL_SSLv23", "PROTOCOL_TLS_CLIENT"),
     ]:
         if not hasattr(ssl, attr):
             setattr(ssl, attr, getattr(ssl, alias))
 
     if not hasattr(ssl, "wrap_socket"):
-        def wrap_socket(sock, keyfile=None, certfile=None,
-                        server_side=False, ssl_version=None,
-                        ca_certs=None, do_handshake_on_connect=True,
-                        suppress_ragged_eofs=True, **_):
+
+        def wrap_socket(
+            sock,
+            keyfile=None,
+            certfile=None,
+            server_side=False,
+            ssl_version=None,
+            ca_certs=None,
+            do_handshake_on_connect=True,
+            suppress_ragged_eofs=True,
+            **_,
+        ):
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
@@ -125,11 +135,13 @@ def _patch_ssl() -> None:
                 do_handshake_on_connect=do_handshake_on_connect,
                 suppress_ragged_eofs=suppress_ragged_eofs,
             )
+
         ssl.wrap_socket = wrap_socket  # type: ignore[attr-defined]
     ssl._arrow_ssl_patched = True  # type: ignore[attr-defined]
 
 
 # ── Layer 3: pure-Python opuslib stub ────────────────────────────────────────
+
 
 def _install_opuslib_stub() -> None:
     """Register a no-op opuslib in sys.modules so pymumble can import."""
@@ -145,7 +157,7 @@ def _install_opuslib_stub() -> None:
     exc_mod.OpusError = OpusError  # type: ignore[attr-defined]
 
     # --- api sub-module (bare minimum) ---
-    api_mod     = types.ModuleType("opuslib.api")
+    api_mod = types.ModuleType("opuslib.api")
     api_enc_mod = types.ModuleType("opuslib.api.encoder")
     api_dec_mod = types.ModuleType("opuslib.api.decoder")
     api_ctl_mod = types.ModuleType("opuslib.api.ctl")
@@ -154,16 +166,16 @@ def _install_opuslib_stub() -> None:
     def _noop_ctl(*_a, **_kw):
         return 0
 
-    api_ctl_mod.set_bitrate   = _noop_ctl  # type: ignore[attr-defined]
-    api_ctl_mod.get_bitrate   = _noop_ctl  # type: ignore[attr-defined]
-    api_ctl_mod.set_complexity = _noop_ctl # type: ignore[attr-defined]
+    api_ctl_mod.set_bitrate = _noop_ctl  # type: ignore[attr-defined]
+    api_ctl_mod.get_bitrate = _noop_ctl  # type: ignore[attr-defined]
+    api_ctl_mod.set_complexity = _noop_ctl  # type: ignore[attr-defined]
 
     # --- stub Encoder ---
     class _StubEncoder:
         def __init__(self, fs: int, channels: int, application: int):
-            self.encoder_state = object()   # non-None sentinel
-            self._bitrate     = 64_000
-            self._complexity  = 5
+            self.encoder_state = object()  # non-None sentinel
+            self._bitrate = 64_000
+            self._complexity = 5
 
         @property
         def bitrate(self) -> int:
@@ -181,12 +193,14 @@ def _install_opuslib_stub() -> None:
         def complexity(self, v: int):
             self._complexity = int(v)
 
-        def encode(self, pcm_data: bytes, frame_size: int,
-                   encode_fec: bool = False) -> bytes:
+        def encode(
+            self, pcm_data: bytes, frame_size: int, encode_fec: bool = False
+        ) -> bytes:
             return b"\xf8\xff\xfe"  # minimal valid silent Opus packet
 
-        def encode_float(self, pcm_data: bytes, frame_size: int,
-                         encode_fec: bool = False) -> bytes:
+        def encode_float(
+            self, pcm_data: bytes, frame_size: int, encode_fec: bool = False
+        ) -> bytes:
             return b"\xf8\xff\xfe"
 
     # --- stub Decoder ---
@@ -203,37 +217,40 @@ def _install_opuslib_stub() -> None:
         def gain(self, v: int):
             self._gain = int(v)
 
-        def decode(self, data: bytes, frame_size: int,
-                   decode_fec: bool = False) -> bytes:
+        def decode(
+            self, data: bytes, frame_size: int, decode_fec: bool = False
+        ) -> bytes:
             return b"\x00" * frame_size * 2  # silence (int16)
 
-        def decode_float(self, data: bytes, frame_size: int,
-                         decode_fec: bool = False) -> bytes:
+        def decode_float(
+            self, data: bytes, frame_size: int, decode_fec: bool = False
+        ) -> bytes:
             return b"\x00" * frame_size * 4  # silence (float32)
 
     # --- main module ---
     opus_mod = types.ModuleType("opuslib")
-    opus_mod.Encoder  = _StubEncoder              # type: ignore[attr-defined]
-    opus_mod.Decoder  = _StubDecoder              # type: ignore[attr-defined]
-    opus_mod.APPLICATION_VOIP                = 2048   # type: ignore[attr-defined]
-    opus_mod.APPLICATION_AUDIO               = 2049   # type: ignore[attr-defined]
-    opus_mod.APPLICATION_RESTRICTED_LOWDELAY = 2051   # type: ignore[attr-defined]
-    opus_mod.OK         = 0                           # type: ignore[attr-defined]
-    opus_mod.exceptions = exc_mod                     # type: ignore[attr-defined]
-    opus_mod.api        = api_mod                     # type: ignore[attr-defined]
+    opus_mod.Encoder = _StubEncoder  # type: ignore[attr-defined]
+    opus_mod.Decoder = _StubDecoder  # type: ignore[attr-defined]
+    opus_mod.APPLICATION_VOIP = 2048  # type: ignore[attr-defined]
+    opus_mod.APPLICATION_AUDIO = 2049  # type: ignore[attr-defined]
+    opus_mod.APPLICATION_RESTRICTED_LOWDELAY = 2051  # type: ignore[attr-defined]
+    opus_mod.OK = 0  # type: ignore[attr-defined]
+    opus_mod.exceptions = exc_mod  # type: ignore[attr-defined]
+    opus_mod.api = api_mod  # type: ignore[attr-defined]
 
     for name, mod in [
-        ("opuslib",              opus_mod),
-        ("opuslib.exceptions",   exc_mod),
-        ("opuslib.api",          api_mod),
-        ("opuslib.api.encoder",  api_enc_mod),
-        ("opuslib.api.decoder",  api_dec_mod),
-        ("opuslib.api.ctl",      api_ctl_mod),
+        ("opuslib", opus_mod),
+        ("opuslib.exceptions", exc_mod),
+        ("opuslib.api", api_mod),
+        ("opuslib.api.encoder", api_enc_mod),
+        ("opuslib.api.decoder", api_dec_mod),
+        ("opuslib.api.ctl", api_ctl_mod),
     ]:
         sys.modules[name] = mod
 
 
 # ── Layer 4: ARM64 vararg calling convention fix ──────────────────────────────
+
 
 def _patch_opuslib_varargs() -> None:
     if getattr(ctypes, "_arrow_opuslib_patched", False):

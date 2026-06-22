@@ -10,6 +10,9 @@
 #   ./deploy.sh logs      # tail logs
 #   ./deploy.sh status    # show container health
 #   ./deploy.sh maps      # list MBTiles base-maps
+#   ./deploy.sh db        # open psql shell on the PostgreSQL database
+#   ./deploy.sh backup    # trigger an immediate pg_dump backup
+#   ./deploy.sh wms       # print MapServer WMS GetCapabilities URL
 #
 # For HTTPS, set extra IPs in .env or export before running:
 #   ARROW_WEB_EXTRA_IPS=78.21.255.210,192.168.0.240 ./deploy.sh https
@@ -21,6 +24,23 @@ cd "$(dirname "$0")"
 [ -f .env ] && export $(grep -v '^\s*#' .env | grep '=' | xargs) 2>/dev/null || true
 
 PORT="${ARROW_HTTP_PORT:-6200}"
+
+# ── PostgreSQL password ───────────────────────────────────────────────────────
+# Generate a random password on first deploy and persist it in .env so every
+# subsequent run (including docker compose up without deploy.sh) uses the same
+# credentials. Never overwrite an already-set value.
+ensure_pg_password() {
+    if grep -q '^POSTGRES_PASSWORD=' .env 2>/dev/null; then
+        export POSTGRES_PASSWORD
+        POSTGRES_PASSWORD="$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)"
+    else
+        local pw
+        pw="$(openssl rand -hex 24 2>/dev/null || LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom | head -c 48)"
+        echo "POSTGRES_PASSWORD=${pw}" >> .env
+        export POSTGRES_PASSWORD="$pw"
+        echo "==> generated POSTGRES_PASSWORD (saved to .env)"
+    fi
+}
 
 # ── docker compose detection ─────────────────────────────────────────────────
 require_compose() {
@@ -140,6 +160,14 @@ server {
         proxy_read_timeout 86400s;
     }
 
+    # MapServer OGC WMS/WFS
+    location /mapserver/ {
+        proxy_pass         http://mapserver/cgi-bin/mapserv?;
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_read_timeout 30s;
+    }
+
     # Web dashboard
     location / {
         proxy_pass         http://web:6002;
@@ -205,6 +233,14 @@ server {
         proxy_read_timeout 86400s;
     }
 
+    # MapServer OGC WMS/WFS
+    location /mapserver/ {
+        proxy_pass         http://mapserver/cgi-bin/mapserv?;
+        proxy_set_header   Host \$host;
+        proxy_set_header   X-Real-IP \$remote_addr;
+        proxy_read_timeout 30s;
+    }
+
     # Web dashboard (Flask)
     location / {
         proxy_pass         http://web:6002;
@@ -259,7 +295,7 @@ EOF
 
 # ── Container cleanup ─────────────────────────────────────────────────────────
 remove_existing() {
-    for name in arrow-backend arrow-web arrow-proxy; do
+    for name in arrow-backend arrow-web arrow-proxy arrow-mapserver; do
         if [ -n "$(docker ps -aq --filter "name=^${name}$" 2>/dev/null)" ]; then
             echo "==> removing $name"
             docker rm -f "$name" >/dev/null
@@ -286,6 +322,7 @@ case "$cmd" in
 
     up)
         require_compose
+        ensure_pg_password
         write_nginx_http "$PORT"
         remove_existing
         list_maps
@@ -295,12 +332,14 @@ case "$cmd" in
         $DC ps
         host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || host_ip=localhost
         echo ""
-        echo "  Arrow  →  http://${host_ip}:${PORT}"
+        echo "  Arrow      →  http://${host_ip}:${PORT}"
+        echo "  MapServer  →  http://${host_ip}:${PORT}/mapserver/?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities"
         echo ""
         ;;
 
     https)
         require_compose
+        ensure_pg_password
         generate_cert
         write_nginx_https "$PORT"
         # Persist mode so plain `docker compose up` also works
@@ -316,7 +355,8 @@ case "$cmd" in
         pub_ip="${SERVER_IP:-$host_ip}"
         echo ""
         echo "══════════════════════════════════════════════════════"
-        echo "  Arrow  →  https://${pub_ip}:${PORT}"
+        echo "  Arrow      →  https://${pub_ip}:${PORT}"
+        echo "  MapServer  →  https://${pub_ip}:${PORT}/mapserver/?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities"
         echo ""
         echo "  Browser setup (one-time):"
         echo "    1. Open  https://${pub_ip}:${PORT}"
@@ -334,6 +374,7 @@ case "$cmd" in
 
     rebuild)
         require_compose
+        ensure_pg_password
         remove_existing
         $DC build --no-cache
         $DC up -d --force-recreate
@@ -349,7 +390,39 @@ case "$cmd" in
     maps)
         list_maps ;;
 
+    db)
+        require_compose
+        [ -f .env ] && export $(grep -v '^\s*#' .env | grep '=' | xargs) 2>/dev/null || true
+        echo "==> connecting to arrow PostgreSQL (\\q to exit)"
+        $DC exec postgres psql -U arrow arrow
+        ;;
+
+    backup)
+        require_compose
+        [ -f .env ] && export $(grep -v '^\s*#' .env | grep '=' | xargs) 2>/dev/null || true
+        DATE="$(date -u +%Y-%m-%dT%H%M%SZ)"
+        OUTFILE="arrow-db-manual-${DATE}.sql.gz"
+        echo "==> pg_dump → ${OUTFILE}"
+        $DC exec -T postgres sh -c \
+            "PGPASSWORD=\$POSTGRES_PASSWORD pg_dump -U arrow arrow" \
+            | gzip > "$OUTFILE"
+        echo "==> saved: $OUTFILE ($(du -h "$OUTFILE" | cut -f1))"
+        ;;
+
+    wms)
+        require_compose
+        host_ip="$(hostname -I 2>/dev/null | awk '{print $1}')" || host_ip=localhost
+        PORT_WMS="${ARROW_HTTP_PORT:-6200}"
+        echo ""
+        echo "  WMS GetCapabilities:"
+        echo "    http://${host_ip}:${PORT_WMS}/mapserver/?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities"
+        echo ""
+        echo "  Available layers:  operators  tactical_objects  cot_tracks"
+        echo "                     alerts     fire_missions     supply_points"
+        echo ""
+        ;;
+
     *)
-        echo "usage: $0 [up|https|down|restart|rebuild|logs|status|maps]" >&2
+        echo "usage: $0 [up|https|down|restart|rebuild|logs|status|maps|db|backup|wms]" >&2
         exit 1 ;;
 esac

@@ -1,32 +1,42 @@
 """Arrow Front — Configuration dialog (Server · Display · GPS)."""
+
 from __future__ import annotations
 
-import json
 
 import httpx
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QTabWidget, QWidget, QLabel, QLineEdit, QPushButton,
-    QCheckBox, QFrame, QComboBox, QSpinBox, QSizePolicy,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QTabWidget,
+    QWidget,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QCheckBox,
+    QFrame,
+    QComboBox,
+    QSpinBox,
+    QSizePolicy,
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont
-
 
 _S = QSettings("Arrow", "ArrowFront")
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DEFAULTS = {
-    "server_url":             "http://localhost:6001",
-    "server_timeout":         10,
-    "display_base_layer":     "OSM",
-    "display_show_trails":    True,
-    "display_voice_alerts":   True,
-    "gps_enabled":            True,
-    "gps_high_accuracy":      True,
-    "gps_max_age_ms":         4000,
-    "gps_center_on_fix":      True,
-    "gps_show_accuracy":      True,
+    "server_url": "http://localhost:6001",
+    "server_timeout": 10,
+    "display_base_layer": "OSM",
+    "display_show_trails": True,
+    "display_voice_alerts": True,
+    "gps_enabled": True,
+    "gps_high_accuracy": True,
+    "gps_max_age_ms": 4000,
+    "gps_center_on_fix": True,
+    "gps_show_accuracy": True,
 }
 
 
@@ -42,9 +52,9 @@ def save_all(values: dict):
 class ConfigDialog(QDialog):
     """Tabbed settings modal. Emits gps_config_changed after saving."""
 
-    gps_config_changed   = pyqtSignal(bool, bool, int, bool, bool)
-    base_layer_changed   = pyqtSignal(str)
-    trails_changed       = pyqtSignal(bool)
+    gps_config_changed = pyqtSignal(bool, bool, int, bool, bool)
+    base_layer_changed = pyqtSignal(str)
+    trails_changed = pyqtSignal(bool)
     voice_alerts_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
@@ -53,8 +63,7 @@ class ConfigDialog(QDialog):
         self.setMinimumSize(520, 460)
         self.setMaximumSize(640, 560)
         self.setWindowFlags(
-            Qt.WindowType.Dialog |
-            Qt.WindowType.MSWindowsFixedSizeDialogHint
+            Qt.WindowType.Dialog | Qt.WindowType.MSWindowsFixedSizeDialogHint
         )
         self._build()
         self._load_values()
@@ -84,9 +93,9 @@ class ConfigDialog(QDialog):
         # ── Tabs ────────────────────────────────────────────────────────
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
-        self._tabs.addTab(self._build_server_tab(),  "SERVER")
+        self._tabs.addTab(self._build_server_tab(), "SERVER")
         self._tabs.addTab(self._build_display_tab(), "DISPLAY")
-        self._tabs.addTab(self._build_gps_tab(),     "GPS")
+        self._tabs.addTab(self._build_gps_tab(), "GPS")
         root.addWidget(self._tabs, 1)
 
         # ── Footer ──────────────────────────────────────────────────────
@@ -145,7 +154,9 @@ class ConfigDialog(QDialog):
         self._test_btn.setFixedWidth(140)
         self._test_btn.clicked.connect(self._test_connection)
         self._test_result = QLabel("")
-        self._test_result.setStyleSheet("font-size:10px;font-family:'Courier New',monospace;")
+        self._test_result.setStyleSheet(
+            "font-size:10px;font-family:'Courier New',monospace;"
+        )
         test_row.addWidget(self._test_btn)
         test_row.addWidget(self._test_result, 1)
         lay.addLayout(test_row)
@@ -168,8 +179,12 @@ class ConfigDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
         self._base_layer = QComboBox()
-        for name, label in [("OSM", "OpenStreetMap"), ("DARK", "Dark (CartoDB)"),
-                             ("SATELLITE", "Satellite (Esri)"), ("TOPO", "Topo")]:
+        for name, label in [
+            ("OSM", "OpenStreetMap"),
+            ("DARK", "Dark (CartoDB)"),
+            ("SATELLITE", "Satellite (Esri)"),
+            ("TOPO", "Topo"),
+        ]:
             self._base_layer.addItem(label, name)
         form.addRow(_lbl("Default base layer"), self._base_layer)
 
@@ -182,7 +197,9 @@ class ConfigDialog(QDialog):
 
         lay.addWidget(_section("Alerts"))
 
-        self._voice_alerts = QCheckBox("Voice alerts  (TTS + alarm tone on incoming alerts)")
+        self._voice_alerts = QCheckBox(
+            "Voice alerts  (TTS + alarm tone on incoming alerts)"
+        )
         lay.addWidget(self._voice_alerts)
 
         lay.addStretch()
@@ -213,7 +230,7 @@ class ConfigDialog(QDialog):
 
         self._gps_accuracy = QComboBox()
         self._gps_accuracy.addItem("High (enableHighAccuracy)", True)
-        self._gps_accuracy.addItem("Low  (battery-saving)",    False)
+        self._gps_accuracy.addItem("Low  (battery-saving)", False)
         form.addRow(_lbl("Accuracy mode"), self._gps_accuracy)
 
         self._gps_interval = QSpinBox()
@@ -228,7 +245,9 @@ class ConfigDialog(QDialog):
         self._gps_center = QCheckBox("Center map on first GPS fix")
         gb.addWidget(self._gps_center)
 
-        self._gps_accuracy_circle = QCheckBox("Show accuracy circle around own position")
+        self._gps_accuracy_circle = QCheckBox(
+            "Show accuracy circle around own position"
+        )
         gb.addWidget(self._gps_accuracy_circle)
 
         lay.addWidget(self._gps_body)
@@ -279,16 +298,17 @@ class ConfigDialog(QDialog):
 
     def _save(self):
         values = {
-            "server_url":          self._url.text().strip().rstrip("/") or "http://localhost:6001",
-            "server_timeout":      self._timeout.value(),
-            "display_base_layer":   self._base_layer.currentData(),
-            "display_show_trails":  self._show_trails.isChecked(),
+            "server_url": self._url.text().strip().rstrip("/")
+            or "http://localhost:6001",
+            "server_timeout": self._timeout.value(),
+            "display_base_layer": self._base_layer.currentData(),
+            "display_show_trails": self._show_trails.isChecked(),
             "display_voice_alerts": self._voice_alerts.isChecked(),
-            "gps_enabled":         self._gps_enabled.isChecked(),
-            "gps_high_accuracy":   bool(self._gps_accuracy.currentData()),
-            "gps_max_age_ms":      self._gps_interval.value() * 1000,
-            "gps_center_on_fix":   self._gps_center.isChecked(),
-            "gps_show_accuracy":   self._gps_accuracy_circle.isChecked(),
+            "gps_enabled": self._gps_enabled.isChecked(),
+            "gps_high_accuracy": bool(self._gps_accuracy.currentData()),
+            "gps_max_age_ms": self._gps_interval.value() * 1000,
+            "gps_center_on_fix": self._gps_center.isChecked(),
+            "gps_show_accuracy": self._gps_accuracy_circle.isChecked(),
         }
         save_all(values)
 
@@ -318,20 +338,28 @@ class ConfigDialog(QDialog):
         self._test_btn.setEnabled(False)
         self._test_result.setText("Testing…")
         try:
-            r = httpx.get(f"{url}/health", timeout=float(self._timeout.value()), verify=False)
+            r = httpx.get(
+                f"{url}/health", timeout=float(self._timeout.value()), verify=False
+            )
             if r.status_code == 200:
                 data = r.json()
                 ver = data.get("version", "")
                 self._test_result.setText(f"● Connected  {ver}")
-                self._test_result.setStyleSheet("color:#3fb950;font-size:10px;font-family:'Courier New',monospace;")
+                self._test_result.setStyleSheet(
+                    "color:#3fb950;font-size:10px;font-family:'Courier New',monospace;"
+                )
             else:
                 self._test_result.setText(f"○ HTTP {r.status_code}")
-                self._test_result.setStyleSheet("color:#d29922;font-size:10px;font-family:'Courier New',monospace;")
+                self._test_result.setStyleSheet(
+                    "color:#d29922;font-size:10px;font-family:'Courier New',monospace;"
+                )
         except Exception as exc:
             msg = str(exc)
             short = msg[:48] if len(msg) > 48 else msg
             self._test_result.setText(f"○ {short}")
-            self._test_result.setStyleSheet("color:#f85149;font-size:10px;font-family:'Courier New',monospace;")
+            self._test_result.setStyleSheet(
+                "color:#f85149;font-size:10px;font-family:'Courier New',monospace;"
+            )
         finally:
             self._test_btn.setEnabled(True)
 
@@ -340,9 +368,12 @@ class ConfigDialog(QDialog):
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _lbl(text: str) -> QLabel:
     lbl = QLabel(text)
-    lbl.setStyleSheet("color:#8b949e;font-size:9px;font-weight:600;letter-spacing:1.2px;")
+    lbl.setStyleSheet(
+        "color:#8b949e;font-size:9px;font-weight:600;letter-spacing:1.2px;"
+    )
     return lbl
 
 

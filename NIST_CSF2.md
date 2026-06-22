@@ -134,7 +134,7 @@ Assets in scope:
 | 9-liner reports (MEDEVAC/CAS) | Operational | HIGH — mission-critical |
 | Messages | Operational | MEDIUM |
 | Fire missions | Operational | CRITICAL — kinetic effects |
-| `arrow.db` (SQLite) | Data store | HIGH |
+| PostgreSQL `arrow` DB | Data store | HIGH |
 | `/data/photos/` | Data store | HIGH |
 | JWT secret (`config.xml`) | Credential | CRITICAL |
 
@@ -190,7 +190,7 @@ Gaps:
 
 - Passwords: bcrypt (rounds=12 default)
 - Transit: Caddy handles TLS in production
-- At rest: **not encrypted** — SQLite plaintext, photos on disk plaintext
+- At rest: **not encrypted** — PostgreSQL data directory plaintext, photos on disk plaintext
 - Photos served with auth (fixed in SECURITY.md PR)
 - No data retention/deletion policy
 
@@ -237,7 +237,7 @@ See `RECOVERY_PLAN.md`.
 **Status:** Implemented (this PR)
 
 `backend/audit.py` writes security events to:
-1. `audit_logs` SQLite table (queryable via `/admin/audit`)
+1. `audit_logs` PostgreSQL table (queryable via `/admin/audit`)
 2. `arrow.security` Python logger (structured, for log aggregation)
 
 Events logged:

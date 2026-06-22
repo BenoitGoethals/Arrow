@@ -30,7 +30,7 @@ flowchart LR
     P[Caddy reverse proxy<br/>:6200]
     B[FastAPI backend<br/>:6001]
     R[(Redis<br/>token blacklist<br/>rate-limit state)]
-    D[(SQLite<br/>arrow.db)]
+    D[(PostgreSQL+PostGIS<br/>arrow)]
     F[/data volume<br/>photos, streams, backups/]
   end
 
@@ -255,7 +255,7 @@ sequenceDiagram
   participant C as Client (browser / Android)
   participant API as FastAPI /auth
   participant SVC as auth_service
-  participant DB as SQLite (Operator)
+  participant DB as PostgreSQL (Operator)
   participant JWT as token_service
   participant LOG as audit
 
@@ -366,7 +366,7 @@ flowchart TB
     web[arrow-web<br/>Flask :6002]
     api[arrow-backend<br/>FastAPI :6001]
     redis[(redis:7-alpine<br/>arrow-redis)]
-    backup[arrow-backup<br/>sqlite3 .dump + tar]
+    backup[arrow-backup<br/>pg_dump + tar]
     subgraph optional["docker compose --profile logging"]
       loki[loki]
       promtail[promtail]
@@ -377,7 +377,8 @@ flowchart TB
     proxy --> api
     web   --> api
     api   --> redis
-    api   --- arrow_data[("arrow-data volume<br/>arrow.db + photos + streams")]
+    api   --- pg[("postgres-data volume<br/>PostgreSQL+PostGIS")]
+    api   --- arrow_data[("arrow-data volume<br/>photos + streams")]
     backup -. read .- arrow_data
     backup --- arrow_backups[("arrow-backups volume")]
     promtail -.- loki -.- grafana
@@ -454,13 +455,13 @@ Tests are split by kind, not by feature:
 
 ```
 tests/
-  conftest.py            # shared fixtures — in-memory SQLite, seeded admin,
-                         # rate-limiter disabled
+  conftest.py            # shared fixtures — in-memory SQLite (unit tests only),
+                         # seeded admin, rate-limiter disabled
   unit/                  # pure, no network
     test_cot.py          # CoT encoder/decoder
     test_pages.py        # web PageService
     test_proxy.py        # web proxy with fake BackendClient
-  integration/           # FastAPI TestClient + real SQLite (in-memory)
+  integration/           # FastAPI TestClient + in-memory SQLite (fast, isolated)
     test_auth_and_tracking.py
     test_messaging.py
     test_tactical_graphics.py

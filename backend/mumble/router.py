@@ -1,4 +1,5 @@
 """Mumble REST + WebSocket endpoints."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, WebSocket
@@ -12,13 +13,14 @@ router = APIRouter(prefix="/mumble", tags=["mumble"])
 
 
 class MumbleConfig(BaseModel):
-    host:     str
-    port:     int  = 64738
-    username: str  = "ArrowBot"
-    password: str  = ""
+    host: str
+    port: int = 64738
+    username: str = "ArrowBot"
+    password: str = ""
 
 
 # ── REST ─────────────────────────────────────────────────────────────────────
+
 
 @router.get("/status")
 async def get_status(_op=Depends(get_current_operator)):
@@ -55,14 +57,14 @@ async def ping_mumble(_op=Depends(get_current_operator)):
 
     st = monitor.get_status()
     return {
-        "ok":            True,
-        "tcp_ms":        tcp_ms,
-        "host":          host,
-        "port":          port,
+        "ok": True,
+        "tcp_ms": tcp_ms,
+        "host": host,
+        "port": port,
         "bot_connected": st["connected"],
-        "bot_error":     st.get("error", ""),
-        "channels":      len(st.get("channels", [])),
-        "users":         len(st.get("users", [])),
+        "bot_error": st.get("error", ""),
+        "channels": len(st.get("channels", [])),
+        "users": len(st.get("users", [])),
     }
 
 
@@ -88,6 +90,7 @@ async def delete_config(_op=Depends(require_role("ADMIN", "BATTLE_CAPTAIN"))):
 
 # ── WebSocket voice bridge ────────────────────────────────────────────────────
 
+
 @router.websocket("/voice")
 async def mumble_voice_ws(
     websocket: WebSocket,
@@ -110,18 +113,19 @@ async def mumble_voice_ws(
         if msg.get("type") != "connect":
             await websocket.close(code=4002)
             return
-        host     = msg.get("host", "")
-        port     = int(msg.get("port", 64738))
+        host = msg.get("host", "")
+        port = int(msg.get("port", 64738))
         username = msg.get("username") or callsign
         password = msg.get("password", "")
         if not host:
             await websocket.send_json({"type": "error", "msg": "host required"})
             await websocket.close()
             return
-    except Exception as exc:
+    except Exception:
         await websocket.close()
         return
 
     from backend.mumble.ws_bridge import MumbleVoiceSession
+
     session = MumbleVoiceSession(websocket, callsign)
     await session.run(host, port, username, password)

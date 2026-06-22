@@ -11,16 +11,29 @@ before ``SimFrame`` is instantiated.
 
 from . import providers as _providers  # noqa: F401 — side-effect: registers built-ins
 
-from .builder    import CotXmlBuilder
-from .client     import BackendClient, WsMonitor
-from .domain     import CotEntry
-from .frame      import SimFrame
-from .messages   import (
-    MsgAutoStopped, MsgAutoTrigger, MsgLoginErr, MsgLoginOk,
-    MsgSendErr, MsgSendOk, MsgWsBtn, MsgWsRaw, MsgWsStatus, QueueMsg,
+from .builder import CotXmlBuilder
+from .client import BackendClient, WsMonitor
+from .domain import CotEntry
+from .frame import SimFrame
+from .messages import (
+    MsgAutoStopped,
+    MsgAutoTrigger,
+    MsgLoginErr,
+    MsgLoginOk,
+    MsgSendErr,
+    MsgSendOk,
+    MsgWsBtn,
+    MsgWsRaw,
+    MsgWsStatus,
+    QueueMsg,
 )
-from .providers  import JsonFileCotProvider
-from .registry   import CotLibraryRegistry, CotMessageProvider, register_provider, registry
+from .providers import JsonFileCotProvider
+from .registry import (
+    CotLibraryRegistry,
+    CotMessageProvider,
+    register_provider,
+    registry,
+)
 from .strategies import AutoSend, BurstSend, OnceSend, SendStrategy
 
 __all__ = [
@@ -29,16 +42,31 @@ __all__ = [
     # builder
     "CotXmlBuilder",
     # registry
-    "CotLibraryRegistry", "CotMessageProvider", "register_provider", "registry",
+    "CotLibraryRegistry",
+    "CotMessageProvider",
+    "register_provider",
+    "registry",
     # providers
     "JsonFileCotProvider",
     # strategies
-    "AutoSend", "BurstSend", "OnceSend", "SendStrategy",
+    "AutoSend",
+    "BurstSend",
+    "OnceSend",
+    "SendStrategy",
     # client
-    "BackendClient", "WsMonitor",
+    "BackendClient",
+    "WsMonitor",
     # messages
-    "MsgAutoStopped", "MsgAutoTrigger", "MsgLoginErr", "MsgLoginOk",
-    "MsgSendErr", "MsgSendOk", "MsgWsBtn", "MsgWsRaw", "MsgWsStatus", "QueueMsg",
+    "MsgAutoStopped",
+    "MsgAutoTrigger",
+    "MsgLoginErr",
+    "MsgLoginOk",
+    "MsgSendErr",
+    "MsgSendOk",
+    "MsgWsBtn",
+    "MsgWsRaw",
+    "MsgWsStatus",
+    "QueueMsg",
     # GUI
     "SimFrame",
 ]

@@ -34,27 +34,39 @@ def _out(db: Session, v: Vehicle) -> VehicleOut:
 
 def _validate(affiliation: str | None, ops_status: str | None) -> None:
     if affiliation is not None and affiliation.upper() not in VALID_AFFILIATION:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"affiliation must be one of {sorted(VALID_AFFILIATION)}")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"affiliation must be one of {sorted(VALID_AFFILIATION)}",
+        )
     if ops_status is not None and ops_status.upper() not in VALID_OPS_STATUS:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"ops_status must be one of {sorted(VALID_OPS_STATUS)}")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"ops_status must be one of {sorted(VALID_OPS_STATUS)}",
+        )
 
 
 async def _broadcast(event: str, v: Vehicle, db: Session) -> None:
     lat, lon, online = derived_position(db, v)
-    await broadcaster.broadcast({
-        "channel": "vehicle",
-        "event": event,
-        "mission_id": v.mission_id,
-        "data": {
-            "id": v.id, "callsign": v.callsign, "vehicle_type": v.vehicle_type,
-            "symbol_code": v.symbol_code, "affiliation": v.affiliation,
-            "ops_status": v.ops_status, "team_id": v.team_id,
-            "operator_id": v.operator_id, "latitude": lat, "longitude": lon,
-            "online": online,
-        },
-    })
+    await broadcaster.broadcast(
+        {
+            "channel": "vehicle",
+            "event": event,
+            "mission_id": v.mission_id,
+            "data": {
+                "id": v.id,
+                "callsign": v.callsign,
+                "vehicle_type": v.vehicle_type,
+                "symbol_code": v.symbol_code,
+                "affiliation": v.affiliation,
+                "ops_status": v.ops_status,
+                "team_id": v.team_id,
+                "operator_id": v.operator_id,
+                "latitude": lat,
+                "longitude": lon,
+                "online": online,
+            },
+        }
+    )
 
 
 @router.get("", response_model=list[VehicleOut])
@@ -106,8 +118,13 @@ async def create_vehicle(
     db.add(v)
     db.commit()
     db.refresh(v)
-    log_event(db, "VEHICLE_CREATE", operator_id=current.id, resource=f"vehicle:{v.id}",
-              detail=v.callsign)
+    log_event(
+        db,
+        "VEHICLE_CREATE",
+        operator_id=current.id,
+        resource=f"vehicle:{v.id}",
+        detail=v.callsign,
+    )
     await _broadcast("created", v, db)
     return _out(db, v)
 
@@ -132,8 +149,13 @@ async def update_vehicle(
         setattr(v, field, value)
     db.commit()
     db.refresh(v)
-    log_event(db, "VEHICLE_UPDATE", operator_id=current.id, resource=f"vehicle:{vehicle_id}",
-              detail=str(changes))
+    log_event(
+        db,
+        "VEHICLE_UPDATE",
+        operator_id=current.id,
+        resource=f"vehicle:{vehicle_id}",
+        detail=str(changes),
+    )
     await _broadcast("updated", v, db)
     return _out(db, v)
 
@@ -150,9 +172,18 @@ async def delete_vehicle(
     mid, callsign = v.mission_id, v.callsign
     db.delete(v)
     db.commit()
-    log_event(db, "VEHICLE_DELETE", operator_id=current.id, resource=f"vehicle:{vehicle_id}",
-              detail=callsign)
-    await broadcaster.broadcast({
-        "channel": "vehicle", "event": "deleted",
-        "mission_id": mid, "data": {"id": vehicle_id},
-    })
+    log_event(
+        db,
+        "VEHICLE_DELETE",
+        operator_id=current.id,
+        resource=f"vehicle:{vehicle_id}",
+        detail=callsign,
+    )
+    await broadcaster.broadcast(
+        {
+            "channel": "vehicle",
+            "event": "deleted",
+            "mission_id": mid,
+            "data": {"id": vehicle_id},
+        }
+    )

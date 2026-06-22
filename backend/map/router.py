@@ -47,12 +47,12 @@ _MIME = {
 class MapSource(BaseModel):
     name: str
     title: str
-    type: str          # "raster" or "vector"
+    type: str  # "raster" or "vector"
     format: str
     min_zoom: int
     max_zoom: int
-    bounds: list[float] | None = None   # [minLon, minLat, maxLon, maxLat]
-    center: list[float] | None = None   # [lon, lat]
+    bounds: list[float] | None = None  # [minLon, minLat, maxLon, maxLat]
+    center: list[float] | None = None  # [lon, lat]
     attribution: str | None = None
     url_template: str
     is_default: bool = False
@@ -115,20 +115,22 @@ def _scan_sources() -> list[MapSource]:
         except sqlite3.Error:
             continue
         ext = "jpg" if meta.fmt == "jpeg" else meta.fmt
-        out.append(MapSource(
-            name=meta.name,
-            title=meta.title,
-            type="vector" if meta.fmt == "pbf" else "raster",
-            format=meta.fmt,
-            min_zoom=meta.min_zoom,
-            max_zoom=meta.max_zoom,
-            bounds=list(meta.bounds) if meta.bounds else None,
-            center=list(meta.center) if meta.center else None,
-            attribution=meta.attribution,
-            url_template=f"/map/tiles/{meta.name}/{{z}}/{{x}}/{{y}}.{ext}",
-            size_bytes=path.stat().st_size,
-            downloadable=True,
-        ))
+        out.append(
+            MapSource(
+                name=meta.name,
+                title=meta.title,
+                type="vector" if meta.fmt == "pbf" else "raster",
+                format=meta.fmt,
+                min_zoom=meta.min_zoom,
+                max_zoom=meta.max_zoom,
+                bounds=list(meta.bounds) if meta.bounds else None,
+                center=list(meta.center) if meta.center else None,
+                attribution=meta.attribution,
+                url_template=f"/map/tiles/{meta.name}/{{z}}/{{x}}/{{y}}.{ext}",
+                size_bytes=path.stat().st_size,
+                downloadable=True,
+            )
+        )
     return out
 
 
@@ -143,15 +145,14 @@ def geocode(
     """Proxy Nominatim geocoding to avoid browser CORS/CSP restrictions."""
     if not q.strip():
         raise HTTPException(status_code=400, detail="Query is empty")
-    url = (
-        "https://nominatim.openstreetmap.org/search?"
-        + urllib.parse.urlencode({"q": q, "format": "json", "limit": "5",
-                                  "addressdetails": "0"})
+    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
+        {"q": q, "format": "json", "limit": "5", "addressdetails": "0"}
     )
     req = urllib.request.Request(url, headers={"User-Agent": "ArrowTactical/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=8) as resp:
             import json
+
             data = json.loads(resp.read())
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Geocoding failed: {exc}") from exc
@@ -168,6 +169,42 @@ def map_config(_: Operator = Depends(get_current_operator)) -> dict:
     }
 
 
+_WMS_LAYERS = (
+    ("operators", "Operators"),
+    ("tactical_objects", "Tactical Objects"),
+    ("cot_tracks", "CoT Tracks"),
+    ("alerts", "Alerts"),
+    ("fire_missions", "Fire Missions"),
+    ("supply_points", "Supply Points"),
+)
+
+
+def _wms_sources() -> list[MapSource]:
+    """Return MapServer WMS sources when running on PostgreSQL."""
+    cfg = load_config()
+    if not cfg.database.url.startswith("postgresql"):
+        return []
+    wms_base = os.environ.get("ARROW_MAPSERVER_URL", "/mapserver")
+    sources: list[MapSource] = []
+    for layer_id, layer_title in _WMS_LAYERS:
+        sources.append(
+            MapSource(
+                name=f"wms_{layer_id}",
+                title=f"WMS: {layer_title}",
+                type="wms",
+                format="png",
+                min_zoom=0,
+                max_zoom=19,
+                url_template=(
+                    f"{wms_base}?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap"
+                    f"&LAYERS={layer_id}&SRS=EPSG:{{srs}}&FORMAT=image/png"
+                    "&TRANSPARENT=true&WIDTH={width}&HEIGHT={height}&BBOX={bbox}"
+                ),
+            )
+        )
+    return sources
+
+
 @router.get("/sources", response_model=list[MapSource])
 def list_sources(_: Operator = Depends(get_current_operator)) -> list[MapSource]:
     """All selectable base map sources: built-in OSM plus every MBTiles in maps/."""
@@ -182,7 +219,7 @@ def list_sources(_: Operator = Depends(get_current_operator)) -> list[MapSource]
         url_template="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         is_default=True,
     )
-    return [osm, *_scan_sources()]
+    return [osm, *_scan_sources(), *_wms_sources()]
 
 
 @router.get("/tiles/{name}/{z}/{x}/{y}.{ext}")
@@ -268,7 +305,9 @@ def _validate_mbtiles(path: Path) -> None:
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        raise HTTPException(status_code=400, detail=f"Not a valid MBTiles archive: {exc}")
+        raise HTTPException(
+            status_code=400, detail=f"Not a valid MBTiles archive: {exc}"
+        )
 
 
 @router.post("/sources", response_model=MapSource, status_code=201)
@@ -284,6 +323,7 @@ async def upload_source(
     place — readers never see a half-written file.
     """
     import logging  # noqa: PLC0415
+
     log = logging.getLogger(__name__)
 
     filename = file.filename or ""
@@ -295,7 +335,9 @@ async def upload_source(
     raw_stem = Path(filename).stem
     safe_chars = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_stem).strip("._-")
     if not safe_chars:
-        raise HTTPException(status_code=400, detail=f"Cannot derive a valid name from {filename!r}")
+        raise HTTPException(
+            status_code=400, detail=f"Cannot derive a valid name from {filename!r}"
+        )
     stem = _safe_name(safe_chars)
     final_path = _MBTILES_DIR / f"{stem}.mbtiles"
 
@@ -309,7 +351,7 @@ async def upload_source(
         raise HTTPException(
             status_code=500,
             detail=f"maps dir {_MBTILES_DIR} is not writable by the backend "
-                   f"(check the docker-compose volume mount and host permissions)",
+            f"(check the docker-compose volume mount and host permissions)",
         )
 
     try:
@@ -336,6 +378,7 @@ async def upload_source(
         _validate_mbtiles(tmp_path)
         # Drop any cached connection to the destination before replacing the file.
         from backend.map.mbtiles import _open  # noqa: PLC0415
+
         _open.cache_clear()
         os.replace(tmp_path, final_path)
     except HTTPException:
@@ -381,6 +424,7 @@ def delete_source(
         raise HTTPException(status_code=404, detail="Unknown map source")
     # Drop the cached SQLite handle for this file before deleting on disk.
     from backend.map.mbtiles import _open as _open_cached  # noqa: PLC0415
+
     _open_cached.cache_clear()
     path.unlink()
     return Response(status_code=204)
@@ -414,6 +458,8 @@ def list_zones(_: Operator = Depends(get_current_operator)) -> list[OfflineZone]
 
 
 @router.post("/offline-zones", response_model=OfflineZone)
-def add_zone(zone: OfflineZone, _: Operator = Depends(get_current_operator)) -> OfflineZone:
+def add_zone(
+    zone: OfflineZone, _: Operator = Depends(get_current_operator)
+) -> OfflineZone:
     _offline_zones.append(zone)
     return zone

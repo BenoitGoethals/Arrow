@@ -1,8 +1,18 @@
 """Missions Panel — read-only selector. Missions are managed via the Arrow web dashboard."""
+
 from __future__ import annotations
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QLabel, QPushButton, QFrame, QTreeWidget, QTreeWidgetItem, QSplitter,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QLabel,
+    QPushButton,
+    QFrame,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QSplitter,
     QMessageBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -10,21 +20,21 @@ from PyQt6.QtGui import QColor, QBrush, QFont
 
 STATUS_COLOR = {
     "PLANNING": "#d29922",
-    "ACTIVE":   "#3fb950",
-    "ENDED":    "#6e7681",
+    "ACTIVE": "#3fb950",
+    "ENDED": "#6e7681",
 }
 STATUS_ICON = {
     "PLANNING": "○",
-    "ACTIVE":   "●",
-    "ENDED":    "✕",
+    "ACTIVE": "●",
+    "ENDED": "✕",
 }
 
 
 class MissionsPanel(QWidget):
-    mission_selected     = pyqtSignal(object)  # mission dict
-    mission_cleared      = pyqtSignal()
-    refresh_requested    = pyqtSignal()
-    delete_all_requested = pyqtSignal()        # confirmed — delete all missions
+    mission_selected = pyqtSignal(object)  # mission dict
+    mission_cleared = pyqtSignal()
+    refresh_requested = pyqtSignal()
+    delete_all_requested = pyqtSignal()  # confirmed — delete all missions
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,8 +52,12 @@ class MissionsPanel(QWidget):
         # Header
         top = QHBoxLayout()
         top.setContentsMargins(8, 6, 8, 4)
-        top.addWidget(QLabel("MISSIONS",
-            styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;"))
+        top.addWidget(
+            QLabel(
+                "MISSIONS",
+                styleSheet="color:#8b949e;font-size:12px;font-weight:700;letter-spacing:2px;",
+            )
+        )
         top.addStretch()
 
         refresh_btn = QPushButton("⟳")
@@ -65,7 +79,9 @@ class MissionsPanel(QWidget):
         top.addWidget(clear_btn)
         layout.addLayout(top)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine); sep.setFixedHeight(1)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFixedHeight(1)
         layout.addWidget(sep)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -110,6 +126,7 @@ class MissionsPanel(QWidget):
         self._list.clear()
 
         if not missions:
+
             def _placeholder(text: str, color: str = "#484f58", size: int = 10):
                 it = QListWidgetItem(text)
                 it.setForeground(QBrush(QColor(color)))
@@ -119,7 +136,9 @@ class MissionsPanel(QWidget):
 
             if role in ("ADMIN", "BATTLE_CAPTAIN"):
                 _placeholder("  No missions on server")
-                _placeholder("  Create missions in the Arrow web dashboard", "#30363d", 9)
+                _placeholder(
+                    "  Create missions in the Arrow web dashboard", "#30363d", 9
+                )
             else:
                 _placeholder("  No mission assigned to your account", "#d29922")
                 _placeholder(f"  Role: {role}", "#30363d", 9)
@@ -131,15 +150,14 @@ class MissionsPanel(QWidget):
 
         for m in missions:
             status = m.get("status", "PLANNING")
-            icon   = STATUS_ICON.get(status, "?")
-            color  = STATUS_COLOR.get(status, "#8b949e")
-            item   = QListWidgetItem(
-                f"  {icon}  {m.get('name', '?')}   [{status}]"
-            )
+            icon = STATUS_ICON.get(status, "?")
+            color = STATUS_COLOR.get(status, "#8b949e")
+            item = QListWidgetItem(f"  {icon}  {m.get('name', '?')}   [{status}]")
             item.setForeground(QBrush(QColor(color)))
             item.setData(Qt.ItemDataRole.UserRole, m)
             if m.get("id") == self._active_id:
-                f = QFont("Courier New", 13); f.setBold(True)
+                f = QFont("Courier New", 13)
+                f.setBold(True)
                 item.setFont(f)
             self._list.addItem(item)
 
@@ -150,9 +168,9 @@ class MissionsPanel(QWidget):
         self._ops_tree.clear()
         for op in operators:
             online = op.get("status", "") == "ONLINE"
-            color  = "#3fb950" if online else "#6e7681"
-            led    = "●" if online else "○"
-            item   = QTreeWidgetItem(
+            color = "#3fb950" if online else "#6e7681"
+            led = "●" if online else "○"
+            item = QTreeWidgetItem(
                 [f"  {led}  {op.get('callsign','?')}  {op.get('rank','')}"]
             )
             item.setForeground(0, QBrush(QColor(color)))
@@ -162,7 +180,7 @@ class MissionsPanel(QWidget):
         self._active_id = mission.get("id") if mission else None
         if mission:
             status = mission.get("status", "PLANNING")
-            color  = STATUS_COLOR.get(status, "#8b949e")
+            color = STATUS_COLOR.get(status, "#8b949e")
             self._detail_header.setText(
                 f"  {STATUS_ICON.get(status,'?')}  {mission.get('name','')}  "
                 f"<span style='color:{color}'>[{status}]</span>"
@@ -181,8 +199,10 @@ class MissionsPanel(QWidget):
         if mission.get("id") == self._active_id:
             self._clear()
             return
-        f_bold = QFont("Courier New", 13); f_bold.setBold(True)
-        f_norm = QFont("Courier New", 13); f_norm.setBold(False)
+        f_bold = QFont("Courier New", 13)
+        f_bold.setBold(True)
+        f_norm = QFont("Courier New", 13)
+        f_norm.setBold(False)
         for i in range(self._list.count()):
             it = self._list.item(i)
             it.setFont(f_bold if it is item else f_norm)
@@ -220,7 +240,8 @@ class MissionsPanel(QWidget):
         self._active_id = None
         self._list.clearSelection()
         self._list.setCurrentItem(None)
-        f = QFont("Courier New", 13); f.setBold(False)
+        f = QFont("Courier New", 13)
+        f.setBold(False)
         for i in range(self._list.count()):
             self._list.item(i).setFont(f)
         self.set_active_mission(None)

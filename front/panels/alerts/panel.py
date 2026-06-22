@@ -1,27 +1,30 @@
 """Alerts Panel — live alert feed with priority styling."""
+
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QListWidget, QListWidgetItem, QLabel,
+    QWidget,
+    QVBoxLayout,
+    QListWidget,
+    QListWidgetItem,
+    QLabel,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 
-from front.models.report import PRIORITY_COLORS
-
 ALERT_COLOR = {
-    "TIC":           "#f85149",
-    "MEDICAL":       "#ff9e64",
-    "EVAC":          "#ffa500",
-    "LOST_COMMS":    "#d29922",
+    "TIC": "#f85149",
+    "MEDICAL": "#ff9e64",
+    "EVAC": "#ffa500",
+    "LOST_COMMS": "#d29922",
     "DRONE_SPOTTED": "#d2a8ff",
 }
 
 ALERT_ICON = {
-    "TIC":           "⚡",
-    "MEDICAL":       "🚑",
-    "EVAC":          "🚁",
-    "LOST_COMMS":    "📡",
+    "TIC": "⚡",
+    "MEDICAL": "🚑",
+    "EVAC": "🚁",
+    "LOST_COMMS": "📡",
     "DRONE_SPOTTED": "🛸",
 }
 
@@ -52,14 +55,12 @@ class AlertsPanel(QWidget):
 
     def add_alert(self, data: dict):
         alert_type = data.get("type", "UNKNOWN")
-        operator   = data.get("operator") or data.get("callsign") or "?"
-        ts         = (data.get("timestamp") or data.get("created_at") or "")[:16]
-        icon       = ALERT_ICON.get(alert_type, "⚠")
-        color      = ALERT_COLOR.get(alert_type, "#f85149")
+        operator = data.get("operator") or data.get("callsign") or "?"
+        ts = (data.get("timestamp") or data.get("created_at") or "")[:16]
+        icon = ALERT_ICON.get(alert_type, "⚠")
+        color = ALERT_COLOR.get(alert_type, "#f85149")
 
-        item = QListWidgetItem(
-            f"{icon}  {alert_type:<16}  {operator:<12}  {ts}"
-        )
+        item = QListWidgetItem(f"{icon}  {alert_type:<16}  {operator:<12}  {ts}")
         item.setForeground(QColor(color))
         font = QFont("Courier New", 13)
         font.setBold(True)

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -60,7 +61,7 @@ def import_hierarchy(
     """Idempotently create the Company → Platoon → Section → Team tree from a row list."""
     created = 0
 
-    def gc(model: type, **kw: object) -> object:
+    def gc(model: type, **kw: object) -> Any:
         nonlocal created
         obj = db.query(model).filter_by(**kw).first()
         if obj:
@@ -72,7 +73,7 @@ def import_hierarchy(
         return obj
 
     for row in body.rows:
-        co  = gc(Company, name=row.company)
+        co = gc(Company, name=row.company)
         plt = gc(Platoon, name=row.platoon, company_id=co.id)
         sec = gc(Section, name=row.section, platoon_id=plt.id)
         gc(Team, name=row.team, section_id=sec.id)
@@ -82,6 +83,7 @@ def import_hierarchy(
 
 
 # ── Nested JSON import ────────────────────────────────────────────────────────
+
 
 class HierarchyJsonOperator(BaseModel):
     callsign: str
@@ -133,12 +135,15 @@ def import_hierarchy_json(
 ) -> HierarchyJsonResult:
     """Import a full nested hierarchy snapshot (companies → operators). Idempotent."""
     counts: dict[str, int] = {
-        "companies_created": 0, "platoons_created": 0,
-        "sections_created": 0, "teams_created": 0,
-        "operators_created": 0, "operators_updated": 0,
+        "companies_created": 0,
+        "platoons_created": 0,
+        "sections_created": 0,
+        "teams_created": 0,
+        "operators_created": 0,
+        "operators_updated": 0,
     }
 
-    def gc(model: type, key: str, **kw: object) -> object:
+    def gc(model: type, key: str, **kw: object) -> Any:
         obj = db.query(model).filter_by(**kw).first()
         if obj:
             return obj
@@ -153,11 +158,19 @@ def import_hierarchy_json(
         for plt_data in co_data.platoons:
             plt = gc(Platoon, "platoons_created", name=plt_data.name, company_id=co.id)
             for sec_data in plt_data.sections:
-                sec = gc(Section, "sections_created", name=sec_data.name, platoon_id=plt.id)
+                sec = gc(
+                    Section, "sections_created", name=sec_data.name, platoon_id=plt.id
+                )
                 for team_data in sec_data.teams:
-                    team = gc(Team, "teams_created", name=team_data.name, section_id=sec.id)
+                    team = gc(
+                        Team, "teams_created", name=team_data.name, section_id=sec.id
+                    )
                     for op_data in team_data.operators:
-                        existing = db.query(Operator).filter_by(callsign=op_data.callsign).first()
+                        existing = (
+                            db.query(Operator)
+                            .filter_by(callsign=op_data.callsign)
+                            .first()
+                        )
                         if existing:
                             existing.rank = op_data.rank
                             existing.role = op_data.role
@@ -165,15 +178,17 @@ def import_hierarchy_json(
                             existing.team_role = op_data.team_role
                             counts["operators_updated"] += 1
                         else:
-                            db.add(Operator(
-                                callsign=op_data.callsign,
-                                password_hash=hash_password(op_data.password),
-                                rank=op_data.rank,
-                                role=op_data.role,
-                                team_id=team.id,
-                                team_role=op_data.team_role,
-                                last_seen=datetime.now(timezone.utc),
-                            ))
+                            db.add(
+                                Operator(
+                                    callsign=op_data.callsign,
+                                    password_hash=hash_password(op_data.password),
+                                    rank=op_data.rank,
+                                    role=op_data.role,
+                                    team_id=team.id,
+                                    team_role=op_data.team_role,
+                                    last_seen=datetime.now(timezone.utc),
+                                )
+                            )
                             counts["operators_created"] += 1
 
     db.commit()
@@ -215,4 +230,6 @@ def import_operators(
             created += 1
 
     db.commit()
-    return OperatorImportResult(created=created, updated=updated, total_rows=len(body.rows))
+    return OperatorImportResult(
+        created=created, updated=updated, total_rows=len(body.rows)
+    )

@@ -14,9 +14,10 @@ class ORMModel(BaseModel):
 
 # ── Asset sub-types ───────────────────────────────────────────────────────────
 
+
 class DroneAsset(BaseModel):
     callsign: str = ""
-    platform: str = ""          # MQ-9, TB2, DJI Matrice, etc.
+    platform: str = ""  # MQ-9, TB2, DJI Matrice, etc.
     loiter_lat: float | None = None
     loiter_lon: float | None = None
     feed_url: str = ""
@@ -24,16 +25,16 @@ class DroneAsset(BaseModel):
 
 
 class IsrAsset(BaseModel):
-    sensor: str = ""            # SIGINT, IMINT, HUMINT, MASINT
+    sensor: str = ""  # SIGINT, IMINT, HUMINT, MASINT
     platform: str = ""
-    collection_priority: str = "MEDIUM"   # HIGH | MEDIUM | LOW
+    collection_priority: str = "MEDIUM"  # HIGH | MEDIUM | LOW
     notes: str = ""
 
 
 class AirSupportAsset(BaseModel):
-    aircraft: str = ""          # F-18, AH-64, AC-130, etc.
+    aircraft: str = ""  # F-18, AH-64, AC-130, etc.
     callsign: str = ""
-    ordnance: str = ""          # GBU-12, Hellfire, 30mm, etc.
+    ordnance: str = ""  # GBU-12, Hellfire, 30mm, etc.
     station_time_min: int = 0
     frequency: str = ""
     notes: str = ""
@@ -48,10 +49,10 @@ class SniperOverwatch(BaseModel):
 
 
 class EwAsset(BaseModel):
-    system: str = ""            # AN/ALQ-99, CREW, DUKE, etc.
+    system: str = ""  # AN/ALQ-99, CREW, DUKE, etc.
     callsign: str = ""
     frequency_bands: str = ""
-    objective: str = "JAM"      # JAM | SIGINT | EW_ATTACK | DECEPTION
+    objective: str = "JAM"  # JAM | SIGINT | EW_ATTACK | DECEPTION
     notes: str = ""
 
 
@@ -59,7 +60,7 @@ class CommsConfig(BaseModel):
     primary_freq: str = ""
     alternate_freq: str = ""
     waveform: str = ""
-    pace_plan: str = ""         # Primary/Alternate/Contingency/Emergency one-liner
+    pace_plan: str = ""  # Primary/Alternate/Contingency/Emergency one-liner
 
 
 class AssaultPhase(BaseModel):
@@ -76,10 +77,10 @@ class AssaultPlan(BaseModel):
 
 
 class ExfilRoute(BaseModel):
-    name: str = ""              # PRIMARY | ALTERNATE | EMERGENCY
-    type: str = "GROUND"        # GROUND | AIR | WATER
+    name: str = ""  # PRIMARY | ALTERNATE | EMERGENCY
+    type: str = "GROUND"  # GROUND | AIR | WATER
     description: str = ""
-    tactical_object_id: int | None = None   # links to a ROUTE TacticalObject
+    tactical_object_id: int | None = None  # links to a ROUTE TacticalObject
 
 
 class PackageAssets(BaseModel):
@@ -94,6 +95,7 @@ class PackageAssets(BaseModel):
 
 
 # ── API in/out ────────────────────────────────────────────────────────────────
+
 
 class StrikePackageIn(BaseModel):
     name: str = Field(min_length=1, max_length=160)
@@ -140,7 +142,14 @@ class StrikePackageOut(ORMModel):
     vehicle_ids: list[int]
     assets: PackageAssets
 
-    @field_validator("operator_ids", "tactical_object_ids", "fire_mission_ids", "report_ids", "vehicle_ids", mode="before")
+    @field_validator(
+        "operator_ids",
+        "tactical_object_ids",
+        "fire_mission_ids",
+        "report_ids",
+        "vehicle_ids",
+        mode="before",
+    )
     @classmethod
     def _parse_id_list(cls, v: object) -> list[int]:
         if isinstance(v, str):

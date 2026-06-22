@@ -1,4 +1,5 @@
 """MapView — QWebEngineView hosting the Leaflet tactical COP."""
+
 from __future__ import annotations
 import base64
 import json
@@ -9,14 +10,27 @@ from PyQt6.QtCore import QUrl, QFile, QIODevice, Qt, QEvent, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import (
-    QWebEngineScript, QWebEnginePage, QWebEngineSettings, QWebEnginePermission,
+    QWebEngineScript,
+    QWebEnginePage,
+    QWebEngineSettings,
+    QWebEnginePermission,
     QWebEngineProfile,
 )
 from PyQt6.QtWebChannel import QWebChannel
 
 from front.map.bridge import MapBridge
 
-_MEDIA_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm', '.mov', '.ogv')
+_MEDIA_EXTS = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".mp4",
+    ".webm",
+    ".mov",
+    ".ogv",
+)
 
 
 def _is_media_file(path: str) -> bool:
@@ -28,9 +42,9 @@ class _DebugPage(QWebEnginePage):
 
     def javaScriptConsoleMessage(self, level, message, line, source):
         tag = {
-            QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel:    "JS",
+            QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel: "JS",
             QWebEnginePage.JavaScriptConsoleMessageLevel.WarningMessageLevel: "JS WARN",
-            QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:   "JS ERR",
+            QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel: "JS ERR",
         }.get(level, "JS")
         print(f"[{tag}] {source}:{line}  {message}", file=sys.stderr)
 
@@ -72,8 +86,12 @@ class MapView(QWebEngineView):
         self._page.setBackgroundColor(QColor("#0d1117"))
 
         s = self._page.settings()
-        s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        s.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        s.setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True
+        )
+        s.setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True
+        )
 
         self.bridge = MapBridge(self)
 
@@ -156,27 +174,32 @@ class MapView(QWebEngineView):
         fade-out animation (~50ms) that keeps the native surface alive; firing
         before it fully closes would repaint into the wrong compositor state.
         """
-        QTimer.singleShot(80,  self._force_repaint)
+        QTimer.singleShot(80, self._force_repaint)
         QTimer.singleShot(300, self._force_repaint)
 
     def focusInEvent(self, event):
         """Repaint when focus returns — covers the QMenu-close focus transition."""
         super().focusInEvent(event)
-        QTimer.singleShot(50,  self._force_repaint)
+        QTimer.singleShot(50, self._force_repaint)
         QTimer.singleShot(200, self._force_repaint)
 
     def contextMenuEvent(self, event):
         # Swallow the Qt context-menu event so no native menu appears over the
         # WebEngine view (a native overlay would drop the Metal framebuffer).
-        print("[MapView] contextMenuEvent (right-click) fired", file=sys.stderr)  # DIAGNOSTIC
+        print(
+            "[MapView] contextMenuEvent (right-click) fired", file=sys.stderr
+        )  # DIAGNOSTIC
         event.accept()
         self._force_repaint()
-        QTimer.singleShot(40,  self._force_repaint)
+        QTimer.singleShot(40, self._force_repaint)
         QTimer.singleShot(200, self._force_repaint)
 
     def _on_permission_requested(self, permission):
         try:
-            if permission.permissionType() == QWebEnginePermission.PermissionType.Geolocation:
+            if (
+                permission.permissionType()
+                == QWebEnginePermission.PermissionType.Geolocation
+            ):
                 permission.grant()
         except Exception:
             pass
@@ -186,7 +209,7 @@ class MapView(QWebEngineView):
             print("[MapView] Page loaded OK", file=sys.stderr)
             self._page.runJavaScript(
                 "typeof L !== 'undefined' ? 'Leaflet OK' : 'Leaflet MISSING'",
-                lambda r: print(f"[MapView] {r}", file=sys.stderr)
+                lambda r: print(f"[MapView] {r}", file=sys.stderr),
             )
             # Install drag-drop event filter on the viewport child widget
             vp = self.focusProxy() or self.viewport()
@@ -201,9 +224,14 @@ class MapView(QWebEngineView):
     def _inject_qwebchannel(self):
         source = self._find_qwebchannel_js()
         if not source:
-            print("[MapView] WARNING: qwebchannel.js not found — bridge disabled", file=sys.stderr)
+            print(
+                "[MapView] WARNING: qwebchannel.js not found — bridge disabled",
+                file=sys.stderr,
+            )
             return
-        print(f"[MapView] qwebchannel.js injected ({len(source)} bytes)", file=sys.stderr)
+        print(
+            f"[MapView] qwebchannel.js injected ({len(source)} bytes)", file=sys.stderr
+        )
         script = QWebEngineScript()
         script.setName("qwebchannel.js")
         script.setSourceCode(source)
@@ -230,9 +258,13 @@ class MapView(QWebEngineView):
         # 3. PyQt6 installation path
         try:
             import PyQt6
+
             candidate = (
                 Path(PyQt6.__file__).parent
-                / "Qt6" / "resources" / "qtwebchannel" / "qwebchannel.js"
+                / "Qt6"
+                / "resources"
+                / "qtwebchannel"
+                / "qwebchannel.js"
             )
             if candidate.exists():
                 return candidate.read_text(encoding="utf-8")
@@ -280,8 +312,14 @@ class MapView(QWebEngineView):
     def center_on(self, lat: float, lon: float, zoom: int = 14):
         self._js(f"centerOn({lat}, {lon}, {zoom})")
 
-    def add_mbtiles_layer(self, mbt_id: str, tile_url: str,
-                          min_zoom: int = 0, max_zoom: int = 18, name: str = ""):
+    def add_mbtiles_layer(
+        self,
+        mbt_id: str,
+        tile_url: str,
+        min_zoom: int = 0,
+        max_zoom: int = 18,
+        name: str = "",
+    ):
         self._js(
             f"addMBTilesLayer({json.dumps(mbt_id)}, {json.dumps(tile_url)}, "
             f"{min_zoom}, {max_zoom}, {json.dumps(name)})"
@@ -310,12 +348,13 @@ class MapView(QWebEngineView):
 
     def _fetch_obj_photo(self, obj_id, photo_id):
         from front.panels.messages.panel import _ImageFetchThread
+
         url = f"{self._server_url}/photos/{photo_id}"
         cached = self._photo_cache.get(url)
         if cached:
             self._js(f"setObjPhoto({json.dumps(obj_id)}, {json.dumps(cached)})")
             return
-        if url in self._photo_cache:   # in-flight (marked with "")
+        if url in self._photo_cache:  # in-flight (marked with "")
             return
         self._photo_cache[url] = ""
         t = _ImageFetchThread(url, self._token)
@@ -365,15 +404,22 @@ class MapView(QWebEngineView):
     def open_symbol_picker(self, lat: float, lon: float, affiliation: str = "FRIENDLY"):
         self._js(f"openSymbolPicker({lat}, {lon}, {json.dumps(affiliation)})")
 
-    def set_gps_config(self, enabled: bool, high_accuracy: bool, max_age_ms: int,
-                       center_on_fix: bool, show_accuracy: bool):
+    def set_gps_config(
+        self,
+        enabled: bool,
+        high_accuracy: bool,
+        max_age_ms: int,
+        center_on_fix: bool,
+        show_accuracy: bool,
+    ):
         self._js(
             f"setGPSConfig({json.dumps(enabled)}, {json.dumps(high_accuracy)}, "
             f"{int(max_age_ms)}, {json.dumps(center_on_fix)}, {json.dumps(show_accuracy)})"
         )
 
-    def set_own_position_native(self, lat: float, lon: float, accuracy: float,
-                                heading: float, source: str):
+    def set_own_position_native(
+        self, lat: float, lon: float, accuracy: float, heading: float, source: str
+    ):
         """Push a fix obtained from native OS location services (macOS Core
         Location) into the own-position HUD, bypassing the in-page geolocation
         watcher that does not resolve under QtWebEngine on macOS."""
@@ -394,10 +440,14 @@ class MapView(QWebEngineView):
         self._js("fetchWeatherAtCenter()")
 
     def set_draw_graphic(self, graphic_type: str, affiliation: str):
-        self._js(f"setDrawGraphic({json.dumps(graphic_type)}, {json.dumps(affiliation)})")
+        self._js(
+            f"setDrawGraphic({json.dumps(graphic_type)}, {json.dumps(affiliation)})"
+        )
 
     def set_free_draw(self, tool: str, color: str, thickness: int):
-        self._js(f"setFreeDraw({json.dumps(tool)}, {json.dumps(color)}, {int(thickness)})")
+        self._js(
+            f"setFreeDraw({json.dumps(tool)}, {json.dumps(color)}, {int(thickness)})"
+        )
 
     def free_draw_undo(self):
         self._js("undoFreeDraw()")
@@ -448,7 +498,9 @@ class MapView(QWebEngineView):
         t = event.type()
         if t == QEvent.Type.DragEnter:
             mime = event.mimeData()
-            if mime.hasUrls() and any(_is_media_file(u.toLocalFile()) for u in mime.urls()):
+            if mime.hasUrls() and any(
+                _is_media_file(u.toLocalFile()) for u in mime.urls()
+            ):
                 event.acceptProposedAction()
                 return True
         elif t == QEvent.Type.DragMove:
@@ -458,7 +510,11 @@ class MapView(QWebEngineView):
         elif t == QEvent.Type.Drop:
             mime = event.mimeData()
             if mime.hasUrls():
-                files = [u.toLocalFile() for u in mime.urls() if _is_media_file(u.toLocalFile())]
+                files = [
+                    u.toLocalFile()
+                    for u in mime.urls()
+                    if _is_media_file(u.toLocalFile())
+                ]
                 if files:
                     event.acceptProposedAction()
                     pos = event.position().toPoint()

@@ -11,17 +11,17 @@ _CSP = (
     # Tile providers: OSM, OSM-HOT, OpenTopoMap, CartoDB, Esri (ArcGIS Online),
     # plus rainviewer/openweathermap radar overlays.
     "img-src 'self' data: blob: "
-        "https://*.tile.openstreetmap.org "
-        "https://*.tile.openstreetmap.fr "
-        "https://*.tile.opentopomap.org "
-        "https://*.basemaps.cartocdn.com "
-        "https://server.arcgisonline.com "
-        "https://*.arcgisonline.com "
-        "https://*.rainviewer.com "
-        "https://tile.openweathermap.org; "
+    "https://*.tile.openstreetmap.org "
+    "https://*.tile.openstreetmap.fr "
+    "https://*.tile.opentopomap.org "
+    "https://*.basemaps.cartocdn.com "
+    "https://server.arcgisonline.com "
+    "https://*.arcgisonline.com "
+    "https://*.rainviewer.com "
+    "https://tile.openweathermap.org; "
     "media-src 'self' blob:; "
     "connect-src 'self' ws: wss: https://api.rainviewer.com https://api.open-meteo.com "
-        "https://aa.usno.navy.mil https://api.sunrise-sunset.org; "
+    "https://aa.usno.navy.mil https://api.sunrise-sunset.org; "
     "frame-ancestors 'none'"
 )
 

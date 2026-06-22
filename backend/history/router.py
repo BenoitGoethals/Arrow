@@ -31,8 +31,13 @@ from backend.storage.models import (
 router = APIRouter(prefix="/history", tags=["history"])
 
 VALID_CATEGORIES = {
-    "alert", "report", "message", "fire_mission",
-    "tactical_object", "battle", "audit",
+    "alert",
+    "report",
+    "message",
+    "fire_mission",
+    "tactical_object",
+    "battle",
+    "audit",
 }
 
 
@@ -77,18 +82,20 @@ def _collect_events(
 
     if "alert" in categories:
         for a in _ts_filter(db.query(Alert), Alert.timestamp).all():
-            out.append({
-                "timestamp": a.timestamp,
-                "category": "alert",
-                "type": a.type,
-                "actor": callsigns.get(a.operator_id, f"op:{a.operator_id}"),
-                "actor_id": a.operator_id,
-                "summary": f"{a.type} alert ({a.status})",
-                "latitude": a.latitude,
-                "longitude": a.longitude,
-                "ref_id": a.id,
-                "detail": {"status": a.status},
-            })
+            out.append(
+                {
+                    "timestamp": a.timestamp,
+                    "category": "alert",
+                    "type": a.type,
+                    "actor": callsigns.get(a.operator_id, f"op:{a.operator_id}"),
+                    "actor_id": a.operator_id,
+                    "summary": f"{a.type} alert ({a.status})",
+                    "latitude": a.latitude,
+                    "longitude": a.longitude,
+                    "ref_id": a.id,
+                    "detail": {"status": a.status},
+                }
+            )
 
     if "report" in categories:
         for r in _ts_filter(db.query(Report), Report.timestamp).all():
@@ -96,114 +103,153 @@ def _collect_events(
                 payload = json.loads(r.payload) if r.payload else {}
             except json.JSONDecodeError:
                 payload = {"raw": r.payload}
-            out.append({
-                "timestamp": r.timestamp,
-                "category": "report",
-                "type": r.type,
-                "actor": callsigns.get(r.operator_id, f"op:{r.operator_id}"),
-                "actor_id": r.operator_id,
-                "summary": f"{r.type} report ({r.status})",
-                "latitude": payload.get("latitude") if isinstance(payload, dict) else None,
-                "longitude": payload.get("longitude") if isinstance(payload, dict) else None,
-                "ref_id": r.id,
-                "detail": {"status": r.status, "reviewer_note": r.reviewer_note, "payload": payload},
-            })
+            out.append(
+                {
+                    "timestamp": r.timestamp,
+                    "category": "report",
+                    "type": r.type,
+                    "actor": callsigns.get(r.operator_id, f"op:{r.operator_id}"),
+                    "actor_id": r.operator_id,
+                    "summary": f"{r.type} report ({r.status})",
+                    "latitude": (
+                        payload.get("latitude") if isinstance(payload, dict) else None
+                    ),
+                    "longitude": (
+                        payload.get("longitude") if isinstance(payload, dict) else None
+                    ),
+                    "ref_id": r.id,
+                    "detail": {
+                        "status": r.status,
+                        "reviewer_note": r.reviewer_note,
+                        "payload": payload,
+                    },
+                }
+            )
 
     if "message" in categories:
         for m in _ts_filter(db.query(Message), Message.timestamp).all():
             target = (
-                "broadcast" if m.message_type == "BROADCAST"
-                else f"group:{m.group_id}" if m.message_type == "GROUP"
-                else callsigns.get(m.receiver_id or 0, f"op:{m.receiver_id}")
+                "broadcast"
+                if m.message_type == "BROADCAST"
+                else (
+                    f"group:{m.group_id}"
+                    if m.message_type == "GROUP"
+                    else callsigns.get(m.receiver_id or 0, f"op:{m.receiver_id}")
+                )
             )
-            out.append({
-                "timestamp": m.timestamp,
-                "category": "message",
-                "type": m.message_type,
-                "actor": callsigns.get(m.sender_id, f"op:{m.sender_id}"),
-                "actor_id": m.sender_id,
-                "summary": f"{m.message_type} → {target}: {m.content[:80]}",
-                "latitude": None,
-                "longitude": None,
-                "ref_id": m.id,
-                "detail": {"target": target, "content": m.content},
-            })
+            out.append(
+                {
+                    "timestamp": m.timestamp,
+                    "category": "message",
+                    "type": m.message_type,
+                    "actor": callsigns.get(m.sender_id, f"op:{m.sender_id}"),
+                    "actor_id": m.sender_id,
+                    "summary": f"{m.message_type} → {target}: {m.content[:80]}",
+                    "latitude": None,
+                    "longitude": None,
+                    "ref_id": m.id,
+                    "detail": {"target": target, "content": m.content},
+                }
+            )
 
     if "fire_mission" in categories:
         for f in _ts_filter(db.query(FireMission), FireMission.timestamp).all():
-            out.append({
-                "timestamp": f.timestamp,
-                "category": "fire_mission",
-                "type": f.mission_type,
-                "actor": callsigns.get(f.operator_id, f"op:{f.operator_id}"),
-                "actor_id": f.operator_id,
-                "summary": f"{f.mission_type} {f.ammunition} x{f.quantity} ({f.status})",
-                "latitude": f.latitude,
-                "longitude": f.longitude,
-                "ref_id": f.id,
-                "detail": {
-                    "ammunition": f.ammunition, "quantity": f.quantity,
-                    "status": f.status, "description": f.description,
-                },
-            })
+            out.append(
+                {
+                    "timestamp": f.timestamp,
+                    "category": "fire_mission",
+                    "type": f.mission_type,
+                    "actor": callsigns.get(f.operator_id, f"op:{f.operator_id}"),
+                    "actor_id": f.operator_id,
+                    "summary": f"{f.mission_type} {f.ammunition} x{f.quantity} ({f.status})",
+                    "latitude": f.latitude,
+                    "longitude": f.longitude,
+                    "ref_id": f.id,
+                    "detail": {
+                        "ammunition": f.ammunition,
+                        "quantity": f.quantity,
+                        "status": f.status,
+                        "description": f.description,
+                    },
+                }
+            )
 
     if "tactical_object" in categories:
         for t in _ts_filter(db.query(TacticalObject), TacticalObject.timestamp).all():
-            out.append({
-                "timestamp": t.timestamp,
-                "category": "tactical_object",
-                "type": t.type,
-                "actor": callsigns.get(t.created_by, f"op:{t.created_by}"),
-                "actor_id": t.created_by,
-                "summary": f"{t.type} placed ({t.visibility})",
-                "latitude": t.latitude,
-                "longitude": t.longitude,
-                "ref_id": t.id,
-                "detail": {"notes": t.notes, "symbol_code": t.symbol_code},
-            })
+            out.append(
+                {
+                    "timestamp": t.timestamp,
+                    "category": "tactical_object",
+                    "type": t.type,
+                    "actor": callsigns.get(t.created_by, f"op:{t.created_by}"),
+                    "actor_id": t.created_by,
+                    "summary": f"{t.type} placed ({t.visibility})",
+                    "latitude": t.latitude,
+                    "longitude": t.longitude,
+                    "ref_id": t.id,
+                    "detail": {"notes": t.notes, "symbol_code": t.symbol_code},
+                }
+            )
 
     if "battle" in categories:
         for b in _ts_filter(db.query(Battle), Battle.started_at).all():
-            out.append({
-                "timestamp": b.started_at,
-                "category": "battle",
-                "type": "BATTLE_START",
-                "actor": "system",
-                "actor_id": None,
-                "summary": f"Battle started: {b.name}",
-                "latitude": None, "longitude": None,
-                "ref_id": b.id,
-                "detail": {"description": b.description, "status": b.status},
-            })
-            if b.ended_at and (start is None or b.ended_at >= start) \
-                          and (end is None or b.ended_at <= end):
-                out.append({
-                    "timestamp": b.ended_at,
+            out.append(
+                {
+                    "timestamp": b.started_at,
                     "category": "battle",
-                    "type": "BATTLE_END",
-                    "actor": "system", "actor_id": None,
-                    "summary": f"Battle ended: {b.name}",
-                    "latitude": None, "longitude": None,
+                    "type": "BATTLE_START",
+                    "actor": "system",
+                    "actor_id": None,
+                    "summary": f"Battle started: {b.name}",
+                    "latitude": None,
+                    "longitude": None,
                     "ref_id": b.id,
-                    "detail": {"status": b.status},
-                })
+                    "detail": {"description": b.description, "status": b.status},
+                }
+            )
+            if (
+                b.ended_at
+                and (start is None or b.ended_at >= start)
+                and (end is None or b.ended_at <= end)
+            ):
+                out.append(
+                    {
+                        "timestamp": b.ended_at,
+                        "category": "battle",
+                        "type": "BATTLE_END",
+                        "actor": "system",
+                        "actor_id": None,
+                        "summary": f"Battle ended: {b.name}",
+                        "latitude": None,
+                        "longitude": None,
+                        "ref_id": b.id,
+                        "detail": {"status": b.status},
+                    }
+                )
 
     if "audit" in categories:
         for a in _ts_filter(db.query(AuditLog), AuditLog.timestamp).all():
-            out.append({
-                "timestamp": a.timestamp,
-                "category": "audit",
-                "type": a.event_type,
-                "actor": callsigns.get(a.operator_id or 0, "—") if a.operator_id else "—",
-                "actor_id": a.operator_id,
-                "summary": f"{a.event_type} {a.outcome} {a.resource or ''}".strip(),
-                "latitude": None, "longitude": None,
-                "ref_id": a.id,
-                "detail": {
-                    "outcome": a.outcome, "ip": a.ip_address,
-                    "resource": a.resource, "detail": a.detail,
-                },
-            })
+            out.append(
+                {
+                    "timestamp": a.timestamp,
+                    "category": "audit",
+                    "type": a.event_type,
+                    "actor": (
+                        callsigns.get(a.operator_id or 0, "—") if a.operator_id else "—"
+                    ),
+                    "actor_id": a.operator_id,
+                    "summary": f"{a.event_type} {a.outcome} {a.resource or ''}".strip(),
+                    "latitude": None,
+                    "longitude": None,
+                    "ref_id": a.id,
+                    "detail": {
+                        "outcome": a.outcome,
+                        "ip": a.ip_address,
+                        "resource": a.resource,
+                        "detail": a.detail,
+                    },
+                }
+            )
 
     out.sort(key=lambda e: e["timestamp"], reverse=True)
     return out
@@ -216,14 +262,31 @@ def _serialize_event(e: dict) -> dict:
 def _csv_response(events: Iterable[dict]) -> Response:
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["timestamp", "category", "type", "actor", "summary",
-                "latitude", "longitude", "ref_id"])
+    w.writerow(
+        [
+            "timestamp",
+            "category",
+            "type",
+            "actor",
+            "summary",
+            "latitude",
+            "longitude",
+            "ref_id",
+        ]
+    )
     for e in events:
-        w.writerow([
-            e["timestamp"].isoformat() if e["timestamp"] else "",
-            e["category"], e["type"], e["actor"], e["summary"],
-            e.get("latitude") or "", e.get("longitude") or "", e["ref_id"],
-        ])
+        w.writerow(
+            [
+                e["timestamp"].isoformat() if e["timestamp"] else "",
+                e["category"],
+                e["type"],
+                e["actor"],
+                e["summary"],
+                e.get("latitude") or "",
+                e.get("longitude") or "",
+                e["ref_id"],
+            ]
+        )
     fname = f"arrow-history-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
     return Response(
         content=buf.getvalue(),
@@ -232,7 +295,9 @@ def _csv_response(events: Iterable[dict]) -> Response:
     )
 
 
-def _pdf_response(events: list[dict], start: datetime | None, end: datetime | None) -> Response:
+def _pdf_response(
+    events: list[dict], start: datetime | None, end: datetime | None
+) -> Response:
     """Render a minimal text-only PDF without external dependencies."""
     lines: list[str] = []
     title = "ARROW — Event History"
@@ -247,7 +312,9 @@ def _pdf_response(events: list[dict], start: datetime | None, end: datetime | No
     lines.append("")
     for e in events:
         ts = e["timestamp"].strftime("%Y-%m-%d %H:%M:%SZ") if e["timestamp"] else "—"
-        line = f"{ts}  [{e['category'].upper()}/{e['type']}]  {e['actor']}: {e['summary']}"
+        line = (
+            f"{ts}  [{e['category'].upper()}/{e['type']}]  {e['actor']}: {e['summary']}"
+        )
         # Wrap long lines (max ~95 chars at 9pt courier on A4)
         while len(line) > 95:
             lines.append(line[:95])
@@ -265,14 +332,14 @@ def _pdf_response(events: list[dict], start: datetime | None, end: datetime | No
 
 def _build_pdf(lines: list[str]) -> bytes:
     """Build a minimal multi-page PDF with Courier 9pt text — no deps."""
-    page_w, page_h = 595, 842         # A4 in points
+    page_w, page_h = 595, 842  # A4 in points
     margin_x, margin_top = 40, 800
     line_h, font_size = 11, 9
     lines_per_page = (margin_top - 40) // line_h
 
     pages: list[list[str]] = []
     for i in range(0, len(lines), lines_per_page):
-        pages.append(lines[i:i + lines_per_page])
+        pages.append(lines[i : i + lines_per_page])
     if not pages:
         pages = [["(no events)"]]
 
@@ -306,7 +373,8 @@ def _build_pdf(lines: list[str]) -> bytes:
         stream = "\n".join(stream_lines).encode("latin-1", errors="replace")
         content = (
             f"<< /Length {len(stream)} >>\nstream\n".encode("latin-1")
-            + stream + b"\nendstream"
+            + stream
+            + b"\nendstream"
         )
         content_obj_ids.append(_add(content))
 
@@ -359,8 +427,12 @@ def _build_pdf(lines: list[str]) -> bytes:
 
 @router.get("")
 def get_history(
-    start: str | None = Query(None, description="ISO-8601 start (inclusive). Omit for all-time."),
-    end:   str | None = Query(None, description="ISO-8601 end (inclusive). Omit for now."),
+    start: str | None = Query(
+        None, description="ISO-8601 start (inclusive). Omit for all-time."
+    ),
+    end: str | None = Query(
+        None, description="ISO-8601 end (inclusive). Omit for now."
+    ),
     categories: str | None = Query(
         None,
         description="Comma-separated subset of: " + ",".join(sorted(VALID_CATEGORIES)),
@@ -378,7 +450,9 @@ def get_history(
     start_dt = _parse_dt(start)
     end_dt = _parse_dt(end)
     if start_dt and end_dt and start_dt > end_dt:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "start must be <= end")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "start must be <= end"
+        )
 
     if categories:
         cats = {c.strip().lower() for c in categories.split(",") if c.strip()}
@@ -399,8 +473,8 @@ def get_history(
         return _pdf_response(events, start_dt, end_dt)
 
     return {
-        "start":  start_dt.isoformat() if start_dt else None,
-        "end":    end_dt.isoformat()   if end_dt   else None,
-        "count":  len(events),
+        "start": start_dt.isoformat() if start_dt else None,
+        "end": end_dt.isoformat() if end_dt else None,
+        "count": len(events),
         "events": [_serialize_event(e) for e in events],
     }

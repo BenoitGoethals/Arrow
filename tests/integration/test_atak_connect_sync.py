@@ -18,8 +18,8 @@ from lxml import etree
 from backend.cot.cot import CotEvent, parse_cot
 from tests.conftest import auth, register
 
-
 # ── CoT XML builder that mimics an ATAK-Android device ───────────────────────
+
 
 def _atak_cot(
     callsign: str,
@@ -35,17 +35,17 @@ def _atak_cot(
     role: str = "Team Member",
 ) -> bytes:
     ev = CotEvent(
-        uid      = uid or f"ARROW.{callsign}",
-        cot_type = cot_type,
-        lat      = lat,
-        lon      = lon,
-        hae      = hae,
-        callsign = callsign,
-        speed    = speed,
-        course   = course,
-        team     = team,
-        role     = role,
-        platform = "ATAK-Android",
+        uid=uid or f"ARROW.{callsign}",
+        cot_type=cot_type,
+        lat=lat,
+        lon=lon,
+        hae=hae,
+        callsign=callsign,
+        speed=speed,
+        course=course,
+        team=team,
+        role=role,
+        platform="ATAK-Android",
     )
     return ev.to_xml()
 
@@ -59,6 +59,7 @@ def _recv_on_channel(ws, channel: str, max_msgs: int = 15) -> dict:
 
 
 # ── 1. Authentication ─────────────────────────────────────────────────────────
+
 
 class TestAtakAuthentication:
 
@@ -80,6 +81,7 @@ class TestAtakAuthentication:
 
 
 # ── 2. Own-position CoT ───────────────────────────────────────────────────────
+
 
 class TestAtakOwnPosition:
 
@@ -112,8 +114,8 @@ class TestAtakOwnPosition:
         ops = client.get("/tracking/live", headers=auth(token)).json()
         me = next((o for o in ops if o["callsign"] == callsign), None)
         assert me is not None, "Operator not found in /tracking/live"
-        assert abs(me["latitude"]  - 48.8566) < 1e-4
-        assert abs(me["longitude"] - 2.3522)  < 1e-4
+        assert abs(me["latitude"] - 48.8566) < 1e-4
+        assert abs(me["longitude"] - 2.3522) < 1e-4
         assert me["status"] == "ONLINE"
 
     def test_own_position_snapshot_retrievable_as_cot_xml(self, client):
@@ -132,7 +134,7 @@ class TestAtakOwnPosition:
         point = root.find("point")
         assert point is not None
         assert abs(float(point.get("lat")) - 52.37) < 1e-4
-        assert abs(float(point.get("lon")) - 4.9)   < 1e-4
+        assert abs(float(point.get("lon")) - 4.9) < 1e-4
 
     def test_position_not_available_before_first_cot(self, client):
         """GET /cot/{uid} returns 404 until the device sends its first position."""
@@ -143,12 +145,13 @@ class TestAtakOwnPosition:
 
 # ── 3. Cross-device position visibility ──────────────────────────────────────
 
+
 class TestAtakCrossDeviceVisibility:
 
     def test_device_a_position_visible_to_device_b(self, client):
         """Device A's position appears in /tracking/live for device B."""
         callsign_a, token_a, _ = register(client)
-        _,          token_b, _ = register(client)
+        _, token_b, _ = register(client)
 
         client.post(
             "/cot",
@@ -159,7 +162,7 @@ class TestAtakCrossDeviceVisibility:
         live = client.get("/tracking/live", headers=auth(token_b)).json()
         device_a = next((o for o in live if o["callsign"] == callsign_a), None)
         assert device_a is not None
-        assert abs(device_a["latitude"]  - 51.5) < 1e-4
+        assert abs(device_a["latitude"] - 51.5) < 1e-4
         assert abs(device_a["longitude"] - 0.12) < 1e-4
 
     def test_multiple_position_updates_reflect_latest(self, client):
@@ -175,10 +178,11 @@ class TestAtakCrossDeviceVisibility:
 
         ops = client.get("/tracking/live", headers=auth(token)).json()
         me = next(o for o in ops if o["callsign"] == callsign)
-        assert abs(me["latitude"] - 50.0) < 1e-4   # only the last update
+        assert abs(me["latitude"] - 50.0) < 1e-4  # only the last update
 
 
 # ── 4. Foreign-entity (hostile/unknown) CoT tracks ───────────────────────────
+
 
 class TestAtakForeignTracks:
 
@@ -193,8 +197,12 @@ class TestAtakForeignTracks:
         r = client.post(
             "/cot",
             content=_atak_cot(
-                "ENEMY-ALPHA", uid=uid, cot_type="a-h-G-U-C-I",
-                lat=50.0, lon=5.0, team="Red",
+                "ENEMY-ALPHA",
+                uid=uid,
+                cot_type="a-h-G-U-C-I",
+                lat=50.0,
+                lon=5.0,
+                team="Red",
             ),
             headers={**auth(token), "Content-Type": "application/xml"},
         )
@@ -204,8 +212,8 @@ class TestAtakForeignTracks:
         match = next((t for t in tracks if t["cot_uid"] == uid), None)
         assert match is not None, f"Hostile track {uid} not found in /cot/tracks"
         assert match["cot_type"] == "a-h-G-U-C-I"
-        assert abs(match["latitude"]  - 50.0) < 1e-4
-        assert abs(match["longitude"] - 5.0)  < 1e-4
+        assert abs(match["latitude"] - 50.0) < 1e-4
+        assert abs(match["longitude"] - 5.0) < 1e-4
 
     def test_foreign_track_sidc_is_populated(self, client):
         """GET /cot/tracks includes SIDC for each foreign track."""
@@ -230,8 +238,13 @@ class TestAtakForeignTracks:
         for i, uid in enumerate(uids):
             client.post(
                 "/cot",
-                content=_atak_cot(f"ENEMY-{i}", uid=uid, cot_type="a-h-G-U-C-I",
-                                   lat=50.0 + i * 0.01, lon=5.0),
+                content=_atak_cot(
+                    f"ENEMY-{i}",
+                    uid=uid,
+                    cot_type="a-h-G-U-C-I",
+                    lat=50.0 + i * 0.01,
+                    lon=5.0,
+                ),
                 headers={**auth(token), "Content-Type": "application/xml"},
             )
 
@@ -248,7 +261,9 @@ class TestAtakForeignTracks:
         for lat in [49.0, 49.5]:
             client.post(
                 "/cot",
-                content=_atak_cot("ROAMER", uid=uid, cot_type="a-h-G-U-C-I", lat=lat, lon=4.0),
+                content=_atak_cot(
+                    "ROAMER", uid=uid, cot_type="a-h-G-U-C-I", lat=lat, lon=4.0
+                ),
                 headers={**auth(token), "Content-Type": "application/xml"},
             )
 
@@ -269,6 +284,7 @@ class TestAtakForeignTracks:
         )
 
         from tests.conftest import admin_token, auth as _auth
+
         admin_tok = admin_token(client)
         tracks = client.get("/cot/tracks", headers=_auth(admin_tok)).json()
         match = next(t for t in tracks if t["cot_uid"] == uid)
@@ -282,6 +298,7 @@ class TestAtakForeignTracks:
 
 
 # ── 5. Real-time WebSocket sync ───────────────────────────────────────────────
+
 
 class TestAtakWebSocketSync:
 
@@ -299,8 +316,8 @@ class TestAtakWebSocketSync:
 
         assert msg["event"] == "position"
         assert msg["data"]["callsign"] == callsign
-        assert abs(msg["data"]["latitude"]  - 53.0) < 1e-4
-        assert abs(msg["data"]["longitude"] - 6.0)  < 1e-4
+        assert abs(msg["data"]["latitude"] - 53.0) < 1e-4
+        assert abs(msg["data"]["longitude"] - 6.0) < 1e-4
         assert "cot_xml" in msg
         assert "cot_type" in msg["data"]
 
@@ -322,7 +339,7 @@ class TestAtakWebSocketSync:
     def test_device_b_receives_device_a_position_update_via_ws(self, client):
         """Device B's WS receives a tracking event when device A updates position."""
         callsign_a, token_a, _ = register(client)
-        _,          token_b, _ = register(client)
+        _, token_b, _ = register(client)
 
         with client.websocket_connect(f"/ws?token={token_b}") as ws:
             client.post(
@@ -342,8 +359,9 @@ class TestAtakWebSocketSync:
         with client.websocket_connect(f"/ws?token={token}") as ws:
             client.post(
                 "/cot",
-                content=_atak_cot("ENEMY-BRAVO", uid=uid, cot_type="a-h-G-U-C-I",
-                                   lat=49.0, lon=2.0),
+                content=_atak_cot(
+                    "ENEMY-BRAVO", uid=uid, cot_type="a-h-G-U-C-I", lat=49.0, lon=2.0
+                ),
                 headers={**auth(token), "Content-Type": "application/xml"},
             )
             msg = _recv_on_channel(ws, "cot-track")
@@ -355,6 +373,7 @@ class TestAtakWebSocketSync:
 
 
 # ── 6. ATAK locale robustness ─────────────────────────────────────────────────
+
 
 class TestAtakLocaleRobustness:
 
@@ -369,12 +388,12 @@ class TestAtakLocaleRobustness:
             b' stale="2024-06-01T12:01:30.000000Z"'
             b' how="m-g">'
             b'<point lat="51,2345" lon="4,4567" hae="100,0" ce="9999999,0" le="9999999,0"/>'
-            b'<detail>'
+            b"<detail>"
             b'  <uid Droid="' + callsign.encode() + b'"/>'
             b'  <contact callsign="' + callsign.encode() + b'"/>'
             b'  <takv os="30" version="4.8.0" device="Samsung Galaxy" platform="ATAK-Android"/>'
-            b'</detail>'
-            b'</event>'
+            b"</detail>"
+            b"</event>"
         )
 
     def test_comma_decimal_position_accepted(self, client):
@@ -391,5 +410,5 @@ class TestAtakLocaleRobustness:
         ops = client.get("/tracking/live", headers=auth(token)).json()
         me = next((o for o in ops if o["callsign"] == callsign), None)
         assert me is not None
-        assert abs(me["latitude"]  - 51.2345) < 1e-4
-        assert abs(me["longitude"] - 4.4567)  < 1e-4
+        assert abs(me["latitude"] - 51.2345) < 1e-4
+        assert abs(me["longitude"] - 4.4567) < 1e-4

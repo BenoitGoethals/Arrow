@@ -30,13 +30,20 @@ class _ShipHandler(logging.Handler):
             msg = record.getMessage()
         except Exception:
             return
-        ts = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created))
-              + f".{int(record.msecs):03d}")
+        ts = (
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record.created))
+            + f".{int(record.msecs):03d}"
+        )
         try:
-            self._q.put_nowait({
-                "ts": ts, "level": record.levelname,
-                "logger": record.name, "category": "web", "message": msg,
-            })
+            self._q.put_nowait(
+                {
+                    "ts": ts,
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "category": "web",
+                    "message": msg,
+                }
+            )
         except queue.Full:
             pass
 

@@ -11,11 +11,21 @@ from typing import Any, Protocol
 
 import httpx
 
-HOP_BY_HOP = frozenset({
-    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-    "te", "trailers", "transfer-encoding", "upgrade", "host", "content-length",
-    "content-encoding",
-})
+HOP_BY_HOP = frozenset(
+    {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+        "host",
+        "content-length",
+        "content-encoding",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -55,7 +65,8 @@ class HttpxBackendClient:
         url = f"{self._base_url}/{path.lstrip('/')}"
         try:
             upstream = httpx.request(
-                method, url,
+                method,
+                url,
                 params=params,
                 content=body,
                 headers=safe_headers,
@@ -64,14 +75,14 @@ class HttpxBackendClient:
             )
         except httpx.RequestError as exc:
             import json
+
             return ProxyResponse(
                 status_code=502,
                 content=json.dumps({"detail": f"Backend unreachable: {exc}"}).encode(),
                 headers=[("content-type", "application/json")],
             )
         out_headers = [
-            (k, v) for k, v in upstream.headers.items()
-            if k.lower() not in HOP_BY_HOP
+            (k, v) for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP
         ]
         return ProxyResponse(
             status_code=upstream.status_code,
