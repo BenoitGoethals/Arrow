@@ -161,8 +161,12 @@ server {
     }
 
     # MapServer OGC WMS/WFS
+    # Use Docker DNS resolver + variable so nginx starts even if mapserver is down
     location /mapserver/ {
-        proxy_pass         http://mapserver/cgi-bin/mapserv?;
+        resolver           127.0.0.11 valid=30s ipv6=off;
+        set \$ms            http://mapserver;
+        rewrite            ^/mapserver/ /cgi-bin/mapserv break;
+        proxy_pass         \$ms;
         proxy_set_header   Host \$host;
         proxy_set_header   X-Real-IP \$remote_addr;
         proxy_read_timeout 30s;
@@ -235,7 +239,10 @@ server {
 
     # MapServer OGC WMS/WFS
     location /mapserver/ {
-        proxy_pass         http://mapserver/cgi-bin/mapserv?;
+        resolver           127.0.0.11 valid=30s ipv6=off;
+        set \$ms            http://mapserver;
+        rewrite            ^/mapserver/ /cgi-bin/mapserv break;
+        proxy_pass         \$ms;
         proxy_set_header   Host \$host;
         proxy_set_header   X-Real-IP \$remote_addr;
         proxy_read_timeout 30s;
@@ -407,6 +414,20 @@ case "$cmd" in
             "PGPASSWORD=\$POSTGRES_PASSWORD pg_dump -U arrow arrow" \
             | gzip > "$OUTFILE"
         echo "==> saved: $OUTFILE ($(du -h "$OUTFILE" | cut -f1))"
+        ;;
+
+    nginx)
+        # Regenerate nginx.conf and restart only the proxy — no rebuild needed
+        require_compose
+        ensure_pg_password
+        if grep -q '^ARROW_TLS=internal' .env 2>/dev/null; then
+            generate_cert
+            write_nginx_https "$PORT"
+        else
+            write_nginx_http "$PORT"
+        fi
+        $DC restart proxy
+        echo "==> proxy restarted"
         ;;
 
     wms)
