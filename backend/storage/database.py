@@ -19,8 +19,15 @@ class Base(DeclarativeBase):
     pass
 
 
-def _migrate(conn: object) -> None:
-    """Apply additive schema migrations that create_all cannot handle."""
+def _migrate() -> None:
+    """Apply additive schema migrations that create_all cannot handle.
+
+    Each statement runs in its own transaction so a failure (e.g. column
+    already exists in PostgreSQL) only rolls back that one statement and
+    does not poison the connection for subsequent migrations.
+    """
+    from sqlalchemy import text as _text
+
     migrations = [
         "CREATE TABLE IF NOT EXISTS photos ("
         "  id INTEGER PRIMARY KEY, filename VARCHAR(255) NOT NULL,"
@@ -117,8 +124,8 @@ def _migrate(conn: object) -> None:
         "  overlays         BOOLEAN DEFAULT 1,"
         "  updated_at       DATETIME"
         ")",
-        "INSERT OR IGNORE INTO map_visibility (id, updated_at) "
-        "VALUES (1, datetime('now'))",
+        "INSERT INTO map_visibility (id, updated_at) "
+        "VALUES (1, CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING",
         # Notification-axis flags — added on top of the original map-axis row
         "ALTER TABLE map_visibility ADD COLUMN notif_chat          BOOLEAN DEFAULT 1",
         "ALTER TABLE map_visibility ADD COLUMN notif_fire_missions BOOLEAN DEFAULT 1",
@@ -238,7 +245,8 @@ def _migrate(conn: object) -> None:
     ]
     for sql in migrations:
         try:
-            conn.execute(__import__("sqlalchemy").text(sql))
+            with engine.begin() as conn:
+                conn.execute(_text(sql))
         except Exception:
             pass  # column/table already exists — safe to skip
 
@@ -247,8 +255,10 @@ def init_db() -> None:
     from backend.storage import models  # noqa: F401  — register mappers
 
     Base.metadata.create_all(bind=engine)
-    with engine.begin() as conn:
-        _migrate(conn)
+    _migrate()
+    if engine.url.drivername.startswith("postgresql"):
+        with engine.begin() as conn:
+            _postgis_views(conn)
 
 
 def get_db() -> Generator[Session, None, None]:
