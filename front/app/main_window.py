@@ -22,6 +22,8 @@ from front.map.symbology import SIDC
 from front.app.toolbar import MainToolbar
 from front.app.statusbar import StatusBar
 from front.panels.orbat.panel import ORBATPanel
+from front.panels.devices.panel import DevicesPanel
+from front.panels.firemissions.panel import FireMissionsPanel
 from front.panels.reports.panel import ReportsPanel
 from front.panels.messages.panel import MessagesPanel
 from front.panels.messages.room_manager import RoomManagerDialog
@@ -38,6 +40,7 @@ from front.windows.strike_planner import StrikePlannerWindow
 from front.windows.opord_window import OpordWindow
 from front.windows.stream_viewer import StreamViewerWindow
 from front.windows.medevac_window import MedevacWindow
+from front.windows.fire_mission_dialog import FireMissionDialog
 from front.client.arrow_client import ArrowClient
 from front.client.ws_listener import WSListener
 from front.map.tile_server import MBTilesServer
@@ -88,6 +91,7 @@ class MainWindow(QMainWindow):
         self._callsign = callsign
         self._client = ArrowClient(server_url, token)
         self._role = "OPERATOR"
+        self._my_operator_id: Optional[int] = None
         self._ws: Optional[WSListener] = None
         self._toasts = ToastManager(self)
         self._suppress_toasts = False
@@ -123,6 +127,14 @@ class MainWindow(QMainWindow):
         # for JS readiness and only then load.
         QTimer.singleShot(1800, self._fallback_load_when_ready)
 
+        # Periodically refresh the Devices panel: FRONT online status decays on a
+        # 90 s heartbeat and ATAK "last seen" ages even without WS events.
+        if self._token:
+            self._devices_timer = QTimer(self)
+            self._devices_timer.setInterval(20_000)
+            self._devices_timer.timeout.connect(self._load_devices)
+            self._devices_timer.start()
+
     # ================================================================
     # UI
     # ================================================================
@@ -145,6 +157,8 @@ class MainWindow(QMainWindow):
 
         # ---- Panels ---------------------------------------------------
         self._orbat_panel = ORBATPanel()
+        self._devices_panel = DevicesPanel()
+        self._firemissions_panel = FireMissionsPanel()
         self._reports_panel = ReportsPanel()
         self._messages_panel = MessagesPanel()
         self._alerts_panel = AlertsPanel()
@@ -161,12 +175,16 @@ class MainWindow(QMainWindow):
         self._opord_windows: list[OpordWindow] = []
         self._stream_viewers: list[StreamViewerWindow] = []
         self._medevac_windows: list[MedevacWindow] = []
+        self._fire_windows: list[FireMissionDialog] = []
 
         # Right: vertical activity bar — feature panels open in the right window.
         self._right_panel = ActivityPanel(side="right", default_width=360)
         self._info = self._right_panel
         self._info.add_panel("missions", "◈", "MISS", self._missions_panel, "1")
         self._info.add_panel("strike", "◆", "STRK", self._strike_panel, "2")
+        self._info.add_panel(
+            "firemissions", "🎯", "FIRE", self._firemissions_panel, "F"
+        )
         self._info.add_panel("opord", "📋", "OPORD", self._opord_panel, "3")
         self._info.add_panel("streams", "📡", "STRMS", self._streams_panel, "4")
         self._info.add_panel("reports", "≡", "RPTS", self._reports_panel, "5")
@@ -187,6 +205,7 @@ class MainWindow(QMainWindow):
         # (Add further icons here later with another add_panel(...) call.)
         self._left_panel = ActivityPanel(side="left", default_width=270)
         self._left_panel.add_panel("orbat", "⊟", "ORBAT", self._orbat_panel, "O")
+        self._left_panel.add_panel("devices", "📶", "DEVS", self._devices_panel, "D")
         # (self._right_panel was created above with all feature panels added.)
 
         # ---- Splitter (fills the whole central area) ------------------
@@ -267,6 +286,17 @@ class MainWindow(QMainWindow):
         self._orbat_panel.message_requested.connect(
             lambda _: self._info.activate("messages")
         )
+        self._devices_panel.operator_focus_requested.connect(self._focus_operator)
+        self._devices_panel.coord_focus_requested.connect(
+            lambda lat, lon: self._map.center_on(lat, lon, zoom=16)
+        )
+        self._firemissions_panel.refresh_requested.connect(self._load_fire_missions)
+        self._firemissions_panel.locate_requested.connect(
+            lambda lat, lon: self._map.center_on(lat, lon, zoom=15)
+        )
+        self._firemissions_panel.status_change_requested.connect(
+            self._on_fm_status_change
+        )
         self._reports_panel.locate_requested.connect(
             lambda lat, lon: self._map.center_on(lat, lon, zoom=14)
         )
@@ -344,6 +374,7 @@ class MainWindow(QMainWindow):
         self._ws.fire_mission_received.connect(self._on_fm_event)
         self._ws.kml_received.connect(self._on_kml_event)
         self._ws.presence_changed.connect(self._on_presence)
+        self._ws.cot_presence_changed.connect(self._on_cot_presence)
         self._ws.mission_received.connect(self._on_mission_event)
         self._ws.strike_package_received.connect(self._on_strike_ws)
         self._ws.stream_received.connect(self._on_stream_ws)
@@ -386,6 +417,7 @@ class MainWindow(QMainWindow):
         self._apply_gps_config()
         self._resolve_role()
         self._load_hierarchy()
+        self._load_devices()
         self._load_missions()
         self._load_opords()
         self._load_streams()
@@ -443,6 +475,7 @@ class MainWindow(QMainWindow):
         for name, panel in [
             ("Missions", "missions"),
             ("Strike Packages", "strike"),
+            ("Fire Missions", "firemissions"),
             ("OPORDs", "opord"),
             ("Reports", "reports"),
             ("Messages", "messages"),
@@ -624,6 +657,7 @@ class MainWindow(QMainWindow):
         try:
             me = self._client.me()
             self._role = me.get("role", "OPERATOR")
+            self._my_operator_id = me.get("id")
             self._callsign = me.get("callsign", self._callsign)
             log.info("Authenticated: callsign=%s role=%s", self._callsign, self._role)
             self._messages_panel.set_my_callsign(self._callsign)
@@ -658,6 +692,17 @@ class MainWindow(QMainWindow):
             import sys
 
             print(f"[ORBAT] error: {e}", file=sys.stderr)
+
+    def _load_devices(self):
+        """Refresh the Devices panel: FRONT (Arrow ops) + ATAK (CoT clients)."""
+        try:
+            self._devices_panel.load_front(self._client.live_operators())
+        except Exception:
+            pass
+        try:
+            self._devices_panel.load_atak(self._client.cot_clients())
+        except Exception:
+            pass
 
     def _load_live_operators(self):
         try:
@@ -706,11 +751,27 @@ class MainWindow(QMainWindow):
             pass
 
     def _load_fire_missions(self):
+        # Resolve operator callsigns for the FDC queue labels (best-effort).
         try:
-            for fm in self._client.fire_missions():
+            self._firemissions_panel.set_operators(self._client.operators())
+        except Exception:
+            pass
+        self._firemissions_panel.set_role(self._role, self._my_operator_id)
+        try:
+            missions = self._client.fire_missions()
+            self._firemissions_panel.load_missions(missions)
+            for fm in missions:
                 self._map.add_fire_mission(fm)
         except Exception:
             pass
+
+    def _on_fm_status_change(self, fm_id: int, new_status: str):
+        try:
+            fm = self._client.update_fire_mission(fm_id, status=new_status)
+            self._firemissions_panel.upsert_mission(fm)
+            self._map.add_fire_mission(fm)
+        except Exception as e:
+            self.statusBar().showMessage(f"Status update failed: {e}", 4000)
 
     def _load_kml_layers(self):
         try:
@@ -876,6 +937,19 @@ class MainWindow(QMainWindow):
 
     def _on_fm_event(self, data: dict):
         self._map.add_fire_mission(data)
+        self._firemissions_panel.upsert_mission(data)
+        # The WS listener forwards only the inner data dict. A fresh submission
+        # carries `callsign`; an FDC update carries `updated_by` instead.
+        is_new = bool(data.get("callsign")) and "updated_by" not in data
+        if is_new and not self._suppress_toasts:
+            sender = data.get("callsign", "")
+            if sender != self._callsign:
+                self._info.inc_badge("firemissions")
+                self._toasts.show(
+                    "mission",
+                    "FIRE MISSION",
+                    f"{sender} · {data.get('mission_type','')}",
+                )
 
     def _on_kml_event(self, data: dict):
         event = data.get("event", "created")
@@ -1063,6 +1137,18 @@ class MainWindow(QMainWindow):
         online = data.get("online", False)
         if op_id is not None:
             self._orbat_panel.update_operator_presence(int(op_id), online)
+        # FRONT roster reflects live operator presence — refresh it.
+        try:
+            self._devices_panel.load_front(self._client.live_operators())
+        except Exception:
+            pass
+
+    def _on_cot_presence(self, _data: dict):
+        """An ATAK TCP client connected/disconnected — refresh the ATAK roster."""
+        try:
+            self._devices_panel.load_atak(self._client.cot_clients())
+        except Exception:
+            pass
 
     # ================================================================
     # RADIAL MENU ACTIONS
@@ -1239,11 +1325,39 @@ class MainWindow(QMainWindow):
         elif action == "poi":
             self._place_poi_with_photo(lat, lon)
         elif action == "fire":
-            self._right_panel.expand()
-            self._info.activate("draw")
+            self._open_call_for_fire(lat, lon)
         elif action == "report":
             self._right_panel.expand()
             self._info.activate("reports")
+
+    def _open_call_for_fire(self, lat: float, lon: float):
+        """Open the Call-for-Fire dialog with the target pre-filled (radial → FIRE)."""
+        try:
+            from front.utils.mgrs_util import to_mgrs
+
+            mgrs = to_mgrs(lat, lon)
+        except Exception:
+            mgrs = f"{lat:.5f}, {lon:.5f}"
+
+        dlg = FireMissionDialog(self._client, lat, lon, mgrs, parent=self)
+        dlg.fire_mission_submitted.connect(self._on_fire_mission_submitted)
+        dlg.show()
+        dlg.raise_()
+        self._fire_windows.append(dlg)
+
+    def _on_fire_mission_submitted(self, fm: dict):
+        """Render the just-submitted mission locally and confirm. Other clients
+        receive it over the `fire-mission` WS channel."""
+        try:
+            self._map.add_fire_mission(fm)
+        except Exception:
+            pass
+        self._firemissions_panel.upsert_mission({**fm, "callsign": self._callsign})
+        self._toasts.show(
+            "mission",
+            "FIRE MISSION SENT",
+            f"{fm.get('mission_type', '')} · {fm.get('ammunition', '')}",
+        )
 
     def _open_medevac(self, lat: float, lon: float):
         """Place a MEDEVAC marker on the map and open the 9-liner form."""

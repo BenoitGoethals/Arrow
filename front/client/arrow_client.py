@@ -2,7 +2,7 @@
 
 import logging
 import time
-from typing import Optional
+from typing import Any, Optional
 import httpx
 
 log = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class ArrowClient:
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self._token}"} if self._token else {}
 
-    def _get(self, path: str, **params) -> list | dict:
+    def _get(self, path: str, **params) -> Any:
         t0 = time.monotonic()
         r = httpx.get(
             f"{self.base_url}{path}",
@@ -33,9 +33,11 @@ class ArrowClient:
         r.raise_for_status()
         return r.json()
 
-    def _post(self, path: str, body: dict = None, data: dict = None) -> dict:
+    def _post(
+        self, path: str, body: Optional[dict] = None, data: Optional[dict] = None
+    ) -> Any:
         t0 = time.monotonic()
-        kw = dict(headers=self._headers(), timeout=8.0, verify=_VERIFY)
+        kw: dict[str, Any] = dict(headers=self._headers(), timeout=8.0, verify=_VERIFY)
         if data:
             kw["data"] = data
         else:
@@ -105,6 +107,10 @@ class ArrowClient:
     def cot_tracks(self) -> list:
         return self._get("/cot/tracks")
 
+    def cot_clients(self) -> list:
+        """Currently connected ATAK TCP clients (callsign, ip, platform, …)."""
+        return self._get("/cot/clients")
+
     # ---- Tactical objects -------------------------------------------
     def tactical_objects(self) -> list:
         return self._get("/tactical-objects")
@@ -155,7 +161,7 @@ class ArrowClient:
     def patch_tactical_object(
         self, obj_id: int, lat: float, lon: float, geometry: str | None = None
     ) -> dict:
-        body = {"latitude": lat, "longitude": lon}
+        body: dict[str, Any] = {"latitude": lat, "longitude": lon}
         if geometry is not None:
             body["geometry"] = geometry
         r = httpx.patch(
@@ -178,6 +184,58 @@ class ArrowClient:
     # ---- Fire missions ----------------------------------------------
     def fire_missions(self) -> list:
         return self._get("/fire-missions")
+
+    def update_fire_mission(
+        self,
+        fm_id: int,
+        status: Optional[str] = None,
+        notes: Optional[str] = None,
+        fdc_operator_id: Optional[int] = None,
+    ) -> dict:
+        """Acknowledge / advance status / assign FDC. Requires BATTLE_CAPTAIN or ADMIN."""
+        body: dict = {}
+        if status is not None:
+            body["status"] = status
+        if notes is not None:
+            body["notes"] = notes
+        if fdc_operator_id is not None:
+            body["fdc_operator_id"] = fdc_operator_id
+        r = httpx.patch(
+            f"{self.base_url}/fire-missions/{fm_id}",
+            json=body,
+            headers=self._headers(),
+            timeout=8.0,
+            verify=_VERIFY,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def post_fire_mission(
+        self,
+        latitude: float,
+        longitude: float,
+        direction: float,
+        mission_type: str = "ADJUST_FIRE",
+        ammunition: str = "HE",
+        quantity: int = 1,
+        altitude: float = 0.0,
+        description: str = "",
+    ) -> dict:
+        """Submit a call-for-fire. Backend broadcasts it on the `fire-mission`
+        channel and returns the created FireMission."""
+        return self._post(
+            "/fire-missions",
+            {
+                "latitude": float(latitude),
+                "longitude": float(longitude),
+                "altitude": float(altitude),
+                "direction": float(direction),
+                "mission_type": mission_type,
+                "ammunition": ammunition,
+                "quantity": int(quantity),
+                "description": description,
+            },
+        )
 
     # ---- Alerts -----------------------------------------------------
     def alerts(self) -> list:
@@ -338,8 +396,8 @@ class ArrowClient:
         opord_id: int,
         label: str,
         image_b64: str,
-        bbox: list = None,
-        center: list = None,
+        bbox: Optional[list] = None,
+        center: Optional[list] = None,
         zoom: float = 0.0,
     ) -> dict:
         return self._post(
