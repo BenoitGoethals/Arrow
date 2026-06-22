@@ -219,7 +219,7 @@ const WMS_URL = '/mapserver/';
 
 // ── Base tile layers ────────────────────────────────────────────────────────
 const BASES = {
-    osm:  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    osm:  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
               maxZoom: 19, attribution: '© OpenStreetMap contributors'
           }),
     dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
