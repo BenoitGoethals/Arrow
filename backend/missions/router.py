@@ -137,6 +137,67 @@ async def update_mission(
     return m
 
 
+_MISSION_PURGE_TABLES = (
+    # Mission-scoped operational data — meaningless after the mission is
+    # deleted, so cascade-delete the rows.
+    "alerts",
+    "reports",
+    "fire_missions",
+    "messages",
+    "atak_shapes",
+    "cas_assets",
+    "strike_packages",
+    "logcop_supply",
+    "logcop_vehicles",
+    "logcop_convoys",
+    "logcop_supply_points",
+)
+_MISSION_NULL_TABLES = (
+    # Tables that survive across missions — just NULL the FK ref.
+    "teams",
+    "operators",
+    "vehicles",
+    "photos",
+    "chatrooms",
+    "cop_documents",
+)
+
+
+def _purge_mission_dependencies(db: Session, mission_id: int) -> None:
+    """Make a mission deletable.
+
+    Without this, every `DELETE /missions/{id}` raises a `ForeignKeyViolation`
+    on `alerts_mission_id_fkey` (and a dozen others) because the schema
+    defaults to `NO ACTION` on the FKs that reference `missions.id`. We
+    explicitly delete mission-scoped rows and NULL the references on tables
+    that outlive the mission. Each statement runs in a savepoint so older
+    deployments missing one of the listed tables don't roll back the whole
+    transaction.
+    """
+    from sqlalchemy import text
+
+    for tbl in _MISSION_PURGE_TABLES:
+        sp = db.begin_nested()
+        try:
+            db.execute(
+                text(f"DELETE FROM {tbl} WHERE mission_id = :mid"),
+                {"mid": mission_id},
+            )
+            sp.commit()
+        except Exception:
+            sp.rollback()
+    for tbl in _MISSION_NULL_TABLES:
+        sp = db.begin_nested()
+        try:
+            db.execute(
+                text(f"UPDATE {tbl} SET mission_id = NULL WHERE mission_id = :mid"),
+                {"mid": mission_id},
+            )
+            sp.commit()
+        except Exception:
+            sp.rollback()
+
+
 @router.delete("/{mission_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_mission(
     mission_id: int,
@@ -150,6 +211,7 @@ async def delete_mission(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Cannot delete an ACTIVE mission — end it first"
         )
+    _purge_mission_dependencies(db, mission_id)
     db.delete(m)
     db.commit()
     await broadcaster.broadcast(

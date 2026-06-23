@@ -265,6 +265,141 @@ def test_restore_recreates_messages_reports_alerts_fire_missions(client) -> None
     assert any(f["mission_type"] == "FIRE_FOR_EFFECT" for f in fms)
 
 
+def test_delete_mission_purges_dependent_rows(client) -> None:
+    """Regression: `DELETE /missions/{id}` must not 500 on the
+    `alerts_mission_id_fkey` (or any sibling) FK violation. Mission-scoped
+    rows are cascade-deleted; preserved tables get mission_id NULLed."""
+    _, op_tok, _ = register(client, "OPERATOR")
+    _, admin_tok, _ = register(client, "ADMIN")
+
+    m = client.post("/missions", headers=auth(admin_tok), json={"name": "DOOMED"})
+    assert m.status_code == 201, m.text
+    mid = m.json()["id"]
+
+    # Create one of each FK-referencing record so the delete used to 500.
+    # Alerts are the canonical 500-trigger (alerts_mission_id_fkey).
+    h_op = auth(op_tok)
+    h_op["X-Mission-ID"] = str(mid)
+    a = client.post(
+        "/alerts",
+        headers=h_op,
+        json={"type": "TIC", "latitude": 50.0, "longitude": 4.0},
+    )
+    assert a.status_code == 201, a.text
+    r = client.post(
+        "/reports",
+        headers=h_op,
+        json={"type": "SPOT", "payload": {"size": "SQUAD"}},
+    )
+    assert r.status_code == 201, r.text
+    f = client.post(
+        "/fire-missions",
+        headers=h_op,
+        json={
+            "latitude": 50.0,
+            "longitude": 4.0,
+            "direction": 90.0,
+            "mission_type": "ADJUST_FIRE",
+            "ammunition": "HE",
+        },
+    )
+    assert f.status_code == 201, f.text
+
+    # The delete used to 500 with ForeignKeyViolation before the purge helper.
+    d = client.delete(f"/missions/{mid}", headers=auth(admin_tok))
+    assert d.status_code == 204, d.text
+
+    # Mission gone, mission-scoped rows gone.
+    assert client.get(f"/missions/{mid}", headers=auth(admin_tok)).status_code == 404
+    alerts = client.get("/alerts", headers=auth(admin_tok)).json()
+    assert all(x.get("id") != a.json()["id"] for x in alerts)
+    reports = client.get("/reports", headers=auth(admin_tok)).json()
+    assert all(x.get("id") != r.json()["id"] for x in reports)
+    fms = client.get("/fire-missions", headers=auth(admin_tok)).json()
+    assert all(x.get("id") != f.json()["id"] for x in fms)
+
+
+def test_reset_deletes_all_missions(client) -> None:
+    """`/admin/map/reset` ends + deletes every mission so they don't accumulate
+    across scenario runs. Both PLANNING and ACTIVE missions go away."""
+    _, admin_tok, _ = register(client, "ADMIN")
+    # Create a mission and start it (so it's ACTIVE).
+    m1 = client.post(
+        "/missions",
+        headers=auth(admin_tok),
+        json={"name": "ACTIVE-OP", "description": "in progress"},
+    )
+    assert m1.status_code == 201, m1.text
+    m1_id = m1.json()["id"]
+    client.post(f"/missions/{m1_id}/start", headers=auth(admin_tok))
+
+    # Plus a PLANNING one (no start).
+    m2 = client.post(
+        "/missions",
+        headers=auth(admin_tok),
+        json={"name": "PLANNED-OP"},
+    )
+    assert m2.status_code == 201, m2.text
+
+    # Sanity: both missions visible.
+    missions_before = client.get("/missions", headers=auth(admin_tok)).json()
+    assert {m["name"] for m in missions_before} >= {"ACTIVE-OP", "PLANNED-OP"}
+
+    r = client.post("/admin/map/reset", headers=auth(admin_tok), json={})
+    assert r.status_code == 201, r.text
+
+    missions_after = client.get("/missions", headers=auth(admin_tok)).json()
+    assert missions_after == [], f"missions survived reset: {missions_after}"
+
+
+def test_reset_handles_photos_uploaded_by_non_admin(client) -> None:
+    """Regression: bulk-deleting non-ADMIN operators must not violate
+    `photos.uploaded_by_fkey` / `cop_documents.uploaded_by_fkey`. Both tables
+    are preserved by design; their `uploaded_by` is re-pointed to the calling
+    admin instead.
+    """
+    import backend.storage.database as _db
+    from backend.storage.models import CopDocument, Operator, Photo
+
+    _, op_tok, op_id = register(client, "OPERATOR")
+    _, admin_tok, admin_id = register(client, "ADMIN")
+
+    # Drop a photo + cop_document that point at the non-ADMIN op.
+    with _db.SessionLocal() as s:
+        s.add(
+            Photo(
+                filename="x.jpg",
+                original_name="x.jpg",
+                mime_type="image/jpeg",
+                uploaded_by=op_id,
+            )
+        )
+        s.add(
+            CopDocument(
+                title="t",
+                filename="t.txt",
+                content_type="TXT",
+                file_data=b"",
+                uploaded_by=op_id,
+            )
+        )
+        s.commit()
+
+    # The reset would 500 before the fix (FK violation on photos).
+    r = client.post("/admin/map/reset", headers=auth(admin_tok), json={})
+    assert r.status_code == 201, r.text
+
+    with _db.SessionLocal() as s:
+        assert s.query(Operator).filter(Operator.id == op_id).first() is None
+        photos = s.query(Photo).all()
+        docs = s.query(CopDocument).all()
+        assert len(photos) == 1
+        assert len(docs) == 1
+        # Re-pointed to the calling admin.
+        assert photos[0].uploaded_by == admin_id
+        assert docs[0].uploaded_by == admin_id
+
+
 def test_reset_preserves_admins_only(client) -> None:
     """Reset wipes every non-ADMIN operator; ADMINs and audit logs survive."""
     cs_op, op_tok, _ = register(client, "OPERATOR")

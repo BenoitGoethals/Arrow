@@ -24,12 +24,14 @@ from backend.storage.models import (
     MapSnapshot,
     MapVisibility,
     Message,
+    Mission,
     Operator,
     OperatorPosition,
     Overlay,
     Report,
     SystemSetting,
     TacticalObject,
+    Vehicle,
 )
 from backend.websocket.manager import broadcaster
 
@@ -385,11 +387,86 @@ async def map_reset(
     db.query(Overlay).delete(synchronize_session=False)
     # Wipe operator position history before deleting operators (cascade safety).
     db.query(OperatorPosition).delete(synchronize_session=False)
+    # Re-point preserved FKs from doomed operators to the calling admin so the
+    # subsequent bulk delete doesn't violate `photos.uploaded_by_fkey` /
+    # `cop_documents.uploaded_by_fkey`. Photos and cop_documents survive the
+    # reset by design — we just transfer ownership to whoever pressed reset.
+    from sqlalchemy import text
+
+    db.execute(
+        text(
+            "UPDATE photos SET uploaded_by = :admin "
+            "WHERE uploaded_by IN ("
+            "    SELECT id FROM operators WHERE role != 'ADMIN'"
+            ")"
+        ),
+        {"admin": current.id},
+    )
+    # cop_documents may not exist in older deployments. Wrap the update in a
+    # savepoint so a missing table doesn't roll back the photos update above.
+    sp = db.begin_nested()
+    try:
+        db.execute(
+            text(
+                "UPDATE cop_documents SET uploaded_by = :admin "
+                "WHERE uploaded_by IN ("
+                "    SELECT id FROM operators WHERE role != 'ADMIN'"
+                ")"
+            ),
+            {"admin": current.id},
+        )
+        sp.commit()
+    except Exception:
+        sp.rollback()
     # Delete every non-ADMIN operator. The calling admin and any other
     # ADMINs survive so the chain of command isn't decapitated.
     db.query(Operator).filter(Operator.role != "ADMIN").delete(
         synchronize_session=False,
     )
+
+    # Vehicles aren't snapshotted (vehicles store position via the operator
+    # they're attached to; both get reset) but they reference operators &
+    # missions via FK. Wipe them so the mission/operator deletes succeed.
+    db.query(Vehicle).delete(synchronize_session=False)
+
+    # ── Missions ────────────────────────────────────────────────────────
+    # Many tables carry a nullable `mission_id` — NULL the references on every
+    # table that still has rows after the deletes above, then end + delete
+    # every mission. Each UPDATE is wrapped in a savepoint so older deployments
+    # missing one of the tables don't roll back the whole transaction.
+    _mission_ref_tables = (
+        "teams",
+        "operators",
+        "atak_shapes",
+        "chatrooms",
+        "cas_assets",
+        "strike_packages",
+        "cop_documents",
+        "logcop_supply",
+        "logcop_vehicles",
+        "logcop_convoys",
+        "logcop_supply_points",
+    )
+    for tbl in _mission_ref_tables:
+        nsp = db.begin_nested()
+        try:
+            db.execute(
+                text(
+                    f"UPDATE {tbl} SET mission_id = NULL "
+                    f"WHERE mission_id IS NOT NULL"
+                )
+            )
+            nsp.commit()
+        except Exception:
+            nsp.rollback()
+    db.execute(
+        text(
+            "UPDATE missions SET status = 'ENDED', "
+            "ended_at = COALESCE(ended_at, CURRENT_TIMESTAMP) "
+            "WHERE status != 'ENDED'"
+        )
+    )
+    db.query(Mission).delete(synchronize_session=False)
 
     db.commit()
     db.refresh(snap)
