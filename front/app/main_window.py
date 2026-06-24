@@ -176,6 +176,7 @@ class MainWindow(QMainWindow):
         self._stream_viewers: list[StreamViewerWindow] = []
         self._medevac_windows: list[MedevacWindow] = []
         self._fire_windows: list[FireMissionDialog] = []
+        self._mortarcalc_windows: list = []
 
         # Right: vertical activity bar — feature panels open in the right window.
         self._right_panel = ActivityPanel(side="right", default_width=360)
@@ -489,6 +490,15 @@ class MainWindow(QMainWindow):
             )
             view_menu.addAction(act)
 
+        # ── Fire Support ────────────────────────────────────────────
+        fs_menu = mb.addMenu("Fire Support")
+        act_mortarcalc = QAction("Mortar FDC (MortarCalc)…", self)
+        act_mortarcalc.setStatusTip(
+            "Open the 81 mm mortar fire-direction-centre calculator"
+        )
+        act_mortarcalc.triggered.connect(self._open_mortarcalc)
+        fs_menu.addAction(act_mortarcalc)
+
         # ── Admin ───────────────────────────────────────────────────
         self._admin_menu = mb.addMenu("Admin")
         self._admin_menu.setEnabled(False)  # unlocked after role resolved
@@ -611,6 +621,57 @@ class MainWindow(QMainWindow):
             "[ / ] or F1 / F2 to toggle panels</small>",
         )
 
+    def _open_mortarcalc(self):
+        """Open the MortarCalc 81 mm mortar FDC as a standalone Front-owned window.
+
+        Built lazily: importing mortarcalc pulls in its QtWebEngine map panel,
+        which is safe here because Front already imports QtWebEngineWidgets at
+        module load (front.map.view), before the QApplication was created. A
+        reference is kept so the window is not garbage-collected.
+        """
+        # Re-use an already-open window instead of spawning duplicates.
+        for w in self._mortarcalc_windows:
+            try:
+                if w.isVisible():
+                    w.showNormal()
+                    w.raise_()
+                    w.activateWindow()
+                    return
+            except RuntimeError:
+                pass  # underlying C++ window was destroyed; fall through to rebuild
+        try:
+            from mortarcalc.app import build_window
+
+            win = build_window()
+        except Exception as e:
+            log.exception("MortarCalc failed to open")
+            QMessageBox.critical(self, "MortarCalc", f"Could not open MortarCalc:\n{e}")
+            return
+        # Mirror MortarCalc pieces / FOs / targets onto the COP map while the
+        # FDC window is open; remove them again when it closes. FOs are linked
+        # to live operators by call sign.
+        try:
+            from front.integrations.mortarcalc_bridge import MortarcalcMapBridge
+
+            win._map_bridge = MortarcalcMapBridge(
+                win, self._map, operators_provider=self._client.live_operators
+            )
+            win.closing.connect(lambda w=win: self._on_mortarcalc_closed(w))
+        except Exception:
+            log.exception("MortarCalc map bridge failed to attach")
+
+        win.show()
+        win.raise_()
+        win.activateWindow()
+        self._mortarcalc_windows.append(win)
+
+    def _on_mortarcalc_closed(self, win):
+        """Drop a closed MortarCalc window so it is not reused or leaked."""
+        try:
+            self._mortarcalc_windows.remove(win)
+        except ValueError:
+            pass
+
     # ================================================================
     # SETTINGS / CONFIGURATION
     # ================================================================
@@ -724,6 +785,11 @@ class MainWindow(QMainWindow):
                             "position_source": op.get("position_source"),
                         }
                     )
+            # Keep MortarCalc FO markers pinned to fresh operator positions.
+            for w in self._mortarcalc_windows:
+                bridge = getattr(w, "_map_bridge", None)
+                if bridge is not None:
+                    bridge.sync()
         except Exception:
             pass
 

@@ -1106,9 +1106,17 @@ const POLY_DRAW_TYPES = new Set([
   'OBJ_F','OBJ_H','AMB_F','AMB_H','ASSEMBLY_AREA','ZONE'
 ]);
 
+// Directional point graphics: placed with a single click, then aimed by moving
+// the mouse (the 2525D symbol rotates / scales live), confirmed with a 2nd click.
+// These are NOT free-form polylines — that produced the "scribble" arrows.
+const TWO_CLICK_TYPES = new Set([
+  'ATK_AXIS','AXIS','COUNTERATTACK','BYPASS','WITHDRAW','DEF_AREA','BLOCK','AMBUSH'
+]);
+
 let _drawType   = null;     // active graphic type
 let _drawAff    = 'F';
 let _drawIsPoly = false;
+let _drawTwoClick = false;  // place-then-aim directional graphic
 let _drawPts    = [];       // clicked LatLngs
 let _drawTemp   = [];       // temporary marker/preview layers
 let _drawPreview= null;     // live preview line/poly
@@ -1121,18 +1129,23 @@ function setDrawGraphic(type, aff){
   _drawType   = type;
   _drawAff    = aff || 'F';
   _drawIsPoly = POLY_DRAW_TYPES.has(type);
+  _drawTwoClick = TWO_CLICK_TYPES.has(type);
   _drawPts    = [];
   drawMode    = 'draw';
   map.doubleClickZoom.disable();
   map.getContainer().style.cursor = 'crosshair';
 
   // Show instruction banner
-  _setDrawBanner((_drawIsPoly?'AREA':'LINE')+' — '+type+
-    ' · click to add points · double-click / right-click to finish · ESC cancels');
+  _setDrawBanner(_drawTwoClick
+    ? (type+' — click to place · move to aim direction · click to confirm · ESC cancels')
+    : (_drawIsPoly?'AREA':'LINE')+' — '+type+
+      ' · click to add points · double-click / right-click to finish · ESC cancels');
 
   map.on('click',     _drawClick);
   map.on('mousemove', _drawMove);
-  map.on('dblclick',  _drawFinish);
+  // Two-click directional graphics confirm on the 2nd click; right-click cancels.
+  // Multi-point lines/areas finish on double- or right-click.
+  if(!_drawTwoClick) map.on('dblclick', _drawFinish);
   map.on('contextmenu', _drawFinishCtx);
 }
 function setDrawMode(mode){ setDrawGraphic(mode,'F'); }
@@ -1142,6 +1155,16 @@ function _drawStyle(){
 }
 
 function _drawClick(e){
+  // Two-click directional graphic: 1st click = anchor, 2nd click = aim/confirm.
+  if(_drawTwoClick){
+    _drawPts.push(e.latlng);
+    if(_drawPts.length>=2){ _drawFinish(); return; }
+    const s=_drawStyle();
+    const dot=L.circleMarker(e.latlng,{radius:4,color:s.color,fillColor:s.color,fillOpacity:1,weight:1}).addTo(map);
+    _drawTemp.push(dot);
+    _renderPreview(e.latlng);
+    return;
+  }
   // prevent the pointer-mode map click handler
   _drawPts.push(e.latlng);
   const s=_drawStyle();
@@ -1155,10 +1178,23 @@ function _drawMove(e){
   _renderPreview(e.latlng);
 }
 
+function _affFullName(a){
+  return a==='H'?'HOSTILE':a==='N'?'NEUTRAL':a==='U'?'UNKNOWN':'FRIENDLY';
+}
+
 function _renderPreview(cursorLL){
+  if(_drawPreview){map.removeLayer(_drawPreview);_drawPreview=null;}
+  // Directional graphics: preview the ACTUAL 2525D symbol, rotating/scaling from
+  // the anchor toward the cursor — so what you see while aiming is what you get.
+  if(_drawTwoClick){
+    if(_drawPts.length<1 || !cursorLL) return;
+    const a=_drawPts[0];
+    if(_distLL(a,cursorLL)<1) return;
+    _drawPreview=buildTacticalGraphic(_drawType,[a,cursorLL],'',_affFullName(_drawAff)).addTo(map);
+    return;
+  }
   const s=_drawStyle();
   const pts=cursorLL?[..._drawPts,cursorLL]:[..._drawPts];
-  if(_drawPreview){map.removeLayer(_drawPreview);_drawPreview=null;}
   if(pts.length<2 && !_drawIsPoly) {
     if(pts.length<1) return;
   }
@@ -1204,7 +1240,7 @@ function cancelDraw(){
   map.off('contextmenu', _drawFinishCtx);
   _drawTemp.forEach(l=>map.removeLayer(l)); _drawTemp=[];
   if(_drawPreview){map.removeLayer(_drawPreview);_drawPreview=null;}
-  _drawPts=[]; _drawType=null; drawMode='pointer';
+  _drawPts=[]; _drawType=null; _drawTwoClick=false; drawMode='pointer';
   map.doubleClickZoom.enable();
   map.getContainer().style.cursor='';
   _setDrawBanner('');

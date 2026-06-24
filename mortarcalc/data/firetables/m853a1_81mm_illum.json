@@ -1,0 +1,57 @@
+{
+  "shell": "M853A1 ILLUM 81mm",
+  "fuze": "TIME",
+  "_note": "PLACEHOLDER DATA — vervang door echte vuurtafel-waarden. Lichtgranaat: tijdsbuis, hoge banen en kortere dracht; TOF tot ontsteekpunt is langer. Velden per charge: rows = [range_m, elev_mils, tof_s, drift_mils, dR_per_100m_height_m]",
+  "charges": [
+    {
+      "id": 0,
+      "muzzle_velocity_mps": 70,
+      "min_range_m": 200,
+      "max_range_m": 700,
+      "rows": [
+        [200, 1480, 11.0, 2, 3],
+        [400, 1400, 13.5, 3, 4],
+        [600, 1320, 15.6, 4, 4],
+        [700, 1280, 16.5, 5, 5]
+      ]
+    },
+    {
+      "id": 1,
+      "muzzle_velocity_mps": 100,
+      "min_range_m": 400,
+      "max_range_m": 1400,
+      "rows": [
+        [400, 1480, 15.5, 3, 3],
+        [700, 1400, 18.5, 5, 4],
+        [1000, 1320, 21.0, 7, 5],
+        [1400, 1220, 23.8, 9, 6]
+      ]
+    },
+    {
+      "id": 2,
+      "muzzle_velocity_mps": 150,
+      "min_range_m": 800,
+      "max_range_m": 2400,
+      "rows": [
+        [800, 1480, 21.5, 4, 2],
+        [1200, 1400, 25.0, 7, 3],
+        [1600, 1320, 28.0, 10, 3],
+        [2000, 1240, 30.6, 13, 4],
+        [2400, 1160, 32.8, 16, 5]
+      ]
+    },
+    {
+      "id": 3,
+      "muzzle_velocity_mps": 200,
+      "min_range_m": 1200,
+      "max_range_m": 3500,
+      "rows": [
+        [1200, 1480, 28.0, 6, 2],
+        [1800, 1400, 32.0, 9, 3],
+        [2400, 1320, 35.4, 12, 3],
+        [3000, 1240, 38.3, 15, 4],
+        [3500, 1170, 40.5, 18, 4]
+      ]
+    }
+  ]
+}

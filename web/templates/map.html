@@ -1454,6 +1454,9 @@
         // All multipoint lines/polygons → identical geometry to the front
         // client, so graphics drawn on any client sync & render everywhere.
         // Offensive manoeuvre (affiliation-coloured, arrowhead at tip)
+        // Directional manoeuvre graphics: placed with click → aim → click (two
+        // points only — anchor + direction), drawn as 2525D arrows/ticks. The
+        // two-click flow (see TG_TWO_CLICK) prevents the old free-polyline scribble.
         ATK_AXIS:      { shape: 'line', wideArrow: true, weight: 3,   label: 'Attack' },
         AXIS:          { shape: 'line', arrow: true,    weight: 3,   label: 'Axis of advance' },
         COUNTERATTACK: { shape: 'line', arrow: true, dash:'10,6', weight: 2.5, label: 'Counterattack' },
@@ -2504,6 +2507,9 @@
             tgFinishDraw();
             return;
         }
+        // Swallow the dblclick that trails a two-click directional placement so it
+        // doesn't immediately re-open the create radial.
+        if (Date.now() - _tgLastTwoClickSave < 400) return;
         _openCreateRadialAt(e);
     });
     map.doubleClickZoom.disable();
@@ -2515,6 +2521,13 @@
     // unit size designator (TM/SEC/PL/COY/"" for none).
     const tgDraw = { type: null, affiliation: 'FRIENDLY',
                      vertices: [], preview: null, mouseLine: null, echelon: '', dots: [] };
+    let _tgLastTwoClickSave = 0;   // ms timestamp of last 2-click directional placement
+
+    // Directional graphics placed with click → aim → click (exactly 2 points:
+    // anchor + direction). Kept in sync with the front client's TWO_CLICK_TYPES.
+    const TG_TWO_CLICK = new Set([
+        'ATK_AXIS','AXIS','COUNTERATTACK','BYPASS','WITHDRAW','DEF_AREA','BLOCK','AMBUSH'
+    ]);
 
     function tgSetStatus(msg) {
         const el = document.getElementById('tg-status');
@@ -2535,6 +2548,8 @@
                          tgDraw.affiliation === 'NEUTRAL' ? '🟢 neutral ' : '🔵 friendly ');
         if (spec.shape === 'point') {
             tgSetStatus(`Click on the map to place ${sideTag}${spec.label}.`);
+        } else if (TG_TWO_CLICK.has(type)) {
+            tgSetStatus(`Click to place ${sideTag}${spec.label}, then move to aim direction and click to confirm.`);
         } else if (spec.shape === 'line') {
             tgSetStatus(`Click vertices for ${sideTag}${spec.label}, double-click to finish.`);
         } else {
@@ -2562,6 +2577,8 @@
         const verts = tgDraw.vertices.slice().filter((v, i, a) =>
             i === 0 || v[0] !== a[i-1][0] || v[1] !== a[i-1][1]);
         if (verts.length < 2) { tgCancelDraw(); return; }
+        // Stamp two-click placements so the trailing dblclick is swallowed.
+        if (TG_TWO_CLICK.has(type)) _tgLastTwoClickSave = Date.now();
 
         // Reset the palette + status NOW so the user sees the action committed,
         // but keep the preview on the map until the POST round-trips. We strip
@@ -2639,11 +2656,20 @@
         tgDraw.preview = (spec.shape === 'polygon')
             ? L.polygon(tgDraw.vertices, opts).addTo(map)
             : L.polyline(tgDraw.vertices, opts).addTo(map);
+        // Directional graphics are exactly 2 points: anchor + aim → finish on the
+        // 2nd click so they can never become a multi-point scribble.
+        if (TG_TWO_CLICK.has(tgDraw.type) && tgDraw.vertices.length >= 2) {
+            tgFinishDraw();
+            return;
+        }
         tgSetStatus(`${spec.label}: ${tgDraw.vertices.length} vertex${tgDraw.vertices.length === 1 ? '' : 'es'}` +
-                    ` — double-click to finish.`);
+                    (TG_TWO_CLICK.has(tgDraw.type)
+                        ? ` — move to aim direction, click to confirm.`
+                        : ` — double-click to finish.`));
     });
 
-    // Live rubber-band line from last vertex → cursor for line/polygon
+    // Live rubber-band line from last vertex → cursor for line/polygon (and the
+    // aim line for two-click directional graphics).
     map.on('mousemove', (e) => {
         if (!tgDraw.type) return;
         const spec = TG_SPEC[tgDraw.type];

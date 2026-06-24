@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a4a33"/>
+      <stop offset="1" stop-color="#222b1e"/>
+    </linearGradient>
+    <linearGradient id="tube" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#cfd8c4"/>
+      <stop offset="1" stop-color="#7c8a6a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- badge -->
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="none" stroke="#9bb07c" stroke-width="10" opacity="0.55"/>
+
+  <!-- trajectory arc -->
+  <path d="M150 372 Q 300 70 452 150" fill="none" stroke="#f2c14e" stroke-width="12"
+        stroke-linecap="round" stroke-dasharray="6 26"/>
+
+  <!-- shell at apex -->
+  <g transform="translate(338 96) rotate(48)">
+    <path d="M-16 -26 Q0 -54 16 -26 L16 22 L-16 22 Z" fill="#e6e2d3"/>
+    <rect x="-16" y="22" width="32" height="14" fill="#b34a2f"/>
+    <path d="M-16 36 L-26 56 L-10 46 L0 60 L10 46 L26 56 L16 36 Z" fill="#444c3a"/>
+  </g>
+
+  <!-- baseplate -->
+  <ellipse cx="186" cy="392" rx="92" ry="22" fill="#1a2114"/>
+  <ellipse cx="186" cy="388" rx="92" ry="22" fill="#39472d"/>
+
+  <!-- mortar tube -->
+  <g transform="translate(186 384) rotate(-50)">
+    <rect x="-30" y="-228" width="60" height="232" rx="26" fill="url(#tube)"/>
+    <rect x="-30" y="-228" width="60" height="232" rx="26" fill="none" stroke="#3b4530" stroke-width="6"/>
+    <ellipse cx="0" cy="-224" rx="30" ry="11" fill="#5b6647"/>
+    <ellipse cx="0" cy="-224" rx="18" ry="6" fill="#141a0e"/>
+    <!-- bipod -->
+    <line x1="14" y1="-150" x2="86" y2="-30" stroke="#2b3320" stroke-width="14" stroke-linecap="round"/>
+    <line x1="-14" y1="-150" x2="-70" y2="-24" stroke="#2b3320" stroke-width="14" stroke-linecap="round"/>
+  </g>
+</svg>

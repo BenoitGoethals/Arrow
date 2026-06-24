@@ -1,0 +1,334 @@
+{
+  "version": 5,
+  "peloton": {
+    "pieces": [
+      {
+        "name": "C1",
+        "easting": 549348.5078429115,
+        "northing": 6121217.030729539,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 282,
+        "is_base": true
+      },
+      {
+        "name": "C2",
+        "easting": 549378.2970047795,
+        "northing": 6121226.265772846,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 283,
+        "is_base": false
+      },
+      {
+        "name": "B1",
+        "easting": 549602.8761234597,
+        "northing": 6121219.868341544,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 278,
+        "is_base": true
+      },
+      {
+        "name": "B2",
+        "easting": 549632.664764808,
+        "northing": 6121229.105096242,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 279,
+        "is_base": false
+      },
+      {
+        "name": "A1",
+        "easting": 549857.2443196098,
+        "northing": 6121222.72054368,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 275,
+        "is_base": true
+      },
+      {
+        "name": "A2",
+        "easting": 549887.2327137074,
+        "northing": 6121214.154260997,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 274,
+        "is_base": false
+      }
+    ],
+    "groups": [
+      {
+        "name": "Charlie",
+        "pdf_mils": 5600,
+        "member_names": [
+          "C1",
+          "C2"
+        ],
+        "left_limit_mils": 4800,
+        "right_limit_mils": 0
+      },
+      {
+        "name": "Bravo",
+        "pdf_mils": 0,
+        "member_names": [
+          "B1",
+          "B2"
+        ],
+        "left_limit_mils": 5600,
+        "right_limit_mils": 800
+      },
+      {
+        "name": "Alpha",
+        "pdf_mils": 800,
+        "member_names": [
+          "A1",
+          "A2"
+        ],
+        "left_limit_mils": 0,
+        "right_limit_mils": 1600
+      }
+    ],
+    "aiming_points": [
+      {
+        "name": "RP-CAMP",
+        "easting": 549736.2988749276,
+        "northing": 6120664.894330837,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 250
+      },
+      {
+        "name": "RP-MAST",
+        "easting": 548969.4124714849,
+        "northing": 6120990.24207837,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 305
+      },
+      {
+        "name": "RP-FARM",
+        "easting": 550369.7715589434,
+        "northing": 6120894.629970905,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 268
+      }
+    ],
+    "observers": [
+      {
+        "call_sign": "A-FO1",
+        "easting": 550077.0297155718,
+        "northing": 6124285.784434657,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 315
+      },
+      {
+        "call_sign": "A-FO2",
+        "easting": 550329.3259411295,
+        "northing": 6124455.584964494,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 325
+      },
+      {
+        "call_sign": "B-FO1",
+        "easting": 549569.2670183273,
+        "northing": 6124224.427378021,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 320
+      },
+      {
+        "call_sign": "B-FO2",
+        "easting": 549376.7597733458,
+        "northing": 6124389.2189214155,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 330
+      },
+      {
+        "call_sign": "C-FO1",
+        "easting": 548996.7107761678,
+        "northing": 6124273.705648648,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 335
+      },
+      {
+        "call_sign": "C-FO2",
+        "easting": 548740.6814804742,
+        "northing": 6124437.82239066,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 340
+      }
+    ],
+    "ammo": {
+      "C1": {
+        "HE": 90,
+        "SMOKE": 18,
+        "ILLUM": 12,
+        "WP": 8
+      },
+      "C2": {
+        "HE": 90,
+        "SMOKE": 18,
+        "ILLUM": 12,
+        "WP": 8
+      },
+      "B1": {
+        "HE": 90,
+        "SMOKE": 18,
+        "ILLUM": 12,
+        "WP": 8
+      },
+      "B2": {
+        "HE": 90,
+        "SMOKE": 18,
+        "ILLUM": 12,
+        "WP": 8
+      },
+      "A1": {
+        "HE": 90,
+        "SMOKE": 18,
+        "ILLUM": 12,
+        "WP": 8
+      },
+      "A2": {
+        "HE": 90,
+        "SMOKE": 18,
+        "ILLUM": 12,
+        "WP": 8
+      }
+    },
+    "low_ammo_threshold": 5,
+    "fire_plan": [
+      {
+        "name": "AB1001",
+        "easting": 549574.8693090314,
+        "northing": 6123723.666626732,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 300,
+        "description": "Track junction north of camp",
+        "target_type": "point",
+        "shell": "HE",
+        "fuze": "quick",
+        "sheaf": "converged",
+        "rounds_per_piece": 2,
+        "suggested_group": "Bravo",
+        "is_fpf": false,
+        "line_azimuth_mils": 0.0,
+        "line_length_m": 200.0,
+        "start_offset_min": null,
+        "duration_min": 0
+      },
+      {
+        "name": "AB1002",
+        "easting": 550082.0606538831,
+        "northing": 6123840.664010416,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 295,
+        "description": "Tree-line assembly area",
+        "target_type": "area",
+        "shell": "HE",
+        "fuze": "quick",
+        "sheaf": "parallel",
+        "rounds_per_piece": 3,
+        "suggested_group": "Alpha",
+        "is_fpf": false,
+        "line_azimuth_mils": 0.0,
+        "line_length_m": 200.0,
+        "start_offset_min": null,
+        "duration_min": 0
+      },
+      {
+        "name": "AB1003",
+        "easting": 549001.0178863273,
+        "northing": 6123884.224711491,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 310,
+        "description": "Ford / stream crossing",
+        "target_type": "point",
+        "shell": "HE",
+        "fuze": "delay",
+        "sheaf": "converged",
+        "rounds_per_piece": 2,
+        "suggested_group": "Charlie",
+        "is_fpf": false,
+        "line_azimuth_mils": 0.0,
+        "line_length_m": 200.0,
+        "start_offset_min": null,
+        "duration_min": 0
+      },
+      {
+        "name": "AB1004",
+        "easting": 549571.7569634808,
+        "northing": 6124001.866999089,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 300,
+        "description": "Smoke screen across valley track",
+        "target_type": "linear",
+        "shell": "SMOKE",
+        "fuze": "time",
+        "sheaf": "linear",
+        "rounds_per_piece": 2,
+        "suggested_group": "Bravo",
+        "is_fpf": false,
+        "line_azimuth_mils": 1600,
+        "line_length_m": 400,
+        "start_offset_min": 0,
+        "duration_min": 5
+      },
+      {
+        "name": "AB1005",
+        "easting": 550078.2874732884,
+        "northing": 6124174.504301591,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 305,
+        "description": "Illumination — northern valley",
+        "target_type": "point",
+        "shell": "ILLUM",
+        "fuze": "illum",
+        "sheaf": "converged",
+        "rounds_per_piece": 4,
+        "suggested_group": "Alpha",
+        "is_fpf": false,
+        "line_azimuth_mils": 0.0,
+        "line_length_m": 200.0,
+        "start_offset_min": null,
+        "duration_min": 0
+      },
+      {
+        "name": "FPF-BRAVO",
+        "easting": 549591.6743256443,
+        "northing": 6122221.386561283,
+        "zone": 30,
+        "hemisphere": "N",
+        "altitude_m": 290,
+        "description": "FPF Bravo — final protective fire",
+        "target_type": "linear",
+        "shell": "HE",
+        "fuze": "quick",
+        "sheaf": "linear",
+        "rounds_per_piece": 3,
+        "suggested_group": "Bravo",
+        "is_fpf": true,
+        "line_azimuth_mils": 1600,
+        "line_length_m": 300,
+        "start_offset_min": null,
+        "duration_min": 0
+      }
+    ],
+    "h_hour": null,
+    "next_fm_number": 1
+  },
+  "missions": [],
+  "active_missions": []
+}

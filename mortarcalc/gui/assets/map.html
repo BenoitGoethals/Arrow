@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>MortarCalc — kaart</title>
+  <link rel="stylesheet" href="leaflet/leaflet.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #1e1e1e; }
+    .marker-label { color: #fff; font-weight: 600; text-shadow: 0 0 3px #000; }
+    .marker-label.planned-label {
+      color: #e0fff7; font-style: italic; font-weight: 500;
+      background: rgba(0,0,0,0.45); padding: 1px 5px; border-radius: 3px;
+    }
+    .range-label {
+      color: #fff; font-weight: 700; font-size: 13px;
+      text-shadow: 0 0 4px #000, 0 0 4px #000;
+      background: rgba(0,0,0,0.55); padding: 2px 6px;
+      border-radius: 3px; white-space: nowrap;
+    }
+    .range-filter {
+      background: rgba(30,30,30,0.92); color: #eee;
+      padding: 10px 12px 12px; border-radius: 4px;
+      font: 12px sans-serif; min-width: 200px;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+    }
+    .range-filter .hdr {
+      color: #aaa; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-bottom: 5px;
+    }
+    .range-filter select, .range-filter button {
+      background: #2a2a2a; color: #eee; border: 1px solid #555;
+      border-radius: 3px; padding: 3px 6px; width: 100%; font: 12px sans-serif;
+    }
+    .range-filter button { cursor: pointer; }
+    .range-filter button:hover { background: #3a3a3a; }
+    .range-filter .row { margin-top: 6px; }
+    .range-filter .row.label { color: #aaa; font-size: 11px; margin-bottom: 2px; }
+    .range-filter .shells { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+    .range-filter .shells label {
+      display: flex; align-items: center; gap: 5px; cursor: pointer;
+      padding: 2px 4px; border-radius: 3px; font-weight: 600;
+    }
+    .range-filter .shells label:hover { background: rgba(255,255,255,0.06); }
+    .range-filter .shells input { accent-color: #1abc9c; }
+    .range-filter .quick {
+      display: flex; gap: 4px; margin-top: 4px;
+    }
+    .range-filter .quick button { padding: 2px 6px; font-size: 11px; }
+    .range-filter .empty { color: #888; font-style: italic; padding: 4px 2px; }
+    .legend {
+      background: rgba(30,30,30,0.88); color: #eee; padding: 9px 12px;
+      font: 13px sans-serif; border-radius: 4px; line-height: 1.6;
+    }
+    .legend .row { display: flex; align-items: center; gap: 6px; }
+    .legend svg { flex: 0 0 auto; }
+    .legend .row.hdr {
+      color: #aaa; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.5px; margin-top: 3px;
+    }
+    .legend .row.sep { border-top: 1px solid #444; height: 0; margin: 6px 0; }
+    .legend .dim { color: #888; font-size: 12px; }
+    .leaflet-control-layers { font: 12px sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="leaflet/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([50.85, 4.35], 13);
+
+    // ---- base layers (online) ----
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap'
+    });
+    const esri = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19, attribution: 'Tiles © Esri' }
+    );
+    const opentopo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17, attribution: 'Map data: © OpenStreetMap, SRTM | © OpenTopoMap'
+    });
+    osm.addTo(map);
+    const baseLayers = {
+      'OpenStreetMap': osm,
+      'Satellite (Esri)': esri,
+      'OpenTopoMap': opentopo,
+    };
+    let mbtilesLayer = null;
+    const layerControl = L.control.layers(baseLayers, null, { position: 'topleft' }).addTo(map);
+
+    // Range overlays — two toggleable layers in the layer control:
+    // 1) "Sector of fire (limits)" — the watch-sector wedge fills (uncoloured
+    //    pie shaded with the section colour; not shell-specific).
+    // 2) "Range envelopes" — the actual range arcs/wedges/rings/labels;
+    //    populated by the Range Filter control panel based on the user's
+    //    section + shell selection.
+    const sectorPies     = L.layerGroup().addTo(map);
+    const rangeLayer     = L.layerGroup().addTo(map);
+    const plannedTargets = L.layerGroup().addTo(map);
+    layerControl.addOverlay(sectorPies,     'Sector of fire (limits)');
+    layerControl.addOverlay(rangeLayer,     'Range envelopes');
+    layerControl.addOverlay(plannedTargets, 'Planned targets (fire plan)');
+
+    // -------- Range Filter control panel --------
+    // Holds the user's choice of section + shells; re-renders rangeLayer on
+    // every change without disturbing the map view.
+    const rangeFilter = { section: 'ALL', shells: new Set() };
+    let _lastPayload = null;
+    let _initialFit  = false;
+
+    const RangeFilterControl = L.Control.extend({
+      options: { position: 'topright' },
+      onAdd: function() {
+        const div = L.DomUtil.create('div', 'range-filter');
+        div.innerHTML =
+          '<div class="hdr">Range filter</div>' +
+          '<div class="row label">Section</div>' +
+          '<div class="row"><select class="rf-section"></select></div>' +
+          '<div class="row label">Munition</div>' +
+          '<div class="shells rf-shells"></div>' +
+          '<div class="quick">'
+            + '<button class="rf-all">All</button>'
+            + '<button class="rf-none">None</button>'
+            + '<button class="rf-fit" title="Zoom to platoon">Fit platoon</button>'
+          + '</div>';
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+      }
+    });
+    const rfControl = new RangeFilterControl();
+    rfControl.addTo(map);
+
+    function rfRoot() { return rfControl.getContainer(); }
+
+    function populateFilterUI(payload) {
+      const root = rfRoot();
+      const sectSel = root.querySelector('.rf-section');
+      const sections = (payload.range_sectors || []).map(s => s.section);
+      const prevSect = rangeFilter.section;
+      sectSel.innerHTML =
+        '<option value="ALL">All sections</option>'
+        + sections.map(n => `<option value="${n}">${n}</option>`).join('');
+      sectSel.value = sections.includes(prevSect) || prevSect === 'ALL'
+        ? prevSect : 'ALL';
+      rangeFilter.section = sectSel.value;
+      sectSel.onchange = () => {
+        rangeFilter.section = sectSel.value;
+        applyRangeFilter();
+      };
+
+      const shellsBox = root.querySelector('.rf-shells');
+      const ammo = payload.ammo_legend || [];
+      if (ammo.length === 0) {
+        shellsBox.innerHTML = '<div class="empty">No firing tables loaded</div>';
+      } else {
+        shellsBox.innerHTML = ammo.map(a =>
+          `<label style="color:${a.color}">`
+          + `<input type="checkbox" data-shell="${a.shell}"`
+          + (rangeFilter.shells.has(a.shell) ? ' checked' : '') + '>'
+          + `${a.shell}</label>`
+        ).join('');
+        shellsBox.querySelectorAll('input').forEach(cb => {
+          cb.onchange = () => {
+            const s = cb.getAttribute('data-shell');
+            if (cb.checked) rangeFilter.shells.add(s);
+            else rangeFilter.shells.delete(s);
+            applyRangeFilter();
+          };
+        });
+      }
+
+      root.querySelector('.rf-all').onclick = () => {
+        rangeFilter.shells = new Set(ammo.map(a => a.shell));
+        populateFilterUI(_lastPayload); applyRangeFilter();
+      };
+      root.querySelector('.rf-none').onclick = () => {
+        rangeFilter.shells.clear();
+        populateFilterUI(_lastPayload); applyRangeFilter();
+      };
+      root.querySelector('.rf-fit').onclick = () => fitPlatoon();
+    }
+
+    function fitPlatoon() {
+      if (!_lastPayload) return;
+      const pts = [];
+      (_lastPayload.pieces || []).forEach(p => pts.push([p.lat, p.lon]));
+      (_lastPayload.aiming_points || []).forEach(p => pts.push([p.lat, p.lon]));
+      (_lastPayload.fos || []).forEach(p => pts.push([p.lat, p.lon]));
+      (_lastPayload.targets || []).forEach(t => pts.push([t.lat, t.lon]));
+      if (pts.length === 0) return;
+      if (pts.length === 1) {
+        map.setView(pts[0], 14);
+      } else {
+        map.fitBounds(L.latLngBounds(pts).pad(0.15));
+      }
+    }
+
+    // ---- legend ----
+    function swatchSvg(color, size) {
+      return `<svg width="${size}" height="${size}" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">`
+        + `<circle cx="9" cy="9" r="7" fill="none" stroke="${color}" stroke-width="2"/>`
+        + `</svg>`;
+    }
+    const legend = L.control({position: 'topright'});
+    legend.onAdd = function() {
+      const div = L.DomUtil.create('div', 'legend');
+      div.innerHTML =
+        '<div class="row">' + mortarSvg('#e74c3c', 18) + '<span>Base piece</span></div>' +
+        '<div class="row">' + mortarSvg('#f39c12', 18) + '<span>Slave piece</span></div>' +
+        '<div class="row">' + apSvg(18) + '<span>Aiming point</span></div>' +
+        '<div class="row">' + foSvg(18) + '<span>FO / Observer</span></div>' +
+        '<div class="row">' + targetSvg('point', 18) + '<span>Active target — point</span></div>' +
+        '<div class="row">' + targetSvg('linear', 18) + '<span>Active target — linear</span></div>' +
+        '<div class="row">' + targetSvg('area', 18) + '<span>Active target — area</span></div>' +
+        '<div class="row">' + plannedTargetSvg('point', false, 18) + '<span>Planned target</span></div>' +
+        '<div class="row">' + plannedTargetSvg('point', true,  18) + '<span>Planned target — FPF</span></div>' +
+        '<div class="row sep" id="legend-ranges-sep"></div>' +
+        '<div id="legend-ranges"></div>';
+      return div;
+    };
+    legend.addTo(map);
+
+    function renderRangeLegend(ammo) {
+      const sep = document.getElementById('legend-ranges-sep');
+      const box = document.getElementById('legend-ranges');
+      if (!sep || !box) return;
+      if (!ammo || !ammo.length) {
+        sep.style.display = 'none'; box.innerHTML = ''; return;
+      }
+      sep.style.display = 'block';
+      box.innerHTML = '<div class="row hdr">Range envelopes (per shell)</div>'
+        + ammo.map(a =>
+            '<div class="row">' + swatchSvg(a.color, 18)
+            + '<span>' + a.shell + '  '
+            + '<span class="dim">(' + a.min_m.toFixed(0) + '–' + a.max_m.toFixed(0) + ' m)</span>'
+            + '</span></div>'
+          ).join('');
+    }
+
+    // ---- MBTiles hook (called from Python) ----
+    window.mc_set_mbtiles = function(urlTemplate, metadata) {
+      if (mbtilesLayer) {
+        map.removeLayer(mbtilesLayer);
+        layerControl.removeLayer(mbtilesLayer);
+        mbtilesLayer = null;
+      }
+      if (urlTemplate) {
+        const meta = metadata || {};
+        const maxZoom = parseInt(meta.maxzoom || '20', 10);
+        const minZoom = parseInt(meta.minzoom || '0', 10);
+        const attribution = meta.attribution || 'MBTiles (offline)';
+        mbtilesLayer = L.tileLayer(urlTemplate, { maxZoom, minZoom, attribution });
+        layerControl.addBaseLayer(mbtilesLayer, 'MBTiles (offline)');
+        // Make MBTiles the active layer.
+        [osm, esri, opentopo].forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
+        mbtilesLayer.addTo(map);
+      }
+    };
+
+    // ---- icons ----
+    function mortarSvg(color, size) {
+      return `<svg width="${size}" height="${size}" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="9" width="22" height="14" rx="1" fill="${color}" stroke="#fff" stroke-width="1.5"/>
+        <line x1="7" y1="22" x2="21" y2="6" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="7" cy="22" r="2.2" fill="#fff"/>
+      </svg>`;
+    }
+    function foSvg(size) {
+      return `<svg width="${size}" height="${size}" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="8" width="24" height="13" rx="3" fill="#3498db" stroke="#fff" stroke-width="1.5"/>
+        <circle cx="9" cy="14.5" r="3.4" fill="none" stroke="#fff" stroke-width="1.6"/>
+        <circle cx="19" cy="14.5" r="3.4" fill="none" stroke="#fff" stroke-width="1.6"/>
+        <line x1="12.5" y1="14.5" x2="15.5" y2="14.5" stroke="#fff" stroke-width="1.6"/>
+      </svg>`;
+    }
+    function apSvg(size) {
+      return `<svg width="${size}" height="${size}" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="14,3 25,23 3,23" fill="#2ecc71" stroke="#fff" stroke-width="1.5"/>
+        <circle cx="14" cy="17" r="2" fill="#fff"/>
+      </svg>`;
+    }
+    function targetSvg(type, size) {
+      let body;
+      if (type === 'area') {
+        body = `<circle cx="14" cy="14" r="11" fill="rgba(155,89,182,0.30)" stroke="#9b59b6" stroke-width="2"/>`;
+      } else if (type === 'linear') {
+        body = `<rect x="2" y="11" width="24" height="6" fill="rgba(155,89,182,0.30)" stroke="#9b59b6" stroke-width="2"/>`;
+      } else {
+        body = `<circle cx="14" cy="14" r="10" fill="none" stroke="#9b59b6" stroke-width="2"/>`;
+      }
+      return `<svg width="${size}" height="${size}" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+        ${body}
+        <line x1="14" y1="2" x2="14" y2="26" stroke="#9b59b6" stroke-width="1.5"/>
+        <line x1="2" y1="14" x2="26" y2="14" stroke="#9b59b6" stroke-width="1.5"/>
+        <circle cx="14" cy="14" r="2.2" fill="#9b59b6"/>
+      </svg>`;
+    }
+
+    // Planned (preplotted, fire-plan) target — hollow + dashed outer ring so
+    // it's clearly distinguishable from a live-mission target. FPF targets
+    // get a red colour.
+    function plannedTargetSvg(type, isFpf, size) {
+      const c = isFpf ? '#e74c3c' : '#1abc9c';
+      const fill = isFpf ? 'rgba(231,76,60,0.20)' : 'rgba(26,188,156,0.20)';
+      let body;
+      if (type === 'area') {
+        body = `<circle cx="14" cy="14" r="11" fill="${fill}" stroke="${c}" stroke-width="2" stroke-dasharray="4 3"/>`;
+      } else if (type === 'linear') {
+        body = `<rect x="2" y="11" width="24" height="6" fill="${fill}" stroke="${c}" stroke-width="2" stroke-dasharray="4 3"/>`;
+      } else {
+        body = `<circle cx="14" cy="14" r="10" fill="${fill}" stroke="${c}" stroke-width="2" stroke-dasharray="4 3"/>`;
+      }
+      return `<svg width="${size}" height="${size}" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+        ${body}
+        <line x1="14" y1="6" x2="14" y2="22" stroke="${c}" stroke-width="1.4"/>
+        <line x1="6" y1="14" x2="22" y2="14" stroke="${c}" stroke-width="1.4"/>
+        <circle cx="14" cy="14" r="1.8" fill="${c}"/>
+      </svg>`;
+    }
+
+    function divIcon(html, size) {
+      return L.divIcon({
+        className: 'mc-icon',
+        html: html,
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2],
+      });
+    }
+
+    let layer = L.layerGroup().addTo(map);
+
+    function render(payload) {
+      _lastPayload = payload;
+      layer.clearLayers();
+      sectorPies.clearLayers();
+      rangeLayer.clearLayers();
+      plannedTargets.clearLayers();
+      const all = [];
+
+      // refresh range legend + range-filter UI from the current ammo set
+      renderRangeLegend(payload.ammo_legend || []);
+      populateFilterUI(payload);
+
+      // Sector-of-fire fill + limit lines (no shell filter — these are about
+      // the watch sector, not a range envelope).
+      (payload.range_sectors || []).forEach(s => {
+        const capTag = (s.max_range_m && s.max_range_m > 0)
+          ? `<br><i>capped at ${s.max_range_m.toFixed(0)} m</i>` : '';
+        if (s.fill && s.fill.length > 2) {
+          sectorPies.addLayer(L.polygon(s.fill, {
+            color: s.color, weight: 2, opacity: 0.85,
+            fillColor: s.color, fillOpacity: 0.18,
+          }).bindTooltip(`${s.section} — sector of fire${capTag}`, { sticky: true }));
+        }
+        (s.limit_lines || []).forEach(line => {
+          sectorPies.addLayer(L.polyline(line, {
+            color: s.color, weight: 2.5, opacity: 0.9,
+          }));
+        });
+      });
+
+      // Range envelopes (per-piece + per-section) are drawn through the
+      // filter so the user can pick exactly which section × shells to see.
+      applyRangeFilter();
+
+      // pieces (mortar icon)
+      payload.pieces.forEach(p => {
+        const color = p.is_base ? '#e74c3c' : '#f39c12';
+        const m = L.marker([p.lat, p.lon], { icon: divIcon(mortarSvg(color, 30), 30) })
+          .bindTooltip(
+            `<b>${p.name}</b>${p.is_base ? ' (base)' : ''}<br>${p.mgrs}<br>` +
+            `${p.group ? 'Section ' + p.group : 'No section'}`,
+            { permanent: true, direction: 'right', className: 'marker-label', offset: [16, 0] }
+          );
+        layer.addLayer(m); all.push([p.lat, p.lon]);
+      });
+
+      // PDF arrows per piece
+      payload.pdf_arrows.forEach(a => {
+        const line = L.polyline([[a.from_lat, a.from_lon], [a.to_lat, a.to_lon]],
+          { color: '#f1c40f', weight: 2, dashArray: '4 3', opacity: 0.8 });
+        layer.addLayer(line);
+      });
+
+      // aiming points
+      payload.aiming_points.forEach(ap => {
+        const m = L.marker([ap.lat, ap.lon], { icon: divIcon(apSvg(22), 22) })
+          .bindTooltip(`RP ${ap.name}<br>${ap.mgrs}`,
+            { permanent: true, direction: 'right', className: 'marker-label', offset: [12, 0] });
+        layer.addLayer(m); all.push([ap.lat, ap.lon]);
+      });
+
+      // FOs (binocular icon)
+      payload.fos.forEach(fo => {
+        const m = L.marker([fo.lat, fo.lon], { icon: divIcon(foSvg(28), 28) })
+          .bindTooltip(`FO ${fo.call_sign}<br>${fo.mgrs}`,
+            { permanent: true, direction: 'right', className: 'marker-label', offset: [14, 0] });
+        layer.addLayer(m); all.push([fo.lat, fo.lon]);
+      });
+
+      // targets — render shape per target type
+      payload.targets.forEach(t => {
+        const type = (t.type || 'point').toLowerCase();
+        const label =
+          `Target ${t.fm_id} (${t.group})<br>` +
+          `<b>${type.toUpperCase()}</b>` +
+          (t.description ? ` — ${t.description}` : '') +
+          `<br>${t.mgrs}` +
+          (t.line ? `<br>line ${t.line.length_m.toFixed(0)} m @ ${t.line.azimuth_mils.toFixed(0)} mils` : '');
+
+        // shape underlay
+        if (type === 'linear' && t.line) {
+          const poly = L.polyline(
+            [[t.line.a_lat, t.line.a_lon], [t.line.b_lat, t.line.b_lon]],
+            { color: '#9b59b6', weight: 5, opacity: 0.85 }
+          );
+          layer.addLayer(poly);
+          all.push([t.line.a_lat, t.line.a_lon]);
+          all.push([t.line.b_lat, t.line.b_lon]);
+        } else if (type === 'area') {
+          const circ = L.circle([t.lat, t.lon], {
+            radius: 75,
+            color: '#9b59b6', weight: 2, opacity: 0.9,
+            fillColor: '#9b59b6', fillOpacity: 0.2,
+          });
+          layer.addLayer(circ);
+        }
+        // center icon for any target type
+        const m = L.marker([t.lat, t.lon], { icon: divIcon(targetSvg(type, 30), 30) })
+          .bindTooltip(label,
+            { permanent: true, direction: 'right', className: 'marker-label', offset: [16, 0] });
+        layer.addLayer(m); all.push([t.lat, t.lon]);
+      });
+
+      // planned (preplotted) targets — hollow + dashed style; FPF in red
+      (payload.planned_targets || []).forEach(t => {
+        const type   = (t.type || 'point').toLowerCase();
+        const color  = t.is_fpf ? '#e74c3c' : '#1abc9c';
+        const tip = [
+          `<b>${t.name}</b>` + (t.is_fpf ? '  <span style="color:#e74c3c">FPF</span>' : ''),
+          t.mgrs,
+          t.description ? `<i>${t.description}</i>` : '',
+          `${(t.shell || '?')} / ${(t.fuze || '?')} · ${(t.sheaf || '?')} · ${t.rounds || 1} rnd/pc`,
+          t.suggested_group ? `Section: ${t.suggested_group}` : '',
+          (t.timing && t.timing !== 'On Call') ? `Timing: ${t.timing}` : 'On Call',
+          t.scheduled ? `Scheduled: ${t.scheduled}` : '',
+        ].filter(Boolean).join('<br>');
+
+        // shape underlay (subtle so it doesn't compete with active targets)
+        if (type === 'linear' && t.line) {
+          const poly = L.polyline(
+            [[t.line.a_lat, t.line.a_lon], [t.line.b_lat, t.line.b_lon]],
+            { color: color, weight: 3, opacity: 0.7, dashArray: '6 4' }
+          );
+          plannedTargets.addLayer(poly);
+        } else if (type === 'area') {
+          plannedTargets.addLayer(L.circle([t.lat, t.lon], {
+            radius: 75,
+            color: color, weight: 1.5, opacity: 0.7, dashArray: '4 3',
+            fillColor: color, fillOpacity: 0.10,
+          }));
+        }
+        // Permanent name label so the FDC can read AB1001, AB1002… at a
+        // glance; click the marker for the full detail popup.
+        const m = L.marker([t.lat, t.lon], {
+          icon: divIcon(plannedTargetSvg(type, t.is_fpf, 26), 26),
+        }).bindTooltip(t.name + (t.is_fpf ? ' (FPF)' : ''), {
+          permanent: true, direction: 'right', offset: [14, 0],
+          className: 'marker-label planned-label',
+        }).bindPopup(tip);
+        plannedTargets.addLayer(m);
+      });
+
+      // GT-lines (per piece → target)
+      payload.gt_lines.forEach(l => {
+        const line = L.polyline([[l.from_lat, l.from_lon], [l.to_lat, l.to_lon]],
+          { color: '#e67e22', weight: 1.5, opacity: 0.7 });
+        layer.addLayer(line);
+      });
+
+      // OT-lines (FO → target): the observer's direction in a fire mission
+      (payload.ot_lines || []).forEach(l => {
+        const line = L.polyline([[l.from_lat, l.from_lon], [l.to_lat, l.to_lon]],
+          { color: '#e056fd', weight: 2, opacity: 0.85, dashArray: '8 5' })
+          .bindTooltip(
+            `${l.call_sign} → ${l.fm_id}<br>OT ${l.azimuth_mils.toFixed(0)} mils · ${l.range_m.toFixed(0)} m`,
+            { sticky: true });
+        layer.addLayer(line);
+      });
+
+      // Only auto-zoom on the very first render — after that the user is in
+      // charge of the view (manual zoom isn't wiped on every refresh). The
+      // 'Fit platoon' button in the range-filter control re-centres on demand.
+      if (!_initialFit && all.length > 0) {
+        map.fitBounds(L.latLngBounds(all).pad(0.08));
+        _initialFit = true;
+      }
+    }
+
+    function applyRangeFilter() {
+      if (!_lastPayload) return;
+      rangeLayer.clearLayers();
+      const sectionFilter = rangeFilter.section;   // 'ALL' or section name
+      const shellFilter   = rangeFilter.shells;    // set of shell names
+
+      if (shellFilter.size === 0) return;          // nothing to draw
+
+      // Per-piece range circles, filtered by section + shell
+      (_lastPayload.piece_ranges || []).forEach(p => {
+        if (sectionFilter !== 'ALL' && p.group !== sectionFilter) return;
+        p.bands.forEach(b => {
+          if (!shellFilter.has(b.shell)) return;
+          rangeLayer.addLayer(L.circle([p.lat, p.lon], {
+            radius: b.max_m,
+            color: b.color, weight: 1.4, opacity: 0.75,
+            fill: false,
+          }).bindTooltip(
+            `${p.name} · ${b.shell} max ${b.max_m.toFixed(0)} m`,
+            { sticky: true }
+          ));
+          if (b.min_m > 0) {
+            rangeLayer.addLayer(L.circle([p.lat, p.lon], {
+              radius: b.min_m,
+              color: b.color, weight: 1, opacity: 0.55,
+              fill: false, dashArray: '3 5',
+            }).bindTooltip(
+              `${p.name} · ${b.shell} min ${b.min_m.toFixed(0)} m`,
+              { sticky: true }
+            ));
+          }
+        });
+      });
+
+      // Per-section centroid arcs + filled wedges + max-range labels
+      (_lastPayload.range_sectors || []).forEach(s => {
+        if (sectionFilter !== 'ALL' && s.section !== sectionFilter) return;
+        const capTag = (s.max_range_m && s.max_range_m > 0)
+          ? `<br><i>capped at ${s.max_range_m.toFixed(0)} m</i>` : '';
+        (s.bands || []).forEach(b => {
+          if (!shellFilter.has(b.shell)) return;
+          if (b.wedge && b.wedge.length > 2) {
+            rangeLayer.addLayer(L.polygon(b.wedge, {
+              color: b.color, weight: 2, opacity: 0.9,
+              fillColor: b.color, fillOpacity: 0.16,
+            }).bindTooltip(
+              `${s.section} · ${b.shell} pie — max ${b.max_m.toFixed(0)} m${capTag}`,
+              { sticky: true }));
+          } else {
+            rangeLayer.addLayer(L.polyline(b.max_arc, {
+              color: b.color, weight: 2.4, opacity: 0.95,
+            }).bindTooltip(
+              `${s.section} · ${b.shell} max ${b.max_m.toFixed(0)} m${capTag}`,
+              { sticky: true }));
+          }
+          if (b.min_arc) {
+            rangeLayer.addLayer(L.polyline(b.min_arc, {
+              color: b.color, weight: 1.5, opacity: 0.8, dashArray: '6 5',
+            }).bindTooltip(
+              `${s.section} · ${b.shell} min ${b.min_m.toFixed(0)} m`,
+              { sticky: true }));
+          }
+          if (b.label_at) {
+            rangeLayer.addLayer(L.marker(b.label_at, {
+              icon: L.divIcon({
+                className: 'range-label',
+                html: `${b.shell} ${b.max_m.toFixed(0)} m`,
+                iconSize: null, iconAnchor: [0, 0],
+              }),
+              interactive: false,
+            }));
+          }
+        });
+      });
+    }
+
+    window.mc_render = function(jsonStr) {
+      try { render(JSON.parse(jsonStr)); }
+      catch (e) { console.error('render failed', e); }
+    };
+    // Expose a hook so the Python side could programmatically refit
+    // (e.g. on tab switch) — not used yet, but cheap to add.
+    window.mc_fit_platoon = function() { _initialFit = false; fitPlatoon(); };
+  </script>
+</body>
+</html>
