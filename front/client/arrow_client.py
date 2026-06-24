@@ -174,6 +174,38 @@ class ArrowClient:
         r.raise_for_status()
         return r.json()
 
+    def post_tactical_marker(
+        self,
+        obj_type: str,
+        lat: float,
+        lon: float,
+        notes: str = "",
+        affiliation: str = "FRIENDLY",
+        symbol_code: str = "",
+    ) -> dict:
+        return self._post(
+            "/tactical-objects",
+            {
+                "type": obj_type,
+                "latitude": lat,
+                "longitude": lon,
+                "notes": notes,
+                "affiliation": affiliation,
+                "symbol_code": symbol_code,
+            },
+        )
+
+    def broadcast_mortar_event(
+        self, event: str, group: str = "", target: str = "", state: str = ""
+    ) -> None:
+        try:
+            self._post(
+                "/mortar-cop/event",
+                {"event": event, "group": group, "target": target, "state": state},
+            )
+        except Exception:
+            pass
+
     # ---- KML --------------------------------------------------------
     def kml_layers(self) -> list:
         return self._get("/kml-layers")

@@ -5365,6 +5365,15 @@
                 handleKmlWsEvent(msg);
             } else if (msg.channel === 'overlay') {
                 handleOverlayWsEvent(msg);
+            } else if (msg.channel === 'mortar-cop') {
+                const d = msg.data || {};
+                if (msg.event === 'firing') {
+                    const label = [d.group, d.target].filter(Boolean).join(' · ');
+                    toast('🔥 MORTARS FIRING' + (label ? ' · ' + label : ''), '#ef4444');
+                } else if (msg.event === 'ceased') {
+                    const grp = d.group ? ' · ' + d.group : '';
+                    toast('✓ MORTARS CEASED FIRE' + grp, '#22c55e');
+                }
             }
             // NOTE: visibility prefs are now per-device (localStorage), so
             // there's no WS subscription here — the admin singleton on the

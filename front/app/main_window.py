@@ -647,9 +647,8 @@ class MainWindow(QMainWindow):
             log.exception("MortarCalc failed to open")
             QMessageBox.critical(self, "MortarCalc", f"Could not open MortarCalc:\n{e}")
             return
-        # Mirror MortarCalc pieces / FOs / targets onto the COP map while the
-        # FDC window is open; remove them again when it closes. FOs are linked
-        # to live operators by call sign.
+        # Mirror MortarCalc pieces / FOs / targets onto the Front COP map while
+        # the FDC window is open. FOs are linked to live operators by call sign.
         try:
             from front.integrations.mortarcalc_bridge import MortarcalcMapBridge
 
@@ -659,6 +658,21 @@ class MainWindow(QMainWindow):
             win.closing.connect(lambda w=win: self._on_mortarcalc_closed(w))
         except Exception:
             log.exception("MortarCalc map bridge failed to attach")
+
+        # Also mirror onto the web map via the Arrow backend REST API, and
+        # show a Front toast whenever a group transitions to SHOT / IN_EFFECT.
+        try:
+            from front.integrations.mortarcalc_bridge import MortarcalcWebBridge
+
+            win._web_bridge = MortarcalcWebBridge(
+                win,
+                arrow_client=self._client,
+                toast_callback=lambda msg: self._toasts.show(
+                    "mission", "MORTARS FIRING", msg
+                ),
+            )
+        except Exception:
+            log.exception("MortarCalc web bridge failed to attach")
 
         win.show()
         win.raise_()
