@@ -24,7 +24,7 @@ from backend.missions.dependencies import get_active_mission
 from backend.reports.cbrn import CbrnParseError, parse_cbrn
 from backend.reports.logrep_parser import parse_logrep_cot, parse_logrep_text
 from backend.storage.database import get_db
-from backend.storage.models import Alert, LogrepRoute, Mission, Operator, Report
+from backend.storage.models import Alert, LogrepRoute, Mission, Operator, Photo, Report, ReportPhoto
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -582,3 +582,142 @@ async def delete_report(
             "data": {"id": report_id},
         }
     )
+
+
+# ── Report photos ─────────────────────────────────────────────────────────────
+
+from pydantic import BaseModel as _BaseModel
+
+
+class ReportPhotoOut(_BaseModel):
+    id: int
+    report_id: int
+    photo_id: int
+    attached_by: int
+    attached_at: datetime
+    url: str
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/{report_id}/photos", response_model=list[ReportPhotoOut])
+def list_report_photos(
+    report_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+) -> list[dict]:
+    rep = db.get(Report, report_id)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    links = (
+        db.query(ReportPhoto)
+        .filter(ReportPhoto.report_id == report_id)
+        .order_by(ReportPhoto.attached_at)
+        .all()
+    )
+    return [
+        {
+            "id": lnk.id,
+            "report_id": lnk.report_id,
+            "photo_id": lnk.photo_id,
+            "attached_by": lnk.attached_by,
+            "attached_at": lnk.attached_at,
+            "url": f"/photos/{lnk.photo_id}",
+        }
+        for lnk in links
+    ]
+
+
+@router.post(
+    "/{report_id}/photos",
+    response_model=ReportPhotoOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def attach_photo_to_report(
+    report_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> dict:
+    """Upload a new photo and attach it to a report."""
+    from backend.photos.router import store_photo_bytes
+
+    rep = db.get(Report, report_id)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    raw = await file.read()
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File exceeds 20 MB")
+
+    mime = file.content_type or "image/jpeg"
+    photo = store_photo_bytes(
+        db, raw, mime, current.id, original_name=file.filename or "photo"
+    )
+
+    lnk = ReportPhoto(
+        report_id=report_id,
+        photo_id=photo.id,
+        attached_by=current.id,
+    )
+    db.add(lnk)
+    db.commit()
+    db.refresh(lnk)
+    return {
+        "id": lnk.id,
+        "report_id": lnk.report_id,
+        "photo_id": lnk.photo_id,
+        "attached_by": lnk.attached_by,
+        "attached_at": lnk.attached_at,
+        "url": f"/photos/{lnk.photo_id}",
+    }
+
+
+@router.post(
+    "/{report_id}/photos/link",
+    response_model=ReportPhotoOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def link_existing_photo(
+    report_id: int,
+    photo_id: int,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> dict:
+    """Link an already-stored photo to a report by its ID."""
+    rep = db.get(Report, report_id)
+    if rep is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    photo = db.get(Photo, photo_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    lnk = ReportPhoto(
+        report_id=report_id,
+        photo_id=photo_id,
+        attached_by=current.id,
+    )
+    db.add(lnk)
+    db.commit()
+    db.refresh(lnk)
+    return {
+        "id": lnk.id,
+        "report_id": lnk.report_id,
+        "photo_id": lnk.photo_id,
+        "attached_by": lnk.attached_by,
+        "attached_at": lnk.attached_at,
+        "url": f"/photos/{lnk.photo_id}",
+    }
+
+
+@router.delete("/{report_id}/photos/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+def detach_photo_from_report(
+    report_id: int,
+    link_id: int,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(get_current_operator),
+) -> None:
+    lnk = db.get(ReportPhoto, link_id)
+    if lnk is None or lnk.report_id != report_id:
+        raise HTTPException(status_code=404, detail="Link not found")
+    db.delete(lnk)
+    db.commit()

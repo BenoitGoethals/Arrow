@@ -94,13 +94,67 @@
     .reports-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
     .reports-table th { text-align: left; color: #64748b; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a3142; }
     .reports-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #1e2736; vertical-align: top; }
+    .reports-table tr { cursor: pointer; }
     .reports-table tr:hover td { background: #1a1f29; }
+    .reports-table tr.rep-selected td { background: #1a2236; border-left: 2px solid #3b82f6; }
     .type-badge { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
-    .rep-detail { display: none; background: #0e1217; border-left: 3px solid #2a3142; padding: 0.6rem 0.75rem; margin-top: 0.3rem; border-radius: 0 4px 4px 0; font-size: 0.8rem; }
     .dl-grid { display: grid; grid-template-columns: 28px 140px 1fr; gap: 0.2rem 0.5rem; }
     .dl-num  { font-weight: 700; color: inherit; }
     .dl-lbl  { color: #94a3b8; }
     .dl-val  { color: #e2e8f0; font-family: monospace; }
+
+    /* ── Detail slide-out panel ─────────────────────────────────────── */
+    #rep-detail-panel {
+        position: fixed; right: 0; top: 60px; bottom: 0; width: 480px;
+        background: #0d1117; border-left: 1px solid #2a3142;
+        display: flex; flex-direction: column;
+        transform: translateX(100%); transition: transform .22s cubic-bezier(.4,0,.2,1);
+        z-index: 500; overflow: hidden;
+    }
+    #rep-detail-panel.open { transform: translateX(0); }
+    .rdp-header { display: flex; align-items: center; gap: .6rem;
+                  padding: .65rem 1rem; background: #161b25;
+                  border-bottom: 1px solid #2a3142; flex-shrink: 0; }
+    .rdp-header .rdp-type { font-size: .72rem; font-weight: 700;
+                             padding: 2px 8px; border-radius: 3px; }
+    .rdp-header .rdp-title { flex: 1; font-size: .9rem; font-weight: 600; color: #e2e8f0; }
+    .rdp-header .rdp-close { background: none; border: 0; color: #64748b;
+                              cursor: pointer; font-size: 1.1rem; padding: 2px 6px; }
+    .rdp-header .rdp-close:hover { color: #e2e8f0; }
+    .rdp-body { flex: 1; overflow-y: auto; padding: .75rem 1rem; }
+    .rdp-section { margin-bottom: 1rem; }
+    .rdp-section-title { font-size: .65rem; text-transform: uppercase; letter-spacing: .12em;
+                         color: #475569; margin-bottom: .4rem; padding-bottom: .25rem;
+                         border-bottom: 1px solid #1e2736; }
+
+    /* ── Photo strip ────────────────────────────────────────────────── */
+    .photo-strip { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .photo-thumb { position: relative; width: 100px; height: 80px;
+                   border-radius: 5px; overflow: hidden;
+                   border: 1px solid #2a3142; background: #0e1217;
+                   cursor: pointer; flex-shrink: 0; }
+    .photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo-thumb .ph-del { position: absolute; top: 2px; right: 2px;
+                           background: rgba(0,0,0,.7); border: 0; border-radius: 3px;
+                           color: #ef4444; font-size: .65rem; cursor: pointer;
+                           padding: 1px 4px; display: none; }
+    .photo-thumb:hover .ph-del { display: block; }
+    .photo-drop { display: flex; align-items: center; justify-content: center;
+                  width: 100px; height: 80px; border-radius: 5px;
+                  border: 1px dashed #2a3142; color: #475569; font-size: .75rem;
+                  cursor: pointer; flex-shrink: 0; text-align: center;
+                  transition: border-color .15s, color .15s; }
+    .photo-drop:hover, .photo-drop.drag-over { border-color: #3b82f6; color: #60a5fa; }
+
+    /* ── Lightbox ───────────────────────────────────────────────────── */
+    #photo-lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.92);
+                      z-index: 9000; align-items: center; justify-content: center; }
+    #photo-lightbox.open { display: flex; }
+    #photo-lightbox img { max-width: 90vw; max-height: 90vh;
+                          border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.8); }
+    #photo-lightbox-close { position: fixed; top: 16px; right: 20px;
+                             background: none; border: 0; color: #94a3b8;
+                             font-size: 1.6rem; cursor: pointer; z-index: 9001; }
 
     /* ── Status management panel ─────────────────────────────────────── */
     .status-panel {
@@ -254,7 +308,7 @@
         <div class="dash-table-wrap">
             <table class="reports-table" id="reports-table">
                 <thead>
-                    <tr><th>Type</th><th>TIC</th><th>Status</th><th>Time</th><th>FO</th><th>Summary</th><th></th></tr>
+                    <tr><th>Type</th><th>TIC</th><th>Status</th><th>Time</th><th>FO</th><th>Summary</th></tr>
                 </thead>
                 <tbody id="reports-body">
                     <tr><td colspan="7" style="color:#475569">Loading…</td></tr>
@@ -262,6 +316,25 @@
             </table>
         </div>
     </div>
+
+    <!-- ── Report detail slide-out panel ───────────────────────────────── -->
+    <div id="rep-detail-panel">
+        <div class="rdp-header">
+            <span class="rdp-type" id="rdp-type-badge"></span>
+            <span class="rdp-title" id="rdp-title"></span>
+            <button class="rdp-close" onclick="closeDetailPanel()" title="Close">✕</button>
+        </div>
+        <div class="rdp-body" id="rdp-body"></div>
+    </div>
+
+    <!-- ── Photo lightbox ───────────────────────────────────────────── -->
+    <div id="photo-lightbox">
+        <button id="photo-lightbox-close" onclick="closeLightbox()">✕</button>
+        <img id="photo-lightbox-img" src="" alt="Photo">
+    </div>
+
+    <!-- hidden file input for photo upload -->
+    <input type="file" id="rep-photo-upload" accept="image/*" style="display:none">
 
     <!-- ── SUBMIT TAB ─────────────────────────────────────────────────── -->
     <div id="tab-submit" class="rep-tabpane" style="display:none">
@@ -884,17 +957,15 @@
         </a>`;
     }
 
-    // ── Build one report table row ───────────────────────────────────
+    // ── Build one report table row (clickable — opens slide-out panel) ──
     function buildReportRow(rep) {
         const c  = TYPE_COLORS[rep.type] || '#64748b';
         const st = rep.status || 'RECEIVED';
         const isCas     = rep.type === 'CAS';
         const isMedEvac = rep.type === 'MEDEVAC' || rep.type === 'CASEVAC';
-        let line1 = '—', detail = '', foLabel = '—', mapBtn = '';
+        let line1 = '—', foLabel = '—';
         try {
             const p = JSON.parse(rep.payload);
-
-            // ── Summary line (table cell) ──────────────────────────────
             if (rep.type === 'LOGREP') {
                 const g = p.section_g || {}, a = p.section_a || {};
                 line1 = [g.assessment, a.present ? `Str: ${a.present}` : ''].filter(Boolean).join(' · ') || '—';
@@ -906,8 +977,94 @@
                 line1 = p.line_1 || p.line_3 || '—';
             }
             if (isCas && p.fo_callsign) foLabel = p.fo_callsign;
+        } catch(_){}
 
-            // ── Full detail ────────────────────────────────────────────
+        const ticBadge = (rep.tic || false)
+            ? `<span style="background:rgba(239,68,68,.2);color:#ef4444;font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:3px;border:1px solid #dc2626">TIC</span>`
+            : '<span style="color:#2a3142;font-size:.7rem">—</span>';
+
+        return `<tr id="rep-row-${rep.id}" onclick="openDetailPanel(${rep.id})">
+            <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
+            <td>${ticBadge}</td>
+            <td><span class="s-badge s-${st}">${st}</span></td>
+            <td style="color:#64748b;white-space:nowrap">${(rep.timestamp||'').slice(0,16).replace('T',' ')}</td>
+            <td style="color:#94a3b8;font-size:.78rem">${escHtml(foLabel)}</td>
+            <td style="font-family:monospace;font-size:0.82rem">${escHtml(line1)}</td>
+        </tr>`;
+    }
+
+    // ── Render filtered rows into table body ─────────────────────────
+    function renderTable(list) {
+        const tbody = document.getElementById('reports-body');
+        tbody.innerHTML = list.map(buildReportRow).join('')
+            || '<tr><td colspan="7" style="color:#475569">No reports</td></tr>';
+    }
+
+    // ── Reports loader (fetch + refresh stats + filter) ──────────────
+    async function loadReports() {
+        const r = await api('/reports');
+        if (!r.ok) return;
+        allReports = await r.json();
+
+        const unreviewed = allReports.filter(rep => rep.status === 'RECEIVED').length;
+        const badge = document.getElementById('unreviewed-badge');
+        badge.style.display = unreviewed ? 'inline' : 'none';
+        badge.textContent   = unreviewed + ' new';
+
+        renderStats(allReports);
+        renderTypeFilterChips(allReports);
+        applyFilter();
+    }
+
+    window.updateStatus = async function(id, newStatus) {
+        const note   = document.getElementById(`note-${id}`)?.value || '';
+        const result = document.getElementById(`sr-${id}`);
+        if (result) result.textContent = 'Saving…';
+        const r = await api(`/reports/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus, reviewer_note: note }),
+        });
+        if (r.ok) {
+            if (result) result.textContent = `✓ Status set to ${newStatus}`;
+            loadReports();
+        } else {
+            const err = await r.json().catch(() => ({}));
+            if (result) result.textContent = `✗ ${err.detail || r.status}`;
+        }
+    };
+
+    // ── Detail slide-out panel ───────────────────────────────────────────
+    let _panelRepId = null;
+
+    window.openDetailPanel = function(id) {
+        const rep = allReports.find(r => r.id === id);
+        if (!rep) return;
+        _panelRepId = id;
+
+        // Highlight selected row
+        document.querySelectorAll('.reports-table tr').forEach(r => r.classList.remove('rep-selected'));
+        const row = document.getElementById(`rep-row-${id}`);
+        if (row) row.classList.add('rep-selected');
+
+        const c   = TYPE_COLORS[rep.type] || '#64748b';
+        const st  = rep.status || 'RECEIVED';
+        const isCas     = rep.type === 'CAS';
+        const isMedEvac = rep.type === 'MEDEVAC' || rep.type === 'CASEVAC';
+
+        // Header
+        const badge = document.getElementById('rdp-type-badge');
+        badge.textContent = rep.type;
+        badge.style.background = c + '22';
+        badge.style.color = c;
+        badge.style.border = `1px solid ${c}66`;
+        document.getElementById('rdp-title').textContent =
+            `#${rep.id} · ${(rep.timestamp||'').slice(0,16).replace('T',' ')}`;
+
+        // Body: detail + status panel
+        let detail = '', mapBtn = '';
+        try {
+            const p = JSON.parse(rep.payload);
             if (rep.type === 'LOGREP') {
                 detail = renderLogrep(p, c);
             } else if (isMedEvac) {
@@ -921,26 +1078,17 @@
             } else {
                 detail = renderGenericPayload(p, c);
             }
-
-            // ── Map-zoom button ────────────────────────────────────────
             const lat = parseFloat(p.latitude  || p.line_5_lat);
             const lon = parseFloat(p.longitude || p.line_5_lon);
             const mgrsHint = p.line1_location || p.line_5_mgrs || '';
             mapBtn = mapZoomBtn(lat, lon, mgrsHint);
-            // Also try CAS target coordinates
             if (!mapBtn && isCas && p.line_5_lat && p.line_5_lon)
                 mapBtn = mapZoomBtn(p.line_5_lat, p.line_5_lon, p.line_5_mgrs || '');
-
         } catch(_){}
 
-        const ticBadge = (rep.tic || false)
-            ? `<span style="background:rgba(239,68,68,.2);color:#ef4444;font-size:.62rem;font-weight:700;padding:1px 5px;border-radius:3px;border:1px solid #dc2626">TIC</span>`
-            : '<span style="color:#2a3142;font-size:.7rem">—</span>';
-
         const note = rep.reviewer_note
-            ? `<div style="margin-top:.5rem;padding:.4rem .6rem;background:#1a2030;
-                           border-left:2px solid #34d399;border-radius:0 4px 4px 0;
-                           font-size:.78rem;color:#94a3b8">
+            ? `<div style="padding:.4rem .6rem;background:#1a2030;border-left:2px solid #34d399;
+                           border-radius:0 4px 4px 0;font-size:.78rem;color:#94a3b8;margin-bottom:.5rem">
                    <strong style="color:#34d399">Review note:</strong> ${escHtml(rep.reviewer_note)}
                </div>` : '';
 
@@ -995,83 +1143,115 @@
                 <span class="status-result" id="feedback-res-${rep.id}"></span>
             </div>` : '';
 
-        return `<tr id="rep-row-${rep.id}">
-            <td><span class="type-badge" style="background:${c}22;color:${c}">${rep.type}</span></td>
-            <td>${ticBadge}</td>
-            <td><span class="s-badge s-${st}">${st}</span></td>
-            <td style="color:#64748b;white-space:nowrap">${(rep.timestamp||'').slice(0,16).replace('T',' ')}</td>
-            <td style="color:#94a3b8;font-size:.78rem">${escHtml(foLabel)}</td>
-            <td style="font-family:monospace;font-size:0.82rem">${escHtml(line1)}</td>
-            <td>
-                <button onclick="toggleDetail(this)"
-                        style="background:none;border:0;color:#64748b;cursor:pointer;font-size:0.8rem">▼</button>
-                <div class="rep-detail" data-id="${rep.id}">
-                    ${detail}${mapBtn}${note}${actionPanel}${routingPanel}${feedbackPanel}
+        document.getElementById('rdp-body').innerHTML = `
+            <div class="rdp-section">
+                <div class="rdp-section-title">Report detail</div>
+                ${detail}${mapBtn ? `<div style="margin-top:.4rem">${mapBtn}</div>` : ''}
+            </div>
+            ${note}
+            <div class="rdp-section" id="rdp-photos-section">
+                <div class="rdp-section-title">Photos</div>
+                <div class="photo-strip" id="rdp-photo-strip">
+                    <span style="color:#475569;font-size:.75rem">Loading…</span>
                 </div>
-            </td>
-        </tr>`;
-    }
+            </div>
+            ${actionPanel}${routingPanel}${feedbackPanel}`;
 
-    // ── Render filtered rows into table body ─────────────────────────
-    function renderTable(list) {
-        const tbody = document.getElementById('reports-body');
-        tbody.innerHTML = list.map(buildReportRow).join('')
-            || '<tr><td colspan="7" style="color:#475569">No reports</td></tr>';
-    }
+        document.getElementById('rep-detail-panel').classList.add('open');
 
-    // ── Reports loader (fetch + refresh stats + filter) ──────────────
-    async function loadReports() {
-        const r = await api('/reports');
-        if (!r.ok) return;
-        allReports = await r.json();
+        // Load logrep routing state and photos asynchronously.
+        if (rep.type === 'LOGREP') loadLogrepRouting(id);
+        loadReportPhotos(id);
 
-        const unreviewed = allReports.filter(rep => rep.status === 'RECEIVED').length;
-        const badge = document.getElementById('unreviewed-badge');
-        badge.style.display = unreviewed ? 'inline' : 'none';
-        badge.textContent   = unreviewed + ' new';
-
-        renderStats(allReports);
-        renderTypeFilterChips(allReports);
-        applyFilter();
-    }
-
-    window.updateStatus = async function(id, newStatus) {
-        const note   = document.getElementById(`note-${id}`)?.value || '';
-        const result = document.getElementById(`sr-${id}`);
-        if (result) result.textContent = 'Saving…';
-        const r = await api(`/reports/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus, reviewer_note: note }),
-        });
-        if (r.ok) {
-            if (result) result.textContent = `✓ Status set to ${newStatus}`;
-            loadReports();
-        } else {
-            const err = await r.json().catch(() => ({}));
-            if (result) result.textContent = `✗ ${err.detail || r.status}`;
-        }
+        // Wire up file input for this report.
+        const fileInput = document.getElementById('rep-photo-upload');
+        fileInput.onchange = () => {
+            if (fileInput.files.length > 0) uploadReportPhoto(id, fileInput.files[0]);
+            fileInput.value = '';
+        };
     };
 
-    window.toggleDetail = function(btn) {
-        const detail = btn.nextElementSibling;
-        const open   = detail.style.display === 'block';
-        detail.style.display = open ? 'none' : 'block';
-        btn.textContent = open ? '▼' : '▲';
-        if (!open) {
-            const id = parseInt(detail.dataset.id);
-            if (!isNaN(id)) loadLogrepRouting(id);
-        }
+    window.closeDetailPanel = function() {
+        document.getElementById('rep-detail-panel').classList.remove('open');
+        document.querySelectorAll('.reports-table tr').forEach(r => r.classList.remove('rep-selected'));
+        _panelRepId = null;
     };
+
+    // Close panel when clicking outside (on the table area)
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetailPanel(); });
 
     window.showReportDetail = function(id) {
-        document.querySelectorAll('.rep-detail').forEach(d => {
-            if (parseInt(d.dataset.id) === id) {
-                d.style.display = 'block';
-                d.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-        });
+        openDetailPanel(id);
     };
+
+    // ── Photo management ─────────────────────────────────────────────────────
+
+    async function loadReportPhotos(repId) {
+        const strip = document.getElementById('rdp-photo-strip');
+        if (!strip) return;
+        const r = await api(`/reports/${repId}/photos`);
+        if (!r.ok) { strip.innerHTML = '<span style="color:#475569;font-size:.75rem">—</span>'; return; }
+        const photos = await r.json();
+        renderPhotoStrip(strip, repId, photos);
+    }
+
+    function renderPhotoStrip(strip, repId, photos) {
+        const thumbs = photos.map(ph => {
+            const src = window.ARROW_BACKEND_URL + ph.url + '?token=' + encodeURIComponent(token);
+            return `<div class="photo-thumb" data-link-id="${ph.id}">
+                <img src="${src}" alt="Photo ${ph.photo_id}"
+                     onclick="openLightbox('${src}')" loading="lazy">
+                <button class="ph-del" title="Remove"
+                        onclick="detachPhoto(event,${repId},${ph.id})">✕</button>
+            </div>`;
+        });
+        // Add-photo tile
+        thumbs.push(`<div class="photo-drop" id="photo-drop-${repId}"
+                          onclick="document.getElementById('rep-photo-upload').click()"
+                          ondragover="event.preventDefault();this.classList.add('drag-over')"
+                          ondragleave="this.classList.remove('drag-over')"
+                          ondrop="handlePhotoDrop(event,${repId})">
+                <span>＋ photo</span>
+            </div>`);
+        strip.innerHTML = thumbs.join('');
+    }
+
+    async function uploadReportPhoto(repId, file) {
+        const strip = document.getElementById('rdp-photo-strip');
+        if (strip) strip.insertAdjacentHTML('beforeend',
+            '<span id="ph-uploading" style="color:#64748b;font-size:.75rem;align-self:center"> Uploading…</span>');
+        const fd = new FormData();
+        fd.append('file', file);
+        const r = await fetch(window.ARROW_BACKEND_URL + `/reports/${repId}/photos`, {
+            method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+        });
+        document.getElementById('ph-uploading')?.remove();
+        if (r.ok) loadReportPhotos(repId);
+    }
+
+    window.handlePhotoDrop = function(e, repId) {
+        e.preventDefault();
+        document.getElementById(`photo-drop-${repId}`)?.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        if (file) uploadReportPhoto(repId, file);
+    };
+
+    window.detachPhoto = async function(e, repId, linkId) {
+        e.stopPropagation();
+        const r = await api(`/reports/${repId}/photos/${linkId}`, { method: 'DELETE' });
+        if (r.ok) loadReportPhotos(repId);
+    };
+
+    // ── Lightbox ─────────────────────────────────────────────────────────────
+
+    window.openLightbox = function(src) {
+        document.getElementById('photo-lightbox-img').src = src;
+        document.getElementById('photo-lightbox').classList.add('open');
+    };
+    window.closeLightbox = function() {
+        document.getElementById('photo-lightbox').classList.remove('open');
+    };
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 
     window.routeLogrep = async function(repId) {
         const wrap   = document.getElementById(`route-dests-${repId}`);

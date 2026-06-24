@@ -509,6 +509,20 @@ class Report(Base):
     tic: Mapped[bool] = mapped_column(default=False)
 
 
+class ReportPhoto(Base):
+    """Junction table linking zero-or-more photos to a report."""
+
+    __tablename__ = "report_photos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"), index=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id"))
+    attached_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    attached_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+
+
 class CasAsset(Base):
     """CAS platform available in the battlespace — timeslot-based capacity management.
 

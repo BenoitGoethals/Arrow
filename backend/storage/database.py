@@ -242,6 +242,15 @@ def _migrate() -> None:
         "  geometry_json TEXT DEFAULT '',"
         "  last_seen DATETIME"
         ")",
+        # Photos attached to reports (many-to-many junction)
+        "CREATE TABLE IF NOT EXISTS report_photos ("
+        "  id INTEGER PRIMARY KEY,"
+        "  report_id INTEGER NOT NULL REFERENCES reports(id),"
+        "  photo_id INTEGER NOT NULL REFERENCES photos(id),"
+        "  attached_by INTEGER REFERENCES operators(id),"
+        "  attached_at DATETIME"
+        ")",
+        "CREATE INDEX IF NOT EXISTS ix_report_photos_report ON report_photos(report_id)",
     ]
     for sql in migrations:
         try:
