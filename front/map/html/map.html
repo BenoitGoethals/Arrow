@@ -641,7 +641,95 @@ const LAYERS={
   kml:L.layerGroup().addTo(map),       cbrn:L.layerGroup().addTo(map),
   weather:L.layerGroup().addTo(map),   freedraw:L.layerGroup().addTo(map),
   routes:L.layerGroup().addTo(map),    vehicles:L.layerGroup().addTo(map),
+  groups:L.layerGroup().addTo(map),
 };
+
+// ── Group markers state ──────────────────────────────────────────────────────
+let _hierarchy = null;
+let _groupLevel = 'section';
+const _groupMarkers = {};  // key → L.Marker
+
+function setHierarchy(data) {
+  _hierarchy = data;
+  refreshGroupMarkers();
+}
+
+function setGroupLevel(level) {
+  _groupLevel = level;
+  refreshGroupMarkers();
+}
+
+function refreshGroupMarkers() {
+  Object.values(_groupMarkers).forEach(m => LAYERS.groups.removeLayer(m));
+  Object.keys(_groupMarkers).forEach(k => delete _groupMarkers[k]);
+  if (!_hierarchy || !LAYERS.groups._map || _groupLevel === 'none') return;
+
+  const groups = [];
+  for (const co of _hierarchy.companies || []) {
+    if (_groupLevel === 'company') {
+      const ops = [];
+      for (const plt of co.platoons || [])
+        for (const sec of plt.sections || [])
+          for (const tm of sec.teams || [])
+            ops.push(...(tm.operators || []));
+      groups.push({ name: co.name, ops });
+    } else {
+      for (const plt of co.platoons || []) {
+        if (_groupLevel === 'platoon') {
+          const ops = [];
+          for (const sec of plt.sections || [])
+            for (const tm of sec.teams || [])
+              ops.push(...(tm.operators || []));
+          groups.push({ name: plt.name, ops });
+        } else {
+          for (const sec of plt.sections || []) {
+            if (_groupLevel === 'section') {
+              const ops = [];
+              for (const tm of sec.teams || [])
+                ops.push(...(tm.operators || []));
+              groups.push({ name: sec.name, ops });
+            } else {
+              for (const tm of sec.teams || [])
+                groups.push({ name: tm.name, ops: tm.operators || [] });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (const grp of groups) {
+    const pts = grp.ops
+      .map(o => tracks[o.id])
+      .filter(t => t && t.marker)
+      .map(t => t.marker.getLatLng());
+    if (!pts.length) continue;
+    const lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+    const lon = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
+    const label = (grp.name || '?').substring(0, 8);
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="background:#0f2744;border:2px solid #388bfd;border-radius:50%;
+                         width:42px;height:42px;display:flex;align-items:center;
+                         justify-content:center;flex-direction:column;
+                         font-family:monospace;font-size:8px;font-weight:bold;
+                         text-align:center;line-height:1.2;color:#c9d1d9;
+                         box-shadow:0 0 8px rgba(56,139,253,0.5)">
+               <div>${label}</div>
+               <div style="color:#79c0ff;font-size:10px">${pts.length}</div>
+             </div>`,
+      iconSize: [42, 42], iconAnchor: [21, 21],
+    });
+    const m = L.marker([lat, lon], { icon, zIndexOffset: 2000 })
+      .bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px">
+        <div style="font-weight:bold;color:#79c0ff;border-bottom:1px solid #30363d;
+                    padding-bottom:4px;margin-bottom:6px">🫂 ${grp.name}</div>
+        <div>${pts.length} operator${pts.length!==1?'s':''} positioned</div>
+      </div>`)
+      .addTo(LAYERS.groups);
+    _groupMarkers[grp.name + '|' + _groupLevel] = m;
+  }
+}
 const vehicleMarkers={};
 
 // ================================================================
@@ -828,6 +916,7 @@ function updateTrack(t){
   if(tracks[t.id]){tracks[t.id].marker.setLatLng([t.lat,t.lon]).setIcon(icon).setPopupContent(popup);}
   else{const m=L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).bindPopup(popup,{maxWidth:260}).on('click',()=>{if(bridge)bridge.onTrackClicked(String(t.id));}).addTo(layer);tracks[t.id]={marker:m,layer};}
   addTrailSeg(LAYERS.operTrails,trails,t.id,t.lat,t.lon,t.online===false?'#6e7681':t.affiliation==='HOSTILE'?'#f85149':'#3fb950');
+  if(LAYERS.groups._map) refreshGroupMarkers();
 }
 function removeTrack(id){if(tracks[id]){tracks[id].layer.removeLayer(tracks[id].marker);delete tracks[id];}if(trails[id]){LAYERS.operTrails.removeLayer(trails[id]);delete trails[id];}}
 

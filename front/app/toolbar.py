@@ -36,6 +36,7 @@ class MainToolbar(QToolBar):
     # Screenshot
     screenshot_requested = pyqtSignal()
     config_requested = pyqtSignal()
+    group_level_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -120,6 +121,7 @@ class MainToolbar(QToolBar):
         # ---- Layers button → opens visibility panel ---------------------
         self._layers_dialog = LayersDialog()
         self._layers_dialog.layer_toggled.connect(self.layer_toggled)
+        self._layers_dialog.group_level_changed.connect(self.group_level_changed)
 
         layers_btn = QToolButton()
         layers_btn.setText("LAYERS ▾")

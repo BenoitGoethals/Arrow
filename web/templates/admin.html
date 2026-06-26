@@ -1389,6 +1389,8 @@ main { padding: 0; }
           desc: 'Named bundles of TacticalObject ids used as map filters.' },
         { key: 'vehicles',         icon: '🚙', label: 'Vehicles',
           desc: 'Unit vehicles, positioned at their assigned operator/team.' },
+        { key: 'groups',           icon: '🫂', label: 'Group markers',
+          desc: 'Centroid marker per unit at the chosen grouping level (team / section / platoon / company).' },
     ];
     const NOTIF_CATEGORIES = [
         { key: 'notif_chat',          icon: '💬', label: 'Chat toasts',
@@ -1413,6 +1415,23 @@ main { padding: 0; }
     // has touched a toggle the local copy is authoritative. Other browser
     // tabs on this device pick up the change via the ``storage`` event.
     const VIS_LS_KEY = 'arrow_visibility_prefs';
+    const GROUP_LEVEL_LS_KEY = 'arrow_group_level';
+    const GROUP_LEVELS = [
+        { value: 'none',    label: 'None' },
+        { value: 'team',    label: 'Team' },
+        { value: 'section', label: 'Section' },
+        { value: 'platoon', label: 'Platoon' },
+        { value: 'company', label: 'Company' },
+    ];
+    function _readGroupLevel() {
+        return localStorage.getItem(GROUP_LEVEL_LS_KEY) || 'section';
+    }
+    function _writeGroupLevel(level) {
+        localStorage.setItem(GROUP_LEVEL_LS_KEY, level);
+        try {
+            window.dispatchEvent(new CustomEvent('arrow-group-level-changed', { detail: { level } }));
+        } catch (_) {}
+    }
     function _allOnDefaults() {
         const d = {};
         [...MAP_CATEGORIES, ...NOTIF_CATEGORIES].forEach(c => d[c.key] = true);
@@ -1503,6 +1522,30 @@ main { padding: 0; }
 
         <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
                    text-transform:uppercase;margin:1.2rem 0 0.5rem">
+            🫂  Grouping level
+        </h3>
+        <div style="background:#161b25;border:1px solid #21262d;border-radius:6px;padding:0.8rem 1rem">
+            <div style="color:#94a3b8;font-size:0.78rem;margin-bottom:0.6rem">
+                When <b style="color:#e2e8f0">Group markers</b> is visible, operators are aggregated
+                into a single centroid marker at this hierarchy level.
+            </div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                ${GROUP_LEVELS.map(gl => {
+                    const active = (_readGroupLevel() === gl.value);
+                    return `<button onclick="groupLevelSet('${gl.value}')"
+                        style="padding:0.3rem 0.9rem;border-radius:4px;font-size:0.82rem;
+                               font-weight:600;cursor:pointer;
+                               background:${active?'#388bfd':'#21262d'};
+                               color:${active?'#fff':'#8b949e'};
+                               border:1px solid ${active?'#388bfd':'#30363d'}">
+                        ${gl.label}
+                    </button>`;
+                }).join('')}
+            </div>
+        </div>
+
+        <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
+                   text-transform:uppercase;margin:1.2rem 0 0.5rem">
             🔔  Notification toasts
         </h3>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem">
@@ -1532,6 +1575,11 @@ main { padding: 0; }
         const out = _allOnDefaults();
         for (const k of Object.keys(out)) if (k in server) out[k] = !!server[k];
         _writeVisPrefs(out);
+        renderVisibility(document.getElementById('adm-main'));
+    };
+
+    window.groupLevelSet = function(level) {
+        _writeGroupLevel(level);
         renderVisibility(document.getElementById('adm-main'));
     };
 

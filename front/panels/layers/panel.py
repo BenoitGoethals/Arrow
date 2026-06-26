@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -68,6 +69,21 @@ MAP_LAYERS = [
         "Lines, polygons, and other drawn tactical graphics.",
         True,
     ),
+    (
+        "groups",
+        "🫂",
+        "Group markers",
+        "Centroid marker per unit at the chosen grouping level.",
+        False,
+    ),
+]
+
+GROUP_LEVELS = [
+    ("none", "None"),
+    ("team", "Team"),
+    ("section", "Section"),
+    ("platoon", "Platoon"),
+    ("company", "Company"),
 ]
 
 
@@ -144,6 +160,7 @@ class _LayerCard(QFrame):
 
 class LayersDialog(QDialog):
     layer_toggled = pyqtSignal(str, bool)
+    group_level_changed = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -168,6 +185,14 @@ class LayersDialog(QDialog):
                 border-radius:4px; padding:4px 16px; font-family:'Courier New';
             }
             QPushButton#closeBtn:hover { background:#388bfd; border-color:#388bfd; color:#fff; }
+            QPushButton#levelPill {
+                background:#21262d; color:#8b949e; border:1px solid #30363d;
+                border-radius:4px; padding:3px 12px; font-family:'Courier New';
+            }
+            QPushButton#levelPill:checked {
+                background:#388bfd; color:#fff; border-color:#388bfd;
+            }
+            QPushButton#levelPill:hover:!checked { border-color:#388bfd; color:#c9d1d9; }
         """)
 
     def _build_ui(self):
@@ -209,7 +234,50 @@ class LayersDialog(QDialog):
             self._cards[key] = card
             grid.addWidget(card, i // 2, i % 2)
         root.addLayout(grid)
+
+        # Grouping level section
+        grp_sep = QFrame()
+        grp_sep.setFrameShape(QFrame.Shape.HLine)
+        grp_sep.setStyleSheet("color:#21262d;")
+        root.addWidget(grp_sep)
+
+        grp_hdr = QLabel("■  GROUPING LEVEL")
+        grp_hdr.setObjectName("sectionHdr")
+        grp_hdr.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        grp_hdr.setContentsMargins(0, 4, 0, 2)
+        root.addWidget(grp_hdr)
+
+        grp_desc = QLabel(
+            "When Group markers is ON, operators are aggregated into a single centroid "
+            "marker at this hierarchy level."
+        )
+        grp_desc.setFont(QFont("Courier New", 8))
+        grp_desc.setStyleSheet("color:#6e7681;")
+        grp_desc.setWordWrap(True)
+        root.addWidget(grp_desc)
+
+        pill_row = QHBoxLayout()
+        pill_row.setSpacing(6)
+        self._level_btn_group = QButtonGroup(self)
+        self._level_btn_group.setExclusive(True)
+        self._level_buttons: dict[str, QPushButton] = {}
+        for value, label in GROUP_LEVELS:
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setChecked(value == "section")
+            btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+            btn.setObjectName("levelPill")
+            btn.setProperty("levelValue", value)
+            btn.clicked.connect(lambda _checked, v=value: self._on_level_clicked(v))
+            self._level_btn_group.addButton(btn)
+            self._level_buttons[value] = btn
+            pill_row.addWidget(btn)
+        pill_row.addStretch()
+        root.addLayout(pill_row)
         root.addStretch()
+
+    def _on_level_clicked(self, value: str) -> None:
+        self.group_level_changed.emit(value)
 
     def set_visible(self, key: str, visible: bool):
         if key in self._cards:

@@ -265,6 +265,7 @@ class MainWindow(QMainWindow):
             menu.aboutToHide.connect(self._map.notify_menu_closed)
         tb.mode_changed.connect(self._on_mode_from_toolbar)
         tb.layer_toggled.connect(self._map.toggle_layer)
+        tb.group_level_changed.connect(self._map.set_group_level)
         tb.base_changed.connect(self._map.set_base_layer)
         tb.fit_requested.connect(self._map.fit_tracks)
         tb.alert_requested.connect(self._send_alert)
@@ -763,6 +764,7 @@ class MainWindow(QMainWindow):
                 file=sys.stderr,
             )
             self._orbat_panel.load_hierarchy(data)
+            self._map.set_hierarchy(data)
         except Exception as e:
             import sys
 

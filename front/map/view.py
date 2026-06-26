@@ -306,6 +306,12 @@ class MapView(QWebEngineView):
     def toggle_layer(self, name: str, visible: bool):
         self._js(f"toggleLayer({json.dumps(name)}, {json.dumps(visible)})")
 
+    def set_group_level(self, level: str):
+        self._js(f"setGroupLevel({json.dumps(level)})")
+
+    def set_hierarchy(self, data: dict):
+        self._js(f"setHierarchy({json.dumps(data)})")
+
     def fit_tracks(self):
         self._js("fitTracks()")
 

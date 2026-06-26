@@ -1024,8 +1024,10 @@
             fire_missions:    true,  alerts:        true,
             reports:          true,  cot_tracks:    true,
             kml_layers:       true,  overlays:      true,
-            vehicles:         true,
+            vehicles:         true,  groups:        false,
         },
+        groupLevel: localStorage.getItem('arrow_group_level') || 'section',
+        groupMarkers: new Map(),
     };
 
     // ── Per-operator visibility — local device preferences ─────────────────
@@ -1062,10 +1064,21 @@
         if (e.key !== VIS_LS_KEY || !e.newValue) return;
         try { _applyVis(JSON.parse(e.newValue)); } catch (_) {}
     });
+    // Group level changes (same-tab from admin, cross-tab from storage)
+    window.addEventListener('arrow-group-level-changed', e => {
+        state.groupLevel = e.detail.level;
+        refreshGroupMarkers();
+    });
+    window.addEventListener('storage', e => {
+        if (e.key !== 'arrow_group_level' || !e.newValue) return;
+        state.groupLevel = e.newValue;
+        refreshGroupMarkers();
+    });
 
     function applyVisibilityToMap() {
         // Re-render everything so the new flags take effect. Each loader
         // is cheap because the data is already cached in `state.*` Maps.
+        refreshGroupMarkers();
         refreshAllMarkers();
         refreshEnemies();
         refreshVehicles();
@@ -4335,6 +4348,80 @@
         refreshFmMarkers();
     }
 
+    function refreshGroupMarkers() {
+        state.groupMarkers.forEach(m => map.removeLayer(m));
+        state.groupMarkers.clear();
+        if (!state.visibility.groups || !state.hierarchy || state.groupLevel === 'none') return;
+
+        const groups = [];
+        for (const co of state.hierarchy.companies || []) {
+            if (state.groupLevel === 'company') {
+                const ops = [];
+                for (const plt of co.platoons || [])
+                    for (const sec of plt.sections || [])
+                        for (const tm of sec.teams || [])
+                            ops.push(...(tm.operators || []));
+                groups.push({ name: co.name, ops });
+            } else {
+                for (const plt of co.platoons || []) {
+                    if (state.groupLevel === 'platoon') {
+                        const ops = [];
+                        for (const sec of plt.sections || [])
+                            for (const tm of sec.teams || [])
+                                ops.push(...(tm.operators || []));
+                        groups.push({ name: plt.name, ops });
+                    } else {
+                        for (const sec of plt.sections || []) {
+                            if (state.groupLevel === 'section') {
+                                const ops = [];
+                                for (const tm of sec.teams || [])
+                                    ops.push(...(tm.operators || []));
+                                groups.push({ name: sec.name, ops });
+                            } else {
+                                for (const tm of sec.teams || [])
+                                    groups.push({ name: tm.name, ops: tm.operators || [] });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (const grp of groups) {
+            const pts = grp.ops
+                .map(o => state.operators.get(o.id))
+                .filter(o => o && o.latitude != null && o.longitude != null);
+            if (!pts.length) continue;
+            const lat = pts.reduce((s, o) => s + o.latitude,  0) / pts.length;
+            const lon = pts.reduce((s, o) => s + o.longitude, 0) / pts.length;
+            const label = (grp.name || '?').substring(0, 8);
+            const icon = L.divIcon({
+                className: '',
+                html: `<div style="background:#0f2744;border:2px solid #388bfd;border-radius:50%;
+                                   width:42px;height:42px;display:flex;align-items:center;
+                                   justify-content:center;flex-direction:column;
+                                   font-family:monospace;font-size:8px;font-weight:bold;
+                                   text-align:center;line-height:1.2;color:#c9d1d9;
+                                   box-shadow:0 0 8px rgba(56,139,253,0.5)">
+                           <div>${label}</div>
+                           <div style="color:#79c0ff;font-size:10px">${pts.length}</div>
+                       </div>`,
+                iconSize: [42, 42], iconAnchor: [21, 21],
+            });
+            const online = pts.filter(o => o.online).length;
+            const m = L.marker([lat, lon], { icon, zIndexOffset: 2000 })
+                .bindPopup(`<div style="font-family:monospace;color:#c9d1d9;padding:8px 12px;font-size:11px">
+                    <div style="font-weight:bold;color:#79c0ff;border-bottom:1px solid #30363d;
+                                padding-bottom:4px;margin-bottom:6px">
+                        🫂 ${grp.name}
+                    </div>
+                    <div>${pts.length} positioned · ${online} online</div>
+                </div>`);
+            m.addTo(map);
+            state.groupMarkers.set(grp.name + '|' + state.groupLevel, m);
+        }
+    }
+
     async function loadHierarchy() {
         const r = await api('/hierarchy');
         if (!r.ok) return;
@@ -4345,7 +4432,7 @@
         collect(state.hierarchy.unassigned_operators);
         // Resolve own-platoon membership whenever hierarchy or me changes
         if (state.me) state.myPlatoonOpIds = resolvePlatoonIds(state.hierarchy, state.me.id);
-        refreshAllMarkers(); renderTree();
+        refreshAllMarkers(); refreshGroupMarkers(); renderTree();
         if (typeof refreshTrackOpSelect === 'function') refreshTrackOpSelect();
     }
 
@@ -5286,6 +5373,7 @@
                 if (d.position_source) op.position_source = d.position_source;
                 state.operators.set(op.id, op);
                 placeOperator(op);
+                if (state.visibility.groups) refreshGroupMarkers();
                 // Vehicles assigned to this operator inherit its position.
                 state.vehicles.forEach(v => {
                     if (v.operator_id === d.operator_id) {
