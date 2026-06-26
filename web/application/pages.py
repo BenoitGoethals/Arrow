@@ -120,3 +120,6 @@ class PageService:
 
     def mapserver(self) -> PageView:
         return PageView("mapserver.html")
+
+    def osint(self) -> PageView:
+        return PageView("osint.html")

@@ -1,0 +1,1452 @@
+{% extends "base.html" %}
+{% block title %}EPIC — Analysis Board{% endblock %}
+
+{% block head %}
+<style>
+/* ── Layout ──────────────────────────────────────────────────────────── */
+.epic-wrap {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 60px);
+    background: #0d1117;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────── */
+.epic-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    background: #0d1117;
+    border-bottom: 1px solid #21262d;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+.epic-toolbar h1 {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: #c084fc;
+    margin: 0 0.5rem 0 0;
+    text-transform: uppercase;
+}
+.epic-proj-select {
+    background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+    color: #c9d1d9; font-family: inherit; font-size: 0.8rem;
+    padding: 0.25rem 0.5rem; cursor: pointer; min-width: 180px;
+}
+.epic-proj-select:focus { outline: none; border-color: #388bfd; }
+.epic-tb-btn {
+    background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+    color: #c9d1d9; font-family: inherit; font-size: 0.75rem;
+    padding: 0.25rem 0.65rem; cursor: pointer; white-space: nowrap;
+}
+.epic-tb-btn:hover { background: #388bfd; border-color: #388bfd; color: #fff; }
+.epic-tb-btn.active { background: #1f3a5f; border-color: #388bfd; color: #79c0ff; }
+.epic-tb-btn.danger:hover { background: #da3633; border-color: #da3633; }
+.epic-proj-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin-right: 5px; vertical-align: middle;
+}
+.epic-proj-name {
+    font-size: 0.88rem; font-weight: 700; color: #e2e8f0;
+    letter-spacing: 0.05em;
+}
+.epic-tb-sep { width: 1px; height: 22px; background: #21262d; margin: 0 0.2rem; }
+.epic-tb-spacer { flex: 1; }
+
+/* ── Body: palette + canvas + detail ─────────────────────────────────── */
+.epic-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* ── Palette ─────────────────────────────────────────────────────────── */
+.epic-palette {
+    width: 240px;
+    flex-shrink: 0;
+    background: #0d1117;
+    border-right: 1px solid #21262d;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.epic-pal-section {
+    padding: 0.5rem 0.75rem 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: #6e7681;
+    text-transform: uppercase;
+}
+.epic-search-box {
+    margin: 0.3rem 0.6rem;
+    background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+    color: #c9d1d9; font-family: inherit; font-size: 0.78rem;
+    padding: 0.3rem 0.5rem; width: calc(100% - 1.2rem);
+}
+.epic-search-box:focus { outline: none; border-color: #388bfd; }
+.epic-pal-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.25rem 0;
+}
+.epic-pal-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    padding: 0.4rem 0.75rem;
+    cursor: grab;
+    border-radius: 4px;
+    margin: 0 0.4rem;
+    transition: background 0.12s;
+    user-select: none;
+}
+.epic-pal-item:hover { background: #161b22; }
+.epic-pal-item:active { cursor: grabbing; }
+.epic-pal-badge {
+    font-size: 0.58rem; font-weight: 700; border-radius: 3px;
+    padding: 1px 5px; white-space: nowrap; flex-shrink: 0; margin-top: 2px;
+}
+.epic-pal-meta { font-size: 0.68rem; color: #8b949e; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.epic-pal-add-btn {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.3rem 0.75rem; margin: 0.1rem 0.4rem;
+    background: #161b22; border: 1px dashed #30363d; border-radius: 4px;
+    color: #8b949e; font-family: inherit; font-size: 0.75rem;
+    cursor: pointer; width: calc(100% - 0.8rem);
+}
+.epic-pal-add-btn:hover { border-color: #388bfd; color: #79c0ff; background: #0f2744; }
+
+/* ── Canvas ──────────────────────────────────────────────────────────── */
+.epic-canvas-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #0d1117;
+    /* dot grid */
+    background-image: radial-gradient(circle, #1a2030 1px, transparent 1px);
+    background-size: 28px 28px;
+    cursor: default;
+}
+.epic-stage {
+    position: absolute;
+    width: 4000px;
+    height: 3000px;
+    transform-origin: 0 0;
+}
+.epic-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 4000px; height: 3000px;
+    pointer-events: none;
+    overflow: visible;
+}
+
+/* ── Node cards ──────────────────────────────────────────────────────── */
+.epic-node {
+    position: absolute;
+    width: 176px;
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    box-shadow: 0 3px 10px rgba(0,0,0,.5);
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    z-index: 10;
+}
+.epic-node:hover { border-color: #388bfd; box-shadow: 0 4px 16px rgba(56,139,253,.25); }
+.epic-node.selected { border-color: #c084fc; box-shadow: 0 4px 16px rgba(192,132,252,.35); z-index: 20; }
+.epic-node.linking-source { border-color: #f0c420; box-shadow: 0 4px 16px rgba(240,196,32,.4); }
+.epic-node-header {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.4rem 0.5rem 0.3rem;
+    border-bottom: 1px solid #21262d;
+    border-left: 3px solid var(--nc, #388bfd);
+    border-radius: 6px 6px 0 0;
+}
+.epic-node-badge {
+    font-size: 0.55rem; font-weight: 700; border-radius: 3px;
+    padding: 1px 5px; white-space: nowrap; flex-shrink: 0;
+}
+.epic-node-id { font-size: 0.6rem; color: #6e7681; margin-left: auto; }
+.epic-node-body { padding: 0.4rem 0.5rem; font-size: 0.7rem; color: #8b949e; min-height: 44px; }
+.epic-node-body b { color: #c9d1d9; }
+.epic-node-body .epic-thumb {
+    width: 100%; max-height: 80px; object-fit: cover; border-radius: 3px;
+    margin-bottom: 0.3rem; display: block;
+}
+.epic-node-footer {
+    display: flex; align-items: center; gap: 0.3rem;
+    padding: 0.25rem 0.5rem;
+    border-top: 1px solid #21262d;
+}
+.epic-node-action {
+    background: none; border: none; color: #6e7681; font-size: 0.7rem;
+    cursor: pointer; padding: 1px 4px; border-radius: 3px; font-family: inherit;
+}
+.epic-node-action:hover { background: #21262d; color: #c9d1d9; }
+.epic-node-action.link-btn.active { color: #f0c420; }
+
+/* linking cursor overlay */
+.epic-canvas-wrap.linking { cursor: crosshair; }
+
+/* ── Timeline ─────────────────────────────────────────────────────────── */
+.epic-timeline {
+    height: 90px;
+    background: #0d1117;
+    border-top: 1px solid #21262d;
+    flex-shrink: 0;
+    display: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 1rem;
+}
+.epic-timeline.open { display: block; }
+.epic-tl-inner {
+    position: relative;
+    height: 90px;
+    min-width: 100%;
+}
+.epic-tl-axis {
+    position: absolute;
+    top: 50px; left: 0;
+    height: 2px; background: #21262d;
+}
+.epic-tl-dot {
+    position: absolute;
+    top: 42px;
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid #0d1117;
+    transform: translateX(-7px);
+    cursor: pointer;
+    z-index: 2;
+}
+.epic-tl-dot:hover { transform: translateX(-7px) scale(1.3); }
+.epic-tl-label {
+    position: absolute;
+    top: 60px;
+    font-size: 0.58rem;
+    color: #6e7681;
+    white-space: nowrap;
+    transform: translateX(-50%);
+}
+
+/* ── Detail panel ─────────────────────────────────────────────────────── */
+.epic-detail {
+    position: absolute;
+    top: 0; right: 0;
+    width: 360px; height: 100%;
+    background: #0d1117;
+    border-left: 1px solid #21262d;
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform .22s cubic-bezier(.4,0,.2,1);
+    z-index: 50;
+}
+.epic-detail.open { transform: translateX(0); }
+.epic-detail-hdr {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid #21262d;
+    flex-shrink: 0;
+}
+.epic-detail-title { font-size: 0.82rem; font-weight: 700; color: #c9d1d9; flex: 1; }
+.epic-detail-close {
+    background: none; border: none; color: #6e7681; font-size: 1rem;
+    cursor: pointer; padding: 0 4px;
+}
+.epic-detail-close:hover { color: #f85149; }
+.epic-detail-body {
+    flex: 1; overflow-y: auto; padding: 0.75rem 0.9rem;
+    font-size: 0.78rem; color: #8b949e;
+}
+.epic-detail-body h3 {
+    font-size: 0.68rem; letter-spacing: 0.12em; color: #6e7681;
+    text-transform: uppercase; margin: 0.8rem 0 0.3rem; font-weight: 700;
+}
+.epic-detail-body .val { color: #c9d1d9; margin-bottom: 0.3rem; }
+.epic-detail-body .payload-box {
+    background: #0d1117; border: 1px solid #21262d; border-radius: 4px;
+    padding: 0.5rem; font-size: 0.68rem; white-space: pre-wrap;
+    word-break: break-all; color: #8b949e; max-height: 200px; overflow-y: auto;
+}
+.epic-detail-link-row {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.3rem 0.4rem; border-radius: 4px;
+    background: #161b22; margin-bottom: 0.3rem;
+    font-size: 0.72rem;
+}
+.epic-detail-link-type {
+    font-size: 0.58rem; font-weight: 700; border-radius: 3px;
+    padding: 1px 5px;
+}
+.epic-detail-actions {
+    padding: 0.6rem 0.9rem;
+    border-top: 1px solid #21262d;
+    display: flex; gap: 0.4rem; flex-wrap: wrap; flex-shrink: 0;
+}
+.epic-detail-actions button {
+    background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+    color: #c9d1d9; font-family: inherit; font-size: 0.72rem;
+    padding: 0.25rem 0.6rem; cursor: pointer;
+}
+.epic-detail-actions button:hover { background: #388bfd; border-color: #388bfd; }
+.epic-detail-actions button.red:hover { background: #da3633; border-color: #da3633; }
+
+/* ── Modals ──────────────────────────────────────────────────────────── */
+.epic-modal-bg {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.65); z-index: 200;
+    align-items: center; justify-content: center;
+}
+.epic-modal-bg.open { display: flex; }
+.epic-modal {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 1.5rem; min-width: 340px; max-width: 460px; width: 100%;
+}
+.epic-modal h2 { font-size: 0.9rem; color: #e2e8f0; margin: 0 0 1rem; font-weight: 700; }
+.epic-modal label { display: block; font-size: 0.72rem; color: #6e7681; margin-bottom: 0.2rem; margin-top: 0.6rem; }
+.epic-modal input, .epic-modal textarea, .epic-modal select {
+    width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+    color: #c9d1d9; font-family: inherit; font-size: 0.8rem; padding: 0.35rem 0.5rem;
+}
+.epic-modal input:focus, .epic-modal textarea:focus, .epic-modal select:focus {
+    outline: none; border-color: #388bfd;
+}
+.epic-modal textarea { height: 80px; resize: vertical; }
+.epic-modal-footer { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.2rem; }
+.epic-modal-footer button {
+    background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+    color: #c9d1d9; font-family: inherit; font-size: 0.8rem;
+    padding: 0.3rem 0.9rem; cursor: pointer;
+}
+.epic-modal-footer button.primary { background: #388bfd; border-color: #388bfd; color: #fff; }
+.epic-modal-footer button:hover:not(.primary) { border-color: #8b949e; }
+
+/* ── Link type picker ────────────────────────────────────────────────── */
+.link-type-row {
+    display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem;
+}
+.link-type-pill {
+    padding: 0.2rem 0.6rem; border-radius: 3px; font-size: 0.68rem; font-weight: 700;
+    cursor: pointer; background: #21262d; border: 1px solid #30363d; color: #8b949e;
+}
+.link-type-pill.active { background: #1f3a5f; border-color: #388bfd; color: #79c0ff; }
+
+/* ── Zoom controls ───────────────────────────────────────────────────── */
+.epic-zoom-ctrls {
+    position: absolute; bottom: 0.7rem; right: 0.7rem;
+    display: flex; gap: 0.25rem; z-index: 30;
+}
+.epic-zoom-btn {
+    width: 28px; height: 28px; border-radius: 4px;
+    background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
+    font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.epic-zoom-btn:hover { background: #388bfd; border-color: #388bfd; }
+.epic-zoom-label {
+    background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+    padding: 0 0.5rem; font-size: 0.68rem; color: #6e7681;
+    display: flex; align-items: center; font-family: monospace;
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+.epic-empty {
+    position: absolute; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    pointer-events: none; color: #21262d;
+}
+.epic-empty .epic-empty-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+.epic-empty p { font-size: 0.8rem; letter-spacing: 0.1em; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="epic-wrap" id="epicWrap">
+
+    <!-- ── Toolbar ─────────────────────────────────────────────────── -->
+    <div class="epic-toolbar">
+        <h1>🕵 EPIC</h1>
+        <div class="epic-tb-sep"></div>
+        <select class="epic-proj-select" id="projSelect" onchange="switchProject(this.value)">
+            <option value="">— select project —</option>
+        </select>
+        <span class="epic-proj-name" id="projName" style="display:none"></span>
+        <div class="epic-tb-sep"></div>
+        <button class="epic-tb-btn" onclick="openNewProjectModal()">＋ New Project</button>
+        <button class="epic-tb-btn" id="archiveBtn" onclick="archiveProject()" style="display:none">⊠ Archive</button>
+        <div class="epic-tb-spacer"></div>
+        <button class="epic-tb-btn" id="tlBtn" onclick="toggleTimeline()">⏱ Timeline</button>
+        <button class="epic-tb-btn" onclick="fitCanvas()" title="Fit all nodes in view">⊡ Fit</button>
+        <button class="epic-tb-btn" onclick="openLinkModal()" title="Create a link between two nodes">⛓ Link</button>
+    </div>
+
+    <!-- ── Body ───────────────────────────────────────────────────── -->
+    <div class="epic-body">
+
+        <!-- Palette -->
+        <div class="epic-palette">
+            <div class="epic-pal-section">Search &amp; Add</div>
+            <input class="epic-search-box" id="palSearch" type="search" placeholder="Search reports, photos…" oninput="palSearch(this.value)"/>
+            <div style="display:flex;gap:0.3rem;padding:0.25rem 0.6rem">
+                <button class="epic-pal-add-btn" style="flex:1" onclick="addEntityNode()">🧑 Entity</button>
+                <button class="epic-pal-add-btn" style="flex:1" onclick="addNoteNode()">✏ Note</button>
+            </div>
+            <div class="epic-pal-list" id="palList">
+                <div style="padding:1rem 0.75rem;color:#6e7681;font-size:0.72rem">
+                    Select a project first, then search or drag items onto the canvas.
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="epic-canvas-wrap" id="canvasWrap"
+             ondrop="onCanvasDrop(event)" ondragover="event.preventDefault()">
+            <div class="epic-stage" id="stage">
+                <svg class="epic-svg" id="epicSvg">
+                    <defs>
+                        <marker id="arr-related" markerWidth="8" markerHeight="6"
+                                refX="7" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#388bfd"/>
+                        </marker>
+                        <marker id="arr-confirms" markerWidth="8" markerHeight="6"
+                                refX="7" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#3fb950"/>
+                        </marker>
+                        <marker id="arr-contradicts" markerWidth="8" markerHeight="6"
+                                refX="7" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#f85149"/>
+                        </marker>
+                        <marker id="arr-observed_at" markerWidth="8" markerHeight="6"
+                                refX="7" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#facc15"/>
+                        </marker>
+                        <marker id="arr-other" markerWidth="8" markerHeight="6"
+                                refX="7" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L8,3 z" fill="#8b949e"/>
+                        </marker>
+                    </defs>
+                </svg>
+                <div class="epic-empty" id="epicEmpty">
+                    <div class="epic-empty-icon">🕵</div>
+                    <p>EMPTY BOARD — DRAG ITEMS FROM THE PALETTE</p>
+                </div>
+            </div>
+            <!-- Zoom controls -->
+            <div class="epic-zoom-ctrls">
+                <button class="epic-zoom-btn" onclick="adjustZoom(0.15)" title="Zoom in">＋</button>
+                <span class="epic-zoom-label" id="zoomLabel">100%</span>
+                <button class="epic-zoom-btn" onclick="adjustZoom(-0.15)" title="Zoom out">－</button>
+                <button class="epic-zoom-btn" onclick="resetZoom()" title="Reset zoom">⊙</button>
+            </div>
+            <!-- Detail panel (inside canvas-wrap for stacking) -->
+            <div class="epic-detail" id="epicDetail">
+                <div class="epic-detail-hdr">
+                    <span class="epic-detail-title" id="detailTitle">—</span>
+                    <button class="epic-detail-close" onclick="closeDetail()">✕</button>
+                </div>
+                <div class="epic-detail-body" id="detailBody"></div>
+                <div class="epic-detail-actions" id="detailActions"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="epic-timeline" id="epicTimeline">
+        <div class="epic-tl-inner" id="tlInner"></div>
+    </div>
+</div>
+
+<!-- ── Modals ──────────────────────────────────────────────────────────── -->
+<!-- New project modal -->
+<div class="epic-modal-bg" id="newProjModal">
+    <div class="epic-modal">
+        <h2>＋ New Intelligence Project</h2>
+        <label>Project name *</label>
+        <input id="newProjName" type="text" placeholder="e.g. GEEL MARKET OPS" maxlength="100"/>
+        <label>Description</label>
+        <textarea id="newProjDesc" placeholder="Objectives, scope, collection focus…"></textarea>
+        <label>Colour</label>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.3rem" id="colorPicker">
+            {% for col in ['#388bfd','#c084fc','#3fb950','#f87171','#fbbf24','#2dd4bf','#fb923c','#e879f9'] %}
+            <div class="color-swatch" data-color="{{ col }}"
+                 onclick="pickColor('{{ col }}')"
+                 style="width:22px;height:22px;border-radius:50%;background:{{ col }};
+                        cursor:pointer;border:2px solid #0d1117;transition:transform .1s">
+            </div>
+            {% endfor %}
+        </div>
+        <input type="hidden" id="newProjColor" value="#388bfd"/>
+        <div class="epic-modal-footer">
+            <button onclick="closeNewProjectModal()">Cancel</button>
+            <button class="primary" onclick="createProject()">Create Project</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add entity modal -->
+<div class="epic-modal-bg" id="entityModal">
+    <div class="epic-modal">
+        <h2>🧑 Add Entity</h2>
+        <label>Entity type</label>
+        <select id="entityType">
+            <option value="PERSON">🧑 Person</option>
+            <option value="VEHICLE">🚗 Vehicle</option>
+            <option value="LOCATION">📍 Location</option>
+            <option value="ORG">🏢 Organisation</option>
+        </select>
+        <label>Name / Title *</label>
+        <input id="entityTitle" type="text" placeholder="e.g. SUSPECT ALPHA"/>
+        <label>Notes</label>
+        <textarea id="entityContent" placeholder="Description, known facts, source…"></textarea>
+        <label>Tags (comma separated)</label>
+        <input id="entityTags" type="text" placeholder="humint, geel, vehicle"/>
+        <div class="epic-modal-footer">
+            <button onclick="document.getElementById('entityModal').classList.remove('open')">Cancel</button>
+            <button class="primary" onclick="submitEntityNode()">Add to Board</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add note modal -->
+<div class="epic-modal-bg" id="noteModal">
+    <div class="epic-modal">
+        <h2>✏ Analyst Note</h2>
+        <label>Title</label>
+        <input id="noteTitle" type="text" placeholder="Brief summary"/>
+        <label>Content *</label>
+        <textarea id="noteContent" placeholder="Analysis, hypothesis, observation…" style="height:120px"></textarea>
+        <label>Tags (comma separated)</label>
+        <input id="noteTags" type="text" placeholder="isr, pattern, confirmed"/>
+        <div class="epic-modal-footer">
+            <button onclick="document.getElementById('noteModal').classList.remove('open')">Cancel</button>
+            <button class="primary" onclick="submitNoteNode()">Add to Board</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit note/entity modal -->
+<div class="epic-modal-bg" id="editNodeModal">
+    <div class="epic-modal">
+        <h2 id="editModalTitle">✏ Edit</h2>
+        <input type="hidden" id="editNodeId"/>
+        <label>Title</label>
+        <input id="editNodeTitle" type="text"/>
+        <label>Content</label>
+        <textarea id="editNodeContent" style="height:100px"></textarea>
+        <label>Tags (comma separated)</label>
+        <input id="editNodeTags" type="text"/>
+        <div class="epic-modal-footer">
+            <button onclick="document.getElementById('editNodeModal').classList.remove('open')">Cancel</button>
+            <button class="primary" onclick="submitEditNode()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Create link modal -->
+<div class="epic-modal-bg" id="linkModal">
+    <div class="epic-modal">
+        <h2>⛓ Create Link</h2>
+        <p style="font-size:0.78rem;color:#8b949e;margin:0 0 0.8rem">
+            Click <b style="color:#c9d1d9">⛓</b> on the <i>source</i> node on the canvas,
+            then click a <i>target</i> node. Or select manually:
+        </p>
+        <label>Source node</label>
+        <select id="linkSrc" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;padding:0.3rem 0.5rem;width:100%;font-family:monospace;font-size:0.78rem"></select>
+        <label>Target node</label>
+        <select id="linkTgt" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;padding:0.3rem 0.5rem;width:100%;font-family:monospace;font-size:0.78rem"></select>
+        <label>Relationship</label>
+        <div class="link-type-row" id="linkTypeRow"></div>
+        <label>Label (optional)</label>
+        <input id="linkLabel" type="text" placeholder="e.g. Same vehicle, Confirmed by"/>
+        <div class="epic-modal-footer">
+            <button onclick="document.getElementById('linkModal').classList.remove('open')">Cancel</button>
+            <button class="primary" onclick="submitLink()">Create Link</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  EPIC — Intelligence Analysis Workboard
+// ═══════════════════════════════════════════════════════════════════════════
+
+const api = (path, opts = {}) => arrowFetch(path, opts);
+
+// ── Type colour map ──────────────────────────────────────────────────────
+const TYPE_COLOR = {
+    SPOT:       '#60a5fa', CONTACT:  '#60a5fa', SALUTE: '#60a5fa',
+    INTSUM:     '#c084fc', SIGINTREP:'#c084fc', TGTREP: '#c084fc',
+    CASEVAC:    '#f472b6', MEDEVAC:  '#f472b6',
+    DRONE_SPOT: '#f87171', BDA:      '#f87171',
+    CAS:        '#fb923c', OBSREP:   '#fb923c', UAVREP: '#fb923c',
+    LOGREP:     '#fbbf24', SITREP:   '#fbbf24', PATROLREP: '#fbbf24',
+    PHOTO:      '#2dd4bf',
+    NOTE:       '#facc15',
+    ENTITY_PERSON:   '#fb923c',
+    ENTITY_VEHICLE:  '#94a3b8',
+    ENTITY_LOCATION: '#3fb950',
+    ENTITY_ORG:      '#e879f9',
+};
+const LINK_COLOR = {
+    RELATED:        '#388bfd',
+    CONFIRMS:       '#3fb950',
+    CONTRADICTS:    '#f85149',
+    OBSERVED_AT:    '#facc15',
+    ASSOCIATED_WITH:'#c084fc',
+    PHOTOGRAPHED_AT:'#2dd4bf',
+};
+const LINK_MARKER = {
+    RELATED:        'arr-related',
+    CONFIRMS:       'arr-confirms',
+    CONTRADICTS:    'arr-contradicts',
+    OBSERVED_AT:    'arr-observed_at',
+    ASSOCIATED_WITH:'arr-other',
+    PHOTOGRAPHED_AT:'arr-other',
+};
+const LINK_DASH = { CONTRADICTS: '6,3' };
+const ENTITY_ICON = { PERSON:'🧑', VEHICLE:'🚗', LOCATION:'📍', ORG:'🏢' };
+
+function typeColor(node) {
+    if (node.node_type === 'PHOTO')  return TYPE_COLOR.PHOTO;
+    if (node.node_type === 'NOTE')   return TYPE_COLOR.NOTE;
+    if (node.node_type === 'ENTITY') return TYPE_COLOR['ENTITY_' + (node.entity_type || 'PERSON')] || '#94a3b8';
+    return TYPE_COLOR[node.report_type] || '#6e7681';
+}
+
+// ── State ────────────────────────────────────────────────────────────────
+const S = {
+    projects: [],
+    projectId: null,
+    nodes: [],       // EpicNodeOut[]
+    links: [],       // EpicLinkOut[]
+    selectedNode: null,
+    linkingFrom: null,   // node id when in link mode
+    zoom: 1.0,
+    panX: 40, panY: 40,
+    dragNode: null, dragOX: 0, dragOY: 0,
+    panStart: null,
+};
+
+// ── Initialise ───────────────────────────────────────────────────────────
+(async () => {
+    await loadProjects();
+    const saved = localStorage.getItem('arrow_epic_project');
+    if (saved && S.projects.find(p => p.id == saved)) {
+        document.getElementById('projSelect').value = saved;
+        await switchProject(saved);
+    }
+    bindCanvasEvents();
+})();
+
+// ── Project list ─────────────────────────────────────────────────────────
+async function loadProjects() {
+    const r = await api('/osint/projects');
+    S.projects = r.ok ? await r.json() : [];
+    const sel = document.getElementById('projSelect');
+    sel.innerHTML = '<option value="">— select project —</option>';
+    S.projects.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name + (p.status === 'ARCHIVED' ? ' [archived]' : '');
+        sel.appendChild(opt);
+    });
+}
+
+async function switchProject(id) {
+    S.projectId = id || null;
+    document.getElementById('archiveBtn').style.display = id ? '' : 'none';
+    if (!id) {
+        S.nodes = []; S.links = [];
+        renderBoard(); return;
+    }
+    localStorage.setItem('arrow_epic_project', id);
+    const r = await api('/osint/projects/' + id);
+    if (!r.ok) return;
+    const board = await r.json();
+    const proj = board.project;
+    S.nodes = board.nodes; S.links = board.links;
+    document.getElementById('projName').textContent = proj.name;
+    document.getElementById('projName').style.display = '';
+    document.getElementById('projName').style.color = proj.color;
+    document.getElementById('projSelect').value = id;
+    renderBoard();
+    renderTimeline();
+    palSearch(document.getElementById('palSearch').value);
+}
+
+// ── New project ──────────────────────────────────────────────────────────
+let _pickedColor = '#388bfd';
+function openNewProjectModal() {
+    document.getElementById('newProjName').value = '';
+    document.getElementById('newProjDesc').value = '';
+    pickColor('#388bfd');
+    document.getElementById('newProjModal').classList.add('open');
+    setTimeout(() => document.getElementById('newProjName').focus(), 80);
+}
+function closeNewProjectModal() {
+    document.getElementById('newProjModal').classList.remove('open');
+}
+function pickColor(c) {
+    _pickedColor = c;
+    document.getElementById('newProjColor').value = c;
+    document.querySelectorAll('.color-swatch').forEach(s => {
+        s.style.border = s.dataset.color === c ? '2px solid #fff' : '2px solid #0d1117';
+        s.style.transform = s.dataset.color === c ? 'scale(1.25)' : '';
+    });
+}
+async function createProject() {
+    const name = document.getElementById('newProjName').value.trim();
+    if (!name) { document.getElementById('newProjName').focus(); return; }
+    const r = await api('/osint/projects', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+            name,
+            description: document.getElementById('newProjDesc').value,
+            color: _pickedColor,
+        }),
+    });
+    if (!r.ok) return;
+    const proj = await r.json();
+    closeNewProjectModal();
+    await loadProjects();
+    document.getElementById('projSelect').value = proj.id;
+    await switchProject(proj.id);
+}
+async function archiveProject() {
+    if (!S.projectId) return;
+    if (!confirm('Archive this project?')) return;
+    await api('/osint/projects/' + S.projectId, {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ status: 'ARCHIVED' }),
+    });
+    S.projectId = null;
+    await loadProjects();
+    document.getElementById('projSelect').value = '';
+    document.getElementById('projName').style.display = 'none';
+    S.nodes = []; S.links = [];
+    renderBoard();
+}
+
+// ── Palette search ───────────────────────────────────────────────────────
+let _palDebounce;
+async function palSearch(q) {
+    clearTimeout(_palDebounce);
+    _palDebounce = setTimeout(async () => {
+        const list = document.getElementById('palList');
+        if (!S.projectId) {
+            list.innerHTML = '<div style="padding:1rem 0.75rem;color:#6e7681;font-size:0.72rem">Select a project first.</div>';
+            return;
+        }
+        const r = await api('/osint/search?q=' + encodeURIComponent(q) + '&types=REPORT,PHOTO');
+        if (!r.ok) return;
+        const { reports, photos } = await r.json();
+        const existingReportIds = new Set(S.nodes.filter(n => n.report_id).map(n => n.report_id));
+        const existingPhotoIds  = new Set(S.nodes.filter(n => n.photo_id).map(n => n.photo_id));
+        list.innerHTML = '';
+        if (!reports.length && !photos.length) {
+            list.innerHTML = '<div style="padding:0.5rem 0.75rem;color:#6e7681;font-size:0.72rem">No results.</div>';
+            return;
+        }
+        if (reports.length) {
+            list.insertAdjacentHTML('beforeend', '<div class="epic-pal-section">Reports</div>');
+            reports.forEach(rep => {
+                const alreadyOn = existingReportIds.has(rep.id);
+                const col = TYPE_COLOR[rep.type] || '#6e7681';
+                const el = document.createElement('div');
+                el.className = 'epic-pal-item';
+                el.draggable = !alreadyOn;
+                el.style.opacity = alreadyOn ? '0.45' : '1';
+                el.title = alreadyOn ? 'Already on board' : 'Drag to canvas or click to add';
+                el.innerHTML = `
+                    <span class="epic-pal-badge" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(rep.type)}</span>
+                    <div style="overflow:hidden">
+                        <div style="font-size:0.72rem;color:#c9d1d9">#${rep.id}</div>
+                        <div class="epic-pal-meta">${fmtDT(rep.timestamp)}</div>
+                    </div>`;
+                if (!alreadyOn) {
+                    el.addEventListener('dragstart', e => {
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                            node_type: 'REPORT', report_id: rep.id,
+                        }));
+                    });
+                    el.addEventListener('click', () => addNodeAt({ node_type:'REPORT', report_id: rep.id }, 200 + Math.random()*400, 150 + Math.random()*300));
+                }
+                list.appendChild(el);
+            });
+        }
+        if (photos.length) {
+            list.insertAdjacentHTML('beforeend', '<div class="epic-pal-section">Photos</div>');
+            photos.forEach(ph => {
+                const alreadyOn = existingPhotoIds.has(ph.id);
+                const el = document.createElement('div');
+                el.className = 'epic-pal-item';
+                el.draggable = !alreadyOn;
+                el.style.opacity = alreadyOn ? '0.45' : '1';
+                el.innerHTML = `
+                    <span class="epic-pal-badge" style="background:#2dd4bf22;color:#2dd4bf;border:1px solid #2dd4bf55">PHOTO</span>
+                    <div style="overflow:hidden">
+                        <div style="font-size:0.72rem;color:#c9d1d9">#${ph.id}</div>
+                        <div class="epic-pal-meta">${esc(ph.original_name || ph.filename)}</div>
+                    </div>`;
+                if (!alreadyOn) {
+                    el.addEventListener('dragstart', e => {
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                            node_type: 'PHOTO', photo_id: ph.id,
+                        }));
+                    });
+                    el.addEventListener('click', () => addNodeAt({ node_type:'PHOTO', photo_id: ph.id }, 200 + Math.random()*400, 150 + Math.random()*300));
+                }
+                list.appendChild(el);
+            });
+        }
+    }, 250);
+}
+
+// ── Canvas drop ──────────────────────────────────────────────────────────
+function onCanvasDrop(e) {
+    e.preventDefault();
+    if (!S.projectId) return;
+    let data;
+    try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+    // Convert screen coords → stage coords
+    const wrap = document.getElementById('canvasWrap');
+    const rect = wrap.getBoundingClientRect();
+    const stageX = (e.clientX - rect.left - S.panX) / S.zoom;
+    const stageY = (e.clientY - rect.top  - S.panY) / S.zoom;
+    addNodeAt(data, stageX, stageY);
+}
+
+// ── Add node ─────────────────────────────────────────────────────────────
+async function addNodeAt(data, x, y) {
+    if (!S.projectId) return;
+    const r = await api('/osint/projects/' + S.projectId + '/nodes', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ ...data, x: Math.round(x), y: Math.round(y) }),
+    });
+    if (!r.ok) return;
+    const node = await r.json();
+    S.nodes.push(node);
+    renderBoard();
+    renderTimeline();
+    palSearch(document.getElementById('palSearch').value);
+}
+
+function addEntityNode() {
+    if (!S.projectId) { alert('Select a project first.'); return; }
+    document.getElementById('entityTitle').value = '';
+    document.getElementById('entityContent').value = '';
+    document.getElementById('entityTags').value = '';
+    document.getElementById('entityModal').classList.add('open');
+    setTimeout(() => document.getElementById('entityTitle').focus(), 80);
+}
+async function submitEntityNode() {
+    const title = document.getElementById('entityTitle').value.trim();
+    if (!title) return;
+    const tags = document.getElementById('entityTags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const cx = (700 + Math.random() * 500) | 0;
+    const cy = (200 + Math.random() * 350) | 0;
+    await addNodeAt({
+        node_type: 'ENTITY',
+        entity_type: document.getElementById('entityType').value,
+        title,
+        content: document.getElementById('entityContent').value,
+        tags,
+        x: cx, y: cy,
+    }, cx, cy);
+    document.getElementById('entityModal').classList.remove('open');
+}
+
+function addNoteNode() {
+    if (!S.projectId) { alert('Select a project first.'); return; }
+    document.getElementById('noteTitle').value = '';
+    document.getElementById('noteContent').value = '';
+    document.getElementById('noteTags').value = '';
+    document.getElementById('noteModal').classList.add('open');
+    setTimeout(() => document.getElementById('noteTitle').focus(), 80);
+}
+async function submitNoteNode() {
+    const content = document.getElementById('noteContent').value.trim();
+    if (!content) return;
+    const tags = document.getElementById('noteTags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const cx = (700 + Math.random() * 500) | 0;
+    const cy = (200 + Math.random() * 350) | 0;
+    await addNodeAt({
+        node_type: 'NOTE',
+        title: document.getElementById('noteTitle').value.trim(),
+        content, tags, x: cx, y: cy,
+    }, cx, cy);
+    document.getElementById('noteModal').classList.remove('open');
+}
+
+// ── Render board ─────────────────────────────────────────────────────────
+const NODE_W = 176, NODE_H_EST = 120;
+
+function renderBoard() {
+    const stage = document.getElementById('stage');
+    // Remove old node divs (keep svg)
+    stage.querySelectorAll('.epic-node').forEach(el => el.remove());
+    document.getElementById('epicEmpty').style.display = S.nodes.length ? 'none' : '';
+
+    S.nodes.forEach(node => {
+        const col = typeColor(node);
+        const el  = document.createElement('div');
+        el.className = 'epic-node' + (S.selectedNode === node.id ? ' selected' : '') + (S.linkingFrom === node.id ? ' linking-source' : '');
+        el.dataset.id = node.id;
+        el.style.left  = node.x + 'px';
+        el.style.top   = node.y + 'px';
+        el.style.setProperty('--nc', col);
+        el.innerHTML = nodeHTML(node, col);
+        bindNodeEvents(el, node);
+        stage.appendChild(el);
+    });
+    renderSvg();
+}
+
+function nodeHTML(node, col) {
+    const badge = n => `<span class="epic-node-badge" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(n)}</span>`;
+    let header = '', body = '';
+
+    if (node.node_type === 'REPORT') {
+        const st = node.report_status || '';
+        const stCol = st === 'PROCESSED' ? '#3fb950' : st === 'RECEIVED' ? '#facc15' : '#6e7681';
+        header = badge(node.report_type || 'RPT') +
+                 `<span style="font-size:0.55rem;color:${stCol};font-weight:700">${esc(st)}</span>` +
+                 `<span class="epic-node-id">#${node.report_id}</span>`;
+        body   = `<b>${fmtDT(node.report_timestamp)}</b><br>` +
+                 (node.report_payload_preview ? `<span style="color:#8b949e;font-size:0.65rem">${esc(node.report_payload_preview.substring(0,80))}…</span>` : '');
+    } else if (node.node_type === 'PHOTO') {
+        header = badge('PHOTO') + `<span class="epic-node-id">#${node.photo_id}</span>`;
+        const src = window.arrowPhotoUrl ? arrowPhotoUrl(node.photo_id) : (window.ARROW_BACKEND_URL + '/photos/' + node.photo_id);
+        body = `<img class="epic-thumb" src="${src}" alt="photo" loading="lazy"
+                     onerror="this.style.display='none'">` +
+               `<span style="font-size:0.65rem">${esc(node.photo_original_name || '')}</span>`;
+    } else if (node.node_type === 'ENTITY') {
+        const icon = ENTITY_ICON[node.entity_type] || '🧑';
+        header = badge(icon + ' ' + (node.entity_type || 'ENTITY'));
+        body = `<b>${esc(node.title || '—')}</b>` +
+               (node.content ? `<br><span style="color:#8b949e;font-size:0.65rem">${esc(node.content.substring(0,80))}</span>` : '') +
+               renderTags(node.tags);
+    } else {
+        // NOTE
+        header = badge('✏ NOTE');
+        body = (node.title ? `<b>${esc(node.title)}</b><br>` : '') +
+               `<span style="color:#8b949e;font-size:0.65rem">${esc((node.content || '').substring(0,100))}</span>` +
+               renderTags(node.tags);
+    }
+
+    const canEdit = node.node_type === 'NOTE' || node.node_type === 'ENTITY';
+    return `
+        <div class="epic-node-header">${header}</div>
+        <div class="epic-node-body">${body}</div>
+        <div class="epic-node-footer">
+            <button class="epic-node-action link-btn${S.linkingFrom === node.id ? ' active' : ''}"
+                    onclick="toggleLinkMode(${node.id},event)" title="Link to another node">⛓</button>
+            ${canEdit ? `<button class="epic-node-action" onclick="openEditNode(${node.id},event)" title="Edit">✏</button>` : ''}
+            ${node.report_lat ? `<button class="epic-node-action" onclick="viewOnMap(${node.report_lat},${node.report_lon},event)" title="View on map">🗺</button>` : ''}
+            <button class="epic-node-action" onclick="removeNode(${node.id},event)" title="Remove from board" style="margin-left:auto;color:#6e7681">🗑</button>
+        </div>`;
+}
+
+function renderTags(tags) {
+    if (!tags || !tags.length) return '';
+    return '<div style="margin-top:3px">' +
+        tags.map(t => `<span style="background:#21262d;border-radius:3px;padding:0 4px;font-size:0.58rem;color:#8b949e;margin-right:2px">#${esc(t)}</span>`).join('') +
+        '</div>';
+}
+
+// ── SVG links ────────────────────────────────────────────────────────────
+function renderSvg() {
+    const svg = document.getElementById('epicSvg');
+    // Remove old paths/texts (keep defs)
+    svg.querySelectorAll('path,text,line').forEach(e => e.remove());
+
+    S.links.forEach(lk => {
+        const src = S.nodes.find(n => n.id === lk.source_node_id);
+        const tgt = S.nodes.find(n => n.id === lk.target_node_id);
+        if (!src || !tgt) return;
+        const sx = src.x + NODE_W / 2, sy = src.y + NODE_H_EST / 2;
+        const tx = tgt.x + NODE_W / 2, ty = tgt.y + NODE_H_EST / 2;
+        const mx = (sx + tx) / 2, my = (sy + ty) / 2 - 30;
+        const col  = LINK_COLOR[lk.link_type] || '#6e7681';
+        const mark = LINK_MARKER[lk.link_type] || 'arr-other';
+        const dash = LINK_DASH[lk.link_type] || '';
+
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M${sx},${sy} Q${mx},${my} ${tx},${ty}`);
+        path.setAttribute('stroke', col);
+        path.setAttribute('stroke-width', '1.5');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('marker-end', `url(#${mark})`);
+        if (dash) path.setAttribute('stroke-dasharray', dash);
+        path.style.opacity = '0.75';
+        svg.appendChild(path);
+
+        if (lk.label) {
+            const lx = (sx + tx) / 2, ly = (sy + ty) / 2 - 8;
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', lx); text.setAttribute('y', ly);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('fill', col);
+            text.setAttribute('font-size', '9');
+            text.setAttribute('font-family', 'Courier New');
+            text.textContent = lk.label;
+            svg.appendChild(text);
+        }
+    });
+}
+
+// ── Node drag ────────────────────────────────────────────────────────────
+function bindNodeEvents(el, node) {
+    el.addEventListener('pointerdown', e => {
+        if (e.target.closest('button') || e.target.tagName === 'IMG') return;
+        if (S.linkingFrom !== null && S.linkingFrom !== node.id) {
+            // Complete a link-by-click
+            finishLinkTo(node.id);
+            e.stopPropagation(); return;
+        }
+        S.dragNode = node.id;
+        S.dragOX   = e.clientX / S.zoom - node.x;
+        S.dragOY   = e.clientY / S.zoom - node.y;
+        el.setPointerCapture(e.pointerId);
+        e.stopPropagation();
+    });
+    el.addEventListener('pointermove', e => {
+        if (S.dragNode !== node.id) return;
+        const nx = e.clientX / S.zoom - S.dragOX;
+        const ny = e.clientY / S.zoom - S.dragOY;
+        node.x = Math.max(0, nx);
+        node.y = Math.max(0, ny);
+        el.style.left = node.x + 'px';
+        el.style.top  = node.y + 'px';
+        renderSvg();
+        e.stopPropagation();
+    });
+    el.addEventListener('pointerup', async e => {
+        if (S.dragNode !== node.id) return;
+        S.dragNode = null;
+        // Save position
+        await api('/osint/projects/' + S.projectId + '/nodes/' + node.id, {
+            method: 'PATCH',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ x: Math.round(node.x), y: Math.round(node.y) }),
+        });
+        e.stopPropagation();
+    });
+    el.addEventListener('click', e => {
+        if (e.target.closest('button') || S.dragNode !== null) return;
+        if (S.linkingFrom !== null && S.linkingFrom !== node.id) {
+            finishLinkTo(node.id); return;
+        }
+        openDetail(node.id);
+    });
+}
+
+// ── Canvas pan / zoom ─────────────────────────────────────────────────────
+function bindCanvasEvents() {
+    const wrap  = document.getElementById('canvasWrap');
+    const stage = document.getElementById('stage');
+
+    wrap.addEventListener('pointerdown', e => {
+        if (e.target !== wrap && !e.target.classList.contains('epic-stage') && !e.target.classList.contains('epic-svg')) return;
+        if (S.linkingFrom !== null) { S.linkingFrom = null; renderBoard(); return; }
+        S.panStart = { x: e.clientX - S.panX, y: e.clientY - S.panY };
+        wrap.setPointerCapture(e.pointerId);
+    });
+    wrap.addEventListener('pointermove', e => {
+        if (!S.panStart) return;
+        S.panX = e.clientX - S.panStart.x;
+        S.panY = e.clientY - S.panStart.y;
+        applyTransform();
+    });
+    wrap.addEventListener('pointerup', () => { S.panStart = null; });
+    wrap.addEventListener('wheel', e => {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.1 : -0.1;
+        adjustZoom(delta, e.clientX, e.clientY);
+    }, { passive: false });
+}
+
+function applyTransform() {
+    const stage = document.getElementById('stage');
+    stage.style.transform = `translate(${S.panX}px, ${S.panY}px) scale(${S.zoom})`;
+    document.getElementById('zoomLabel').textContent = Math.round(S.zoom * 100) + '%';
+}
+function adjustZoom(delta, cx, cy) {
+    const wrap = document.getElementById('canvasWrap');
+    cx = cx ?? wrap.clientWidth / 2;
+    cy = cy ?? wrap.clientHeight / 2;
+    const newZoom = Math.max(0.2, Math.min(3, S.zoom + delta));
+    // Zoom around pointer position
+    S.panX = cx - (cx - S.panX) * (newZoom / S.zoom);
+    S.panY = cy - (cy - S.panY) * (newZoom / S.zoom);
+    S.zoom = newZoom;
+    applyTransform();
+}
+function resetZoom() { S.zoom = 1; S.panX = 40; S.panY = 40; applyTransform(); }
+function fitCanvas() {
+    if (!S.nodes.length) return;
+    const wrap = document.getElementById('canvasWrap');
+    const W = wrap.clientWidth, H = wrap.clientHeight;
+    const xs = S.nodes.map(n => n.x), ys = S.nodes.map(n => n.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs) + NODE_W;
+    const minY = Math.min(...ys), maxY = Math.max(...ys) + NODE_H_EST;
+    const scaleX = W / (maxX - minX + 80), scaleY = H / (maxY - minY + 80);
+    S.zoom = Math.min(scaleX, scaleY, 1.5);
+    S.panX = (W - (maxX - minX) * S.zoom) / 2 - minX * S.zoom;
+    S.panY = (H - (maxY - minY) * S.zoom) / 2 - minY * S.zoom;
+    applyTransform();
+}
+
+// ── Link mode ─────────────────────────────────────────────────────────────
+function toggleLinkMode(nodeId, e) {
+    e && e.stopPropagation();
+    if (S.linkingFrom === nodeId) {
+        S.linkingFrom = null;
+        document.getElementById('canvasWrap').classList.remove('linking');
+    } else {
+        S.linkingFrom = nodeId;
+        document.getElementById('canvasWrap').classList.add('linking');
+    }
+    renderBoard();
+}
+async function finishLinkTo(targetId) {
+    const srcId = S.linkingFrom;
+    S.linkingFrom = null;
+    document.getElementById('canvasWrap').classList.remove('linking');
+    // Show link type picker in a mini prompt
+    const ltype = await pickLinkType();
+    if (!ltype) { renderBoard(); return; }
+    const r = await api('/osint/projects/' + S.projectId + '/links', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ source_node_id: srcId, target_node_id: targetId, link_type: ltype }),
+    });
+    if (r.ok) {
+        const lk = await r.json();
+        S.links.push(lk);
+    }
+    renderBoard();
+}
+
+// ── Link type quick picker (returns a Promise<string|null>) ───────────────
+function pickLinkType() {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:center;justify-content:center';
+        overlay.innerHTML = `
+            <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1.2rem;min-width:280px">
+                <div style="font-size:0.8rem;font-weight:700;color:#c9d1d9;margin-bottom:0.8rem">Select relationship type</div>
+                <div style="display:flex;flex-direction:column;gap:0.4rem">
+                ${Object.entries(LINK_COLOR).map(([k,c]) => `
+                    <button data-type="${k}" style="background:#21262d;border:1px solid ${c}55;border-radius:4px;color:${c};
+                        font-family:monospace;font-size:0.75rem;font-weight:700;padding:0.3rem 0.6rem;cursor:pointer;text-align:left">
+                        ${k.replace(/_/g,' ')}
+                    </button>`).join('')}
+                </div>
+                <button style="margin-top:0.8rem;background:none;border:none;color:#6e7681;font-family:monospace;cursor:pointer" data-type="">✕ Cancel</button>
+            </div>`;
+        overlay.querySelectorAll('button').forEach(btn => {
+            btn.onclick = () => { document.body.removeChild(overlay); resolve(btn.dataset.type || null); };
+        });
+        document.body.appendChild(overlay);
+    });
+}
+
+// ── Link modal (manual) ───────────────────────────────────────────────────
+let _selectedLinkType = 'RELATED';
+function openLinkModal() {
+    if (!S.projectId || !S.nodes.length) { alert('Add nodes to the board first.'); return; }
+    const src = document.getElementById('linkSrc');
+    const tgt = document.getElementById('linkTgt');
+    src.innerHTML = tgt.innerHTML = S.nodes.map(n => {
+        const label = nodeLabelShort(n);
+        return `<option value="${n.id}">${label}</option>`;
+    }).join('');
+    // Link type pills
+    _selectedLinkType = 'RELATED';
+    const row = document.getElementById('linkTypeRow');
+    row.innerHTML = Object.entries(LINK_COLOR).map(([k,c]) =>
+        `<span class="link-type-pill${k === _selectedLinkType ? ' active' : ''}"
+               data-type="${k}" onclick="selectLinkType('${k}')"
+               style="color:${c};border-color:${c}55">${k.replace(/_/g,' ')}</span>`
+    ).join('');
+    document.getElementById('linkLabel').value = '';
+    document.getElementById('linkModal').classList.add('open');
+}
+function selectLinkType(t) {
+    _selectedLinkType = t;
+    document.querySelectorAll('.link-type-pill').forEach(p => p.classList.toggle('active', p.dataset.type === t));
+}
+async function submitLink() {
+    const srcId = parseInt(document.getElementById('linkSrc').value);
+    const tgtId = parseInt(document.getElementById('linkTgt').value);
+    if (srcId === tgtId) { alert('Source and target must be different nodes.'); return; }
+    const r = await api('/osint/projects/' + S.projectId + '/links', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+            source_node_id: srcId,
+            target_node_id: tgtId,
+            link_type: _selectedLinkType,
+            label: document.getElementById('linkLabel').value.trim() || null,
+        }),
+    });
+    if (r.ok) { const lk = await r.json(); S.links.push(lk); }
+    document.getElementById('linkModal').classList.remove('open');
+    renderBoard();
+}
+
+// ── Delete link ───────────────────────────────────────────────────────────
+async function deleteLink(linkId) {
+    await api('/osint/projects/' + S.projectId + '/links/' + linkId, { method: 'DELETE' });
+    S.links = S.links.filter(l => l.id !== linkId);
+    renderBoard();
+    if (S.selectedNode) openDetail(S.selectedNode);
+}
+
+// ── Remove node ───────────────────────────────────────────────────────────
+async function removeNode(nodeId, e) {
+    e && e.stopPropagation();
+    const r = await api('/osint/projects/' + S.projectId + '/nodes/' + nodeId, { method: 'DELETE' });
+    if (!r.ok) return;
+    S.nodes = S.nodes.filter(n => n.id !== nodeId);
+    S.links = S.links.filter(l => l.source_node_id !== nodeId && l.target_node_id !== nodeId);
+    if (S.selectedNode === nodeId) closeDetail();
+    renderBoard(); renderTimeline();
+    palSearch(document.getElementById('palSearch').value);
+}
+
+// ── Edit node ─────────────────────────────────────────────────────────────
+function openEditNode(nodeId, e) {
+    e && e.stopPropagation();
+    const node = S.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    document.getElementById('editNodeId').value = nodeId;
+    document.getElementById('editModalTitle').textContent = node.node_type === 'ENTITY' ? '🧑 Edit Entity' : '✏ Edit Note';
+    document.getElementById('editNodeTitle').value   = node.title || '';
+    document.getElementById('editNodeContent').value = node.content || '';
+    document.getElementById('editNodeTags').value    = (node.tags || []).join(', ');
+    document.getElementById('editNodeModal').classList.add('open');
+    setTimeout(() => document.getElementById('editNodeTitle').focus(), 80);
+}
+async function submitEditNode() {
+    const nodeId = parseInt(document.getElementById('editNodeId').value);
+    const tags   = document.getElementById('editNodeTags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const r = await api('/osint/projects/' + S.projectId + '/nodes/' + nodeId, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+            title:   document.getElementById('editNodeTitle').value.trim(),
+            content: document.getElementById('editNodeContent').value,
+            tags,
+        }),
+    });
+    if (r.ok) {
+        const updated = await r.json();
+        const idx = S.nodes.findIndex(n => n.id === nodeId);
+        if (idx >= 0) S.nodes[idx] = updated;
+    }
+    document.getElementById('editNodeModal').classList.remove('open');
+    renderBoard(); renderTimeline();
+    if (S.selectedNode === nodeId) openDetail(nodeId);
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────
+function openDetail(nodeId) {
+    S.selectedNode = nodeId;
+    const node = S.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    const col = typeColor(node);
+    document.getElementById('detailTitle').textContent = nodeLabelShort(node);
+    document.getElementById('detailTitle').style.color = col;
+
+    const body = document.getElementById('detailBody');
+    let html = '';
+
+    if (node.node_type === 'REPORT') {
+        html += `<h3>Report</h3>
+            <div class="val"><b>${esc(node.report_type)}</b> #${node.report_id}</div>
+            <div class="val">Status: <b>${esc(node.report_status || '—')}</b></div>
+            <div class="val">Time: ${fmtDT(node.report_timestamp)}</div>`;
+        if (node.report_payload_preview) {
+            let pretty = node.report_payload_preview;
+            try { pretty = JSON.stringify(JSON.parse(node.report_payload_preview), null, 2); } catch {}
+            html += `<h3>Payload</h3><div class="payload-box">${esc(pretty)}</div>`;
+        }
+    } else if (node.node_type === 'PHOTO') {
+        const src = window.arrowPhotoUrl ? arrowPhotoUrl(node.photo_id) : (window.ARROW_BACKEND_URL + '/photos/' + node.photo_id);
+        html += `<h3>Photo</h3>
+            <img src="${src}" alt="photo" style="width:100%;border-radius:4px;margin-bottom:0.5rem">
+            <div class="val">${esc(node.photo_original_name || node.photo_filename || '')}</div>`;
+    } else if (node.node_type === 'ENTITY') {
+        const icon = ENTITY_ICON[node.entity_type] || '🧑';
+        html += `<h3>Entity</h3>
+            <div class="val" style="font-size:1.5rem">${icon}</div>
+            <div class="val"><b>${esc(node.title || '—')}</b></div>
+            <div class="val">Type: ${esc(node.entity_type || '—')}</div>`;
+        if (node.content) html += `<h3>Notes</h3><div class="val">${esc(node.content)}</div>`;
+    } else {
+        html += `<h3>Analyst Note</h3>`;
+        if (node.title) html += `<div class="val"><b>${esc(node.title)}</b></div>`;
+        if (node.content) html += `<div class="val">${esc(node.content)}</div>`;
+    }
+
+    // Tags
+    if (node.tags && node.tags.length) {
+        html += `<h3>Tags</h3><div>${renderTags(node.tags)}</div>`;
+    }
+
+    // Connections
+    const nodeLinks = S.links.filter(l => l.source_node_id === nodeId || l.target_node_id === nodeId);
+    if (nodeLinks.length) {
+        html += `<h3>Connections (${nodeLinks.length})</h3>`;
+        nodeLinks.forEach(lk => {
+            const otherId = lk.source_node_id === nodeId ? lk.target_node_id : lk.source_node_id;
+            const dir     = lk.source_node_id === nodeId ? '→' : '←';
+            const other   = S.nodes.find(n => n.id === otherId);
+            const col2    = LINK_COLOR[lk.link_type] || '#6e7681';
+            html += `<div class="epic-detail-link-row">
+                <span style="font-size:0.75rem">${dir}</span>
+                <span class="epic-detail-link-type" style="background:${col2}22;color:${col2};border:1px solid ${col2}55">${lk.link_type.replace(/_/g,' ')}</span>
+                <span style="flex:1;color:#c9d1d9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${other ? esc(nodeLabelShort(other)) : '#'+otherId}</span>
+                <button class="epic-node-action" onclick="deleteLink(${lk.id})" style="font-size:0.65rem">🗑</button>
+            </div>`;
+        });
+    }
+
+    body.innerHTML = html;
+    if (window.arrowApplyPhotos) arrowApplyPhotos(body);
+
+    const actions = document.getElementById('detailActions');
+    let actHtml = '';
+    if (node.report_lat) {
+        actHtml += `<button onclick="viewOnMap(${node.report_lat},${node.report_lon})">🗺 View on Map</button>`;
+    }
+    if (node.node_type === 'NOTE' || node.node_type === 'ENTITY') {
+        actHtml += `<button onclick="openEditNode(${nodeId})">✏ Edit</button>`;
+    }
+    actHtml += `<button class="red" onclick="removeNode(${nodeId})">🗑 Remove</button>`;
+    actions.innerHTML = actHtml;
+
+    document.getElementById('epicDetail').classList.add('open');
+    // Re-render to show selection highlight
+    document.querySelectorAll('.epic-node').forEach(el => {
+        el.classList.toggle('selected', parseInt(el.dataset.id) === nodeId);
+    });
+}
+
+function closeDetail() {
+    S.selectedNode = null;
+    document.getElementById('epicDetail').classList.remove('open');
+    document.querySelectorAll('.epic-node').forEach(el => el.classList.remove('selected'));
+}
+
+// ── Timeline ──────────────────────────────────────────────────────────────
+function toggleTimeline() {
+    const tl = document.getElementById('epicTimeline');
+    const btn = document.getElementById('tlBtn');
+    tl.classList.toggle('open');
+    btn.classList.toggle('active', tl.classList.contains('open'));
+    if (tl.classList.contains('open')) renderTimeline();
+}
+
+function renderTimeline() {
+    const inner = document.getElementById('tlInner');
+    inner.innerHTML = '';
+    const timed = S.nodes.map(n => ({
+        node: n,
+        ts: n.report_timestamp ? new Date(n.report_timestamp) :
+            n.created_at ? new Date(n.created_at) : null,
+    })).filter(x => x.ts).sort((a, b) => a.ts - b.ts);
+
+    if (!timed.length) { inner.innerHTML = '<div style="padding:1rem;color:#6e7681;font-size:0.72rem">No timestamped items.</div>'; return; }
+
+    const minT = timed[0].ts, maxT = timed[timed.length-1].ts;
+    const span = Math.max(maxT - minT, 1);
+    const TL_W = Math.max(inner.parentElement.clientWidth - 48, timed.length * 60 + 40);
+    inner.style.width = TL_W + 'px';
+
+    const axis = document.createElement('div');
+    axis.className = 'epic-tl-axis';
+    axis.style.width = TL_W + 'px';
+    inner.appendChild(axis);
+
+    timed.forEach(({ node, ts }) => {
+        const left = 24 + ((ts - minT) / span) * (TL_W - 48);
+        const col  = typeColor(node);
+        const dot  = document.createElement('div');
+        dot.className = 'epic-tl-dot';
+        dot.style.cssText = `left:${left}px;background:${col};border-color:${col}55`;
+        dot.title = nodeLabelShort(node) + ' — ' + fmtDT(ts);
+        dot.onclick = () => centerOnNode(node.id);
+        inner.appendChild(dot);
+
+        const lbl = document.createElement('div');
+        lbl.className = 'epic-tl-label';
+        lbl.style.left = left + 'px';
+        lbl.textContent = fmtDTshort(ts);
+        inner.appendChild(lbl);
+    });
+}
+
+function centerOnNode(nodeId) {
+    const node = S.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    const wrap = document.getElementById('canvasWrap');
+    S.panX = wrap.clientWidth  / 2 - (node.x + NODE_W / 2)     * S.zoom;
+    S.panY = wrap.clientHeight / 2 - (node.y + NODE_H_EST / 2) * S.zoom;
+    applyTransform();
+    openDetail(nodeId);
+}
+
+// ── View on map ───────────────────────────────────────────────────────────
+function viewOnMap(lat, lon, e) {
+    e && e.stopPropagation();
+    window.open('/map?lat=' + lat + '&lng=' + lon, '_blank');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtDT(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+'Z ' +
+           d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+}
+function fmtDTshort(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+}
+function nodeLabelShort(n) {
+    if (n.node_type === 'REPORT')  return (n.report_type || 'RPT') + ' #' + n.report_id;
+    if (n.node_type === 'PHOTO')   return 'Photo #' + n.photo_id;
+    if (n.node_type === 'ENTITY')  return (n.title || 'Entity') + ' [' + (n.entity_type || 'E') + ']';
+    return n.title || 'Note #' + n.id;
+}
+
+// Keyboard: Escape cancels link mode / closes detail
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        if (S.linkingFrom !== null) {
+            S.linkingFrom = null;
+            document.getElementById('canvasWrap').classList.remove('linking');
+            renderBoard();
+        } else { closeDetail(); }
+    }
+});
+</script>
+{% endblock %}

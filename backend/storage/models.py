@@ -1004,3 +1004,84 @@ class LogcopSupplyPoint(Base):
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("operators.id"), nullable=True
     )
+
+
+# ── EPIC — Intelligence Analysis Workboard ────────────────────────────────────
+
+
+class EpicProject(Base):
+    """An analyst-defined intelligence collection project (corkboard)."""
+
+    __tablename__ = "epic_projects"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    color: Mapped[str] = mapped_column(String(20), default="#388bfd")
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")  # ACTIVE | ARCHIVED
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    nodes: Mapped[list["EpicNode"]] = relationship(
+        "EpicNode", back_populates="project", cascade="all,delete-orphan"
+    )
+    links: Mapped[list["EpicLink"]] = relationship(
+        "EpicLink", back_populates="project", cascade="all,delete-orphan"
+    )
+
+
+class EpicNode(Base):
+    """A card pinned on an EpicProject canvas — wraps a Report, Photo, or is standalone."""
+
+    __tablename__ = "epic_nodes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("epic_projects.id"), nullable=False
+    )
+    node_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # REPORT | PHOTO | NOTE | ENTITY
+    x: Mapped[float] = mapped_column(Float, default=100.0)
+    y: Mapped[float] = mapped_column(Float, default=100.0)
+    # Cross-references (mutually exclusive — only one is set)
+    report_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reports.id"), nullable=True
+    )
+    photo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("photos.id"), nullable=True
+    )
+    # Standalone content (NOTE / ENTITY)
+    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entity_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # PERSON | VEHICLE | LOCATION | ORG
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    tags: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string[]
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    project: Mapped["EpicProject"] = relationship("EpicProject", back_populates="nodes")
+
+
+class EpicLink(Base):
+    """A directed relationship between two EpicNode cards."""
+
+    __tablename__ = "epic_links"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("epic_projects.id"), nullable=False
+    )
+    source_node_id: Mapped[int] = mapped_column(
+        ForeignKey("epic_nodes.id"), nullable=False
+    )
+    target_node_id: Mapped[int] = mapped_column(
+        ForeignKey("epic_nodes.id"), nullable=False
+    )
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    link_type: Mapped[str] = mapped_column(String(30), default="RELATED")
+    # RELATED | CONFIRMS | CONTRADICTS | OBSERVED_AT | ASSOCIATED_WITH | PHOTOGRAPHED_AT
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    project: Mapped["EpicProject"] = relationship("EpicProject", back_populates="links")
