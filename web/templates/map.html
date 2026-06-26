@@ -996,6 +996,19 @@
     // Used by loadEnemies() to suppress the one-shot auto-fit once the user
     // has actively panned/zoomed somewhere of their own choosing.
     map.on('dragend zoomend', () => { state.userMovedMap = true; });
+    map.on('zoomend', () => { if (state.groupAuto && state.visibility.groups) _applyGroupAutoLevel(); });
+
+    function _levelFromZoom(z) {
+        if (z <= 8)  return 'company';
+        if (z <= 10) return 'platoon';
+        if (z <= 12) return 'section';
+        if (z <= 14) return 'team';
+        return 'none';
+    }
+    function _applyGroupAutoLevel() {
+        const level = _levelFromZoom(map.getZoom());
+        if (level !== state.groupLevel) { state.groupLevel = level; refreshGroupMarkers(); }
+    }
 
     // State
     const state = {
@@ -1027,6 +1040,7 @@
             vehicles:         true,  groups:        false,
         },
         groupLevel: localStorage.getItem('arrow_group_level') || 'section',
+        groupAuto: (localStorage.getItem('arrow_group_auto') ?? 'true') === 'true',
         groupMarkers: new Map(),
     };
 
@@ -1070,8 +1084,15 @@
         refreshGroupMarkers();
     });
     window.addEventListener('storage', e => {
-        if (e.key !== 'arrow_group_level' || !e.newValue) return;
-        state.groupLevel = e.newValue;
+        if (e.key === 'arrow_group_level' && e.newValue) {
+            state.groupLevel = e.newValue; refreshGroupMarkers();
+        } else if (e.key === 'arrow_group_auto' && e.newValue) {
+            state.groupAuto = e.newValue === 'true'; refreshGroupMarkers();
+        }
+    });
+    window.addEventListener('arrow-group-auto-changed', e => {
+        state.groupAuto = e.detail.auto;
+        if (state.groupAuto) _applyGroupAutoLevel();
         refreshGroupMarkers();
     });
 
@@ -4432,6 +4453,7 @@
         collect(state.hierarchy.unassigned_operators);
         // Resolve own-platoon membership whenever hierarchy or me changes
         if (state.me) state.myPlatoonOpIds = resolvePlatoonIds(state.hierarchy, state.me.id);
+        if (state.groupAuto) _applyGroupAutoLevel();
         refreshAllMarkers(); refreshGroupMarkers(); renderTree();
         if (typeof refreshTrackOpSelect === 'function') refreshTrackOpSelect();
     }

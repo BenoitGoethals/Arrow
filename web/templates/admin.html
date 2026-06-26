@@ -1416,12 +1416,21 @@ main { padding: 0; }
     // tabs on this device pick up the change via the ``storage`` event.
     const VIS_LS_KEY = 'arrow_visibility_prefs';
     const GROUP_LEVEL_LS_KEY = 'arrow_group_level';
+    const GROUP_AUTO_LS_KEY  = 'arrow_group_auto';
     const GROUP_LEVELS = [
         { value: 'none',    label: 'None' },
         { value: 'team',    label: 'Team' },
         { value: 'section', label: 'Section' },
         { value: 'platoon', label: 'Platoon' },
         { value: 'company', label: 'Company' },
+    ];
+    // Zoom thresholds (must mirror map.html _levelFromZoom)
+    const ZOOM_THRESHOLDS = [
+        { maxZoom: 8,  level: 'company',  label: 'Company' },
+        { maxZoom: 10, level: 'platoon',  label: 'Platoon' },
+        { maxZoom: 12, level: 'section',  label: 'Section' },
+        { maxZoom: 14, level: 'team',     label: 'Team' },
+        { maxZoom: Infinity, level: 'none', label: 'Individual' },
     ];
     function _readGroupLevel() {
         return localStorage.getItem(GROUP_LEVEL_LS_KEY) || 'section';
@@ -1430,6 +1439,16 @@ main { padding: 0; }
         localStorage.setItem(GROUP_LEVEL_LS_KEY, level);
         try {
             window.dispatchEvent(new CustomEvent('arrow-group-level-changed', { detail: { level } }));
+        } catch (_) {}
+    }
+    function _readGroupAuto() {
+        const v = localStorage.getItem(GROUP_AUTO_LS_KEY);
+        return v === null ? true : v === 'true';
+    }
+    function _writeGroupAuto(on) {
+        localStorage.setItem(GROUP_AUTO_LS_KEY, String(on));
+        try {
+            window.dispatchEvent(new CustomEvent('arrow-group-auto-changed', { detail: { auto: on } }));
         } catch (_) {}
     }
     function _allOnDefaults() {
@@ -1524,25 +1543,51 @@ main { padding: 0; }
                    text-transform:uppercase;margin:1.2rem 0 0.5rem">
             🫂  Grouping level
         </h3>
-        <div style="background:#161b25;border:1px solid #21262d;border-radius:6px;padding:0.8rem 1rem">
-            <div style="color:#94a3b8;font-size:0.78rem;margin-bottom:0.6rem">
-                When <b style="color:#e2e8f0">Group markers</b> is visible, operators are aggregated
-                into a single centroid marker at this hierarchy level.
-            </div>
-            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-                ${GROUP_LEVELS.map(gl => {
-                    const active = (_readGroupLevel() === gl.value);
-                    return `<button onclick="groupLevelSet('${gl.value}')"
-                        style="padding:0.3rem 0.9rem;border-radius:4px;font-size:0.82rem;
-                               font-weight:600;cursor:pointer;
-                               background:${active?'#388bfd':'#21262d'};
-                               color:${active?'#fff':'#8b949e'};
-                               border:1px solid ${active?'#388bfd':'#30363d'}">
-                        ${gl.label}
-                    </button>`;
-                }).join('')}
-            </div>
-        </div>
+        ${(() => {
+            const auto = _readGroupAuto();
+            const manualLevel = _readGroupLevel();
+            const pill = (gl) => {
+                const active = (!auto && manualLevel === gl.value);
+                return `<button onclick="groupLevelSet('${gl.value}')"
+                    ${auto ? 'disabled' : ''}
+                    style="padding:0.3rem 0.9rem;border-radius:4px;font-size:0.82rem;
+                           font-weight:600;cursor:${auto?'not-allowed':'pointer'};
+                           opacity:${auto?'0.4':'1'};
+                           background:${active?'#388bfd':'#21262d'};
+                           color:${active?'#fff':'#8b949e'};
+                           border:1px solid ${active?'#388bfd':'#30363d'}">
+                    ${gl.label}
+                </button>`;
+            };
+            return `
+            <div style="background:#161b25;border:1px solid #21262d;border-radius:6px;padding:0.8rem 1rem">
+                <div style="display:flex;align-items:center;gap:0.8rem;margin-bottom:0.7rem">
+                    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;user-select:none">
+                        <input type="checkbox" id="grp-auto-cb" ${auto?'checked':''}
+                               onchange="groupAutoToggle(this.checked)"
+                               style="width:16px;height:16px;cursor:pointer"/>
+                        <span style="color:#e2e8f0;font-weight:600;font-size:0.85rem">Auto-zoom</span>
+                    </label>
+                    <span style="color:#64748b;font-size:0.78rem">
+                        ${auto
+                            ? '— level follows map zoom automatically'
+                            : '— pick a fixed level below'}
+                    </span>
+                </div>
+                ${auto ? `
+                <div style="display:grid;grid-template-columns:auto 1fr;gap:0.25rem 0.8rem;
+                            font-size:0.78rem;color:#94a3b8;margin-bottom:0.7rem">
+                    <span style="color:#64748b">z ≤ 8</span>  <span>Company</span>
+                    <span style="color:#64748b">z 9–10</span> <span>Platoon</span>
+                    <span style="color:#64748b">z 11–12</span><span>Section</span>
+                    <span style="color:#64748b">z 13–14</span><span>Team</span>
+                    <span style="color:#64748b">z ≥ 15</span> <span>Individual (no grouping)</span>
+                </div>` : ''}
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                    ${GROUP_LEVELS.map(gl => pill(gl)).join('')}
+                </div>
+            </div>`;
+        })()}
 
         <h3 style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.15em;
                    text-transform:uppercase;margin:1.2rem 0 0.5rem">
@@ -1580,6 +1625,11 @@ main { padding: 0; }
 
     window.groupLevelSet = function(level) {
         _writeGroupLevel(level);
+        renderVisibility(document.getElementById('adm-main'));
+    };
+
+    window.groupAutoToggle = function(on) {
+        _writeGroupAuto(on);
         renderVisibility(document.getElementById('adm-main'));
     };
 

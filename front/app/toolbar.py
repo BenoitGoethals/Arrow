@@ -37,6 +37,7 @@ class MainToolbar(QToolBar):
     screenshot_requested = pyqtSignal()
     config_requested = pyqtSignal()
     group_level_changed = pyqtSignal(str)
+    group_auto_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,6 +123,7 @@ class MainToolbar(QToolBar):
         self._layers_dialog = LayersDialog()
         self._layers_dialog.layer_toggled.connect(self.layer_toggled)
         self._layers_dialog.group_level_changed.connect(self.group_level_changed)
+        self._layers_dialog.group_auto_changed.connect(self.group_auto_changed)
 
         layers_btn = QToolButton()
         layers_btn.setText("LAYERS ▾")

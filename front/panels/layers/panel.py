@@ -161,6 +161,7 @@ class _LayerCard(QFrame):
 class LayersDialog(QDialog):
     layer_toggled = pyqtSignal(str, bool)
     group_level_changed = pyqtSignal(str)
+    group_auto_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -247,15 +248,33 @@ class LayersDialog(QDialog):
         grp_hdr.setContentsMargins(0, 4, 0, 2)
         root.addWidget(grp_hdr)
 
-        grp_desc = QLabel(
-            "When Group markers is ON, operators are aggregated into a single centroid "
-            "marker at this hierarchy level."
-        )
-        grp_desc.setFont(QFont("Courier New", 8))
-        grp_desc.setStyleSheet("color:#6e7681;")
-        grp_desc.setWordWrap(True)
-        root.addWidget(grp_desc)
+        # Auto-zoom toggle row
+        auto_row = QHBoxLayout()
+        auto_row.setSpacing(8)
+        self._auto_cb = QCheckBox("Auto-zoom")
+        self._auto_cb.setChecked(True)  # default ON
+        self._auto_cb.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        self._auto_cb.setStyleSheet("color:#c9d1d9;")
+        self._auto_cb.stateChanged.connect(self._on_auto_changed)
+        auto_row.addWidget(self._auto_cb)
+        self._auto_hint = QLabel("— level follows map zoom")
+        self._auto_hint.setFont(QFont("Courier New", 8))
+        self._auto_hint.setStyleSheet("color:#6e7681;")
+        auto_row.addWidget(self._auto_hint)
+        auto_row.addStretch()
+        root.addLayout(auto_row)
 
+        # Zoom threshold legend
+        self._zoom_legend = QLabel(
+            "z ≤ 8 → Company   |   z 9–10 → Platoon   |   z 11–12 → Section   |"
+            "   z 13–14 → Team   |   z ≥ 15 → Individual"
+        )
+        self._zoom_legend.setFont(QFont("Courier New", 8))
+        self._zoom_legend.setStyleSheet("color:#388bfd;padding-left:4px;")
+        self._zoom_legend.setWordWrap(True)
+        root.addWidget(self._zoom_legend)
+
+        # Manual level pills (disabled when auto is on)
         pill_row = QHBoxLayout()
         pill_row.setSpacing(6)
         self._level_btn_group = QButtonGroup(self)
@@ -269,12 +288,23 @@ class LayersDialog(QDialog):
             btn.setObjectName("levelPill")
             btn.setProperty("levelValue", value)
             btn.clicked.connect(lambda _checked, v=value: self._on_level_clicked(v))
+            btn.setEnabled(False)  # disabled by default (auto is ON)
             self._level_btn_group.addButton(btn)
             self._level_buttons[value] = btn
             pill_row.addWidget(btn)
         pill_row.addStretch()
         root.addLayout(pill_row)
         root.addStretch()
+
+    def _on_auto_changed(self, state: int) -> None:
+        auto = state == 2
+        self._zoom_legend.setVisible(auto)
+        for btn in self._level_buttons.values():
+            btn.setEnabled(not auto)
+        self._auto_hint.setText(
+            "— level follows map zoom" if auto else "— pick a fixed level"
+        )
+        self.group_auto_changed.emit(auto)
 
     def _on_level_clicked(self, value: str) -> None:
         self.group_level_changed.emit(value)

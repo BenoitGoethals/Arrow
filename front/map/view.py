@@ -312,6 +312,9 @@ class MapView(QWebEngineView):
     def set_hierarchy(self, data: dict):
         self._js(f"setHierarchy({json.dumps(data)})")
 
+    def set_group_auto(self, auto: bool):
+        self._js(f"setGroupAuto({json.dumps(auto)})")
+
     def fit_tracks(self):
         self._js("fitTracks()")
 

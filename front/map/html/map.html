@@ -645,18 +645,39 @@ const LAYERS={
 };
 
 // ── Group markers state ──────────────────────────────────────────────────────
-let _hierarchy = null;
+let _hierarchy  = null;
 let _groupLevel = 'section';
+let _groupAuto  = true;
 const _groupMarkers = {};  // key → L.Marker
+
+function _levelFromZoom(z) {
+  if (z <= 8)  return 'company';
+  if (z <= 10) return 'platoon';
+  if (z <= 12) return 'section';
+  if (z <= 14) return 'team';
+  return 'none';
+}
+
+map.on('zoomend', function() {
+  if (_groupAuto && LAYERS.groups._map) {
+    const lv = _levelFromZoom(map.getZoom());
+    if (lv !== _groupLevel) { _groupLevel = lv; refreshGroupMarkers(); }
+  }
+});
 
 function setHierarchy(data) {
   _hierarchy = data;
+  if (_groupAuto) _groupLevel = _levelFromZoom(map.getZoom());
   refreshGroupMarkers();
 }
 
 function setGroupLevel(level) {
-  _groupLevel = level;
-  refreshGroupMarkers();
+  if (!_groupAuto) { _groupLevel = level; refreshGroupMarkers(); }
+}
+
+function setGroupAuto(auto) {
+  _groupAuto = auto;
+  if (auto) { _groupLevel = _levelFromZoom(map.getZoom()); refreshGroupMarkers(); }
 }
 
 function refreshGroupMarkers() {
