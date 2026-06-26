@@ -585,11 +585,16 @@ const TYPE_COLOR = {
     SPOT:       '#60a5fa', CONTACT:  '#60a5fa', SALUTE: '#60a5fa',
     INTSUM:     '#c084fc', SIGINTREP:'#c084fc', TGTREP: '#c084fc',
     CASEVAC:    '#f472b6', MEDEVAC:  '#f472b6',
-    DRONE_SPOT: '#f87171', BDA:      '#f87171',
+    DRONE_SPOT: '#f87171', DRONE_SPOTTED: '#f87171', BDA: '#f87171',
     CAS:        '#fb923c', OBSREP:   '#fb923c', UAVREP: '#fb923c',
     LOGREP:     '#fbbf24', SITREP:   '#fbbf24', PATROLREP: '#fbbf24',
     PHOTO:      '#2dd4bf',
     NOTE:       '#facc15',
+    // Alert types
+    TIC:        '#ef4444',
+    MEDICAL:    '#f472b6',
+    EVAC:       '#fb923c',
+    LOST_COMMS: '#94a3b8',
     ENTITY_PERSON:   '#fb923c',
     ENTITY_VEHICLE:  '#94a3b8',
     ENTITY_LOCATION: '#3fb950',
@@ -618,6 +623,7 @@ function typeColor(node) {
     if (node.node_type === 'PHOTO')  return TYPE_COLOR.PHOTO;
     if (node.node_type === 'NOTE')   return TYPE_COLOR.NOTE;
     if (node.node_type === 'ENTITY') return TYPE_COLOR['ENTITY_' + (node.entity_type || 'PERSON')] || '#94a3b8';
+    if (node.node_type === 'ALERT')  return TYPE_COLOR[node.alert_type] || '#ef4444';
     return TYPE_COLOR[node.report_type] || '#6e7681';
 }
 
@@ -747,15 +753,43 @@ async function palSearch(q) {
             list.innerHTML = '<div style="padding:1rem 0.75rem;color:#6e7681;font-size:0.72rem">Select a project first.</div>';
             return;
         }
-        const r = await api('/osint/search?q=' + encodeURIComponent(q) + '&types=REPORT,PHOTO');
+        const r = await api('/osint/search?q=' + encodeURIComponent(q) + '&types=REPORT,PHOTO,ALERT');
         if (!r.ok) return;
-        const { reports, photos } = await r.json();
+        const { reports, photos, alerts } = await r.json();
         const existingReportIds = new Set(S.nodes.filter(n => n.report_id).map(n => n.report_id));
         const existingPhotoIds  = new Set(S.nodes.filter(n => n.photo_id).map(n => n.photo_id));
+        const existingAlertIds  = new Set(S.nodes.filter(n => n.alert_id).map(n => n.alert_id));
         list.innerHTML = '';
-        if (!reports.length && !photos.length) {
+        if (!reports.length && !photos.length && !alerts.length) {
             list.innerHTML = '<div style="padding:0.5rem 0.75rem;color:#6e7681;font-size:0.72rem">No results.</div>';
             return;
+        }
+        if (alerts.length) {
+            list.insertAdjacentHTML('beforeend', '<div class="epic-pal-section">Alerts</div>');
+            alerts.forEach(al => {
+                const alreadyOn = existingAlertIds.has(al.id);
+                const col = TYPE_COLOR[al.type] || '#ef4444';
+                const el = document.createElement('div');
+                el.className = 'epic-pal-item';
+                el.draggable = !alreadyOn;
+                el.style.opacity = alreadyOn ? '0.45' : '1';
+                el.title = alreadyOn ? 'Already on board' : 'Drag to canvas or click to add';
+                el.innerHTML = `
+                    <span class="epic-pal-badge" style="background:${col}22;color:${col};border:1px solid ${col}55">🚨 ${esc(al.type)}</span>
+                    <div style="overflow:hidden">
+                        <div style="font-size:0.72rem;color:#c9d1d9">${esc(al.callsign)}</div>
+                        <div class="epic-pal-meta">${fmtDT(al.timestamp)} · ${esc(al.status)}</div>
+                    </div>`;
+                if (!alreadyOn) {
+                    el.addEventListener('dragstart', e => {
+                        e.dataTransfer.setData('text/plain', JSON.stringify({
+                            node_type: 'ALERT', alert_id: al.id,
+                        }));
+                    });
+                    el.addEventListener('click', () => addNodeAt({ node_type:'ALERT', alert_id: al.id }, 200 + Math.random()*400, 150 + Math.random()*300));
+                }
+                list.appendChild(el);
+            });
         }
         if (reports.length) {
             list.insertAdjacentHTML('beforeend', '<div class="epic-pal-section">Reports</div>');
@@ -767,10 +801,11 @@ async function palSearch(q) {
                 el.draggable = !alreadyOn;
                 el.style.opacity = alreadyOn ? '0.45' : '1';
                 el.title = alreadyOn ? 'Already on board' : 'Drag to canvas or click to add';
+                const ticBadge = rep.tic ? `<span style="font-size:0.55rem;color:#ef4444;font-weight:700;margin-left:3px">TIC</span>` : '';
                 el.innerHTML = `
                     <span class="epic-pal-badge" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(rep.type)}</span>
                     <div style="overflow:hidden">
-                        <div style="font-size:0.72rem;color:#c9d1d9">#${rep.id}</div>
+                        <div style="font-size:0.72rem;color:#c9d1d9">#${rep.id}${ticBadge}</div>
                         <div class="epic-pal-meta">${fmtDT(rep.timestamp)}</div>
                     </div>`;
                 if (!alreadyOn) {
@@ -785,7 +820,7 @@ async function palSearch(q) {
             });
         }
         if (photos.length) {
-            list.insertAdjacentHTML('beforeend', '<div class="epic-pal-section">Photos</div>');
+            list.insertAdjacentHTML('beforeend', '<div class="epic-pal-section">Photos / Media</div>');
             photos.forEach(ph => {
                 const alreadyOn = existingPhotoIds.has(ph.id);
                 const el = document.createElement('div');
@@ -917,11 +952,22 @@ function nodeHTML(node, col) {
     const badge = n => `<span class="epic-node-badge" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(n)}</span>`;
     let header = '', body = '';
 
-    if (node.node_type === 'REPORT') {
+    if (node.node_type === 'ALERT') {
+        const atype = node.alert_type || 'ALERT';
+        const ast   = node.alert_status || '';
+        const astCol = ast === 'ACKNOWLEDGED' ? '#3fb950' : '#ef4444';
+        header = badge('🚨 ' + atype) +
+                 `<span style="font-size:0.55rem;color:${astCol};font-weight:700">${esc(ast)}</span>` +
+                 `<span class="epic-node-id">#${node.alert_id}</span>`;
+        body   = `<b>${esc(node.alert_callsign || '—')}</b><br>` +
+                 `<span style="color:#8b949e;font-size:0.65rem">${fmtDT(node.alert_timestamp)}</span>` +
+                 (node.alert_lat ? `<br><span style="color:#8b949e;font-size:0.65rem">📍 ${node.alert_lat.toFixed(4)}, ${node.alert_lon.toFixed(4)}</span>` : '');
+    } else if (node.node_type === 'REPORT') {
         const st = node.report_status || '';
         const stCol = st === 'PROCESSED' ? '#3fb950' : st === 'RECEIVED' ? '#facc15' : '#6e7681';
+        const ticTag = node.report_tic ? `<span style="font-size:0.55rem;color:#ef4444;font-weight:700;margin-left:2px">TIC</span>` : '';
         header = badge(node.report_type || 'RPT') +
-                 `<span style="font-size:0.55rem;color:${stCol};font-weight:700">${esc(st)}</span>` +
+                 `<span style="font-size:0.55rem;color:${stCol};font-weight:700">${esc(st)}</span>${ticTag}` +
                  `<span class="epic-node-id">#${node.report_id}</span>`;
         body   = `<b>${fmtDT(node.report_timestamp)}</b><br>` +
                  (node.report_payload_preview ? `<span style="color:#8b949e;font-size:0.65rem">${esc(node.report_payload_preview.substring(0,80))}…</span>` : '');
@@ -954,6 +1000,7 @@ function nodeHTML(node, col) {
                     onclick="toggleLinkMode(${node.id},event)" title="Link to another node">⛓</button>
             ${canEdit ? `<button class="epic-node-action" onclick="openEditNode(${node.id},event)" title="Edit">✏</button>` : ''}
             ${node.report_lat ? `<button class="epic-node-action" onclick="viewOnMap(${node.report_lat},${node.report_lon},event)" title="View on map">🗺</button>` : ''}
+            ${node.alert_lat ? `<button class="epic-node-action" onclick="viewOnMap(${node.alert_lat},${node.alert_lon},event)" title="View on map">🗺</button>` : ''}
             <button class="epic-node-action" onclick="removeNode(${node.id},event)" title="Remove from board" style="margin-left:auto;color:#6e7681">🗑</button>
         </div>`;
 }
@@ -1274,9 +1321,21 @@ function openDetail(nodeId) {
     const body = document.getElementById('detailBody');
     let html = '';
 
-    if (node.node_type === 'REPORT') {
+    if (node.node_type === 'ALERT') {
+        const atype = node.alert_type || 'ALERT';
+        const astCol = node.alert_status === 'ACKNOWLEDGED' ? '#3fb950' : '#ef4444';
+        html += `<h3>🚨 Alert</h3>
+            <div class="val" style="font-size:1rem;font-weight:700;color:${TYPE_COLOR[atype]||'#ef4444'}">${esc(atype)}</div>
+            <div class="val">From: <b>${esc(node.alert_callsign || '—')}</b></div>
+            <div class="val">Status: <b style="color:${astCol}">${esc(node.alert_status || '—')}</b></div>
+            <div class="val">Time: ${fmtDT(node.alert_timestamp)}</div>`;
+        if (node.alert_lat) {
+            html += `<div class="val">Position: <b>${node.alert_lat.toFixed(5)}, ${node.alert_lon.toFixed(5)}</b></div>`;
+        }
+    } else if (node.node_type === 'REPORT') {
+        const ticTag = node.report_tic ? `<span style="color:#ef4444;font-weight:700;margin-left:6px">⚠ TIC</span>` : '';
         html += `<h3>Report</h3>
-            <div class="val"><b>${esc(node.report_type)}</b> #${node.report_id}</div>
+            <div class="val"><b>${esc(node.report_type)}</b> #${node.report_id}${ticTag}</div>
             <div class="val">Status: <b>${esc(node.report_status || '—')}</b></div>
             <div class="val">Time: ${fmtDT(node.report_timestamp)}</div>`;
         if (node.report_payload_preview) {
@@ -1333,6 +1392,9 @@ function openDetail(nodeId) {
     if (node.report_lat) {
         actHtml += `<button onclick="viewOnMap(${node.report_lat},${node.report_lon})">🗺 View on Map</button>`;
     }
+    if (node.alert_lat) {
+        actHtml += `<button onclick="viewOnMap(${node.alert_lat},${node.alert_lon})">🗺 View on Map</button>`;
+    }
     if (node.node_type === 'NOTE' || node.node_type === 'ENTITY') {
         actHtml += `<button onclick="openEditNode(${nodeId})">✏ Edit</button>`;
     }
@@ -1367,6 +1429,7 @@ function renderTimeline() {
     const timed = S.nodes.map(n => ({
         node: n,
         ts: n.report_timestamp ? new Date(n.report_timestamp) :
+            n.alert_timestamp  ? new Date(n.alert_timestamp) :
             n.created_at ? new Date(n.created_at) : null,
     })).filter(x => x.ts).sort((a, b) => a.ts - b.ts);
 
@@ -1434,6 +1497,7 @@ function fmtDTshort(ts) {
 function nodeLabelShort(n) {
     if (n.node_type === 'REPORT')  return (n.report_type || 'RPT') + ' #' + n.report_id;
     if (n.node_type === 'PHOTO')   return 'Photo #' + n.photo_id;
+    if (n.node_type === 'ALERT')   return '🚨 ' + (n.alert_type || 'ALERT') + ' — ' + (n.alert_callsign || '#' + n.alert_id);
     if (n.node_type === 'ENTITY')  return (n.title || 'Entity') + ' [' + (n.entity_type || 'E') + ']';
     return n.title || 'Note #' + n.id;
 }

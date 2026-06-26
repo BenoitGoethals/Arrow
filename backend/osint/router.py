@@ -15,6 +15,7 @@ from backend.auth.jwt_auth import get_current_operator
 from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
 from backend.storage.models import (
+    Alert,
     EpicLink,
     EpicNode,
     EpicProject,
@@ -56,11 +57,12 @@ class EpicProjectOut(BaseModel):
 
 
 class EpicNodeIn(BaseModel):
-    node_type: str  # REPORT | PHOTO | NOTE | ENTITY
+    node_type: str  # REPORT | PHOTO | ALERT | NOTE | ENTITY
     x: float = 100.0
     y: float = 100.0
     report_id: int | None = None
     photo_id: int | None = None
+    alert_id: int | None = None
     title: str | None = None
     content: str | None = None
     entity_type: str | None = None
@@ -86,6 +88,7 @@ class EpicNodeOut(BaseModel):
     y: float
     report_id: int | None
     photo_id: int | None
+    alert_id: int | None = None
     title: str | None
     content: str | None
     entity_type: str | None
@@ -100,8 +103,15 @@ class EpicNodeOut(BaseModel):
     report_payload_preview: str | None = None
     report_lat: float | None = None
     report_lon: float | None = None
+    report_tic: bool = False
     photo_filename: str | None = None
     photo_original_name: str | None = None
+    alert_type: str | None = None
+    alert_timestamp: datetime | None = None
+    alert_status: str | None = None
+    alert_lat: float | None = None
+    alert_lon: float | None = None
+    alert_callsign: str | None = None
 
 
 class EpicLinkIn(BaseModel):
@@ -132,7 +142,7 @@ class EpicBoardOut(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-VALID_NODE_TYPES = {"REPORT", "PHOTO", "NOTE", "ENTITY"}
+VALID_NODE_TYPES = {"REPORT", "PHOTO", "ALERT", "NOTE", "ENTITY"}
 VALID_LINK_TYPES = {
     "RELATED",
     "CONFIRMS",
@@ -145,7 +155,7 @@ VALID_ENTITY_TYPES = {"PERSON", "VEHICLE", "LOCATION", "ORG"}
 
 
 def _enrich_node(node: EpicNode, db: Session) -> dict[str, Any]:
-    """Return EpicNode as a dict with denormalized report/photo fields."""
+    """Return EpicNode as a dict with denormalized report/photo/alert fields."""
     d: dict[str, Any] = {
         "id": node.id,
         "project_id": node.project_id,
@@ -154,6 +164,7 @@ def _enrich_node(node: EpicNode, db: Session) -> dict[str, Any]:
         "y": node.y,
         "report_id": node.report_id,
         "photo_id": node.photo_id,
+        "alert_id": node.alert_id,
         "title": node.title,
         "content": node.content,
         "entity_type": node.entity_type,
@@ -167,8 +178,15 @@ def _enrich_node(node: EpicNode, db: Session) -> dict[str, Any]:
         "report_payload_preview": None,
         "report_lat": None,
         "report_lon": None,
+        "report_tic": False,
         "photo_filename": None,
         "photo_original_name": None,
+        "alert_type": None,
+        "alert_timestamp": None,
+        "alert_status": None,
+        "alert_lat": None,
+        "alert_lon": None,
+        "alert_callsign": None,
     }
     if node.report_id:
         r = db.get(Report, node.report_id)
@@ -176,10 +194,10 @@ def _enrich_node(node: EpicNode, db: Session) -> dict[str, Any]:
             d["report_type"] = r.type
             d["report_timestamp"] = r.timestamp
             d["report_status"] = r.status
+            d["report_tic"] = bool(r.tic)
             if r.payload:
                 try:
                     p = json.loads(r.payload)
-                    # Pull lat/lon for "View on map" button
                     d["report_lat"] = p.get("latitude") or p.get("lat")
                     d["report_lon"] = p.get("longitude") or p.get("lon")
                     preview = json.dumps(p)[:200]
@@ -191,6 +209,15 @@ def _enrich_node(node: EpicNode, db: Session) -> dict[str, Any]:
         if ph:
             d["photo_filename"] = ph.filename
             d["photo_original_name"] = ph.original_name
+    if node.alert_id:
+        al = db.get(Alert, node.alert_id)
+        if al:
+            d["alert_type"] = al.type
+            d["alert_timestamp"] = al.timestamp
+            d["alert_status"] = al.status
+            d["alert_lat"] = al.latitude
+            d["alert_lon"] = al.longitude
+            d["alert_callsign"] = al.operator.callsign if al.operator else None
     return d
 
 
@@ -333,10 +360,16 @@ def add_node(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "photo_id required for PHOTO node"
         )
+    if body.node_type == "ALERT" and body.alert_id is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "alert_id required for ALERT node"
+        )
     if body.report_id and not db.get(Report, body.report_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
     if body.photo_id and not db.get(Photo, body.photo_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Photo not found")
+    if body.alert_id and not db.get(Alert, body.alert_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Alert not found")
     node = EpicNode(
         project_id=project_id,
         node_type=body.node_type,
@@ -344,6 +377,7 @@ def add_node(
         y=body.y,
         report_id=body.report_id,
         photo_id=body.photo_id,
+        alert_id=body.alert_id,
         title=body.title,
         content=body.content,
         entity_type=body.entity_type,
@@ -480,6 +514,7 @@ class SearchReportOut(BaseModel):
     timestamp: datetime
     status: str
     payload_preview: str
+    tic: bool = False
 
 
 class SearchPhotoOut(BaseModel):
@@ -490,15 +525,27 @@ class SearchPhotoOut(BaseModel):
     timestamp: datetime
 
 
+class SearchAlertOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    type: str
+    timestamp: datetime
+    status: str
+    callsign: str
+    latitude: float | None
+    longitude: float | None
+
+
 class SearchOut(BaseModel):
     reports: list[SearchReportOut]
     photos: list[SearchPhotoOut]
+    alerts: list[SearchAlertOut]
 
 
 @router.get("/search", response_model=SearchOut)
 def search(
     q: str = Query("", max_length=120),
-    types: str = Query("REPORT,PHOTO"),
+    types: str = Query("REPORT,PHOTO,ALERT"),
     db: Session = Depends(get_db),
     _op: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
@@ -506,6 +553,7 @@ def search(
     requested = {t.strip().upper() for t in types.split(",")}
     reports_out: list[SearchReportOut] = []
     photos_out: list[SearchPhotoOut] = []
+    alerts_out: list[SearchAlertOut] = []
 
     if "REPORT" in requested:
         rq = db.query(Report)
@@ -529,6 +577,7 @@ def search(
                     timestamp=r.timestamp,
                     status=r.status,
                     payload_preview=preview,
+                    tic=bool(r.tic),
                 )
             )
 
@@ -546,4 +595,26 @@ def search(
                 )
             )
 
-    return SearchOut(reports=reports_out, photos=photos_out)
+    if "ALERT" in requested:
+        aq = db.query(Alert)
+        if mission:
+            aq = aq.filter(Alert.mission_id == mission.id)
+        if q:
+            aq = aq.filter(Alert.type.ilike(f"%{q}%"))
+        from sqlalchemy.orm import selectinload  # noqa: PLC0415
+
+        aq = aq.options(selectinload(Alert.operator))
+        for al in aq.order_by(Alert.timestamp.desc()).limit(50).all():
+            alerts_out.append(
+                SearchAlertOut(
+                    id=al.id,
+                    type=al.type,
+                    timestamp=al.timestamp,
+                    status=al.status,
+                    callsign=al.operator.callsign if al.operator else "—",
+                    latitude=al.latitude,
+                    longitude=al.longitude,
+                )
+            )
+
+    return SearchOut(reports=reports_out, photos=photos_out, alerts=alerts_out)

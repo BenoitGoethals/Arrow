@@ -1018,9 +1018,13 @@ class EpicProject(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     color: Mapped[str] = mapped_column(String(20), default="#388bfd")
-    status: Mapped[str] = mapped_column(String(20), default="ACTIVE")  # ACTIVE | ARCHIVED
+    status: Mapped[str] = mapped_column(
+        String(20), default="ACTIVE"
+    )  # ACTIVE | ARCHIVED
     created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
     mission_id: Mapped[int | None] = mapped_column(
         ForeignKey("missions.id"), nullable=True
     )
@@ -1042,16 +1046,15 @@ class EpicNode(Base):
         ForeignKey("epic_projects.id"), nullable=False
     )
     node_type: Mapped[str] = mapped_column(String(20), nullable=False)
-    # REPORT | PHOTO | NOTE | ENTITY
+    # REPORT | PHOTO | ALERT | NOTE | ENTITY
     x: Mapped[float] = mapped_column(Float, default=100.0)
     y: Mapped[float] = mapped_column(Float, default=100.0)
     # Cross-references (mutually exclusive — only one is set)
     report_id: Mapped[int | None] = mapped_column(
         ForeignKey("reports.id"), nullable=True
     )
-    photo_id: Mapped[int | None] = mapped_column(
-        ForeignKey("photos.id"), nullable=True
-    )
+    photo_id: Mapped[int | None] = mapped_column(ForeignKey("photos.id"), nullable=True)
+    alert_id: Mapped[int | None] = mapped_column(ForeignKey("alerts.id"), nullable=True)
     # Standalone content (NOTE / ENTITY)
     title: Mapped[str | None] = mapped_column(String(200), nullable=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1060,7 +1063,9 @@ class EpicNode(Base):
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     tags: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string[]
     created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
     project: Mapped["EpicProject"] = relationship("EpicProject", back_populates="nodes")
 
 
@@ -1083,5 +1088,7 @@ class EpicLink(Base):
     link_type: Mapped[str] = mapped_column(String(30), default="RELATED")
     # RELATED | CONFIRMS | CONTRADICTS | OBSERVED_AT | ASSOCIATED_WITH | PHOTOGRAPHED_AT
     created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
     project: Mapped["EpicProject"] = relationship("EpicProject", back_populates="links")
