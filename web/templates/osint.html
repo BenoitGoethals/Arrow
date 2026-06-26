@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}EPIC — Analysis Board{% endblock %}
+{% block title %}OSINT — Analysis Board{% endblock %}
 
 {% block head %}
 <style>
@@ -371,7 +371,7 @@
 
     <!-- ── Toolbar ─────────────────────────────────────────────────── -->
     <div class="epic-toolbar">
-        <h1>🕵 EPIC</h1>
+        <h1>🕵 OSINT</h1>
         <div class="epic-tb-sep"></div>
         <select class="epic-proj-select" id="projSelect" onchange="switchProject(this.value)">
             <option value="">— select project —</option>
@@ -392,7 +392,7 @@
         <!-- Palette -->
         <div class="epic-palette">
             <div class="epic-pal-section">Search &amp; Add</div>
-            <input class="epic-search-box" id="palSearch" type="search" placeholder="Search reports, photos…" oninput="palSearch(this.value)"/>
+            <input class="epic-search-box" id="palSearch" type="search" placeholder="Search reports, alerts, photos…" oninput="palSearch(this.value)"/>
             <div style="display:flex;gap:0.3rem;padding:0.25rem 0.6rem">
                 <button class="epic-pal-add-btn" style="flex:1" onclick="addEntityNode()">🧑 Entity</button>
                 <button class="epic-pal-add-btn" style="flex:1" onclick="addNoteNode()">✏ Note</button>
@@ -434,7 +434,7 @@
                 </svg>
                 <div class="epic-empty" id="epicEmpty">
                     <div class="epic-empty-icon">🕵</div>
-                    <p>EMPTY BOARD — DRAG ITEMS FROM THE PALETTE</p>
+                    <p>EMPTY OSINT BOARD — DRAG ITEMS FROM THE PALETTE</p>
                 </div>
             </div>
             <!-- Zoom controls -->
@@ -466,7 +466,7 @@
 <!-- New project modal -->
 <div class="epic-modal-bg" id="newProjModal">
     <div class="epic-modal">
-        <h2>＋ New Intelligence Project</h2>
+        <h2>＋ New OSINT Project</h2>
         <label>Project name *</label>
         <input id="newProjName" type="text" placeholder="e.g. GEEL MARKET OPS" maxlength="100"/>
         <label>Description</label>
@@ -575,7 +575,7 @@
 {% block scripts %}
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-//  EPIC — Intelligence Analysis Workboard
+//  OSINT — Intelligence Analysis Workboard
 // ═══════════════════════════════════════════════════════════════════════════
 
 const api = (path, opts = {}) => arrowFetch(path, opts);
@@ -643,13 +643,18 @@ const S = {
 
 // ── Initialise ───────────────────────────────────────────────────────────
 (async () => {
-    await loadProjects();
-    const saved = localStorage.getItem('arrow_epic_project');
-    if (saved && S.projects.find(p => p.id == saved)) {
-        document.getElementById('projSelect').value = saved;
-        await switchProject(saved);
+    try {
+        await loadProjects();
+        const saved = localStorage.getItem('arrow_osint_project');
+        if (saved && S.projects.find(p => p.id == saved)) {
+            document.getElementById('projSelect').value = saved;
+            await switchProject(saved);
+        }
+    } catch(e) { console.error('OSINT board init error', e); }
+    finally {
+        bindCanvasEvents();
+        applyTransform();
     }
-    bindCanvasEvents();
 })();
 
 // ── Project list ─────────────────────────────────────────────────────────
@@ -673,7 +678,7 @@ async function switchProject(id) {
         S.nodes = []; S.links = [];
         renderBoard(); return;
     }
-    localStorage.setItem('arrow_epic_project', id);
+    localStorage.setItem('arrow_osint_project', id);
     const r = await api('/osint/projects/' + id);
     if (!r.ok) return;
     const board = await r.json();
@@ -945,6 +950,7 @@ function renderBoard() {
         bindNodeEvents(el, node);
         stage.appendChild(el);
     });
+    if (window.arrowApplyPhotos) arrowApplyPhotos(stage);
     renderSvg();
 }
 
@@ -973,8 +979,7 @@ function nodeHTML(node, col) {
                  (node.report_payload_preview ? `<span style="color:#8b949e;font-size:0.65rem">${esc(node.report_payload_preview.substring(0,80))}…</span>` : '');
     } else if (node.node_type === 'PHOTO') {
         header = badge('PHOTO') + `<span class="epic-node-id">#${node.photo_id}</span>`;
-        const src = window.arrowPhotoUrl ? arrowPhotoUrl(node.photo_id) : (window.ARROW_BACKEND_URL + '/photos/' + node.photo_id);
-        body = `<img class="epic-thumb" src="${src}" alt="photo" loading="lazy"
+        body = `<img class="epic-thumb" data-photo-id="${node.photo_id}" alt="loading…"
                      onerror="this.style.display='none'">` +
                `<span style="font-size:0.65rem">${esc(node.photo_original_name || '')}</span>`;
     } else if (node.node_type === 'ENTITY') {
@@ -1344,9 +1349,8 @@ function openDetail(nodeId) {
             html += `<h3>Payload</h3><div class="payload-box">${esc(pretty)}</div>`;
         }
     } else if (node.node_type === 'PHOTO') {
-        const src = window.arrowPhotoUrl ? arrowPhotoUrl(node.photo_id) : (window.ARROW_BACKEND_URL + '/photos/' + node.photo_id);
         html += `<h3>Photo</h3>
-            <img src="${src}" alt="photo" style="width:100%;border-radius:4px;margin-bottom:0.5rem">
+            <img data-photo-id="${node.photo_id}" alt="loading…" style="width:100%;border-radius:4px;margin-bottom:0.5rem" onerror="this.alt='⚠ unavailable'">
             <div class="val">${esc(node.photo_original_name || node.photo_filename || '')}</div>`;
     } else if (node.node_type === 'ENTITY') {
         const icon = ENTITY_ICON[node.entity_type] || '🧑';
