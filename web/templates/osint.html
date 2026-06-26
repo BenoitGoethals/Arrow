@@ -378,12 +378,12 @@
         </select>
         <span class="epic-proj-name" id="projName" style="display:none"></span>
         <div class="epic-tb-sep"></div>
-        <button class="epic-tb-btn" onclick="openNewProjectModal()">＋ New Project</button>
-        <button class="epic-tb-btn" id="archiveBtn" onclick="archiveProject()" style="display:none">⊠ Archive</button>
+        <button type="button" class="epic-tb-btn" onclick="openNewProjectModal()">＋ New Project</button>
+        <button type="button" class="epic-tb-btn" id="archiveBtn" onclick="archiveProject()" style="display:none">⊠ Archive</button>
         <div class="epic-tb-spacer"></div>
-        <button class="epic-tb-btn" id="tlBtn" onclick="toggleTimeline()">⏱ Timeline</button>
-        <button class="epic-tb-btn" onclick="fitCanvas()" title="Fit all nodes in view">⊡ Fit</button>
-        <button class="epic-tb-btn" onclick="openLinkModal()" title="Create a link between two nodes">⛓ Link</button>
+        <button type="button" class="epic-tb-btn" id="tlBtn" onclick="toggleTimeline()">⏱ Timeline</button>
+        <button type="button" class="epic-tb-btn" onclick="fitCanvas()" title="Fit all nodes in view">⊡ Fit</button>
+        <button type="button" class="epic-tb-btn" onclick="openLinkModal()" title="Create a link between two nodes">⛓ Link</button>
     </div>
 
     <!-- ── Body ───────────────────────────────────────────────────── -->
@@ -394,8 +394,8 @@
             <div class="epic-pal-section">Search &amp; Add</div>
             <input class="epic-search-box" id="palSearch" type="search" placeholder="Search reports, alerts, photos…" oninput="palSearch(this.value)"/>
             <div style="display:flex;gap:0.3rem;padding:0.25rem 0.6rem">
-                <button class="epic-pal-add-btn" style="flex:1" onclick="addEntityNode()">🧑 Entity</button>
-                <button class="epic-pal-add-btn" style="flex:1" onclick="addNoteNode()">✏ Note</button>
+                <button type="button" class="epic-pal-add-btn" style="flex:1" onclick="addEntityNode()">🧑 Entity</button>
+                <button type="button" class="epic-pal-add-btn" style="flex:1" onclick="addNoteNode()">✏ Note</button>
             </div>
             <div class="epic-pal-list" id="palList">
                 <div style="padding:1rem 0.75rem;color:#6e7681;font-size:0.72rem">
@@ -482,9 +482,10 @@
             {% endfor %}
         </div>
         <input type="hidden" id="newProjColor" value="#388bfd"/>
+        <p id="newProjError" style="color:#ef4444;font-size:0.75rem;margin:0.4rem 0 0;display:none"></p>
         <div class="epic-modal-footer">
-            <button onclick="closeNewProjectModal()">Cancel</button>
-            <button class="primary" onclick="createProject()">Create Project</button>
+            <button type="button" onclick="closeNewProjectModal()">Cancel</button>
+            <button type="button" class="primary" onclick="createProject()">Create Project</button>
         </div>
     </div>
 </div>
@@ -507,8 +508,8 @@
         <label>Tags (comma separated)</label>
         <input id="entityTags" type="text" placeholder="humint, geel, vehicle"/>
         <div class="epic-modal-footer">
-            <button onclick="document.getElementById('entityModal').classList.remove('open')">Cancel</button>
-            <button class="primary" onclick="submitEntityNode()">Add to Board</button>
+            <button type="button" onclick="document.getElementById('entityModal').classList.remove('open')">Cancel</button>
+            <button type="button" class="primary" onclick="submitEntityNode()">Add to Board</button>
         </div>
     </div>
 </div>
@@ -524,8 +525,8 @@
         <label>Tags (comma separated)</label>
         <input id="noteTags" type="text" placeholder="isr, pattern, confirmed"/>
         <div class="epic-modal-footer">
-            <button onclick="document.getElementById('noteModal').classList.remove('open')">Cancel</button>
-            <button class="primary" onclick="submitNoteNode()">Add to Board</button>
+            <button type="button" onclick="document.getElementById('noteModal').classList.remove('open')">Cancel</button>
+            <button type="button" class="primary" onclick="submitNoteNode()">Add to Board</button>
         </div>
     </div>
 </div>
@@ -542,8 +543,8 @@
         <label>Tags (comma separated)</label>
         <input id="editNodeTags" type="text"/>
         <div class="epic-modal-footer">
-            <button onclick="document.getElementById('editNodeModal').classList.remove('open')">Cancel</button>
-            <button class="primary" onclick="submitEditNode()">Save</button>
+            <button type="button" onclick="document.getElementById('editNodeModal').classList.remove('open')">Cancel</button>
+            <button type="button" class="primary" onclick="submitEditNode()">Save</button>
         </div>
     </div>
 </div>
@@ -565,8 +566,8 @@
         <label>Label (optional)</label>
         <input id="linkLabel" type="text" placeholder="e.g. Same vehicle, Confirmed by"/>
         <div class="epic-modal-footer">
-            <button onclick="document.getElementById('linkModal').classList.remove('open')">Cancel</button>
-            <button class="primary" onclick="submitLink()">Create Link</button>
+            <button type="button" onclick="document.getElementById('linkModal').classList.remove('open')">Cancel</button>
+            <button type="button" class="primary" onclick="submitLink()">Create Link</button>
         </div>
     </div>
 </div>
@@ -704,6 +705,10 @@ function openNewProjectModal() {
 }
 function closeNewProjectModal() {
     document.getElementById('newProjModal').classList.remove('open');
+    const errEl = document.getElementById('newProjError');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    const nameEl = document.getElementById('newProjName');
+    if (nameEl) nameEl.style.borderColor = '';
 }
 function pickColor(c) {
     _pickedColor = c;
@@ -714,18 +719,42 @@ function pickColor(c) {
     });
 }
 async function createProject() {
-    const name = document.getElementById('newProjName').value.trim();
-    if (!name) { document.getElementById('newProjName').focus(); return; }
-    const r = await api('/osint/projects', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({
-            name,
-            description: document.getElementById('newProjDesc').value,
-            color: _pickedColor,
-        }),
-    });
-    if (!r.ok) return;
+    const errEl = document.getElementById('newProjError');
+    const nameEl = document.getElementById('newProjName');
+    errEl.style.display = 'none';
+    const name = nameEl.value.trim();
+    if (!name) {
+        nameEl.style.borderColor = '#ef4444';
+        nameEl.focus();
+        errEl.textContent = 'Project name is required.';
+        errEl.style.display = '';
+        return;
+    }
+    nameEl.style.borderColor = '';
+    let r;
+    try {
+        r = await api('/osint/projects', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+                name,
+                description: document.getElementById('newProjDesc').value,
+                color: _pickedColor,
+            }),
+        });
+    } catch (e) {
+        errEl.textContent = 'Network error — is the backend running?';
+        errEl.style.display = '';
+        console.error('createProject fetch error', e);
+        return;
+    }
+    if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        errEl.textContent = 'Error ' + r.status + ': ' + (body.detail || 'Could not create project');
+        errEl.style.display = '';
+        console.error('createProject API error', r.status, body);
+        return;
+    }
     const proj = await r.json();
     closeNewProjectModal();
     await loadProjects();
