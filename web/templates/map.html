@@ -6037,10 +6037,15 @@
     // canonical keyed layer and optionally attach it to the active overlay.
     async function fdSave(type, geometry, notes) {
         try {
+            // latitude/longitude are required by the schema; use the first
+            // coordinate as the anchor point (geometry holds the full shape).
+            const anchor = geometry.coords?.[0] ?? [0, 0];
             const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
                 method: 'POST',
                 headers: missionHeaders({ 'Content-Type': 'application/json' }),
-                body: JSON.stringify({ type, geometry: JSON.stringify(geometry),
+                body: JSON.stringify({ type,
+                                       latitude: anchor[0], longitude: anchor[1],
+                                       geometry: JSON.stringify(geometry),
                                        notes: JSON.stringify(notes), affiliation: 'NEUTRAL' }),
             });
             if (r.ok) {
@@ -6048,6 +6053,7 @@
                 state.tacticalObjects.set(o.id, o);
                 return o;
             }
+            console.warn('[freedraw] save failed', r.status, await r.text().catch(() => ''));
         } catch (e) { console.warn('[freedraw] save failed', e); }
         return null;
     }
