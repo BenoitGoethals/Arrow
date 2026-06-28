@@ -11,10 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from fastapi.encoders import jsonable_encoder
+
 from backend.audit import log_event
 from backend.auth.jwt_auth import get_current_operator, require_role
+from backend.layers import serialize
+from backend.layers.envelope import make_envelope
 from backend.opord.pdf import PHOTO_DIR, render_opord_pdf
 from backend.opord.schemas import (
+    AttachLayerIn,
     MapSnapshotIn,
     MapSnapshotRenderIn,
     OpordCreate,
@@ -24,13 +29,35 @@ from backend.opord.schemas import (
 )
 from backend.opord.tiles import render_snapshot_png
 from backend.storage.database import get_db
-from backend.storage.models import Operator, Opord, Photo
+from backend.storage.models import (
+    EpicProject,
+    KmlLayer,
+    Operator,
+    Opord,
+    Overlay,
+    Photo,
+)
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/opord", tags=["opord"])
 
 
-def _to_out(o: Opord, db: Session) -> dict[str, Any]:
+def _attachments(o: Opord, *, include_envelope: bool) -> list[dict[str, Any]]:
+    entries = json.loads(o.attached_layers or "[]")
+    out: list[dict[str, Any]] = []
+    for a in entries:
+        item = {
+            "id": a.get("id"),
+            "kind": a.get("kind"),
+            "source_id": a.get("source_id"),
+            "name": a.get("name"),
+            "envelope": a.get("envelope") if include_envelope else None,
+        }
+        out.append(item)
+    return out
+
+
+def _to_out(o: Opord, db: Session, *, include_envelope: bool = True) -> dict[str, Any]:
     snaps = json.loads(o.map_snapshots or "[]")
     return {
         "id": o.id,
@@ -47,6 +74,7 @@ def _to_out(o: Opord, db: Session) -> dict[str, Any]:
         "sustainment": json.loads(o.sustainment or "{}"),
         "command_signal": json.loads(o.command_signal or "{}"),
         "map_snapshots": snaps,
+        "attached_layers": _attachments(o, include_envelope=include_envelope),
         "battle_id": o.battle_id,
         "status": o.status,
         "author_id": o.author_id,
@@ -78,7 +106,7 @@ def list_opords(
     _: Operator = Depends(get_current_operator),
 ):
     rows = db.query(Opord).order_by(Opord.updated_at.desc()).limit(200).all()
-    return [_to_out(o, db) for o in rows]
+    return [_to_out(o, db, include_envelope=False) for o in rows]
 
 
 @router.get("/{opord_id}", response_model=OpordOut)
@@ -266,6 +294,118 @@ def delete_snapshot(
     db.commit()
     db.refresh(o)
     return _to_out(o, db)
+
+
+def _freeze_layer(
+    kind: str, source_id: int, db: Session, op: Operator
+) -> dict[str, Any]:
+    """Fetch the live layer and serialize it into a frozen export envelope."""
+    kind = kind.upper()
+    if kind == "OVERLAY":
+        row = db.get(Overlay, source_id)
+        if not row:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown overlay")
+        return make_envelope(
+            "OVERLAY", row.name, op.id, serialize.serialize_overlay(db, row)
+        )
+    if kind == "KML":
+        layer = db.get(KmlLayer, source_id)
+        if not layer:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown layer")
+        return make_envelope("KML", layer.name, op.id, serialize.serialize_kml(layer))
+    if kind == "OSINT":
+        proj = db.get(EpicProject, source_id)
+        if not proj:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
+        return make_envelope(
+            "OSINT", proj.name, op.id, serialize.serialize_osint(db, proj)
+        )
+    raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown kind {kind!r}")
+
+
+@router.post("/{opord_id}/layers", response_model=OpordOut)
+def attach_layer(
+    opord_id: int,
+    payload: AttachLayerIn,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+):
+    """Freeze a layer (overlay/KML/OSINT) into the OPORD so it stays self-contained."""
+    o = db.get(Opord, opord_id)
+    if not o:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    env = _freeze_layer(payload.kind, payload.source_id, db, current)
+    attachments = json.loads(o.attached_layers or "[]")
+    next_id = (max((a.get("id", 0) for a in attachments), default=0)) + 1
+    attachments.append(
+        {
+            "id": next_id,
+            "kind": env["kind"],
+            "source_id": payload.source_id,
+            "name": env["name"],
+            "envelope": jsonable_encoder(env),
+        }
+    )
+    o.attached_layers = json.dumps(attachments)
+    db.commit()
+    db.refresh(o)
+    log_event(
+        db,
+        "OPORD_ATTACH_LAYER",
+        operator_id=current.id,
+        resource=f"opord:{o.id}",
+        detail=f"{env['kind']}:{payload.source_id}",
+    )
+    return _to_out(o, db)
+
+
+@router.delete("/{opord_id}/layers/{attach_id}", response_model=OpordOut)
+def detach_layer(
+    opord_id: int,
+    attach_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+):
+    o = db.get(Opord, opord_id)
+    if not o:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    attachments = [
+        a for a in json.loads(o.attached_layers or "[]") if a.get("id") != attach_id
+    ]
+    o.attached_layers = json.dumps(attachments)
+    db.commit()
+    db.refresh(o)
+    return _to_out(o, db)
+
+
+@router.get("/{opord_id}/layers/{attach_id}/export")
+def export_attached_layer(
+    opord_id: int,
+    attach_id: int,
+    db: Session = Depends(get_db),
+    _: Operator = Depends(get_current_operator),
+):
+    """Download the frozen envelope so a recipient can re-import it elsewhere."""
+    o = db.get(Opord, opord_id)
+    if not o:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    for a in json.loads(o.attached_layers or "[]"):
+        if a.get("id") == attach_id:
+            name = (
+                "".join(
+                    c if c.isalnum() or c in "-_" else "_"
+                    for c in (a.get("name") or "layer")
+                )[:60]
+                or "layer"
+            )
+            return Response(
+                content=json.dumps(a.get("envelope") or {}),
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{name}.layer.json"'
+                },
+            )
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
 
 
 @router.post("/{opord_id}/publish", response_model=OpordOut)

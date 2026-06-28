@@ -51,6 +51,7 @@ from backend.vehicles.router import router as vehicles_router
 from backend.websocket.router import router as ws_router
 from backend.mumble.router import router as mumble_router
 from backend.osint.router import router as osint_router
+from backend.layers.router import router as layers_router
 
 _WEAK_SECRET = "change-me-in-production"
 _SECRET_FILE = "data/jwt_secret.key"
@@ -291,6 +292,7 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
     app.include_router(mumble_router)
     app.include_router(osint_router)
+    app.include_router(layers_router)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict[str, str]:

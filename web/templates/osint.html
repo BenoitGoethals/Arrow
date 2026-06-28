@@ -379,6 +379,9 @@
         <span class="epic-proj-name" id="projName" style="display:none"></span>
         <div class="epic-tb-sep"></div>
         <button type="button" class="epic-tb-btn" onclick="openNewProjectModal()">＋ New Project</button>
+        <button type="button" class="epic-tb-btn" id="exportBtn" onclick="exportBoard()" style="display:none" title="Export board to file">⬇ Export</button>
+        <button type="button" class="epic-tb-btn" onclick="document.getElementById('osintImportFile').click()" title="Import a board from file">⬆ Import</button>
+        <input id="osintImportFile" type="file" accept="application/json,.json" style="display:none" onchange="importBoard(this)">
         <button type="button" class="epic-tb-btn" id="archiveBtn" onclick="archiveProject()" style="display:none">⊠ Archive</button>
         <div class="epic-tb-spacer"></div>
         <button type="button" class="epic-tb-btn" id="tlBtn" onclick="toggleTimeline()">⏱ Timeline</button>
@@ -675,6 +678,7 @@ async function loadProjects() {
 async function switchProject(id) {
     S.projectId = id || null;
     document.getElementById('archiveBtn').style.display = id ? '' : 'none';
+    document.getElementById('exportBtn').style.display = id ? '' : 'none';
     if (!id) {
         S.nodes = []; S.links = [];
         renderBoard(); return;
@@ -692,6 +696,39 @@ async function switchProject(id) {
     renderBoard();
     renderTimeline();
     palSearch(document.getElementById('palSearch').value);
+}
+
+// ── Export / Import board ────────────────────────────────────────────────
+async function exportBoard() {
+    if (!S.projectId) return;
+    const r = await api('/layers/osint/' + S.projectId + '/export');
+    if (!r.ok) { alert('Export failed: ' + r.status); return; }
+    const proj = S.projects.find(p => p.id == S.projectId);
+    const name = (proj ? proj.name : 'board').replace(/[^a-z0-9\-_]+/gi, '_');
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a');
+    a.href = url; a.download = name + '.osint.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+}
+
+async function importBoard(input) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (!file) return;
+    let envelope;
+    try { envelope = JSON.parse(await file.text()); }
+    catch (_) { alert('Not a valid JSON layer file.'); return; }
+    const r = await api('/layers/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(envelope),
+    });
+    if (!r.ok) { alert('Import failed: ' + (await r.text()).slice(0, 160)); return; }
+    const res = await r.json();
+    await loadProjects();
+    document.getElementById('projSelect').value = res.id;
+    await switchProject(String(res.id));
 }
 
 // ── New project ──────────────────────────────────────────────────────────

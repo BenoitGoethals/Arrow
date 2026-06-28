@@ -497,6 +497,10 @@
                         <input id="kml-file" type="file" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz"
                                style="display:none">
                     </label>
+                    <label class="overlay-btn" style="display:block; text-align:center; cursor:pointer; margin-top:4px">
+                        ⬆ Import exported layer (.json)
+                        <input id="kml-layer-import-file" type="file" accept="application/json,.json" style="display:none">
+                    </label>
                     <div id="kml-status" style="margin-top:6px; color:#94a3b8; font-size:0.78rem;"></div>
                 </div>
                 <div id="kml-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
@@ -578,7 +582,11 @@
                     <button id="ov-close" class="overlay-btn" style="padding:0 8px">×</button>
                 </div>
                 <div id="ov-edit-row" style="display:none; margin-bottom:8px">
-                    <button id="ov-new" class="overlay-btn" style="width:100%">+ New overlay…</button>
+                    <div style="display:flex; gap:6px">
+                        <button id="ov-new" class="overlay-btn" style="flex:1">+ New overlay…</button>
+                        <button id="ov-import" class="overlay-btn" title="Import overlay from file">⬆ Import</button>
+                    </div>
+                    <input id="ov-import-file" type="file" accept="application/json,.json" style="display:none">
                 </div>
                 <div id="ov-status" style="display:none; margin-bottom:6px; color:#94a3b8; font-size:0.78rem"></div>
                 <div id="ov-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
@@ -2241,6 +2249,14 @@
             });
             row.appendChild(fit);
 
+            const exp = document.createElement('button');
+            exp.className = 'overlay-btn';
+            exp.title = 'Export overlay to file';
+            exp.textContent = '⬇';
+            exp.addEventListener('click', () =>
+                downloadLayer(`/layers/overlays/${ov.id}/export`, `${ov.name}.overlay.json`));
+            row.appendChild(exp);
+
             if (ovState.canEdit) {
                 const del = document.createElement('button');
                 del.className = 'overlay-btn';
@@ -2333,6 +2349,51 @@
         ovState.modal.style.display = 'flex';
     }
     function closeNewOverlayModal() { ovState.modal.style.display = 'none'; }
+
+    // ── Shared layer export/import helpers (overlays + KML) ──────────────────
+    // GET endpoints stream a JSON file with Content-Disposition, but they need
+    // the Authorization header, so fetch → Blob rather than a bare anchor href.
+    async function downloadLayer(path, filename) {
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + path, { headers });
+            if (!r.ok) { alert('Export failed: ' + r.status); return; }
+            const blob = await r.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) { alert('Export failed: ' + e); }
+    }
+
+    // Read a chosen .json file and POST it to /layers/import scoped to the
+    // active mission. onDone(result) lets each panel refresh its own list.
+    function importLayerFile(input, onDone) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+            input.value = '';  // allow re-importing the same file
+            let envelope;
+            try { envelope = JSON.parse(reader.result); }
+            catch (_) { alert('Not a valid JSON layer file.'); return; }
+            try {
+                const r = await fetch(window.ARROW_BACKEND_URL + '/layers/import', {
+                    method: 'POST',
+                    headers: missionHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(envelope),
+                });
+                if (!r.ok) { alert('Import failed: ' + (await r.text()).slice(0, 160)); return; }
+                if (onDone) onDone(await r.json());
+            } catch (e) { alert('Import failed: ' + e); }
+        };
+        reader.readAsText(file);
+    }
+
+    document.getElementById('ov-import').addEventListener('click', () =>
+        document.getElementById('ov-import-file').click());
+    document.getElementById('ov-import-file').addEventListener('change', (e) =>
+        importLayerFile(e.target, () => loadOverlays()));
 
     document.getElementById('ov-new').addEventListener('click', () => openNewOverlayModal());
     document.getElementById('ov-modal-close').addEventListener('click', closeNewOverlayModal);
@@ -4638,6 +4699,14 @@
             });
             row.appendChild(fit);
 
+            const exp = document.createElement('button');
+            exp.className = 'overlay-btn';
+            exp.title = 'Export layer to file';
+            exp.textContent = '⬇';
+            exp.addEventListener('click', () =>
+                downloadLayer(`/layers/kml/${entry.meta.id}/export`, `${entry.meta.name}.kml-layer.json`));
+            row.appendChild(exp);
+
             if (kml.canEdit) {
                 const del = document.createElement('button');
                 del.className = 'overlay-btn';
@@ -5020,6 +5089,20 @@
             kmlFileInput.value = '';
         }
     });
+
+    document.getElementById('kml-layer-import-file')?.addEventListener('change', (e) =>
+        importLayerFile(e.target, async (res) => {
+            kml.statusEl.textContent = `Imported "${res.name}".`;
+            // Pull the freshly-created layer (and its features) and show it.
+            const r = await api(`/kml-layers/${res.id}`);
+            if (r.ok) {
+                const detail = await r.json();
+                const entry = { meta: detail, group: buildKmlLayerGroup(detail.features || []), hidden: false };
+                kml.layers.set(detail.id, entry);
+                await applyKmlVisibility(entry);
+                renderKmlList();
+            }
+        }));
 
     // ── Alert handler — pan/zoom to contact, show MGRS in popup, pulse marker
     // ───────────────────────────────────────────────────────────────────────

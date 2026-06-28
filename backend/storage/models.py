@@ -630,6 +630,9 @@ class Opord(Base):
     sustainment: Mapped[str] = mapped_column(Text, default="{}")  # JSON
     command_signal: Mapped[str] = mapped_column(Text, default="{}")  # JSON
     map_snapshots: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
+    # Frozen layer-export envelopes (overlays/KML/OSINT) — keeps the order
+    # self-contained: {id, kind, source_id, name, envelope}. See backend.layers.
+    attached_layers: Mapped[str] = mapped_column(Text, default="[]")  # JSON list
 
     status: Mapped[str] = mapped_column(
         String(20), default="DRAFT"

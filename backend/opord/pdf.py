@@ -213,8 +213,46 @@ def render_opord_pdf(opord: Opord, photos_by_id: dict[int, Photo]) -> bytes:
             if snap.get("annotations"):
                 story.append(_para(snap["annotations"], styles["body"]))
 
+    attachments = (
+        _load_json_list(opord.attached_layers)
+        if isinstance(opord.attached_layers, str)
+        else (opord.attached_layers or [])
+    )
+    if attachments:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("ATTACHED LAYERS", styles["h1"]))
+        for a in attachments:
+            story.append(_attachment_para(a, styles))
+
     story.append(Spacer(1, 12))
     story.append(Paragraph(opord.classification or "UNCLASSIFIED", styles["classif"]))
 
     doc.build(story)
     return buf.getvalue()
+
+
+def _load_json_list(s: str) -> list:
+    try:
+        v = json.loads(s) if s else []
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
+
+def _attachment_para(a: dict, styles: dict[str, ParagraphStyle]) -> Paragraph:
+    """One-line doctrinal summary; the full data is embedded in the OPORD JSON."""
+    kind = a.get("kind", "")
+    payload = (a.get("envelope") or {}).get("payload") or {}
+    if kind == "OVERLAY":
+        detail = f"{len(payload.get('objects') or [])} object(s)"
+    elif kind == "KML":
+        detail = f"{payload.get('feature_count', 0)} feature(s)"
+    elif kind == "OSINT":
+        detail = (
+            f"{len(payload.get('nodes') or [])} node(s), "
+            f"{len(payload.get('links') or [])} link(s)"
+        )
+    else:
+        detail = ""
+    name = a.get("name") or "—"
+    return Paragraph(f"<b>{kind}</b> — {name} &nbsp; ({detail})", styles["body"])

@@ -251,6 +251,8 @@ def _migrate() -> None:
         "  attached_at DATETIME"
         ")",
         "CREATE INDEX IF NOT EXISTS ix_report_photos_report ON report_photos(report_id)",
+        # Frozen, self-contained layer attachments (overlays/KML/OSINT) on an OPORD
+        "ALTER TABLE opords ADD COLUMN attached_layers TEXT DEFAULT '[]'",
     ]
     for sql in migrations:
         try:

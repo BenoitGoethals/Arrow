@@ -76,6 +76,7 @@
     <button class="tab-btn" data-tab="sustainment">4. Sustainment</button>
     <button class="tab-btn" data-tab="cs">5. Command &amp; Signal</button>
     <button class="tab-btn" data-tab="snaps">🗺 Map snapshots</button>
+    <button class="tab-btn" data-tab="layers">📎 Attachments</button>
     <button class="tab-btn" data-tab="distrib">📤 Distribution</button>
   </div>
 
@@ -192,6 +193,26 @@
     <div class="snap-grid" id="snap-grid"></div>
   </div>
 
+  <!-- Attached layers -->
+  <div class="pane" data-pane="layers">
+    <h2>📎 Attached layers</h2>
+    <p class="info">Freeze an overlay, KML layer, or OSINT board into this OPORD. The snapshot is self-contained — it stays intact even if the source is later edited or deleted, and recipients can re-import it into another mission.</p>
+    <div class="field" style="display:flex; gap:.5rem; align-items:flex-end; flex-wrap:wrap">
+      <div style="flex:0 0 9rem"><label>Type</label>
+        <select id="att-kind" onchange="loadAttachSources()">
+          <option value="OVERLAY">Overlay</option>
+          <option value="KML">KML layer</option>
+          <option value="OSINT">OSINT board</option>
+        </select>
+      </div>
+      <div style="flex:1; min-width:12rem"><label>Source</label>
+        <select id="att-source"><option value="">— none available —</option></select>
+      </div>
+      <button class="btn btn-primary" id="att-add" onclick="attachLayer()">+ Attach</button>
+    </div>
+    <div id="att-list" style="margin-top:1rem"></div>
+  </div>
+
   <!-- Distribution -->
   <div class="pane" data-pane="distrib">
     <h2>📤 Distribution</h2>
@@ -240,6 +261,7 @@ let state = {
   status: 'DRAFT',
   recipient_ids: [],
   map_snapshots: [],
+  attached_layers: [],
 };
 
 // Tab switching
@@ -334,11 +356,84 @@ function fill(o) {
   document.getElementById('opord-title-display').textContent = o.title || 'Untitled OPORD';
   state.status = o.status; state.recipient_ids = o.recipient_ids || [];
   state.map_snapshots = o.map_snapshots || [];
+  state.attached_layers = o.attached_layers || [];
   const pill = document.getElementById('opord-status');
   pill.textContent = o.status;
   pill.className = 'status-pill ' + (o.status === 'PUBLISHED' ? 'published' : 'draft');
   renderSnaps();
+  renderAttachments();
   renderRecipients();
+}
+
+// ── Attached layers ──────────────────────────────────────────────────────
+const ATT_DETAIL = {
+  OVERLAY: p => `${(p.objects || []).length} object(s)`,
+  KML:     p => `${p.feature_count || 0} feature(s)`,
+  OSINT:   p => `${(p.nodes || []).length} node(s), ${(p.links || []).length} link(s)`,
+};
+
+function renderAttachments() {
+  const box = document.getElementById('att-list');
+  if (!box) return;
+  if (!state.attached_layers.length) {
+    box.innerHTML = '<p class="info">No layers attached yet.</p>';
+    return;
+  }
+  box.innerHTML = state.attached_layers.map(a => {
+    const payload = (a.envelope || {}).payload || {};
+    const detail = (ATT_DETAIL[a.kind] ? ATT_DETAIL[a.kind](payload) : '');
+    const name = (a.name || '—').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    return `<div style="display:flex; align-items:center; gap:.6rem; padding:.4rem .6rem; border:1px solid #2a3142; border-radius:6px; margin-bottom:.4rem">
+      <span style="font-size:.7rem; font-weight:700; color:#60a5fa; width:4.5rem">${a.kind}</span>
+      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${name}
+        <span class="info" style="font-size:.72rem">· ${detail}</span></span>
+      <button class="btn btn-ghost" type="button" onclick="downloadAttachment(${a.id}, '${name.replace(/'/g, '')}')">⬇</button>
+      <button class="btn btn-ghost" type="button" onclick="detachLayer(${a.id})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+async function loadAttachSources() {
+  const kind = document.getElementById('att-kind').value;
+  const path = kind === 'OVERLAY' ? '/overlays'
+             : kind === 'KML'     ? '/kml-layers'
+             :                      '/osint/projects';
+  const sel = document.getElementById('att-source');
+  sel.innerHTML = '<option value="">— loading… —</option>';
+  try {
+    const r = await api(path);
+    const list = r.ok ? await r.json() : [];
+    sel.innerHTML = list.length
+      ? list.map(x => `<option value="${x.id}">${(x.name || ('#' + x.id)).replace(/[<>]/g,'')}</option>`).join('')
+      : '<option value="">— none available —</option>';
+  } catch (_) { sel.innerHTML = '<option value="">— failed to load —</option>'; }
+}
+
+async function attachLayer() {
+  if (!state.id) { alert('Save the OPORD first.'); return; }
+  const kind = document.getElementById('att-kind').value;
+  const source_id = parseInt(document.getElementById('att-source').value);
+  if (!source_id) { alert('Choose a source to attach.'); return; }
+  const r = await api(`/opord/${state.id}/layers`, {
+    method: 'POST', body: JSON.stringify({ kind, source_id }),
+  });
+  if (!r.ok) { alert('Attach failed: ' + (await r.text()).slice(0, 160)); return; }
+  fill(await r.json());
+}
+
+async function detachLayer(attachId) {
+  const r = await api(`/opord/${state.id}/layers/${attachId}`, { method: 'DELETE' });
+  if (r.ok) fill(await r.json());
+}
+
+async function downloadAttachment(attachId, name) {
+  const r = await api(`/opord/${state.id}/layers/${attachId}/export`);
+  if (!r.ok) { alert('Export failed: ' + r.status); return; }
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement('a');
+  a.href = url; a.download = (name || 'layer') + '.layer.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function save() {
@@ -759,6 +854,7 @@ document.getElementById('snap-go').addEventListener('click', async () => {
   } else {
     renderRecipients();
   }
+  loadAttachSources();
   enableActions();
 })();
 </script>

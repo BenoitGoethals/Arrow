@@ -41,6 +41,21 @@ class MapSnapshotOut(BaseModel):
     annotations: str
 
 
+class AttachLayerIn(BaseModel):
+    kind: str  # OVERLAY | KML | OSINT
+    source_id: int
+
+
+class AttachedLayerOut(BaseModel):
+    id: int
+    kind: str
+    source_id: int
+    name: str
+    # Full frozen export envelope. Omitted on list responses to keep them small;
+    # present on the single-OPORD GET and the dedicated export endpoint.
+    envelope: dict[str, Any] | None = None
+
+
 class OpordBase(BaseModel):
     title: str
     opord_number: str = ""
@@ -73,6 +88,7 @@ class OpordOut(OpordBase):
     author_id: int
     recipient_ids: list[int] = Field(default_factory=list)
     map_snapshots: list[MapSnapshotOut] = Field(default_factory=list)
+    attached_layers: list[AttachedLayerOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
