@@ -591,7 +591,7 @@
                 <div id="ov-status" style="display:none; margin-bottom:6px; color:#94a3b8; font-size:0.78rem"></div>
                 <div id="ov-list" style="display:flex; flex-direction:column; gap:4px; max-height:50vh; overflow-y:auto"></div>
                 <div style="margin-top:8px; color:#64748b; font-size:0.72rem; border-top:1px solid #2a3142; padding-top:6px">
-                    When no overlay is active, every tactical object is shown. Activating one or more filters to their union.
+                    Objects assigned to a layer are visible only when that layer is active. Unassigned objects are always visible.
                 </div>
             </div>
             <!-- ── Go To panel ─────────────────────────────────────────────── -->
@@ -2130,8 +2130,7 @@
         const showLegacy   = enemyLayerVisible();
         const showTg       = tgLayerVisible();
         const showTactical = state.visibility.tactical_objects;
-        const allowedByOverlay = state.visibility.overlays
-            ? computeActiveOverlayIds() : null;
+        const ovFilter = state.visibility.overlays ? computeActiveOverlayIds() : null;
 
         // Track which marker keys should exist after this pass.
         const wanted = new Set();
@@ -2147,7 +2146,7 @@
                     if (state.overlayMode === 'friendly' &&
                         aff !== 'FRIENDLY' && aff !== 'ASSUMED_FRIEND') return;
                 }
-                if (allowedByOverlay && !allowedByOverlay.has(obj.id)) return;
+                if (!_ovAllowed(obj.id, ovFilter)) return;
                 wanted.add(`to-${obj.id}`);
                 placeEnemy(obj);
             });
@@ -2190,15 +2189,32 @@
     };
     ovState.editRow.style.display = ovState.canEdit ? '' : 'none';
 
+    // Returns { assigned: Set, active: Set } when overlays have objects, else null.
+    // "assigned" = all object IDs belonging to ANY overlay.
+    // "active"   = object IDs belonging to a currently-active overlay.
+    // null means no filter (no overlays have any members yet).
     function computeActiveOverlayIds() {
-        if (ovState.active.size === 0) return null;   // no filter
-        const out = new Set();
+        const assigned = new Set();
+        for (const ov of ovState.overlays.values()) {
+            (ov.object_ids || []).forEach(x => assigned.add(x));
+        }
+        if (assigned.size === 0) return null;
+
+        const active = new Set();
         for (const id of ovState.active) {
             const ov = ovState.overlays.get(id);
             if (!ov) continue;
-            (ov.object_ids || []).forEach(x => out.add(x));
+            (ov.object_ids || []).forEach(x => active.add(x));
         }
-        return out;
+        return { assigned, active };
+    }
+
+    // True if objId should be shown under the given overlay filter.
+    // Unassigned objects are always visible; assigned objects only when their layer is active.
+    function _ovAllowed(objId, filter) {
+        if (!filter) return true;
+        if (!filter.assigned.has(objId)) return true;
+        return filter.active.has(objId);
     }
 
     function persistActiveOverlays() {
@@ -2742,8 +2758,8 @@
             const o = await r.json();
             console.log('[tg] saved', o);
             state.tacticalObjects.set(o.id, o);
-            refreshEnemies();
             _attachToActiveOverlay(o.id);
+            refreshEnemies();
             return true;
         } catch (err) {
             console.error('[tg] POST error', err);
@@ -3071,8 +3087,8 @@
         if (r.ok) {
             const o = await r.json();
             state.tacticalObjects.set(o.id, o);
-            refreshEnemies();
             _attachToActiveOverlay(o.id);
+            refreshEnemies();
             document.getElementById('objective-modal').remove();
         } else {
             st.textContent = `✗ Failed (${r.status})`;
@@ -3162,8 +3178,8 @@
         if (r.ok) {
             const o = await r.json();
             state.tacticalObjects.set(o.id, o);
-            refreshEnemies();
             _attachToActiveOverlay(o.id);
+            refreshEnemies();
             document.getElementById('poi-modal').remove();
         } else {
             st.textContent = `✗ Failed (${r.status})`; st.style.color = '#ef4444';
@@ -3565,8 +3581,8 @@
             if (r.ok) {
                 const o = await r.json();
                 state.tacticalObjects.set(o.id, o);
-                refreshEnemies();
                 _attachToActiveOverlay(o.id);
+                refreshEnemies();
                 document.getElementById('symbol-picker')?.remove();
                 _sp = null;
             } else {
@@ -3753,7 +3769,7 @@
             method:'POST', headers:missionHeaders({'Content-Type':'application/json'}),
             body: JSON.stringify({ type, symbol_code:sidc, latitude:lat, longitude:lon, notes }),
         });
-        if (r.ok) { const o = await r.json(); state.tacticalObjects.set(o.id,o); refreshEnemies(); _attachToActiveOverlay(o.id); }
+        if (r.ok) { const o = await r.json(); state.tacticalObjects.set(o.id,o); _attachToActiveOverlay(o.id); refreshEnemies(); }
         else alert('Failed: ' + r.status);
     };
 
@@ -6057,12 +6073,12 @@
     // mirrors how refreshEnemies() filters tactical objects.
     function fdRefresh() {
         if (!fdReady) return;
-        const allowed = state.visibility.overlays ? computeActiveOverlayIds() : null;
+        const ovFilter = state.visibility.overlays ? computeActiveOverlayIds() : null;
         state.tacticalObjects.forEach(o => {
             if (!isFdType(o.type)) return;
             const lyr = state.markers.get(`fd-${o.id}`);
             if (!lyr) return;
-            const show = !allowed || allowed.has(o.id);
+            const show = _ovAllowed(o.id, ovFilter);
             if (show && !fdLayer.hasLayer(lyr)) fdLayer.addLayer(lyr);
             else if (!show && fdLayer.hasLayer(lyr)) fdLayer.removeLayer(lyr);
         });
@@ -6236,8 +6252,8 @@
                 state.markers.set(key, lyr);
                 // fdRenderLine/Text already attached it; drop it back off if the
                 // active-overlay filter excludes this drawing.
-                const allowed = state.visibility.overlays ? computeActiveOverlayIds() : null;
-                if (allowed && !allowed.has(obj.id) && fdLayer.hasLayer(lyr))
+                const ovFilter = state.visibility.overlays ? computeActiveOverlayIds() : null;
+                if (!_ovAllowed(obj.id, ovFilter) && fdLayer.hasLayer(lyr))
                     fdLayer.removeLayer(lyr);
             }
         } catch (e) { console.warn('[freedraw] render failed', e); }

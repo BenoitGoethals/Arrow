@@ -9,10 +9,10 @@ class MapBridge(QObject):
     own_position = pyqtSignal(float, float, float)  # lat, lon, accuracy (m)
     track_clicked = pyqtSignal(str)
     map_clicked = pyqtSignal(float, float)
-    graphic_drawn = pyqtSignal(str, str, str)  # type, geojson, affiliation
+    graphic_drawn = pyqtSignal(str, str, str, int)  # type, geojson, affiliation, active_overlay_id
     measure_done = pyqtSignal(str, str)
     radial_action = pyqtSignal(str, float, float)
-    symbol_selected = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
+    symbol_selected = pyqtSignal(str, str, float, float, int)  # sidc, designation, lat, lon, active_overlay_id
     # type, geom_json, notes_json, active_overlay_id (0 = none / not single-active)
     free_draw_saved = pyqtSignal(str, str, str, int)
     # Saved-overlays panel → Python (all fire-and-forget; results return via setOverlays)
@@ -51,9 +51,9 @@ class MapBridge(QObject):
     def onMapClicked(self, lat, lon):
         self.map_clicked.emit(lat, lon)
 
-    @pyqtSlot(str, str, str)
-    def onGraphicDrawn(self, graphic_type, geojson, affiliation):
-        self.graphic_drawn.emit(graphic_type, geojson, affiliation)
+    @pyqtSlot(str, str, str, int)
+    def onGraphicDrawn(self, graphic_type: str, geojson: str, affiliation: str, active_overlay_id: int = 0):
+        self.graphic_drawn.emit(graphic_type, geojson, affiliation, active_overlay_id)
 
     @pyqtSlot(str, str)
     def onMeasureComplete(self, distance_str, bearing_str):
@@ -63,9 +63,9 @@ class MapBridge(QObject):
     def onRadialAction(self, action, lat, lon):
         self.radial_action.emit(action, lat, lon)
 
-    @pyqtSlot(str, str, float, float)
-    def onSymbolSelected(self, sidc, designation, lat, lon):
-        self.symbol_selected.emit(sidc, designation, lat, lon)
+    @pyqtSlot(str, str, float, float, int)
+    def onSymbolSelected(self, sidc: str, designation: str, lat: float, lon: float, active_overlay_id: int = 0):
+        self.symbol_selected.emit(sidc, designation, lat, lon, active_overlay_id)
 
     @pyqtSlot(str, str, str, int)
     def onFreeDrawSaved(

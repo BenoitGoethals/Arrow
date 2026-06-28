@@ -1398,7 +1398,7 @@ class MainWindow(QMainWindow):
         mode = "READ-ONLY" if not self._token else "COP"
         self.setWindowTitle(f"ARROW FRONT  —  {self._callsign.upper()}  —  {mode}")
 
-    def _on_symbol_placed(self, sidc: str, designation: str, lat: float, lon: float):
+    def _on_symbol_placed(self, sidc: str, designation: str, lat: float, lon: float, active_overlay_id: int = 0):
         """User placed a symbol via the picker — save to server as tactical object."""
         from PyQt6.QtWidgets import (
             QDialog,
@@ -1471,7 +1471,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Upload failed: {e}", 4000)
 
         try:
-            self._client.post_tactical_object(
+            obj = self._client.post_tactical_object(
                 obj_type,
                 {"type": "point", "coords": [[lat, lon]]},
                 notes=designation or "",
@@ -1480,6 +1480,7 @@ class MainWindow(QMainWindow):
                 echelon=echelon,
                 photo_id=photo_id,
             )
+            self._attach_to_active_overlay(obj["id"], active_overlay_id)
         except Exception as e:
             self.statusBar().showMessage(f"Symbol not saved: {e}", 3000)
         self._map.add_tactical_object(
@@ -1921,9 +1922,25 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
 
+        self._attach_to_active_overlay(obj["id"], active_overlay_id)
         # Render the canonical keyed object now rather than waiting for the WS echo.
         try:
             self._map.add_tactical_object(obj)
+        except Exception:
+            pass
+
+    def _attach_to_active_overlay(self, obj_id: int, active_overlay_id: int) -> None:
+        """Add obj_id to overlay active_overlay_id (0 = skip)."""
+        if not active_overlay_id or not self._can_edit_overlays():
+            return
+        ov = self._overlays.get(active_overlay_id)
+        if ov is None:
+            return
+        ids = sorted({*ov.get("object_ids", []), obj_id})
+        try:
+            updated = self._client.patch_overlay(active_overlay_id, object_ids=ids)
+            self._overlays[updated["id"]] = updated
+            self._push_overlays()
         except Exception:
             pass
 
@@ -2054,7 +2071,8 @@ class MainWindow(QMainWindow):
             self._map.add_route(r)
 
     def _on_graphic_drawn(
-        self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY"
+        self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY",
+        active_overlay_id: int = 0,
     ):
         """Persist a drawn tactical graphic to the backend (synced to web + android).
 
@@ -2066,12 +2084,13 @@ class MainWindow(QMainWindow):
             geom = json.loads(geojson_str)
             if not (geom.get("coords") or []):
                 return
-            self._client.post_tactical_object(
+            obj = self._client.post_tactical_object(
                 gtype,
                 geom,
                 notes="",
                 affiliation=affiliation or "FRIENDLY",
             )
+            self._attach_to_active_overlay(obj["id"], active_overlay_id)
         except Exception as e:
             self.statusBar().showMessage(f"Graphic not saved: {e}", 3000)
 

@@ -952,7 +952,7 @@ function placeSelectedSymbol(){
   if(!selectedFunc||pickerLat==null) return;
   const sidc=buildSIDC(pickerAff,selectedDim,selectedFunc,pickerEchCode||'--');
   const desig=document.getElementById('sym-designation').value.trim();
-  if(bridge) bridge.onSymbolSelected(sidc,desig,pickerLat,pickerLon);
+  if(bridge) bridge.onSymbolSelected(sidc,desig,pickerLat,pickerLon,_fdActiveOverlayId());
   closeSymbolPicker();
 }
 
@@ -1400,7 +1400,7 @@ function _drawFinish(){
   const geom = isPoly ? {type:'polygon', coords:coords}
                       : {type:'line',    coords:coords};
   const affName = _drawAff==='H' ? 'HOSTILE' : _drawAff==='N' ? 'NEUTRAL' : _drawAff==='U' ? 'UNKNOWN' : 'FRIENDLY';
-  if(bridge) bridge.onGraphicDrawn(type, JSON.stringify(geom), affName);
+  if(bridge) bridge.onGraphicDrawn(type, JSON.stringify(geom), affName, _fdActiveOverlayId());
 
   cancelDraw();
 }
@@ -3172,14 +3172,24 @@ const ovState = {
 function _ovEl(id){ return document.getElementById(id); }
 function persistActiveOverlays(){ try { localStorage.setItem(OV_LS_KEY, JSON.stringify([...ovState.active])); } catch(_){} }
 
-// Union of object ids across active overlays; null = no filter (show all).
-// Until overlays are pushed from Python, never filter (avoids hiding everything
-// on load when a persisted active-set exists but the overlay data isn't loaded).
+// Returns {assigned, active} when overlays have members, else null (no filter).
+// "assigned" = all object IDs in ANY overlay; "active" = IDs in currently-active overlays.
+// Null until any overlay has members, so unassigned objects are always visible.
 function computeActiveOverlayIds(){
-  if(ovState.active.size===0 || ovState.overlays.size===0) return null;
-  const out=new Set();
-  for(const id of ovState.active){ const ov=ovState.overlays.get(id); if(ov)(ov.object_ids||[]).forEach(x=>out.add(x)); }
-  return out;
+  if(ovState.overlays.size===0) return null;
+  const assigned=new Set();
+  for(const ov of ovState.overlays.values())(ov.object_ids||[]).forEach(x=>assigned.add(x));
+  if(assigned.size===0) return null;
+  const active=new Set();
+  for(const id of ovState.active){ const ov=ovState.overlays.get(id); if(ov)(ov.object_ids||[]).forEach(x=>active.add(x)); }
+  return {assigned, active};
+}
+// True if objId should be visible under the given filter.
+// Unassigned objects always show; assigned objects only when their layer is active.
+function _ovAllowed(objId, filter){
+  if(!filter) return true;
+  if(!filter.assigned.has(objId)) return true;
+  return filter.active.has(objId);
 }
 function isFdType(t){ return t==='FREEDRAW_LINE'||t==='FREEDRAW_TEXT'; }
 
@@ -3188,8 +3198,8 @@ function isFdType(t){ return t==='FREEDRAW_LINE'||t==='FREEDRAW_TEXT'; }
 function _applyOverlayFilterOne(id){
   const lyr=graphics[id], home=objHomeLayer[id];
   if(!lyr||!home) return;
-  const allowed=computeActiveOverlayIds();
-  const show=!allowed || allowed.has(id);
+  const filter=computeActiveOverlayIds();
+  const show=_ovAllowed(Number(id), filter);
   if(show){ if(!home.hasLayer(lyr)) home.addLayer(lyr); }
   else if(home.hasLayer(lyr)) home.removeLayer(lyr);
 }

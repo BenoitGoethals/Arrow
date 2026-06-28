@@ -587,8 +587,10 @@ fun MapScreen(
                             val activeId = activeOverlays.singleOrNull()
                             if (activeId != null && dto.id > 0) {
                                 savedOverlays.firstOrNull { it.id == activeId }?.let { ov ->
+                                    val optimisticIds = (ov.objectIds + dto.id).distinct()
+                                    savedOverlays = savedOverlays.map { if (it.id == activeId) it.copy(objectIds = optimisticIds) else it }
                                     container.overlayRepository
-                                        .setObjectIds(activeId, (ov.objectIds + dto.id).distinct())
+                                        .setObjectIds(activeId, optimisticIds)
                                         .onSuccess { updated ->
                                             savedOverlays = savedOverlays.map {
                                                 if (it.id == updated.id) updated else it
@@ -879,16 +881,25 @@ fun MapScreen(
         val showLegacyHostiles = visibility.tacticalObjects &&
             (overlayMode == OverlayMode.ALL || overlayMode == OverlayMode.ENEMIES)
 
-        val overlayAllowed: Set<Int>? = when {
-            !visibility.overlays      -> null
-            activeOverlays.isEmpty()  -> null
-            else -> savedOverlays.asSequence()
+        // All object IDs assigned to any overlay (used to detect "unassigned" objects).
+        val assignedToAnyOverlay: Set<Int> = if (!visibility.overlays) emptySet() else
+            savedOverlays.flatMap { it.objectIds }.toSet()
+        // Object IDs in currently-active overlays.
+        val activeOverlayIds: Set<Int> = if (!visibility.overlays) emptySet() else
+            savedOverlays.asSequence()
                 .filter { it.id in activeOverlays }
                 .flatMap { it.objectIds.asSequence() }
                 .toSet()
-        }
+        // An object passes the filter if:
+        // - overlay visibility is off (no filter), OR
+        // - no objects are assigned to any overlay yet, OR
+        // - the object is not assigned to any overlay (unassigned → always show), OR
+        // - the object belongs to at least one active overlay.
         fun passesOverlay(id: Int): Boolean =
-            overlayAllowed == null || id in overlayAllowed
+            !visibility.overlays ||
+            assignedToAnyOverlay.isEmpty() ||
+            id !in assignedToAnyOverlay ||
+            id in activeOverlayIds
 
         val visibleEnemies = if (showLegacyHostiles)
             enemies.filter {
@@ -2226,9 +2237,21 @@ fun MapScreen(
                                     notes        = friendlyNotes,
                                     affiliation  = "FRIENDLY",
                                 ),
-                            ).onSuccess {
+                            ).onSuccess { dto ->
                                 pendingPoint  = null
                                 friendlyNotes = ""
+                                val activeId = activeOverlays.singleOrNull()
+                                if (activeId != null && dto.id > 0) {
+                                    savedOverlays.firstOrNull { it.id == activeId }?.let { ov ->
+                                        val optimisticIds = (ov.objectIds + dto.id).distinct()
+                                        savedOverlays = savedOverlays.map { if (it.id == activeId) it.copy(objectIds = optimisticIds) else it }
+                                        container.overlayRepository
+                                            .setObjectIds(activeId, optimisticIds)
+                                            .onSuccess { updated ->
+                                                savedOverlays = savedOverlays.map { if (it.id == updated.id) updated else it }
+                                            }
+                                    }
+                                }
                             }.onFailure {
                                 submitError = it.message ?: "Failed"
                             }
@@ -2351,11 +2374,23 @@ fun MapScreen(
                                     notes      = notes,
                                     photoId    = pendingPhotoId,
                                 ),
-                            ).onSuccess {
+                            ).onSuccess { dto ->
                                 pendingPoint    = null
                                 pendingPhotoId  = null
                                 pendingPhotoUri = null
                                 // enemies Flow auto-updates from local DB — no manual refresh needed
+                                val activeId = activeOverlays.singleOrNull()
+                                if (activeId != null && dto.id > 0) {
+                                    savedOverlays.firstOrNull { it.id == activeId }?.let { ov ->
+                                        val optimisticIds = (ov.objectIds + dto.id).distinct()
+                                        savedOverlays = savedOverlays.map { if (it.id == activeId) it.copy(objectIds = optimisticIds) else it }
+                                        container.overlayRepository
+                                            .setObjectIds(activeId, optimisticIds)
+                                            .onSuccess { updated ->
+                                                savedOverlays = savedOverlays.map { if (it.id == updated.id) updated else it }
+                                            }
+                                    }
+                                }
                             }.onFailure {
                                 submitError = it.message ?: "Failed"
                             }
