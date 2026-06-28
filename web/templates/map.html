@@ -1479,16 +1479,20 @@
     const TG_UNKNOWN  = '#facc15';   // yellow
     // Accept BOTH 'HOSTILE' (front/backend/APP-6 standard) and legacy 'ENEMY'.
     const TG_NEUTRAL = '#22c55e';   // green
+    // Match by leading letter so every enemy encoding renders red — full word
+    // (ENEMY/HOSTILE), single-letter code (H/E), or odd casing all map the same.
     function tgColor(aff) {
-        if (aff === 'ENEMY' || aff === 'HOSTILE') return TG_ENEMY;
-        if (aff === 'NEUTRAL') return TG_NEUTRAL;
-        if (aff === 'UNKNOWN') return TG_UNKNOWN;
+        const a = (aff || '').toUpperCase();
+        if (a[0] === 'E' || a[0] === 'H') return TG_ENEMY;
+        if (a[0] === 'N') return TG_NEUTRAL;
+        if (a[0] === 'U') return TG_UNKNOWN;
         return TG_FRIENDLY;
     }
     function tgFill(aff) {
-        if (aff === 'ENEMY' || aff === 'HOSTILE') return '#dc262633';
-        if (aff === 'NEUTRAL') return '#22c55e33';
-        if (aff === 'UNKNOWN') return '#facc1533';
+        const a = (aff || '').toUpperCase();
+        if (a[0] === 'E' || a[0] === 'H') return '#dc262633';
+        if (a[0] === 'N') return '#22c55e33';
+        if (a[0] === 'U') return '#facc1533';
         return '#3b82f633';
     }
     const TG_SPEC = {
@@ -1759,11 +1763,14 @@
             if (tagTxt.trim()) _tgLabelMarker(_tgCentroid(coords), tagTxt, c).addTo(grp);
         } else { // line
             const len  = _tgLen(coords);
-            const head = Math.min(Math.max(len*0.10, 120), 1500);
+            // Arrowhead scales with the shaft length (so it stays in proportion
+            // at any map scale). Keep the floor/ceiling small so short arrows
+            // aren't dominated by an oversized head.
+            const head = Math.min(Math.max(len*0.10, 30), 400);
 
             if (spec.wideArrow && coords.length >= 2) {
                 // 2525B Axis of Attack — hollow wide arrow (outline only)
-                const halfW   = Math.min(Math.max(len*0.06, 80), 700);
+                const halfW   = Math.min(Math.max(len*0.05, 25), 200);
                 const headLen = halfW * 3;
                 const tip  = coords[coords.length-1];
                 const brg  = _tgBearing(coords[coords.length-2], tip);

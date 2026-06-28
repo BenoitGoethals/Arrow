@@ -1966,10 +1966,13 @@ const TG = {
 
 // affiliation → colour per APP-6 colour standard
 function _affColor(aff){
+  // Match by leading letter so every enemy encoding renders red — full word
+  // (HOSTILE/ENEMY), single-letter code (H/E), or odd casing all map the same.
   const a=(aff||'FRIENDLY').toUpperCase();
-  return a==='HOSTILE'||a==='ENEMY' ? '#f85149'
-       : a==='NEUTRAL'             ? '#3fb950'
-       : a==='UNKNOWN'             ? '#d29922' : '#00aaff';
+  return a[0]==='H'||a[0]==='E' ? '#f85149'   // HOSTILE / ENEMY
+       : a[0]==='N'             ? '#3fb950'   // NEUTRAL
+       : a[0]==='U'             ? '#d29922'   // UNKNOWN
+       : '#00aaff';                           // FRIENDLY (default)
 }
 
 // ── geometry helpers ──────────────────────────────────────────────────────
