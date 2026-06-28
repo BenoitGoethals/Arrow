@@ -2293,6 +2293,27 @@
         if (ovState.active.has(ov.id)) refreshEnemies();
     }
 
+    // Attach a newly-created tactical object to the single active overlay (if any).
+    // Called by every object-creation path (TG, POI, enemy, symbol, free-draw).
+    // No-ops silently when 0 or ≥2 overlays are active, or the operator can't edit.
+    async function _attachToActiveOverlay(objId) {
+        if (!ovState.canEdit) return;
+        if (ovState.active.size !== 1) return;
+        const ovId = [...ovState.active][0];
+        const ov = ovState.overlays.get(ovId);
+        if (!ov) return;
+        const ids = [...new Set([...(ov.object_ids || []), objId])];
+        ov.object_ids = ids;
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + `/overlays/${ovId}`, {
+                method: 'PATCH',
+                headers: missionHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ object_ids: ids }),
+            });
+            if (r.ok) upsertOverlayLocal(await r.json());
+        } catch (e) { console.warn('[overlay] attach failed', e); }
+    }
+
     async function loadOverlays() {
         try {
             const r = await api('/overlays');
@@ -2722,6 +2743,7 @@
             console.log('[tg] saved', o);
             state.tacticalObjects.set(o.id, o);
             refreshEnemies();
+            _attachToActiveOverlay(o.id);
             return true;
         } catch (err) {
             console.error('[tg] POST error', err);
@@ -3050,6 +3072,7 @@
             const o = await r.json();
             state.tacticalObjects.set(o.id, o);
             refreshEnemies();
+            _attachToActiveOverlay(o.id);
             document.getElementById('objective-modal').remove();
         } else {
             st.textContent = `✗ Failed (${r.status})`;
@@ -3140,6 +3163,7 @@
             const o = await r.json();
             state.tacticalObjects.set(o.id, o);
             refreshEnemies();
+            _attachToActiveOverlay(o.id);
             document.getElementById('poi-modal').remove();
         } else {
             st.textContent = `✗ Failed (${r.status})`; st.style.color = '#ef4444';
@@ -3542,6 +3566,7 @@
                 const o = await r.json();
                 state.tacticalObjects.set(o.id, o);
                 refreshEnemies();
+                _attachToActiveOverlay(o.id);
                 document.getElementById('symbol-picker')?.remove();
                 _sp = null;
             } else {
@@ -3728,7 +3753,7 @@
             method:'POST', headers:missionHeaders({'Content-Type':'application/json'}),
             body: JSON.stringify({ type, symbol_code:sidc, latitude:lat, longitude:lon, notes }),
         });
-        if (r.ok) { const o = await r.json(); state.tacticalObjects.set(o.id,o); refreshEnemies(); }
+        if (r.ok) { const o = await r.json(); state.tacticalObjects.set(o.id,o); refreshEnemies(); _attachToActiveOverlay(o.id); }
         else alert('Failed: ' + r.status);
     };
 
@@ -6023,25 +6048,9 @@
     // "Draw on overlays": a fresh stroke joins the active overlay when exactly
     // one is active, so it propagates / exports / attaches to OPORD with it.
     async function fdMaybeAddToActiveOverlay(objId) {
-        if (!ovState.canEdit) return;
-        if (ovState.active.size !== 1) {
-            if (ovState.active.size >= 2)
-                fdHint('Drawing saved — not added to an overlay (multiple active).');
-            return;
-        }
-        const ovId = [...ovState.active][0];
-        const ov = ovState.overlays.get(ovId);
-        if (!ov) return;
-        const ids = [...new Set([...(ov.object_ids || []), objId])];
-        ov.object_ids = ids;  // optimistic local membership → drawing stays visible immediately
-        try {
-            const r = await fetch(window.ARROW_BACKEND_URL + `/overlays/${ovId}`, {
-                method: 'PATCH',
-                headers: { ...headers, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ object_ids: ids }),
-            });
-            if (r.ok) upsertOverlayLocal(await r.json());  // reconcile with server truth
-        } catch (e) { console.warn('[freedraw] attach to overlay failed', e); }
+        if (ovState.active.size >= 2)
+            fdHint('Drawing saved — not added to an overlay (multiple active).');
+        await _attachToActiveOverlay(objId);
     }
 
     // Re-evaluate which drawings are visible under the active-overlay filter —
