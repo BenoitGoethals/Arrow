@@ -544,17 +544,20 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
       </div>
       <div class="sym-ctrl-row">
         <span class="sym-ctrl-label">ECHELON</span>
+        <!-- MIL-STD-2525B echelon: letter at SIDC index 11 (milsymbol reads
+             charAt(11)). A=Team B=Squad C=Section D=Platoon E=Company
+             F=Battalion G=Regiment H=Brigade I=Division J=Corps. -->
         <button class="ech-btn active" data-ech="--" data-echcode="--">—</button>
-        <button class="ech-btn" data-ech="TM"   data-echcode="A-">TM</button>
-        <button class="ech-btn" data-ech="SQD"  data-echcode="C-">SQD</button>
-        <button class="ech-btn" data-ech="SEC"  data-echcode="D-">SEC</button>
-        <button class="ech-btn" data-ech="PLT"  data-echcode="E-">PLT</button>
-        <button class="ech-btn" data-ech="COY"  data-echcode="F-">COY</button>
-        <button class="ech-btn" data-ech="BN"   data-echcode="G-">BN</button>
-        <button class="ech-btn" data-ech="RGT"  data-echcode="H-">RGT</button>
-        <button class="ech-btn" data-ech="BDE"  data-echcode="I-">BDE</button>
-        <button class="ech-btn" data-ech="DIV"  data-echcode="J-">DIV</button>
-        <button class="ech-btn" data-ech="CORPS" data-echcode="K-">CORPS</button>
+        <button class="ech-btn" data-ech="TM"   data-echcode="-A">TM</button>
+        <button class="ech-btn" data-ech="SQD"  data-echcode="-B">SQD</button>
+        <button class="ech-btn" data-ech="SEC"  data-echcode="-C">SEC</button>
+        <button class="ech-btn" data-ech="PLT"  data-echcode="-D">PLT</button>
+        <button class="ech-btn" data-ech="COY"  data-echcode="-E">COY</button>
+        <button class="ech-btn" data-ech="BN"   data-echcode="-F">BN</button>
+        <button class="ech-btn" data-ech="RGT"  data-echcode="-G">RGT</button>
+        <button class="ech-btn" data-ech="BDE"  data-echcode="-H">BDE</button>
+        <button class="ech-btn" data-ech="DIV"  data-echcode="-I">DIV</button>
+        <button class="ech-btn" data-ech="CORPS" data-echcode="-J">CORPS</button>
       </div>
     </div>
     <div id="sym-body"><!-- populated by JS --></div>
@@ -1037,11 +1040,14 @@ function removeVehicle(id){if(vehicleMarkers[id]){LAYERS.vehicles.removeLayer(ve
 // TACTICAL OBJECTS
 // ================================================================
 // Types that use APP-6B unit symbols (milsymbol frames)
+// Echelon letter at index 11 (milsymbol reads charAt(11)) per MIL-STD-2525B:
+// C=Section, D=Platoon, E=Company. (Old SIDCs put it at index 10, where it
+// never rendered.)
 const UNIT_SIDC={
-  ENEMY:'SHGPUCI---D----', HOSTILE:'SHGPUCI---D----',
-  FRIENDLY:'SFGPUCI---D----', UNKNOWN:'SUGPUU----D----',
-  VEHICLE:'SHGPUCA---D----', ARTILLERY:'SHGPUCF---D----',
-  OBJECTIVE:'SFGPUH----F----', ZONE:'SNGPUU----E----', ROUTE:'SFGPUCI---E----',
+  ENEMY:'SHGPUCI----C---', HOSTILE:'SHGPUCI----C---',
+  FRIENDLY:'SFGPUCI----C---', UNKNOWN:'SUGPUU-----C---',
+  VEHICLE:'SHGPUCA----C---', ARTILLERY:'SHGPUCF----C---',
+  OBJECTIVE:'SFGPUH-----E---', ZONE:'SNGPUU-----D---', ROUTE:'SFGPUCI----D---',
 };
 // Control/named positions — render as pin icons, NOT unit symbols
 const PIN_TYPES=new Set(['POI','MARKER','WAYPOINT']);
@@ -1139,7 +1145,7 @@ function addTacticalObject(obj){
       icon=_pinIcon(obj.notes, aff);
     } else {
       // Military units / vehicles / objectives → APP-6B milsymbol frame
-      const sidc=UNIT_SIDC[type]||'SUGPUU----D----';
+      const sidc=UNIT_SIDC[type]||'SUGPUU---------';
       icon=buildMilIcon(sidc,'','',obj.rotation);
     }
     lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(layer);
@@ -2466,7 +2472,7 @@ function centerOn(lat,lon,zoom){map.setView([lat,lon],zoom||map.getZoom());}
 function buildMilIcon(sidc,label,unit,heading,badge){
   if(typeof ms!=='undefined'){
     try{
-      const sym=new ms.Symbol(sidc||'SUGPUU----D----',{size:26,direction:(typeof heading==='number'&&isFinite(heading))?heading:''});
+      const sym=new ms.Symbol(sidc||'SUGPUU---------',{size:26,direction:(typeof heading==='number'&&isFinite(heading))?heading:''});
       const sz=sym.getSize(),an=sym.getAnchor();
       const html=badge
         ? `<div style="position:relative">${sym.asSVG()}<div style="position:absolute;top:-3px;right:-8px;background:#8957e5;color:#fff;font:700 8px monospace;line-height:1;padding:1px 3px;border-radius:3px;border:1px solid #0d1117;letter-spacing:.04em" title="Position from ATAK device">${badge}</div></div>`

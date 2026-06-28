@@ -62,7 +62,9 @@ CONTROL_GRAPHICS = [
     ("Route", "ROUTE", "F", "—"),
 ]
 
-ECHELON_LABELS = [("—", "--"), ("TM", "A-"), ("SEC", "D-"), ("PL", "E-"), ("COY", "F-")]
+# Echelon SIDC codes (letter at index 11) — MIL-STD-2525B: A=Team C=Section
+# D=Platoon E=Company. Matches symbology.ECHELON and the web client.
+ECHELON_LABELS = [("—", "--"), ("TM", "-A"), ("SEC", "-C"), ("PL", "-D"), ("COY", "-E")]
 
 _BLUE = "#3b82f6"
 _RED = "#ef4444"

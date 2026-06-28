@@ -6,8 +6,10 @@ Format: SXDPUUUUUUMMCC0  (15 chars, 0-indexed)
   [2]  D  = Battle dimension   G=Ground  A=Air  S=SeaSurface  U=Subsurface
   [3]  P  = Status            P=Present  A=Anticipated
   [4-9]   = Function ID (6 chars, pad with -)
-  [10-11] = Echelon/modifier  --=None  A-=Team  C-=Squad  D-=Section
-                               E-=Platoon  F-=Company  G-=Battalion
+  [10]    = HQ / task-force / mobility modifier  (-=none)
+  [11]    = Echelon — milsymbol reads charAt(11) (MIL-STD-2525B / APP-6):
+                A=Team/Crew B=Squad C=Section D=Platoon E=Company
+                F=Battalion G=Regiment H=Brigade I=Division J=Corps K=Army
   [12-13] = Country code      --=Unknown
   [14]    = Order of battle   -=None
 """
@@ -20,19 +22,25 @@ N = "N"  # Neutral  (green)
 A = "A"  # Assumed friend
 
 # ---- Echelon modifier codes (positions 10-11) -----------------------
+# The echelon LETTER sits at SIDC position 11 (index 11) — milsymbol reads
+# charAt(11) — so each value is "-<letter>". Mapping matches MIL-STD-2525B and
+# the web client exactly: A=Team B=Squad C=Section D=Platoon E=Company
+# F=Battalion G=Regiment H=Brigade I=Division J=Corps K=Army. "crew" shares the
+# team echelon (A); there is no separate code for it in 2525B.
 ECHELON = {
     "none": "--",
-    "team": "A-",
-    "crew": "B-",
-    "squad": "C-",
-    "section": "D-",
-    "platoon": "E-",
-    "company": "F-",
-    "battalion": "G-",
-    "regiment": "H-",
-    "brigade": "I-",
-    "division": "J-",
-    "corps": "K-",
+    "team": "-A",
+    "crew": "-A",
+    "squad": "-B",
+    "section": "-C",
+    "platoon": "-D",
+    "company": "-E",
+    "battalion": "-F",
+    "regiment": "-G",
+    "brigade": "-H",
+    "division": "-I",
+    "corps": "-J",
+    "army": "-K",
 }
 
 # ---- Ground combat function IDs ------------------------------------
@@ -103,7 +111,7 @@ def friendly_hq(echelon: str = "company") -> str:
     s = build(F, "hq", echelon)
     # Set HQ bit: position 10 = 'H' modifier not trivially in 15-char
     # milsymbol v1 accepts 'SFGPUH----F----' for HQ
-    return f"S{F}GP" + "UH----" + ECHELON.get(echelon, "F-") + "---"
+    return f"S{F}GP" + "UH----" + ECHELON.get(echelon, "--") + "---"
 
 
 def medevac() -> str:
