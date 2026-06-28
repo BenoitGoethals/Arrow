@@ -13,7 +13,14 @@ class MapBridge(QObject):
     measure_done = pyqtSignal(str, str)
     radial_action = pyqtSignal(str, float, float)
     symbol_selected = pyqtSignal(str, str, float, float)  # sidc, designation, lat, lon
-    free_draw_saved = pyqtSignal(str, str, str)  # type, geom_json, notes_json
+    # type, geom_json, notes_json, active_overlay_id (0 = none / not single-active)
+    free_draw_saved = pyqtSignal(str, str, str, int)
+    # Saved-overlays panel → Python (all fire-and-forget; results return via setOverlays)
+    overlay_create_requested = pyqtSignal(str)  # json {name, description, object_ids}
+    overlay_patch_requested = pyqtSignal(int, str)  # overlay_id, json fields
+    overlay_delete_requested = pyqtSignal(int)  # overlay_id
+    layer_export_requested = pyqtSignal(str, int)  # kind ("OVERLAY"|"KML"), source_id
+    layer_import_requested = pyqtSignal()  # triggers native open-file dialog
     tactical_object_action = pyqtSignal(str, int)  # action ("delete"), obj_id
     tactical_object_move = pyqtSignal(
         int, float, float, str
@@ -60,9 +67,35 @@ class MapBridge(QObject):
     def onSymbolSelected(self, sidc, designation, lat, lon):
         self.symbol_selected.emit(sidc, designation, lat, lon)
 
-    @pyqtSlot(str, str, str)
-    def onFreeDrawSaved(self, obj_type: str, geom_json: str, notes_json: str):
-        self.free_draw_saved.emit(obj_type, geom_json, notes_json)
+    @pyqtSlot(str, str, str, int)
+    def onFreeDrawSaved(
+        self,
+        obj_type: str,
+        geom_json: str,
+        notes_json: str,
+        active_overlay_id: int = 0,
+    ):
+        self.free_draw_saved.emit(obj_type, geom_json, notes_json, active_overlay_id)
+
+    @pyqtSlot(str)
+    def onOverlayCreate(self, json_str: str):
+        self.overlay_create_requested.emit(json_str)
+
+    @pyqtSlot(int, str)
+    def onOverlayPatch(self, overlay_id: int, json_str: str):
+        self.overlay_patch_requested.emit(overlay_id, json_str)
+
+    @pyqtSlot(int)
+    def onOverlayDelete(self, overlay_id: int):
+        self.overlay_delete_requested.emit(overlay_id)
+
+    @pyqtSlot(str, int)
+    def onLayerExport(self, kind: str, source_id: int):
+        self.layer_export_requested.emit(kind, source_id)
+
+    @pyqtSlot()
+    def onLayerImport(self):
+        self.layer_import_requested.emit()
 
     @pyqtSlot(str, int)
     def onTacticalObjectAction(self, action: str, obj_id: int):

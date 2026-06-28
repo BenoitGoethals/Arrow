@@ -2165,6 +2165,9 @@
                 removeEntityMarker(m); state.markers.delete(key);
             }
         });
+
+        // Free-draw strokes follow the same active-overlay filter.
+        fdRefresh();
     }
 
     // ── Saved overlays ───────────────────────────────────────────────────────
@@ -5944,6 +5947,9 @@
     //                 notes    JSON {color, text}
     // ════════════════════════════════════════════════════════════════════
     const fdLayer = L.layerGroup().addTo(map);
+    // var (not let) so fdRefresh() called via refreshEnemies stays safe even if
+    // it fires before this line runs during initial page setup.
+    var fdReady = true;
 
     let fdColor   = '#ef4444';
     let fdThick   = 2;
@@ -5980,6 +5986,8 @@
     }
 
     // ── Save to backend ───────────────────────────────────────────────────
+    // Returns the created object (or null) so the caller can register the
+    // canonical keyed layer and optionally attach it to the active overlay.
     async function fdSave(type, geometry, notes) {
         try {
             const r = await fetch(window.ARROW_BACKEND_URL + '/tactical-objects', {
@@ -5991,9 +5999,81 @@
             if (r.ok) {
                 const o = await r.json();
                 state.tacticalObjects.set(o.id, o);
-                // Don't call refreshEnemies — we already rendered locally
+                return o;
             }
         } catch (e) { console.warn('[freedraw] save failed', e); }
+        return null;
+    }
+
+    // After a stroke saves, swap the optimistic preview for the canonical
+    // keyed layer (so it hides/shows with overlays and dedupes the WS echo),
+    // then attach it to the single active overlay if there is exactly one.
+    function fdFinalizeLocal(previewLayer, o) {
+        if (previewLayer) fdLayer.removeLayer(previewLayer);
+        if (!o) return;
+        // Update local overlay membership first (synchronous part), so the
+        // canonical render below already passes the active-overlay filter and
+        // the stroke never flickers out.
+        fdMaybeAddToActiveOverlay(o.id);
+        fdPlaceObject(o);
+        const lyr = state.markers.get(`fd-${o.id}`);
+        if (lyr) fdHistory.push(lyr);
+    }
+
+    // "Draw on overlays": a fresh stroke joins the active overlay when exactly
+    // one is active, so it propagates / exports / attaches to OPORD with it.
+    async function fdMaybeAddToActiveOverlay(objId) {
+        if (!ovState.canEdit) return;
+        if (ovState.active.size !== 1) {
+            if (ovState.active.size >= 2)
+                fdHint('Drawing saved — not added to an overlay (multiple active).');
+            return;
+        }
+        const ovId = [...ovState.active][0];
+        const ov = ovState.overlays.get(ovId);
+        if (!ov) return;
+        const ids = [...new Set([...(ov.object_ids || []), objId])];
+        ov.object_ids = ids;  // optimistic local membership → drawing stays visible immediately
+        try {
+            const r = await fetch(window.ARROW_BACKEND_URL + `/overlays/${ovId}`, {
+                method: 'PATCH',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ object_ids: ids }),
+            });
+            if (r.ok) upsertOverlayLocal(await r.json());  // reconcile with server truth
+        } catch (e) { console.warn('[freedraw] attach to overlay failed', e); }
+    }
+
+    // Re-evaluate which drawings are visible under the active-overlay filter —
+    // mirrors how refreshEnemies() filters tactical objects.
+    function fdRefresh() {
+        if (!fdReady) return;
+        const allowed = state.visibility.overlays ? computeActiveOverlayIds() : null;
+        state.tacticalObjects.forEach(o => {
+            if (!isFdType(o.type)) return;
+            const lyr = state.markers.get(`fd-${o.id}`);
+            if (!lyr) return;
+            const show = !allowed || allowed.has(o.id);
+            if (show && !fdLayer.hasLayer(lyr)) fdLayer.addLayer(lyr);
+            else if (!show && fdLayer.hasLayer(lyr)) fdLayer.removeLayer(lyr);
+        });
+    }
+
+    let fdHintTimer = null;
+    function fdHint(msg) {
+        let el = document.getElementById('fd-hint');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'fd-hint';
+            el.style.cssText = 'position:fixed; bottom:18px; left:50%; transform:translateX(-50%);' +
+                'z-index:1200; background:#0e1217; border:1px solid #2a3142; color:#e2e8f0;' +
+                'padding:6px 12px; border-radius:6px; font-size:0.8rem; box-shadow:0 4px 14px rgba(0,0,0,0.5)';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.display = '';
+        clearTimeout(fdHintTimer);
+        fdHintTimer = setTimeout(() => { el.style.display = 'none'; }, 2800);
     }
 
     // ── Tool management ───────────────────────────────────────────────────
@@ -6047,9 +6127,9 @@
         if (fdCurLyr) { fdLayer.removeLayer(fdCurLyr); fdCurLyr = null; }
         if (fdPts.length >= 2) {
             const coords = fdPts.map(ll => [ll.lat, ll.lng]);
-            const lyr = fdRenderLine(coords, fdColor, fdThick);
-            fdHistory.push(lyr);
-            fdSave('FREEDRAW_LINE', {type:'line', coords}, {color: fdColor, thick: fdThick});
+            const preview = fdRenderLine(coords, fdColor, fdThick);  // optimistic
+            fdSave('FREEDRAW_LINE', {type:'line', coords}, {color: fdColor, thick: fdThick})
+                .then(o => fdFinalizeLocal(preview, o));
         }
         fdPts = [];
     }
@@ -6073,11 +6153,11 @@
     window.fdPlaceText = function() {
         const text = (document.getElementById('fd-text-input').value || '').trim();
         if (text && fdPendLL) {
-            const lyr = fdRenderText(fdPendLL.lat, fdPendLL.lng, fdColor, text);
-            fdHistory.push(lyr);
+            const preview = fdRenderText(fdPendLL.lat, fdPendLL.lng, fdColor, text);  // optimistic
             fdSave('FREEDRAW_TEXT',
                    {type:'point', coords:[[fdPendLL.lat, fdPendLL.lng]]},
-                   {color: fdColor, text});
+                   {color: fdColor, text})
+                .then(o => fdFinalizeLocal(preview, o));
         }
         fdCloseText();
     };
@@ -6143,7 +6223,14 @@
                 const [lat, lon] = geom.coords[0];
                 lyr = fdRenderText(lat, lon, notes.color || '#ef4444', notes.text || '?');
             }
-            if (lyr) state.markers.set(key, lyr);
+            if (lyr) {
+                state.markers.set(key, lyr);
+                // fdRenderLine/Text already attached it; drop it back off if the
+                // active-overlay filter excludes this drawing.
+                const allowed = state.visibility.overlays ? computeActiveOverlayIds() : null;
+                if (allowed && !allowed.has(obj.id) && fdLayer.hasLayer(lyr))
+                    fdLayer.removeLayer(lyr);
+            }
         } catch (e) { console.warn('[freedraw] render failed', e); }
     }
 

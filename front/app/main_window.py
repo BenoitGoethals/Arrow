@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QSplitter,
     QMessageBox,
+    QFileDialog,
 )
 from front.app.activity_panel import ActivityPanel
 from PyQt6.QtCore import Qt, QTimer, QSettings
@@ -92,6 +93,8 @@ class MainWindow(QMainWindow):
         self._client = ArrowClient(server_url, token)
         self._role = "OPERATOR"
         self._my_operator_id: Optional[int] = None
+        self._active_mission_id: Optional[int] = None
+        self._overlays: dict[int, dict] = {}  # Saved overlays, id → dto
         self._ws: Optional[WSListener] = None
         self._toasts = ToastManager(self)
         self._suppress_toasts = False
@@ -313,6 +316,11 @@ class MainWindow(QMainWindow):
         self._draw_panel.delete_all_graphics.connect(self._on_delete_all_graphics)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
         self._map.bridge.free_draw_saved.connect(self._on_free_draw_saved)
+        self._map.bridge.overlay_create_requested.connect(self._on_overlay_create)
+        self._map.bridge.overlay_patch_requested.connect(self._on_overlay_patch)
+        self._map.bridge.overlay_delete_requested.connect(self._on_overlay_delete)
+        self._map.bridge.layer_export_requested.connect(self._on_layer_export)
+        self._map.bridge.layer_import_requested.connect(self._on_layer_import)
         self._map.bridge.tactical_object_action.connect(self._on_tactical_object_action)
         self._map.bridge.tactical_object_move.connect(self._on_tactical_object_move)
         self._map.bridge.route_drawn.connect(self._on_route_drawn)
@@ -376,6 +384,7 @@ class MainWindow(QMainWindow):
         self._ws.vehicle_received.connect(self._on_vehicle_event)
         self._ws.fire_mission_received.connect(self._on_fm_event)
         self._ws.kml_received.connect(self._on_kml_event)
+        self._ws.overlay_received.connect(self._on_overlay_event)
         self._ws.presence_changed.connect(self._on_presence)
         self._ws.cot_presence_changed.connect(self._on_cot_presence)
         self._ws.mission_received.connect(self._on_mission_event)
@@ -431,6 +440,7 @@ class MainWindow(QMainWindow):
         self._load_tactical_objects()
         self._load_fire_missions()
         self._load_kml_layers()
+        self._load_overlays()
         self._load_alerts()
         self._load_reports()
         self._load_messages()
@@ -868,6 +878,116 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    # ---- Saved overlays + layer export/import -----------------------
+    def _can_edit_overlays(self) -> bool:
+        return self._role in ("ADMIN", "BATTLE_CAPTAIN")
+
+    def _push_overlays(self):
+        self._map.set_overlays(list(self._overlays.values()), self._can_edit_overlays())
+
+    def _load_overlays(self):
+        try:
+            self._overlays = {o["id"]: o for o in self._client.overlays()}
+        except Exception:
+            self._overlays = {}
+        self._push_overlays()
+
+    def _on_overlay_event(self, data: dict):
+        """WS `overlay` channel — keep the in-map panel in sync across clients."""
+        event = data.get("event", "")
+        oid = data.get("id")
+        if event == "deleted" and oid is not None:
+            self._overlays.pop(oid, None)
+            self._push_overlays()
+            return
+        # created/updated payloads carry the full OverlayOut; fall back to a
+        # reload if a thin payload ever arrives.
+        if oid is not None and "object_ids" in data:
+            self._overlays[oid] = data
+            self._push_overlays()
+        else:
+            self._load_overlays()
+
+    def _on_overlay_create(self, json_str: str):
+        try:
+            d = json.loads(json_str)
+            ov = self._client.create_overlay(
+                d.get("name", "Overlay"),
+                d.get("description", ""),
+                d.get("object_ids") or [],
+            )
+            self._overlays[ov["id"]] = ov
+            self._push_overlays()
+        except Exception as e:
+            self.statusBar().showMessage(f"Overlay create failed: {e}", 4000)
+
+    def _on_overlay_patch(self, overlay_id: int, json_str: str):
+        try:
+            ov = self._client.patch_overlay(overlay_id, **json.loads(json_str))
+            self._overlays[ov["id"]] = ov
+            self._push_overlays()
+        except Exception as e:
+            self.statusBar().showMessage(f"Overlay update failed: {e}", 4000)
+
+    def _on_overlay_delete(self, overlay_id: int):
+        try:
+            self._client.delete_overlay(overlay_id)
+            self._overlays.pop(overlay_id, None)
+            self._push_overlays()
+        except Exception as e:
+            self.statusBar().showMessage(f"Overlay delete failed: {e}", 4000)
+
+    def _on_layer_export(self, kind: str, source_id: int):
+        try:
+            env = self._client.export_layer(kind, source_id)
+        except Exception as e:
+            self.statusBar().showMessage(f"Export failed: {e}", 4000)
+            return
+        default = f"{env.get('name', 'layer')}.{kind.lower()}.json"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export layer", default, "JSON (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(env, f, indent=2)
+            self.statusBar().showMessage(f"Exported to {path}", 4000)
+        except OSError as e:
+            self.statusBar().showMessage(f"Could not write file: {e}", 4000)
+
+    def _on_layer_import(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import layer", "", "JSON (*.json);;All Files (*)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                env = json.load(f)
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Import Failed", f"Not a valid layer file:\n{e}")
+            return
+        try:
+            res = self._client.import_layer(env, self._active_mission_id)
+        except Exception as e:
+            msg = (
+                "Permission denied (need BATTLE_CAPTAIN/ADMIN)."
+                if "403" in str(e)
+                else str(e)
+            )
+            QMessageBox.critical(self, "Import Failed", msg)
+            return
+        kind = res.get("kind", "")
+        if kind == "OVERLAY":
+            self._load_overlays()
+        elif kind == "KML":
+            try:
+                self._map.add_kml_layer(self._client.kml_layer(res["id"]))
+            except Exception:
+                pass
+        self._toasts.show("info", "LAYER IMPORTED", res.get("name", "").upper())
+
     def _load_alerts(self):
         try:
             for a in self._client.alerts():
@@ -1238,6 +1358,7 @@ class MainWindow(QMainWindow):
     # ================================================================
     def _on_mission_selected(self, mission: dict):
         mid = mission.get("id")
+        self._active_mission_id = mid
         self._missions_panel.set_active_mission(mission)
         name = mission.get("name", "?")
         self.setWindowTitle(
@@ -1273,6 +1394,7 @@ class MainWindow(QMainWindow):
             )
 
     def _on_mission_cleared(self):
+        self._active_mission_id = None
         mode = "READ-ONLY" if not self._token else "COP"
         self.setWindowTitle(f"ARROW FRONT  —  {self._callsign.upper()}  —  {mode}")
 
@@ -1759,13 +1881,23 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
 
-    def _on_free_draw_saved(self, obj_type: str, geom_json: str, notes_json: str):
-        """Persist a free-draw stroke/text so web + other fronts see it via WS."""
+    def _on_free_draw_saved(
+        self,
+        obj_type: str,
+        geom_json: str,
+        notes_json: str,
+        active_overlay_id: int = 0,
+    ):
+        """Persist a free-draw stroke/text so web + other fronts see it via WS.
+
+        "Draw on overlays": when exactly one overlay is active (the page passes
+        its id), append the new object to that overlay so it travels with it.
+        """
         try:
             geom = json.loads(geom_json)
             if not geom.get("coords"):
                 return
-            self._client.post_tactical_object(
+            obj = self._client.post_tactical_object(
                 obj_type,
                 geom,
                 notes=notes_json,
@@ -1773,6 +1905,27 @@ class MainWindow(QMainWindow):
             )
         except Exception as e:
             self.statusBar().showMessage(f"Free draw not saved: {e}", 3000)
+            return
+
+        if active_overlay_id and self._can_edit_overlays():
+            ov = self._overlays.get(active_overlay_id)
+            if ov is not None:
+                ids = sorted({*ov.get("object_ids", []), obj["id"]})
+                try:
+                    updated = self._client.patch_overlay(
+                        active_overlay_id, object_ids=ids
+                    )
+                    self._overlays[updated["id"]] = updated
+                    # Push membership BEFORE rendering so the stroke isn't filtered out.
+                    self._push_overlays()
+                except Exception:
+                    pass
+
+        # Render the canonical keyed object now rather than waiting for the WS echo.
+        try:
+            self._map.add_tactical_object(obj)
+        except Exception:
+            pass
 
     def _on_tactical_object_action(self, action: str, obj_id: int):
         if action == "delete" and obj_id > 0:

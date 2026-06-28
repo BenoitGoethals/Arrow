@@ -354,6 +354,7 @@ class OpordWindow(QMainWindow):
             ("4.  SUSTAINMENT", self._build_sustainment()),
             ("5.  CMD & SIGNAL", self._build_cs()),
             ("📸  SNAPSHOTS", self._build_snapshots()),
+            ("📎  ATTACHMENTS", self._build_attachments()),
             ("📤  DISTRIBUTION", self._build_distribution()),
         ]
         for i, (label, page) in enumerate(pages):
@@ -701,6 +702,205 @@ class OpordWindow(QMainWindow):
         lay.addWidget(self._snap_scroll, 1)
         return w
 
+    # ── Attached layers ───────────────────────────────────────────────────────
+    _ATT_BTN = (
+        "QPushButton{background:#21262d;border:1px solid #30363d;"
+        "color:#c9d1d9;font-size:10px;padding:5px 10px;border-radius:2px;}"
+        "QPushButton:hover{border-color:#388bfd;color:#79c0ff;}"
+        "QPushButton:disabled{color:#484f58;border-color:#21262d;}"
+    )
+
+    def _build_attachments(self) -> QWidget:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(24, 16, 24, 16)
+        lay.setSpacing(10)
+
+        lay.addWidget(
+            QLabel(
+                "ATTACHED LAYERS",
+                styleSheet="color:#3fb950;font-size:12px;font-weight:700;padding:0 0 6px;",
+            )
+        )
+        lay.addWidget(
+            QLabel(
+                "Freeze an overlay or KML layer into this OPORD. The snapshot is "
+                "self-contained — it survives even if the source is later changed "
+                "or deleted, and recipients can re-import it.",
+                styleSheet="color:#6e7681;font-size:9px;",
+                wordWrap=True,
+            )
+        )
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self._att_kind = QComboBox()
+        self._att_kind.addItems(["OVERLAY", "KML"])
+        self._att_kind.setStyleSheet(_FIELD_STYLE)
+        self._att_kind.setFixedWidth(110)
+        self._att_kind.currentTextChanged.connect(self._load_attach_sources)
+        self._att_source = QComboBox()
+        self._att_source.setStyleSheet(_FIELD_STYLE)
+        att_add = QPushButton("＋  Attach")
+        att_add.setStyleSheet(self._ATT_BTN)
+        att_add.clicked.connect(self._attach_layer)
+        row.addWidget(self._att_kind)
+        row.addWidget(self._att_source, 1)
+        row.addWidget(att_add)
+        lay.addLayout(row)
+
+        self._att_hint = QLabel(
+            "Save the OPORD first before attaching layers.",
+            styleSheet="color:#6e7681;font-size:9px;",
+        )
+        lay.addWidget(self._att_hint)
+        lay.addWidget(_sep())
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea{background:#0d1117;}")
+        self._att_container = QWidget()
+        self._att_container.setStyleSheet("background:#0d1117;")
+        self._att_list = QVBoxLayout(self._att_container)
+        self._att_list.setContentsMargins(0, 0, 0, 0)
+        self._att_list.setSpacing(6)
+        self._att_list.addStretch()
+        scroll.setWidget(self._att_container)
+        lay.addWidget(scroll, 1)
+        self._render_attachments()
+        return w
+
+    def _load_attach_sources(self):
+        kind = self._att_kind.currentText()
+        self._att_source.clear()
+        try:
+            items = (
+                self._client.overlays()
+                if kind == "OVERLAY"
+                else self._client.kml_layers()
+            )
+        except Exception:
+            items = []
+        for x in items:
+            self._att_source.addItem(x.get("name", f"#{x['id']}"), x["id"])
+
+    @staticmethod
+    def _att_detail(kind: str, payload: dict) -> str:
+        if kind == "OVERLAY":
+            return f"{len(payload.get('objects') or [])} object(s)"
+        if kind == "KML":
+            return f"{payload.get('feature_count', 0)} feature(s)"
+        if kind == "OSINT":
+            return (
+                f"{len(payload.get('nodes') or [])} node(s), "
+                f"{len(payload.get('links') or [])} link(s)"
+            )
+        return ""
+
+    def _render_attachments(self):
+        # Clear existing rows (keep the trailing stretch).
+        while self._att_list.count() > 1:
+            item = self._att_list.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        has_id = self._opord_id is not None
+        self._att_hint.setVisible(not has_id)
+        self._att_kind.setEnabled(has_id)
+        self._att_source.setEnabled(has_id)
+
+        atts = self._opord.get("attached_layers") or []
+        if not atts:
+            empty = QLabel("No attachments yet." if has_id else "Save the OPORD first.")
+            empty.setStyleSheet("color:#6e7681;font-size:10px;padding:8px 0;")
+            self._att_list.insertWidget(0, empty)
+            return
+
+        for i, a in enumerate(atts):
+            kind = a.get("kind", "")
+            payload = (a.get("envelope") or {}).get("payload") or {}
+            detail = self._att_detail(kind, payload)
+            card = QFrame()
+            card.setStyleSheet(
+                "QFrame{background:#161b22;border:1px solid #30363d;border-radius:4px;}"
+            )
+            cl = QHBoxLayout(card)
+            cl.setContentsMargins(10, 6, 10, 6)
+            cl.setSpacing(8)
+            lbl = QLabel(f"<b style='color:#79c0ff'>{kind}</b>  {a.get('name','—')}")
+            lbl.setStyleSheet("color:#c9d1d9;font-size:10px;")
+            det = QLabel(detail)
+            det.setStyleSheet("color:#6e7681;font-size:9px;")
+            cl.addWidget(lbl, 1)
+            cl.addWidget(det)
+            exp = QPushButton("⬇")
+            exp.setFixedWidth(30)
+            exp.setStyleSheet(self._ATT_BTN)
+            exp.setToolTip("Export attachment to file")
+            exp.clicked.connect(
+                lambda _c, aid=a.get("id"), nm=a.get("name", "layer"): (
+                    self._export_attachment(aid, nm)
+                )
+            )
+            det_btn = QPushButton("✕")
+            det_btn.setFixedWidth(30)
+            det_btn.setStyleSheet(self._ATT_BTN)
+            det_btn.setToolTip("Detach")
+            det_btn.clicked.connect(lambda _c, aid=a.get("id"): self._detach_layer(aid))
+            cl.addWidget(exp)
+            cl.addWidget(det_btn)
+            self._att_list.insertWidget(i, card)
+
+    def _attach_layer(self):
+        if not self._opord_id:
+            QMessageBox.information(
+                self, "Save First", "Save the OPORD before attaching layers."
+            )
+            return
+        sid = self._att_source.currentData()
+        if sid is None:
+            return
+        try:
+            self._opord = self._client.opord_attach_layer(
+                self._opord_id, self._att_kind.currentText(), sid
+            )
+            self._render_attachments()
+        except Exception as e:
+            msg = (
+                "Permission denied — attaching layers requires BATTLE_CAPTAIN or ADMIN."
+                if "403" in str(e)
+                else str(e)
+            )
+            QMessageBox.critical(self, "Attach Failed", msg)
+
+    def _detach_layer(self, attach_id):
+        if attach_id is None:
+            return
+        try:
+            self._opord = self._client.opord_detach_layer(self._opord_id, attach_id)
+            self._render_attachments()
+        except Exception as e:
+            QMessageBox.critical(self, "Detach Failed", str(e))
+
+    def _export_attachment(self, attach_id, name: str):
+        if attach_id is None:
+            return
+        try:
+            env = self._client.opord_attachment_export(self._opord_id, attach_id)
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", str(e))
+            return
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in name) or "layer"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export attachment", f"{safe}.layer.json", "JSON (*.json)"
+        )
+        if path:
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(env, f, indent=2)
+            except OSError as e:
+                QMessageBox.critical(self, "Export Failed", str(e))
+
     # ── Snapshot management ───────────────────────────────────────────────────
 
     def _ensure_saved(self) -> bool:
@@ -985,6 +1185,8 @@ class OpordWindow(QMainWindow):
         self._update_title_bar()
         self._load_operators()
         self._refresh_snapshots()
+        self._load_attach_sources()
+        self._render_attachments()
 
     def _update_title_bar(self):
         status = self._opord.get("status", "DRAFT")
@@ -1095,6 +1297,9 @@ class OpordWindow(QMainWindow):
             self._opord = result
             self._update_title_bar()
             self._refresh_snapshots()
+            self._render_attachments()
+            if not self._att_source.count():
+                self._load_attach_sources()
             self.saved.emit(result)
             self.statusBar().showMessage("Saved", 3000)
         except Exception as e:

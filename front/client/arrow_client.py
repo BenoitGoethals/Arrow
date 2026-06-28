@@ -480,6 +480,28 @@ class ArrowClient:
     def send_opord(self, opord_id: int, recipient_ids: list) -> dict:
         return self._post(f"/opord/{opord_id}/send", {"recipient_ids": recipient_ids})
 
+    # ---- OPORD attached layers --------------------------------------
+    def opord_attach_layer(self, opord_id: int, kind: str, source_id: int) -> dict:
+        """Freeze a layer (OVERLAY/KML/OSINT) onto the OPORD; returns updated OPORD."""
+        return self._post(
+            f"/opord/{opord_id}/layers", {"kind": kind, "source_id": source_id}
+        )
+
+    def opord_detach_layer(self, opord_id: int, attach_id: int) -> dict:
+        """Remove an attachment; returns the updated OPORD (so use a raw DELETE)."""
+        r = httpx.request(
+            "DELETE",
+            f"{self.base_url}/opord/{opord_id}/layers/{attach_id}",
+            headers=self._headers(),
+            timeout=8.0,
+            verify=_VERIFY,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def opord_attachment_export(self, opord_id: int, attach_id: int) -> dict:
+        return self._get(f"/opord/{opord_id}/layers/{attach_id}/export")
+
     # ---- Strike packages --------------------------------------------
     def strike_packages(self) -> list:
         return self._get("/strike-packages")
@@ -494,6 +516,53 @@ class ArrowClient:
 
     def overlay(self, overlay_id: int) -> dict:
         return self._get(f"/overlays/{overlay_id}")
+
+    def create_overlay(
+        self, name: str, description: str = "", object_ids: list | None = None
+    ) -> dict:
+        return self._post(
+            "/overlays",
+            {"name": name, "description": description, "object_ids": object_ids or []},
+        )
+
+    def patch_overlay(self, overlay_id: int, **fields: Any) -> dict:
+        """Update name / description / object_ids on an overlay."""
+        r = httpx.patch(
+            f"{self.base_url}/overlays/{overlay_id}",
+            json=fields,
+            headers=self._headers(),
+            timeout=8.0,
+            verify=_VERIFY,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def delete_overlay(self, overlay_id: int) -> None:
+        self._delete(f"/overlays/{overlay_id}")
+
+    # ---- Portable layer export / import -----------------------------
+    _LAYER_SEG = {"OVERLAY": "overlays", "KML": "kml", "OSINT": "osint"}
+
+    def export_layer(self, kind: str, source_id: int) -> dict:
+        """Return the portable export envelope for an overlay / KML / OSINT layer."""
+        seg = self._LAYER_SEG[kind.upper()]
+        return self._get(f"/layers/{seg}/{source_id}/export")
+
+    def import_layer(self, envelope: dict, mission_id: int | None = None) -> dict:
+        """Clone an exported layer into the (optionally) active mission."""
+        headers = self._headers()
+        headers["Content-Type"] = "application/json"
+        if mission_id:
+            headers["X-Mission-ID"] = str(mission_id)
+        r = httpx.post(
+            f"{self.base_url}/layers/import",
+            json=envelope,
+            headers=headers,
+            timeout=10.0,
+            verify=_VERIFY,
+        )
+        r.raise_for_status()
+        return r.json()
 
     # ---- Map sources (MBTiles on server) ----------------------------
     def map_sources(self) -> list:

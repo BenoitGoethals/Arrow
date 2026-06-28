@@ -404,6 +404,10 @@ class MapView(QWebEngineView):
     def add_kml_layer(self, kml: dict):
         self._js(f"addKmlLayer({json.dumps(kml)})")
 
+    def set_overlays(self, overlays: list, can_edit: bool = False):
+        """Push the Saved-overlays list to the in-map panel."""
+        self._js(f"setOverlays({json.dumps(overlays)}, {json.dumps(bool(can_edit))})")
+
     def remove_kml_layer(self, layer_id: str):
         self._js(f"removeKmlLayer({json.dumps(layer_id)})")
 

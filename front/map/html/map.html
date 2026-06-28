@@ -195,6 +195,16 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
 /* backdrop background removed — same Qt6/macOS Metal compositor bug as the
    radial menu backdrop; a position:fixed full-screen element with any non-transparent
    background creates a new GPU compositing layer that blacks out the map canvas */
+/* Saved-overlays panel. The modal backdrop is transparent (dark bg only on the
+   card) — a full-screen non-transparent fixed element blacks out the Metal map. */
+#ov-toggle{position:fixed;top:12px;right:12px;z-index:1500;background:#0e1217;border:1px solid #2a3142;color:#e2e8f0;border-radius:6px;padding:6px 10px;font-size:0.8rem;cursor:pointer;font-family:'Courier New',monospace;}
+#ov-toggle:hover{border-color:#388bfd;}
+#ov-panel{position:fixed;top:50px;right:12px;z-index:1500;width:300px;background:#0e1217;border:1px solid #2a3142;border-radius:6px;padding:12px;color:#e2e8f0;font-family:'Courier New',monospace;font-size:0.85rem;box-shadow:0 4px 14px rgba(0,0,0,.5);}
+#ov-modal{position:fixed;inset:0;z-index:1600;align-items:center;justify-content:center;}
+.ov-modal-card{background:#0e1217;border:1px solid #2a3142;border-radius:8px;padding:16px;width:360px;max-width:92vw;color:#e2e8f0;font-family:'Courier New',monospace;box-shadow:0 16px 48px rgba(0,0,0,.8);}
+.ov-input{width:100%;box-sizing:border-box;margin-bottom:6px;background:#161b22;border:1px solid #2a3142;color:#e2e8f0;border-radius:4px;padding:5px 8px;}
+.ov-btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:3px 8px;font-family:'Courier New',monospace;font-size:0.8rem;cursor:pointer;}
+.ov-btn:hover{border-color:#388bfd;color:#fff;}
 #sym-overlay{display:none;position:fixed;inset:0;z-index:3000;align-items:center;justify-content:center;}
 #sym-overlay.active{display:flex;}
 #sym-panel{background:#161b22;border:1px solid #30363d;border-radius:4px;width:820px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.8);}
@@ -424,6 +434,45 @@ html,body{width:100%;height:100%;background:#0d1117;overflow:hidden;font-family:
     <div id="own-gps-mgrs">—</div>
     <div id="own-gps-ll">—</div>
     <div id="own-gps-acc"></div>
+  </div>
+</div>
+
+<!-- Saved overlays (top-right) -->
+<button id="ov-toggle" title="Saved overlays">📚 Overlays</button>
+<div id="ov-panel" style="display:none">
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+    <strong style="flex:1">Saved overlays</strong>
+    <button id="ov-close" class="ov-btn" style="padding:0 8px">×</button>
+  </div>
+  <div id="ov-edit-row" style="display:none;margin-bottom:8px">
+    <div style="display:flex;gap:6px">
+      <button id="ov-new" class="ov-btn" style="flex:1">+ New overlay…</button>
+      <button id="ov-import" class="ov-btn" title="Import layer from file">⬆ Import</button>
+    </div>
+  </div>
+  <div id="ov-status" style="display:none;margin-bottom:6px;color:#94a3b8;font-size:0.78rem"></div>
+  <div id="ov-list" style="display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow-y:auto"></div>
+  <div style="margin-top:8px;color:#64748b;font-size:0.72rem;border-top:1px solid #2a3142;padding-top:6px">
+    No overlay active → everything shows. Activate one or more to filter to their union; drawings on an active overlay show with it.
+  </div>
+</div>
+<div id="ov-modal" style="display:none">
+  <div class="ov-modal-card">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+      <strong style="flex:1">New overlay</strong>
+      <button id="ov-modal-close" class="ov-btn" style="padding:0 8px">×</button>
+    </div>
+    <input id="ov-modal-name" class="ov-input" placeholder="Name">
+    <input id="ov-modal-desc" class="ov-input" placeholder="Description (optional)">
+    <div style="display:flex;gap:6px;margin:6px 0">
+      <button id="ov-modal-all" class="ov-btn">All</button>
+      <button id="ov-modal-none" class="ov-btn">None</button>
+    </div>
+    <div id="ov-modal-objs" style="max-height:40vh;overflow-y:auto;border:1px solid #2a3142;border-radius:4px;padding:6px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button id="ov-modal-cancel" class="ov-btn">Cancel</button>
+      <button id="ov-modal-save" class="ov-btn" style="background:#1f6feb;border-color:#1f6feb;color:#fff">Save</button>
+    </div>
   </div>
 </div>
 
@@ -1024,6 +1073,7 @@ function addTacticalObject(obj){
 
   // Free-draw annotations from web/any client
   if(type==='FREEDRAW_LINE'||type==='FREEDRAW_TEXT'){
+    const _wasPresent=!!graphics[obj.id];
     try {
       const notes = typeof obj.notes==='string' ? JSON.parse(obj.notes||'{}') : (obj.notes||{});
       const color = notes.color||'#ef4444';
@@ -1046,6 +1096,14 @@ function addTacticalObject(obj){
       }
     } catch(e){}
     tobjData[obj.id]=obj;
+    objHomeLayer[obj.id]=LAYERS.freedraw;
+    // The canonical stroke just arrived — drop one optimistic preview (FIFO).
+    if(!_wasPresent && _fdPendingPreviews.length){
+      const prev=_fdPendingPreviews.shift();
+      if(prev){ LAYERS.freedraw.removeLayer(prev);
+        const hi=_fdHistory.indexOf(prev); if(hi>=0) _fdHistory.splice(hi,1); }
+    }
+    _applyOverlayFilterOne(obj.id);
     _attachTobjMenu(graphics[obj.id], obj.id);
     return;
   }
@@ -1059,6 +1117,8 @@ function addTacticalObject(obj){
     if(graphics[obj.id]) LAYERS.graphics.removeLayer(graphics[obj.id]);
     graphics[obj.id]=lyr;
     tobjData[obj.id]=obj;
+    objHomeLayer[obj.id]=LAYERS.graphics;
+    _applyOverlayFilterOne(obj.id);
     _attachTobjMenu(lyr, obj.id);
     return;
   }
@@ -1090,15 +1150,17 @@ function addTacticalObject(obj){
   // deletable via the right-click radial (line/polygon graphics and free-draw
   // are wired up in their own branches above).
   tobjData[obj.id]=obj;
+  objHomeLayer[obj.id]=layer;
+  _applyOverlayFilterOne(obj.id);
   _attachTobjMenu(lyr, obj.id);
 }
-function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);LAYERS.graphics.removeLayer(graphics[id]);LAYERS.freedraw.removeLayer(graphics[id]);delete graphics[id];}delete tobjData[id];}
+function removeTacticalObject(id){if(graphics[id]){LAYERS.enemies.removeLayer(graphics[id]);LAYERS.tactObjs.removeLayer(graphics[id]);LAYERS.graphics.removeLayer(graphics[id]);LAYERS.freedraw.removeLayer(graphics[id]);delete graphics[id];}delete tobjData[id];delete objHomeLayer[id];}
 // Remove every tactical object / graphic / free-draw layer from the map at once.
 function clearAllGraphics(){
   Object.keys(graphics).forEach(id=>removeTacticalObject(id));
 }
 // Geo-pinned photos: data-URIs injected from Python (setObjPhoto) keyed by object id.
-const objPhotos={}, tobjData={};
+const objPhotos={}, tobjData={}, objHomeLayer={};
 function buildObjPopup(obj){const c=obj.affiliation==='HOSTILE'?'#f85149':'#d29922';const photo=objPhotos[obj.id]?`<img src="${objPhotos[obj.id]}" alt="photo" style="display:block;max-width:230px;border-radius:4px;margin-top:6px"/>`:(obj.photo_id?`<div style="color:#6e7681;font-size:9px;margin-top:5px">📷 loading photo…</div>`:'');return `<div style="font-family:monospace;color:#c9d1d9;padding:10px 14px;font-size:11px;min-width:190px"><div style="font-weight:bold;color:${c};border-bottom:1px solid #30363d;padding-bottom:5px;margin-bottom:6px">${esc(obj.type)} ${obj.echelon?'['+esc(obj.echelon)+']':''}</div>${obj.notes?`<div>${esc(obj.notes)}</div>`:''}${obj.latitude?`<div>MGRS ${latLonToMGRS(obj.latitude,obj.longitude)}</div>`:''}${photo}<div style="color:#6e7681;font-size:9px;margin-top:5px">${esc(obj.timestamp||'')}</div></div>`;}
 // Inject a fetched photo data-URI and refresh the marker's popup if already drawn.
 function setObjPhoto(id, uri){objPhotos[id]=uri;const m=graphics[id],o=tobjData[id];if(o&&m&&m.setPopupContent){try{m.setPopupContent(buildObjPopup(o));}catch(e){}}}
@@ -2944,6 +3006,8 @@ let _fdPts       = [];
 let _fdCurLyr    = null;
 let _fdHistory   = [];
 let _fdPendingLL = null;
+// Optimistic strokes awaiting their canonical (server-id) replacement (FIFO).
+let _fdPendingPreviews = [];
 
 function setFreeDraw(tool, color, thickness) {
   _fdStopAll();
@@ -3016,12 +3080,14 @@ function _fdDocUp() {
       lineCap: 'round', lineJoin: 'round', interactive: false
     }).addTo(LAYERS.freedraw);
     _fdHistory.push(lyr);
+    _fdPendingPreviews.push(lyr);   // replaced by the canonical stroke on render
     // Persist — broadcasts via WS so web + all other fronts see it
     const coords = _fdPts.map(ll => [ll.lat, ll.lng]);
     if (bridge) bridge.onFreeDrawSaved(
       'FREEDRAW_LINE',
       JSON.stringify({type:'line', coords}),
-      JSON.stringify({color:_fdColor, thick:_fdThick})
+      JSON.stringify({color:_fdColor, thick:_fdThick}),
+      _fdActiveOverlayId()
     );
   }
   _fdPts = [];
@@ -3056,11 +3122,13 @@ function placeFreeText() {
       })
     }).addTo(LAYERS.freedraw);
     _fdHistory.push(lyr);
+    _fdPendingPreviews.push(lyr);   // replaced by the canonical stroke on render
     // Persist — broadcasts via WS so web + all other fronts see it
     if (bridge) bridge.onFreeDrawSaved(
       'FREEDRAW_TEXT',
       JSON.stringify({type:'point', coords:[[_fdPendingLL.lat, _fdPendingLL.lng]]}),
-      JSON.stringify({color:_fdColor, text})
+      JSON.stringify({color:_fdColor, text}),
+      _fdActiveOverlayId()
     );
   }
   closeFreeDrawTextInput();
@@ -3080,6 +3148,7 @@ function undoFreeDraw() {
 function clearFreeDrawLayer() {
   LAYERS.freedraw.clearLayers();
   _fdHistory = [];
+  _fdPendingPreviews = [];
   _fdCurLyr  = null;
 }
 
@@ -3087,6 +3156,140 @@ document.getElementById('fd-text-input').addEventListener('keydown', function(e)
   if (e.key === 'Enter')  { placeFreeText();          e.preventDefault(); }
   if (e.key === 'Escape') { closeFreeDrawTextInput(); e.preventDefault(); }
 });
+
+// ================================================================
+// SAVED OVERLAYS (in-map panel) + draw-on-overlays filter
+// The page never calls the backend directly — every mutation goes out
+// through the Qt bridge; Python re-pushes the list via setOverlays().
+// ================================================================
+const OV_LS_KEY = 'arrow_front_active_overlays';
+const ovState = {
+  overlays: new Map(),                       // id -> dto
+  active:   new Set((function(){ try { return JSON.parse(localStorage.getItem(OV_LS_KEY)||'[]'); } catch(_){ return []; } })()),
+  canEdit:  false,
+};
+
+function _ovEl(id){ return document.getElementById(id); }
+function persistActiveOverlays(){ try { localStorage.setItem(OV_LS_KEY, JSON.stringify([...ovState.active])); } catch(_){} }
+
+// Union of object ids across active overlays; null = no filter (show all).
+// Until overlays are pushed from Python, never filter (avoids hiding everything
+// on load when a persisted active-set exists but the overlay data isn't loaded).
+function computeActiveOverlayIds(){
+  if(ovState.active.size===0 || ovState.overlays.size===0) return null;
+  const out=new Set();
+  for(const id of ovState.active){ const ov=ovState.overlays.get(id); if(ov)(ov.object_ids||[]).forEach(x=>out.add(x)); }
+  return out;
+}
+function isFdType(t){ return t==='FREEDRAW_LINE'||t==='FREEDRAW_TEXT'; }
+
+// Show/hide ONE tactical object per the active-overlay filter, toggling its
+// membership in the home layer it was originally added to.
+function _applyOverlayFilterOne(id){
+  const lyr=graphics[id], home=objHomeLayer[id];
+  if(!lyr||!home) return;
+  const allowed=computeActiveOverlayIds();
+  const show=!allowed || allowed.has(id);
+  if(show){ if(!home.hasLayer(lyr)) home.addLayer(lyr); }
+  else if(home.hasLayer(lyr)) home.removeLayer(lyr);
+}
+// Re-apply the filter to every tactical object (overlays activated / changed).
+function applyOverlayFilter(){ Object.keys(graphics).forEach(id=>_applyOverlayFilterOne(id)); }
+
+// Single active overlay id (for "draw on overlays"), else 0.
+function _fdActiveOverlayId(){
+  return (ovState.canEdit && ovState.active.size===1) ? [...ovState.active][0] : 0;
+}
+
+// Python → page: replace the overlay list and re-render.
+function setOverlays(list, canEdit){
+  ovState.canEdit = !!canEdit;
+  const er=_ovEl('ov-edit-row'); if(er) er.style.display = ovState.canEdit ? '' : 'none';
+  ovState.overlays = new Map((list||[]).map(o=>[o.id,o]));
+  let changed=false;
+  for(const id of [...ovState.active]) if(!ovState.overlays.has(id)){ ovState.active.delete(id); changed=true; }
+  if(changed) persistActiveOverlays();
+  renderOverlayList();
+  applyOverlayFilter();
+}
+
+function _ovEsc(s){ return String(s||'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+
+function renderOverlayList(){
+  const list=_ovEl('ov-list'); if(!list) return;
+  list.innerHTML='';
+  if(ovState.overlays.size===0){ list.innerHTML='<div style="color:#64748b">No overlays saved yet.</div>'; return; }
+  const sorted=[...ovState.overlays.values()].sort((a,b)=>(b.updated_at||'').localeCompare(a.updated_at||''));
+  for(const ov of sorted){
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid #2a3142;border-radius:4px';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=ovState.active.has(ov.id);
+    cb.addEventListener('change',()=>{
+      if(cb.checked) ovState.active.add(ov.id); else ovState.active.delete(ov.id);
+      persistActiveOverlays(); applyOverlayFilter();
+    });
+    row.appendChild(cb);
+    const name=document.createElement('div'); name.style.cssText='flex:1;min-width:0';
+    name.innerHTML=`<div style="font-weight:600">${_ovEsc(ov.name)}</div>`+
+      `<div style="color:#64748b;font-size:0.72rem">${(ov.object_ids||[]).length} object(s)`+
+      (ov.description?` · ${_ovEsc(ov.description)}`:'')+`</div>`;
+    row.appendChild(name);
+    const fit=document.createElement('button'); fit.className='ov-btn'; fit.title='Zoom to overlay'; fit.textContent='🎯';
+    fit.addEventListener('click',()=>{
+      const pts=(ov.object_ids||[]).map(id=>tobjData[id]).filter(o=>o&&o.latitude).map(o=>[o.latitude,o.longitude]);
+      if(pts.length) map.fitBounds(L.latLngBounds(pts),{padding:[40,40]});
+    });
+    row.appendChild(fit);
+    const exp=document.createElement('button'); exp.className='ov-btn'; exp.title='Export overlay to file'; exp.textContent='⬇';
+    exp.addEventListener('click',()=>{ if(bridge) bridge.onLayerExport('OVERLAY', ov.id); });
+    row.appendChild(exp);
+    if(ovState.canEdit){
+      const del=document.createElement('button'); del.className='ov-btn'; del.title='Delete overlay'; del.textContent='🗑';
+      del.addEventListener('click',()=>{ if(confirm(`Delete overlay "${ov.name}"?`) && bridge) bridge.onOverlayDelete(ov.id); });
+      row.appendChild(del);
+    }
+    list.appendChild(row);
+  }
+}
+
+function openNewOverlayModal(){
+  _ovEl('ov-modal-name').value='';
+  _ovEl('ov-modal-desc').value='';
+  const box=_ovEl('ov-modal-objs'); box.innerHTML='';
+  const items=Object.values(tobjData).sort((a,b)=>a.id-b.id);
+  if(items.length===0) box.innerHTML='<div style="color:#64748b">No tactical objects on the map yet.</div>';
+  for(const o of items){
+    const r=document.createElement('label');
+    r.style.cssText='display:flex;align-items:center;gap:6px;padding:2px 4px;cursor:pointer';
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.dataset.id=o.id; r.appendChild(cb);
+    const note=(o.notes||'').toString().slice(0,40);
+    const span=document.createElement('span'); span.style.cssText='font-size:0.78rem';
+    span.textContent=`#${o.id} ${o.type}${note?' — '+note:''}`; r.appendChild(span);
+    box.appendChild(r);
+  }
+  _ovEl('ov-modal').style.display='flex';
+}
+function closeNewOverlayModal(){ _ovEl('ov-modal').style.display='none'; }
+
+// Panel wiring (DOM exists from page load).
+(function wireOverlayPanel(){
+  const tgl=_ovEl('ov-toggle'); if(!tgl) return;   // panel markup absent → skip
+  tgl.addEventListener('click',()=>{ const p=_ovEl('ov-panel'); p.style.display=p.style.display==='none'?'':'none'; });
+  _ovEl('ov-close').addEventListener('click',()=>{ _ovEl('ov-panel').style.display='none'; });
+  _ovEl('ov-new').addEventListener('click',openNewOverlayModal);
+  _ovEl('ov-import').addEventListener('click',()=>{ if(bridge) bridge.onLayerImport(); });
+  _ovEl('ov-modal-close').addEventListener('click',closeNewOverlayModal);
+  _ovEl('ov-modal-cancel').addEventListener('click',closeNewOverlayModal);
+  _ovEl('ov-modal-all').addEventListener('click',()=>_ovEl('ov-modal-objs').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true));
+  _ovEl('ov-modal-none').addEventListener('click',()=>_ovEl('ov-modal-objs').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false));
+  _ovEl('ov-modal-save').addEventListener('click',()=>{
+    const name=_ovEl('ov-modal-name').value.trim();
+    if(!name){ const s=_ovEl('ov-status'); s.style.display=''; s.textContent='Name is required.'; return; }
+    const ids=[..._ovEl('ov-modal-objs').querySelectorAll('input[type=checkbox]:checked')].map(c=>Number(c.dataset.id));
+    if(bridge) bridge.onOverlayCreate(JSON.stringify({name, description:_ovEl('ov-modal-desc').value.trim(), object_ids:ids}));
+    closeNewOverlayModal();
+  });
+})();
 
 // ================================================================
 // OWN GPS POSITION
