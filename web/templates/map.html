@@ -6056,8 +6056,14 @@
     // keyed layer (so it hides/shows with overlays and dedupes the WS echo),
     // then attach it to the single active overlay if there is exactly one.
     function fdFinalizeLocal(previewLayer, o) {
+        if (!o) {
+            // Save failed (backend unreachable?) — keep the stroke visible on the
+            // map so the operator doesn't lose the shape, and surface a hint.
+            if (previewLayer) fdHistory.push(previewLayer);
+            fdHint('Drawing not saved — check server connection.');
+            return;
+        }
         if (previewLayer) fdLayer.removeLayer(previewLayer);
-        if (!o) return;
         // Update local overlay membership first (synchronous part), so the
         // canonical render below already passes the active-overlay filter and
         // the stroke never flickers out.
@@ -6144,9 +6150,6 @@
 
     function fdDocMove(e) {
         if (!fdDown) return;
-        // If the left button is no longer held (released outside the window),
-        // treat it as a mouseup so the stroke is saved rather than discarded.
-        if (e.buttons !== undefined && !(e.buttons & 1)) { fdDocUp({button: 0}); return; }
         const rect = map.getContainer().getBoundingClientRect();
         const ll = map.containerPointToLatLng(L.point(e.clientX - rect.left, e.clientY - rect.top));
         fdPts.push(ll);
@@ -6162,12 +6165,16 @@
         if (e.button !== 0) return;  // left button only
         if (!fdDown) return;
         fdDown = false;
-        if (fdCurLyr) { fdLayer.removeLayer(fdCurLyr); fdCurLyr = null; }
+        // Promote the in-progress stroke (fdCurLyr) directly to the optimistic
+        // preview — avoids any visual gap between stroke-end and server confirm.
+        const curLyr = fdCurLyr;
+        fdCurLyr = null;
         if (fdPts.length >= 2) {
             const coords = fdPts.map(ll => [ll.lat, ll.lng]);
-            const preview = fdRenderLine(coords, fdColor, fdThick);  // optimistic
             fdSave('FREEDRAW_LINE', {type:'line', coords}, {color: fdColor, thick: fdThick})
-                .then(o => fdFinalizeLocal(preview, o));
+                .then(o => fdFinalizeLocal(curLyr, o));
+        } else {
+            if (curLyr) fdLayer.removeLayer(curLyr);
         }
         fdPts = [];
     }
