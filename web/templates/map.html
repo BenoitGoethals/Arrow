@@ -2625,7 +2625,8 @@
     // fire / objective / POI / report).  Leaflet's `contextmenu` event fires
     // on right-click; suppressing the browser menu keeps the radial visible.
     map.on('contextmenu', (e) => {
-        if (tgDraw.type) return;  // active draw — let it consume the event
+        if (tgDraw.type) return;  // active TG draw — let it consume the event
+        if (fdTool === 'pen') { L.DomEvent.preventDefault(e.originalEvent); return; }  // drawing active
         L.DomEvent.preventDefault(e.originalEvent);
         L.DomEvent.stopPropagation(e.originalEvent);
         _openCreateRadialAt(e);
@@ -6131,7 +6132,10 @@
     }
 
     // ── Pen handlers ──────────────────────────────────────────────────────
-    function fdLeafletDown(e) { fdDown = true; fdPts = [e.latlng]; }
+    function fdLeafletDown(e) {
+        if (e.originalEvent.button !== 0) return;  // left button only
+        fdDown = true; fdPts = [e.latlng];
+    }
 
     function fdDocMove(e) {
         if (!fdDown) return;
@@ -6146,7 +6150,8 @@
             }).addTo(fdLayer);
     }
 
-    function fdDocUp() {
+    function fdDocUp(e) {
+        if (e.button !== 0) return;  // left button only
         if (!fdDown) return;
         fdDown = false;
         if (fdCurLyr) { fdLayer.removeLayer(fdCurLyr); fdCurLyr = null; }
