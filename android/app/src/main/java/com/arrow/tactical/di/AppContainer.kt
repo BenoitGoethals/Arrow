@@ -12,6 +12,7 @@ import com.arrow.tactical.data.local.AppDatabase
 import com.arrow.tactical.firemission.FireMissionRepository
 import com.arrow.tactical.mission.MissionRepository
 import com.arrow.tactical.kml.KmlLayerRepository
+import com.arrow.tactical.layers.LayerRepository
 import com.arrow.tactical.map.MapSourceRepository
 import com.arrow.tactical.map.MilsymRenderer
 import com.arrow.tactical.map.WeatherRepository
@@ -77,6 +78,7 @@ class AppContainer(private val context: Context) {
     val mapSourceRepository = MapSourceRepository(apiClient, context, tokenStore, settingsRepository)
     val kmlLayerRepository = KmlLayerRepository(apiClient)
     val overlayRepository = OverlayRepository(apiClient)
+    val layerRepository = LayerRepository(apiClient)
     val mapVisibilityRepository = MapVisibilityRepository(context, apiClient)
     val photoRepository = PhotoRepository(apiClient)
     val fireMissionRepository = FireMissionRepository(apiClient)

@@ -62,6 +62,7 @@ import com.arrow.tactical.tactical.FriendlyType
 import com.arrow.tactical.tracking.LocationService
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.arrow.tactical.network.MgrsConverter
 import kotlinx.serialization.json.JsonObject
@@ -171,6 +172,47 @@ fun MapScreen(
     var activeOverlays by remember { mutableStateOf<Set<Int>>(emptySet()) }
     val overlayReloadTrigger = remember { mutableIntStateOf(0) }
     var overlayPanelOpen by remember { mutableStateOf(false) }
+
+    // Free-draw (pen) state. Strokes are persisted as FREEDRAW_LINE tactical
+    // objects and, when a single overlay is active, joined to it (draw-on-overlays).
+    var penMode by remember { mutableStateOf(false) }
+    var penColorHex by remember { mutableStateOf("#EF4444") }
+    val penWidthDp = 3
+
+    // Restore the per-device active-overlay set once on entry.
+    LaunchedEffect(Unit) {
+        activeOverlays = container.settingsRepository.activeOverlays.first()
+    }
+
+    // Storage Access Framework launchers for layer export/import (overlays).
+    var pendingOverlayExport by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    val overlayExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val req = pendingOverlayExport
+        pendingOverlayExport = null
+        if (uri != null && req != null) scope.launch {
+            container.layerRepository.exportLayer("OVERLAY", req.first).onSuccess { jsonText ->
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(jsonText.toByteArray()) }
+                }
+            }
+        }
+    }
+    val overlayImportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val jsonText = runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            if (!jsonText.isNullOrBlank()) {
+                container.layerRepository.importLayer(jsonText).onSuccess { res ->
+                    if (res.kind == "OVERLAY") overlayReloadTrigger.value++
+                }
+            }
+        }
+    }
 
     // ── Admin map+notification visibility — global filter ──────────────────
     // The repository holds a StateFlow; we collect it here so every render
@@ -519,6 +561,49 @@ fun MapScreen(
         }
     }
 
+    // ── Free-draw (pen) overlay — attach a touch-capturing overlay while in pen
+    //    mode. On stroke release a FREEDRAW_LINE is created and, if exactly one
+    //    overlay is active, the new object joins it (draw-on-overlays).
+    LaunchedEffect(mapRef.value, penMode, penColorHex) {
+        val map = mapRef.value ?: return@LaunchedEffect
+        map.overlays.removeAll { it is FreeDrawOverlay }
+        if (penMode) {
+            val argb = runCatching { android.graphics.Color.parseColor(penColorHex) }
+                .getOrDefault(android.graphics.Color.RED)
+            map.overlays.add(
+                FreeDrawOverlay(argb, penWidthDp.toFloat()) { pts ->
+                    val anchor = pts.first()
+                    scope.launch {
+                        container.tacticalRepository.mark(
+                            com.arrow.tactical.network.TacticalObjectIn(
+                                type = "FREEDRAW_LINE",
+                                latitude = anchor.latitude,
+                                longitude = anchor.longitude,
+                                affiliation = "NEUTRAL",
+                                notes = freeDrawNotes(penColorHex, penWidthDp),
+                                geometry = freeDrawLineGeometry(pts),
+                            )
+                        ).onSuccess { dto ->
+                            val activeId = activeOverlays.singleOrNull()
+                            if (activeId != null && dto.id > 0) {
+                                savedOverlays.firstOrNull { it.id == activeId }?.let { ov ->
+                                    container.overlayRepository
+                                        .setObjectIds(activeId, (ov.objectIds + dto.id).distinct())
+                                        .onSuccess { updated ->
+                                            savedOverlays = savedOverlays.map {
+                                                if (it.id == updated.id) updated else it
+                                            }
+                                        }
+                                }
+                            }
+                        }
+                    }
+                }
+            )
+        }
+        map.invalidate()
+    }
+
     // Materialise visible layers onto the map. Re-runs whenever the catalogue
     // changes OR the local-hide set changes; feature payloads are fetched
     // lazily and cached in kmlFeatures so a hide/show flip is instant.
@@ -809,6 +894,7 @@ fun MapScreen(
             enemies.filter {
                 !MilSymbolRenderer.isTacticalGraphic(it.type) &&
                 !MilSymbolRenderer.isTacticalLineOrPolygon(it.type) &&
+                !isFreeDraw(it.type) &&
                 passesOverlay(it.id)
             }
         else emptyList()
@@ -957,6 +1043,14 @@ fun MapScreen(
 
         for (g in visibleGraphics) {
             renderTacticalGraphic(map, res, g)
+        }
+
+        // Free-draw strokes (FREEDRAW_LINE / FREEDRAW_TEXT) from any client —
+        // obey the same active-overlay filter as every other tactical object.
+        if (visibility.tacticalObjects) {
+            for (g in enemies) {
+                if (isFreeDraw(g.type) && passesOverlay(g.id)) renderFreeDraw(map, g)
+            }
         }
 
         if (overlayMode != OverlayMode.NONE && visibility.fireMissions) {
@@ -1515,11 +1609,92 @@ fun MapScreen(
             com.arrow.tactical.overlays.ui.OverlayMapPanel(
                 overlays  = savedOverlays,
                 activeIds = activeOverlays,
+                canEdit   = role == "ADMIN" || role == "BATTLE_CAPTAIN",
                 onToggle  = { id, on ->
                     activeOverlays = if (on) activeOverlays + id else activeOverlays - id
+                    scope.launch { container.settingsRepository.setActiveOverlays(activeOverlays) }
+                },
+                onCreate  = { name ->
+                    scope.launch {
+                        // New overlay from the currently-visible tactical-object ids.
+                        val ids = enemies.map { it.id }.filter { it > 0 }
+                        container.overlayRepository.create(name, "", ids).onSuccess {
+                            overlayReloadTrigger.value++
+                        }
+                    }
+                },
+                onDelete  = { id ->
+                    scope.launch {
+                        container.overlayRepository.delete(id).onSuccess {
+                            activeOverlays = activeOverlays - id
+                            overlayReloadTrigger.value++
+                        }
+                    }
+                },
+                onExport  = { id, name ->
+                    pendingOverlayExport = id to name
+                    overlayExportLauncher.launch(
+                        name.replace(Regex("[^A-Za-z0-9-_]"), "_") + ".overlay.json"
+                    )
+                },
+                onImport  = { overlayImportLauncher.launch(arrayOf("application/json")) },
+                onFit     = { id ->
+                    val ov = savedOverlays.firstOrNull { it.id == id }
+                    val pts = ov?.objectIds?.mapNotNull { oid ->
+                        enemies.firstOrNull { it.id == oid }?.let { GeoPoint(it.latitude, it.longitude) }
+                    }.orEmpty()
+                    if (pts.isNotEmpty()) mapRef.value?.zoomToBoundingBox(
+                        org.osmdroid.util.BoundingBox.fromGeoPointsSafe(pts), true, 80,
+                    )
                 },
                 onClose   = { overlayPanelOpen = false },
             )
+        }
+
+        // ── Free-draw control — pen toggle + colour swatches (bottom-right).
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 12.dp, bottom = 110.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (penMode) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("#EF4444", "#F59E0B", "#22C55E", "#3B82F6", "#F1F5F9").forEach { c ->
+                        Box(
+                            Modifier
+                                .size(26.dp)
+                                .background(
+                                    Color(android.graphics.Color.parseColor(c)),
+                                    androidx.compose.foundation.shape.CircleShape,
+                                )
+                                .border(
+                                    if (c == penColorHex) 2.dp else 0.5.dp,
+                                    Color.White,
+                                    androidx.compose.foundation.shape.CircleShape,
+                                )
+                                .clickable { penColorHex = c }
+                        )
+                    }
+                }
+            }
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .background(
+                        if (penMode) Color(0xFFEF4444) else Color(0xCC0E1217),
+                        androidx.compose.foundation.shape.CircleShape,
+                    )
+                    .border(0.5.dp, Color(0xFF2A3142), androidx.compose.foundation.shape.CircleShape)
+                    .clickable {
+                        penMode = !penMode
+                        if (penMode) { kmlPanelOpen = false; overlayPanelOpen = false; wxPanelOpen = false }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("✏", fontSize = 22.sp)
+            }
         }
 
         // ── Weather panel — slides in from the right, stacks alongside KML/Overlay panels.

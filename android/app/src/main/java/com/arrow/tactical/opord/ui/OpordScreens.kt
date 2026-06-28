@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -110,6 +111,22 @@ fun OpordDetailScreen(container: AppContainer, opordId: Int, onBack: () -> Unit)
     var opord by remember { mutableStateOf<OpordDto?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // SAF: export a frozen attached layer to a file the recipient can re-import.
+    var pendingAttachExport by remember { mutableStateOf<Int?>(null) }
+    val attachExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val attachId = pendingAttachExport
+        pendingAttachExport = null
+        if (uri != null && attachId != null) scope.launch {
+            container.opordRepository.exportAttachment(opordId, attachId).onSuccess { jsonText ->
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(jsonText.toByteArray()) }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(opordId) {
         container.opordRepository.get(opordId)
             .onSuccess { opord = it; error = null }
@@ -180,7 +197,54 @@ fun OpordDetailScreen(container: AppContainer, opordId: Int, onBack: () -> Unit)
                     } }
                 }
             }
+            if (o.attachedLayers.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text("Attached layers", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                o.attachedLayers.forEach { a ->
+                    Spacer(Modifier.height(6.dp))
+                    Card { Row(
+                        Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "${a.kind}  ·  ${a.name}",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                            )
+                            Text(
+                                attachmentDetail(a),
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                            )
+                        }
+                        IconButton(onClick = {
+                            pendingAttachExport = a.id
+                            attachExportLauncher.launch(
+                                a.name.replace(Regex("[^A-Za-z0-9-_]"), "_") + ".layer.json"
+                            )
+                        }) {
+                            Icon(Icons.Default.Download, contentDescription = "Export")
+                        }
+                    } }
+                }
+            }
         }
+    }
+}
+
+/** Human-readable count line for an OPORD layer attachment, from its frozen envelope payload. */
+private fun attachmentDetail(a: com.arrow.tactical.network.AttachedLayerDto): String {
+    val payload = a.envelope?.get("payload") as? JsonObject ?: return ""
+    fun arrLen(key: String) = (payload[key] as? kotlinx.serialization.json.JsonArray)?.size ?: 0
+    return when (a.kind) {
+        "OVERLAY" -> "${arrLen("objects")} object(s)"
+        "KML" -> {
+            val n = (payload["feature_count"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "0"
+            "$n feature(s)"
+        }
+        "OSINT" -> "${arrLen("nodes")} node(s), ${arrLen("links")} link(s)"
+        else -> ""
     }
 }
 

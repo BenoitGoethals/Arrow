@@ -23,6 +23,13 @@ class OpordRepository(
         api.json.decodeFromString<OpordDto>(r.body)
     }
 
+    /** Raw export envelope (JSON) for one attached layer, for SAF save / re-import. */
+    suspend fun exportAttachment(opordId: Int, attachId: Int): Result<String> = runCatching {
+        val r = api.get("/opord/$opordId/layers/$attachId/export")
+        require(r.ok) { "attachment export failed: ${r.code}" }
+        r.body
+    }
+
     /**
      * Download the rendered PDF and return a content:// Uri so the system
      * PDF viewer can open it. Auth header is added via the OkHttp interceptor

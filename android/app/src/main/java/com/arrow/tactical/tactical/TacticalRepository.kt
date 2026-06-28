@@ -69,6 +69,7 @@ class TacticalRepository(
                 notes       = payload.notes,
                 visibility  = payload.visibility,
                 affiliation = payload.affiliation,
+                geometry    = payload.geometry,
                 syncStatus  = "pending",
             )
         )
@@ -179,6 +180,7 @@ class TacticalRepository(
         notes       = p.notes,
         visibility  = p.visibility,
         affiliation = p.affiliation,
+        geometry    = p.geometry,
         createdBy   = -1,
     )
 }

@@ -21,11 +21,15 @@ class SettingsRepository(private val context: Context) {
     private val keyTeam         = stringPreferencesKey("team")
     private val keyBasemap      = stringPreferencesKey("basemap")
     private val keyActiveMission = intPreferencesKey("active_mission_id")
+    private val keyThemeMode    = stringPreferencesKey("theme_mode")
+    private val keyActiveOverlays = stringPreferencesKey("active_overlays")  // CSV of ids
 
     val serverUrl: Flow<String>  = context.dataStore.data.map { upgradeUrl(it[keyServerUrl] ?: DEFAULT_SERVER) }
     val callsign:  Flow<String>  = context.dataStore.data.map { it[keyCallsign] ?: "" }
     val team:      Flow<String>  = context.dataStore.data.map { it[keyTeam] ?: "" }
     val basemap:   Flow<String?> = context.dataStore.data.map { it[keyBasemap] }
+    val themeMode: Flow<String>  = context.dataStore.data.map { it[keyThemeMode] ?: "SYSTEM" }
+    val activeOverlays: Flow<Set<Int>> = context.dataStore.data.map { parseIds(it[keyActiveOverlays]) }
 
     // Synchronous backing field — MissionRepository reads this at init time
     // before any coroutine can run. Updated by setActiveMissionId().
@@ -63,8 +67,19 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[keyBasemap] = name }
     }
 
+    suspend fun setThemeMode(mode: String) {
+        context.dataStore.edit { it[keyThemeMode] = mode }
+    }
+
+    suspend fun setActiveOverlays(ids: Set<Int>) {
+        context.dataStore.edit { it[keyActiveOverlays] = ids.joinToString(",") }
+    }
+
     companion object {
         const val DEFAULT_SERVER = "https://78.21.255.210:6200/api"
+
+        private fun parseIds(csv: String?): Set<Int> =
+            csv?.split(",")?.mapNotNull { it.trim().toIntOrNull() }?.toSet() ?: emptySet()
 
         fun upgradeUrl(url: String): String {
             if (url.startsWith("http://") && "localhost" !in url && "127.0.0.1" !in url) {

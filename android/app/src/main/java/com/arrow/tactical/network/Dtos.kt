@@ -119,6 +119,9 @@ data class TacticalObjectIn(
     val visibility: String = "COMPANY",
     @SerialName("photo_id") val photoId: Int? = null,
     val affiliation: String = "FRIENDLY",
+    // GeoJSON-ish geometry for lines/polygons and free-draw strokes:
+    // {"type":"line|polygon|point","coords":[[lat,lon],...]}. Empty = point.
+    val geometry: String = "",
 )
 
 @Serializable
@@ -324,11 +327,31 @@ data class OpordDto(
     val sustainment: JsonObject = JsonObject(emptyMap()),
     @SerialName("command_signal") val commandSignal: JsonObject = JsonObject(emptyMap()),
     @SerialName("map_snapshots") val mapSnapshots: List<OpordSnapshotDto> = emptyList(),
+    @SerialName("attached_layers") val attachedLayers: List<AttachedLayerDto> = emptyList(),
     val status: String = "DRAFT",
     @SerialName("author_id") val authorId: Int = 0,
     @SerialName("recipient_ids") val recipientIds: List<Int> = emptyList(),
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+/** A layer (overlay/KML/OSINT) frozen onto an OPORD. ``envelope`` is the full
+ *  portable export; omitted on list responses, present on the single-OPORD GET. */
+@Serializable
+data class AttachedLayerDto(
+    val id: Int,
+    val kind: String = "",
+    @SerialName("source_id") val sourceId: Int = 0,
+    val name: String = "",
+    val envelope: JsonObject? = null,
+)
+
+/** Result of POST /layers/import. */
+@Serializable
+data class LayerImportResult(
+    val kind: String,
+    val id: Int,
+    val name: String,
 )
 
 @Serializable
