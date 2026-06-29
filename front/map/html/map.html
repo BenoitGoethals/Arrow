@@ -1052,6 +1052,18 @@ const UNIT_SIDC={
 // Control/named positions — render as pin icons, NOT unit symbols
 const PIN_TYPES=new Set(['POI','MARKER','WAYPOINT']);
 
+function _sofPointIcon(abbr, color){
+  const fs = abbr.length > 3 ? 12 : abbr.length === 3 ? 14 : 16;
+  const svg = `<svg width="40" height="40" viewBox="0 0 80 80">
+    <polygon points="40,8 64,23 64,57 40,72 16,57 16,23"
+             fill="${color}" fill-opacity=".92" stroke="#0a0a0a" stroke-width="2.5"/>
+    <text x="40" y="40" text-anchor="middle" dominant-baseline="central"
+          fill="#0a0a0a" font-size="${fs}" font-weight="700"
+          font-family="Courier New,monospace">${abbr}</text>
+  </svg>`;
+  return L.divIcon({html:svg,className:'mil-icon',iconSize:[40,40],iconAnchor:[20,20],popupAnchor:[0,-22]});
+}
+
 function _pinIcon(notes, aff){
   const n=(notes||'').toUpperCase();
   // Colour by content
@@ -1124,6 +1136,23 @@ function addTacticalObject(obj){
     graphics[obj.id]=lyr;
     tobjData[obj.id]=obj;
     objHomeLayer[obj.id]=LAYERS.graphics;
+    _applyOverlayFilterOne(obj.id);
+    _attachTobjMenu(lyr, obj.id);
+    return;
+  }
+
+  // SOF point marker (no geometry — lat/lon only)
+  if(SOF_POINT_TYPES.has(type)){
+    const lat=obj.latitude||(geom&&geom.coords?.[0]?.[0]);
+    const lon=obj.longitude||(geom&&geom.coords?.[0]?.[1]);
+    if(!lat||!lon) return;
+    const spec=TG[type]||{};
+    const icon=_sofPointIcon(spec.tag||type, spec.color||'#f59e0b');
+    lyr=L.marker([lat,lon],{icon}).bindPopup(buildObjPopup(obj),{maxWidth:260}).addTo(LAYERS.tactObjs);
+    if(graphics[obj.id]) LAYERS.tactObjs.removeLayer(graphics[obj.id]);
+    graphics[obj.id]=lyr;
+    tobjData[obj.id]=obj;
+    objHomeLayer[obj.id]=LAYERS.tactObjs;
     _applyOverlayFilterOne(obj.id);
     _attachTobjMenu(lyr, obj.id);
     return;
@@ -1291,6 +1320,12 @@ const TWO_CLICK_TYPES = new Set([
   'ATK_AXIS','AXIS','COUNTERATTACK','BYPASS','WITHDRAW','DEF_AREA','BLOCK','AMBUSH'
 ]);
 
+// SOF point markers — placed with a single click, no geometry needed.
+const SOF_POINT_TYPES = new Set([
+  'SOF_OP','SOF_LUP','SOF_IP','SOF_BIVAK','SOF_PUP','SOF_DP',
+  'SOF_RV','SOF_ERV','SOF_CP','SOF_FUP','SOF_HLZ','SOF_DZ'
+]);
+
 let _drawType   = null;     // active graphic type
 let _drawAff    = 'F';
 let _drawIsPoly = false;
@@ -1313,11 +1348,17 @@ function setDrawGraphic(type, aff){
   map.doubleClickZoom.disable();
   map.getContainer().style.cursor = 'crosshair';
 
+  const spec = TG[type] || {};
+  const label = spec.label || type;
   // Show instruction banner
-  _setDrawBanner(_drawTwoClick
-    ? (type+' — click to place · move to aim direction · click to confirm · ESC cancels')
-    : (_drawIsPoly?'AREA':'LINE')+' — '+type+
-      ' · click to add points · double-click / right-click to finish · ESC cancels');
+  if(SOF_POINT_TYPES.has(type)){
+    _setDrawBanner(label+' ('+( spec.tag||type)+') — click on the map to place · ESC cancels');
+  } else {
+    _setDrawBanner(_drawTwoClick
+      ? (type+' — click to place · move to aim direction · click to confirm · ESC cancels')
+      : (_drawIsPoly?'AREA':'LINE')+' — '+type+
+        ' · click to add points · double-click / right-click to finish · ESC cancels');
+  }
 
   map.on('click',     _drawClick);
   map.on('mousemove', _drawMove);
@@ -1333,6 +1374,14 @@ function _drawStyle(){
 }
 
 function _drawClick(e){
+  // SOF point marker: single click → save immediately, no geometry.
+  if(SOF_POINT_TYPES.has(_drawType)){
+    const affName = _drawAff==='H'?'HOSTILE':_drawAff==='N'?'NEUTRAL':_drawAff==='U'?'UNKNOWN':'FRIENDLY';
+    const geom = {type:'point', coords:[[e.latlng.lat, e.latlng.lng]]};
+    if(bridge) bridge.onGraphicDrawn(_drawType, JSON.stringify(geom), affName, _fdActiveOverlayId());
+    cancelDraw();
+    return;
+  }
   // Two-click directional graphic: 1st click = anchor, 2nd click = aim/confirm.
   if(_drawTwoClick){
     _drawPts.push(e.latlng);
@@ -1968,6 +2017,22 @@ const TG = {
   // Intel
   NAI:           {kind:'areadash',  color:'#aa44ff', w:2,   tag:'NAI'},
   TAI:           {kind:'areadash',  color:'#ff44aa', w:2,   tag:'TAI'},
+  // SOF / Paracommando point markers
+  SOF_OP:       {kind:'sof_point', color:'#f59e0b', tag:'OP',  label:'Observation Post'},
+  SOF_LUP:      {kind:'sof_point', color:'#f59e0b', tag:'LUP', label:'Lying Up Position'},
+  SOF_IP:       {kind:'sof_point', color:'#22c55e', tag:'IP',  label:'Initial Point'},
+  SOF_BIVAK:    {kind:'sof_point', color:'#f59e0b', tag:'BVK', label:'Bivouac'},
+  SOF_PUP:      {kind:'sof_point', color:'#60a5fa', tag:'PUP', label:'Pick-Up Point'},
+  SOF_DP:       {kind:'sof_point', color:'#60a5fa', tag:'DP',  label:'Drop Point'},
+  SOF_RV:       {kind:'sof_point', color:'#a855f7', tag:'RV',  label:'Rendezvous'},
+  SOF_ERV:      {kind:'sof_point', color:'#ec4899', tag:'ERV', label:'Emergency RV'},
+  SOF_CP:       {kind:'sof_point', color:'#f59e0b', tag:'CP',  label:'Checkpoint'},
+  SOF_FUP:      {kind:'sof_point', color:'#22c55e', tag:'FUP', label:'Forming Up Point'},
+  SOF_HLZ:      {kind:'sof_point', color:'#60a5fa', tag:'HLZ', label:'Helicopter LZ'},
+  SOF_DZ:       {kind:'sof_point', color:'#22c55e', tag:'DZ',  label:'Drop Zone'},
+  // SOF lines
+  SOF_BASELINE: {kind:'linelabel', color:'#f59e0b', w:2.5, tag:'BSL', dash:'8,4'},
+  SOF_FLANK:    {kind:'arrow',     color:'#f59e0b', w:2.5, label:'Flank direction'},
 };
 
 // affiliation → colour per APP-6 colour standard

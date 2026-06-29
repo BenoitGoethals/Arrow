@@ -198,6 +198,9 @@
     .tg-btn.tg-enemy    { color: #fca5a5; }
     .tg-btn.tg-enemy:hover { border-color: #ef4444; color: #fecaca; }
     .tg-btn.tg-enemy.active { background: #2a1010; border-color: #ef4444; color: #fecaca; }
+    .tg-btn.tg-sof    { border-left: 3px solid #f59e0b; color: #fcd34d; }
+    .tg-btn.tg-sof:hover { border-color: #f59e0b; color: #fef3c7; }
+    .tg-btn.tg-sof.active { background: #292007; border-color: #f59e0b; color: #fef3c7; }
     .tg-section-label { font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
                         margin: 8px 0 2px; font-weight: 700; }
     .tg-section-label.friendly { color: #93c5fd; }
@@ -371,6 +374,23 @@
                 <button class="tg-btn" data-tg="ASSEMBLY_AREA"   data-aff="FRIENDLY"><span class="tg-glyph">▱</span>Assembly Area</button>
                 <button class="tg-btn" data-tg="NAI"             data-aff="FRIENDLY"><span class="tg-glyph">▢</span>NAI</button>
                 <button class="tg-btn" data-tg="TAI"             data-aff="HOSTILE"><span class="tg-glyph">▢</span>TAI</button>
+            </div>
+            <div class="tg-section-label" style="color:#f59e0b">▌SOF / Paracommando</div>
+            <div class="tg-grid">
+                <button class="tg-btn tg-sof" data-tg="SOF_OP"       data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>OP</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_LUP"      data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>LUP</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_IP"       data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>IP</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_FUP"      data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>FUP</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_CP"       data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>CP</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_RV"       data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>RV</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_ERV"      data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>ERV</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_BIVAK"    data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>Bivouac</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_PUP"      data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>PUP</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_DP"       data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>DP</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_HLZ"      data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>HLZ</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_DZ"       data-aff="FRIENDLY"><span class="tg-glyph">⬡</span>DZ</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_BASELINE" data-aff="FRIENDLY"><span class="tg-glyph">━</span>Baseline</button>
+                <button class="tg-btn tg-sof" data-tg="SOF_FLANK"    data-aff="FRIENDLY"><span class="tg-glyph">➤</span>Flank</button>
             </div>
             <button class="tg-btn tg-cancel" id="tg-cancel">✕ Cancel drawing</button>
         </details>
@@ -1576,6 +1596,22 @@
         // Intel
         NAI:           { shape: 'polygon', dash:'6,5', fixed:'#a855f7', tag:'NAI', label: 'Named Area of Interest' },
         TAI:           { shape: 'polygon', dash:'6,5', fixed:'#ec4899', tag:'TAI', label: 'Targeted Area of Interest' },
+        // ── SOF / Paracommando point markers (single-click, amber hex) ──────
+        SOF_OP:       { shape: 'point', sofColor: '#f59e0b', tag: 'OP',   label: 'Observation Post'  },
+        SOF_LUP:      { shape: 'point', sofColor: '#f59e0b', tag: 'LUP',  label: 'Lying Up Position' },
+        SOF_IP:       { shape: 'point', sofColor: '#22c55e', tag: 'IP',   label: 'Initial Point'     },
+        SOF_BIVAK:    { shape: 'point', sofColor: '#f59e0b', tag: 'BVK',  label: 'Bivouac'           },
+        SOF_PUP:      { shape: 'point', sofColor: '#60a5fa', tag: 'PUP',  label: 'Pick-Up Point'     },
+        SOF_DP:       { shape: 'point', sofColor: '#60a5fa', tag: 'DP',   label: 'Drop Point'        },
+        SOF_RV:       { shape: 'point', sofColor: '#a855f7', tag: 'RV',   label: 'Rendezvous'        },
+        SOF_ERV:      { shape: 'point', sofColor: '#ec4899', tag: 'ERV',  label: 'Emergency RV'      },
+        SOF_CP:       { shape: 'point', sofColor: '#f59e0b', tag: 'CP',   label: 'Checkpoint'        },
+        SOF_FUP:      { shape: 'point', sofColor: '#22c55e', tag: 'FUP',  label: 'Forming Up Point'  },
+        SOF_HLZ:      { shape: 'point', sofColor: '#60a5fa', tag: 'HLZ',  label: 'Helicopter LZ'     },
+        SOF_DZ:       { shape: 'point', sofColor: '#22c55e', tag: 'DZ',   label: 'Drop Zone'         },
+        // SOF lines
+        SOF_BASELINE: { shape: 'line', fixed: '#f59e0b', weight: 2.5, dash: '8,4', tag: 'BSL', label: 'Baseline' },
+        SOF_FLANK:    { shape: 'line', arrow: true, fixed: '#f59e0b', weight: 2.5, label: 'Flank direction' },
     };
     const TG_TYPES = Object.keys(TG_SPEC);
 
@@ -1674,7 +1710,20 @@
                           stroke-width="3" fill="none" stroke-linecap="round"/>`;
                 break;
             default:
-                glyph = `<circle cx="40" cy="40" r="20" fill="${c}"/>`;
+                if (spec && spec.sofColor) {
+                    // SOF / Paracommando marker — amber (or type-specific) hexagon + abbreviation
+                    const sc  = spec.sofColor;
+                    const abbr = spec.tag || obj.type.replace('SOF_', '');
+                    const fs  = abbr.length > 3 ? 13 : abbr.length === 3 ? 15 : 18;
+                    glyph = `
+                        <polygon points="40,8 64,23 64,57 40,72 16,57 16,23"
+                                 fill="${sc}" fill-opacity=".92" stroke="#0a0a0a" stroke-width="2"/>
+                        <text x="40" y="40" text-anchor="middle" dominant-baseline="central"
+                              fill="#0a0a0a" font-size="${fs}" font-weight="700"
+                              font-family="'Courier New',monospace">${abbr}</text>`;
+                } else {
+                    glyph = `<circle cx="40" cy="40" r="20" fill="${c}"/>`;
+                }
         }
         // Echelon size designator (dots/bars) at top of the icon — drawn
         // OUTSIDE the rotation group so it stays upright.

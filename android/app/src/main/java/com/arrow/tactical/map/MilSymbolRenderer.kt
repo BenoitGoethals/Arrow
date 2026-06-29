@@ -470,6 +470,19 @@ object MilSymbolRenderer {
         "BLOCK"         to TgSpec { c, dp, col -> drawBlockBar(c, dp, col) },
         "BYPASS"        to TgSpec { c, dp, col -> drawBypass(c, dp, col) },
         "WITHDRAW"      to TgSpec { c, dp, col -> drawWithdraw(c, dp, col) },
+        // SOF / Paracommando hexagon markers
+        "SOF_OP"    to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "OP") },
+        "SOF_LUP"   to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "LUP") },
+        "SOF_IP"    to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "IP",  0xFF22C55E.toInt()) },
+        "SOF_BIVAK" to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "BVK") },
+        "SOF_PUP"   to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "PUP", 0xFF60A5FA.toInt()) },
+        "SOF_DP"    to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "DP",  0xFF60A5FA.toInt()) },
+        "SOF_RV"    to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "RV",  0xFFA855F7.toInt()) },
+        "SOF_ERV"   to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "ERV", 0xFFEC4899.toInt()) },
+        "SOF_CP"    to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "CP") },
+        "SOF_FUP"   to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "FUP", 0xFF22C55E.toInt()) },
+        "SOF_HLZ"   to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "HLZ", 0xFF60A5FA.toInt()) },
+        "SOF_DZ"    to TgSpec { c, dp, col -> drawSofHex(c, dp, col, "DZ",  0xFF22C55E.toInt()) },
     )
 
     fun isTacticalGraphic(type: String): Boolean = type in TG_SPECS
@@ -576,6 +589,44 @@ object MilSymbolRenderer {
             moveTo(26 * dp, 44 * dp); lineTo(18 * dp, 33 * dp); lineTo(34 * dp, 33 * dp); close()
         }
         c.drawPath(head, paint)
+    }
+
+    private fun drawSofHex(
+        c: Canvas, dp: Float, @Suppress("UNUSED_PARAMETER") col: Int,
+        abbr: String, hexColor: Int = 0xFFF59E0B.toInt(),
+    ) {
+        val s = 52 * dp
+        val cx = s / 2; val cy = s / 2
+        val r  = s * 0.42f
+        // Flat-top hexagon: 6 vertices at angles 30°,90°,150°,210°,270°,330°
+        val path = Path().apply {
+            for (i in 0..5) {
+                val a = Math.toRadians((60.0 * i + 30)).toFloat()
+                val x = cx + r * kotlin.math.cos(a)
+                val y = cy + r * kotlin.math.sin(a)
+                if (i == 0) moveTo(x, y) else lineTo(x, y)
+            }
+            close()
+        }
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = hexColor; style = Paint.Style.FILL; alpha = 235
+        })
+        c.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(220, 10, 10, 10); style = Paint.Style.STROKE
+            strokeWidth = 2.2f * dp
+        })
+        val textSize = when {
+            abbr.length > 3 -> 11f * dp
+            abbr.length == 3 -> 13f * dp
+            else             -> 16f * dp
+        }
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(220, 10, 10, 10); this.textSize = textSize
+            isFakeBoldText = true; typeface = android.graphics.Typeface.MONOSPACE
+            textAlign = Paint.Align.CENTER
+        }
+        val fm = textPaint.fontMetrics
+        c.drawText(abbr, cx, cy - (fm.ascent + fm.descent) / 2f, textPaint)
     }
 
     private val ECHELON_DOTS = mapOf("TM" to 2, "SEC" to 3)

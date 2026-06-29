@@ -38,7 +38,8 @@ object TacticalGraphicRenderer {
 
     private enum class TgKind {
         WIDE_ARROW, ARROW, DEFENSE, BLOCK_BAR, HORSESHOE,
-        SCALLOP, LINE_LABEL, FSCM, BOUNDARY, AREA, AREA_DASHED, HATCH
+        SCALLOP, LINE_LABEL, FSCM, BOUNDARY, AREA, AREA_DASHED, HATCH,
+        SOF_POINT  // rendered via MilSymbolRenderer fallback (no geometry)
     }
 
     private data class TgSpec(
@@ -82,6 +83,23 @@ object TacticalGraphicRenderer {
         "FSCL" to TgSpec(TgKind.FSCM, 3.0f, fixedColor = 0xFFFF8800.toInt(), tag = "FSCL"),
         "CFL"  to TgSpec(TgKind.FSCM, 2.5f, fixedColor = 0xFFFF4400.toInt(), tag = "CFL"),
         "NFL"  to TgSpec(TgKind.FSCM, 2.5f, fixedColor = 0xFFFF0000.toInt(), tag = "NFL"),
+        // SOF / Paracommando point markers — routed via MilSymbolRenderer fallback
+        "SOF_OP"       to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFFF59E0B.toInt()),
+        "SOF_LUP"      to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFFF59E0B.toInt()),
+        "SOF_IP"       to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFF22C55E.toInt()),
+        "SOF_BIVAK"    to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFFF59E0B.toInt()),
+        "SOF_PUP"      to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFF60A5FA.toInt()),
+        "SOF_DP"       to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFF60A5FA.toInt()),
+        "SOF_RV"       to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFFA855F7.toInt()),
+        "SOF_ERV"      to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFFEC4899.toInt()),
+        "SOF_CP"       to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFFF59E0B.toInt()),
+        "SOF_FUP"      to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFF22C55E.toInt()),
+        "SOF_HLZ"      to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFF60A5FA.toInt()),
+        "SOF_DZ"       to TgSpec(TgKind.SOF_POINT, fixedColor = 0xFF22C55E.toInt()),
+        // SOF lines
+        "SOF_BASELINE" to TgSpec(TgKind.LINE_LABEL, 2.5f, fixedColor = 0xFFF59E0B.toInt(), tag = "BSL",
+                                 dashOnDp = 8f, dashOffDp = 4f),
+        "SOF_FLANK"    to TgSpec(TgKind.ARROW,      2.5f, fixedColor = 0xFFF59E0B.toInt()),
     )
 
     fun isTacticalControl(type: String): Boolean = type in TG_REGISTRY
@@ -115,6 +133,7 @@ object TacticalGraphicRenderer {
             TgKind.AREA        -> buildArea(map, res, coords, color, w, dp, spec.tag, dashed = false)
             TgKind.AREA_DASHED -> buildArea(map, res, coords, color, w, dp, spec.tag, dashed = true)
             TgKind.HATCH       -> buildHatch(map, res, coords, color, w, dp, spec.tag)
+            TgKind.SOF_POINT   -> emptyList() // rendered via MilSymbolRenderer fallback
         }
     }
 

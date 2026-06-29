@@ -62,6 +62,24 @@ CONTROL_GRAPHICS = [
     ("Route", "ROUTE", "F", "—"),
 ]
 
+# SOF / Paracommando point markers and lines — shared vocab with web + android.
+SOF_GRAPHICS = [
+    ("OP",       "SOF_OP",       "F", "⬡"),
+    ("LUP",      "SOF_LUP",      "F", "⬡"),
+    ("IP",       "SOF_IP",       "F", "⬡"),
+    ("FUP",      "SOF_FUP",      "F", "⬡"),
+    ("CP",       "SOF_CP",       "F", "⬡"),
+    ("RV",       "SOF_RV",       "F", "⬡"),
+    ("ERV",      "SOF_ERV",      "F", "⬡"),
+    ("Bivouac",  "SOF_BIVAK",    "F", "⬡"),
+    ("PUP",      "SOF_PUP",      "F", "⬡"),
+    ("DP",       "SOF_DP",       "F", "⬡"),
+    ("HLZ",      "SOF_HLZ",      "F", "⬡"),
+    ("DZ",       "SOF_DZ",       "F", "⬡"),
+    ("Baseline", "SOF_BASELINE", "F", "━"),
+    ("Flank",    "SOF_FLANK",    "F", "➤"),
+]
+
 # Echelon SIDC codes (letter at index 11) — MIL-STD-2525B: A=Team C=Section
 # D=Platoon E=Company. Matches symbology.ECHELON and the web client.
 ECHELON_LABELS = [("—", "--"), ("TM", "-A"), ("SEC", "-C"), ("PL", "-D"), ("COY", "-E")]
@@ -69,6 +87,7 @@ ECHELON_LABELS = [("—", "--"), ("TM", "-A"), ("SEC", "-C"), ("PL", "-D"), ("CO
 _BLUE = "#3b82f6"
 _RED = "#ef4444"
 _AMBER = "#f59e0b"
+_SOF = "#f59e0b"
 
 
 _FD_COLORS = [
@@ -179,6 +198,10 @@ class DrawPanel(QWidget):
             self._section_header("FIRE SUPPORT / CONTROL MEASURES", _AMBER)
         )
         self._control_btns = self._graphic_grid(layout, CONTROL_GRAPHICS, _AMBER)
+
+        # SOF / Paracommando section
+        layout.addWidget(self._section_header("SOF / PARACOMMANDO", _SOF))
+        self._sof_btns = self._graphic_grid(layout, SOF_GRAPHICS, _SOF)
 
         layout.addStretch()
 
@@ -413,7 +436,7 @@ class DrawPanel(QWidget):
         # Stop any active free draw tool
         self._stop_free_draw_tools()
         # Deselect all others
-        all_btns = self._friendly_btns + self._enemy_btns + self._control_btns
+        all_btns = self._friendly_btns + self._enemy_btns + self._control_btns + self._sof_btns
         for b in all_btns:
             if b is not btn:
                 b.setChecked(False)
@@ -442,7 +465,7 @@ class DrawPanel(QWidget):
             self._stop_free_draw_tools()
             self.free_draw_changed.emit("none", self._fd_color, self._fd_thick)
         # Stop tactical graphic drawing
-        for b in self._friendly_btns + self._enemy_btns + self._control_btns:
+        for b in self._friendly_btns + self._enemy_btns + self._control_btns + self._sof_btns:
             b.setChecked(False)
             b.setStyleSheet(self._gfx_btn_style(b.property("color"), False))
         self._cancel_btn.setEnabled(False)
