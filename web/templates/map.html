@@ -479,6 +479,7 @@
                 <button class="overlay-btn" id="goto-toggle" title="Go to location">🔍 Go To</button>
                 <button class="overlay-btn" id="track-toggle" title="Operator track history">📊 Tracks</button>
                 <button class="overlay-btn" id="wx-toggle" title="Weather overlays">🌧 Weather</button>
+                <button class="overlay-btn active" id="cluster-toggle" title="Group nearby symbols into cluster badges — click to show all individually">⊞ Group</button>
                 <button class="overlay-btn" id="mgal-btn" title="Media Gallery">📷 Media</button>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
@@ -808,8 +809,53 @@
         };
     }
 
-    // Route a point marker through the cluster instead of the bare map.
-    function addEntityMarker(m) { entityCluster.addLayer(m); return m; }
+    // ── Clustering on/off toggle ────────────────────────────────────────────
+    // Persisted per browser: '0' = off, anything else = on (default on).
+    let clusteringEnabled = localStorage.getItem('arrow_cluster') !== '0';
+
+    function _syncClusterBtn() {
+        const btn = document.getElementById('cluster-toggle');
+        if (!btn) return;
+        btn.classList.toggle('active', clusteringEnabled);
+        btn.title = clusteringEnabled
+            ? 'Grouping ON — click to show all symbols individually'
+            : 'Grouping OFF — click to re-enable cluster badges';
+    }
+    _syncClusterBtn();
+
+    function toggleClustering() {
+        clusteringEnabled = !clusteringEnabled;
+        localStorage.setItem('arrow_cluster', clusteringEnabled ? '1' : '0');
+        _syncClusterBtn();
+        const hasGetLayers = typeof entityCluster.getLayers === 'function';
+        if (clusteringEnabled) {
+            // Move markers that are directly on the map back into the cluster group.
+            state.markers.forEach(m => {
+                if (!entityCluster.hasLayer(m)) {
+                    try { map.removeLayer(m); } catch (_) {}
+                    try { entityCluster.addLayer(m); } catch (_) {}
+                }
+            });
+            if (hasGetLayers) entityCluster.refreshClusters();
+        } else {
+            // Pull every marker out of the cluster and place it directly on the map.
+            if (hasGetLayers) {
+                const layers = entityCluster.getLayers();
+                entityCluster.clearLayers();
+                layers.forEach(m => { try { m.addTo(map); } catch (_) {} });
+            }
+        }
+    }
+
+    document.getElementById('cluster-toggle')
+        ?.addEventListener('click', toggleClustering);
+
+    // Route a point marker through the cluster OR directly onto the map.
+    function addEntityMarker(m) {
+        if (clusteringEnabled) entityCluster.addLayer(m);
+        else m.addTo(map);
+        return m;
+    }
     // Remove a marker whether it lives in the cluster or directly on the map
     // (graphics featureGroups are added straight to the map). Safe for both.
     function removeEntityMarker(m) {
