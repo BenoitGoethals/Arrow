@@ -62,23 +62,25 @@ from front.panels.routes.panel import RoutesPanel, RoutePropertiesDialog
 
 CBRN_TYPES = {"CBRN_1", "CBRN_2", "CBRN_3", "CBRN_4", "CBRN_5", "CBRN_6"}
 
+# Echelon letter sits at SIDC index 11 (milsymbol reads charAt(11)); index 10 is
+# the HQ/mobility modifier. Keys are "-<letter>" to match MIL-STD-2525B / the web.
 _SIDC_ECH_MAP = {
-    "A-": "TM",
-    "B-": "CREW",
-    "C-": "SQD",
-    "D-": "SEC",
-    "E-": "PLT",
-    "F-": "COY",
-    "G-": "BN",
-    "H-": "RGT",
-    "I-": "BDE",
-    "J-": "DIV",
-    "K-": "CORPS",
+    "-A": "TM",
+    "-B": "SQD",
+    "-C": "SEC",
+    "-D": "PLT",
+    "-E": "COY",
+    "-F": "BN",
+    "-G": "RGT",
+    "-H": "BDE",
+    "-I": "DIV",
+    "-J": "CORPS",
+    "-K": "ARMY",
 }
 
 
 def _sidc_echelon(sidc: str) -> str:
-    """Extract echelon label from a 15-char SIDC (positions 10-11)."""
+    """Extract echelon label from a 15-char SIDC (echelon at index 11)."""
     if len(sidc) >= 12:
         return _SIDC_ECH_MAP.get(sidc[10:12], "")
     return ""

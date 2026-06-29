@@ -62,7 +62,9 @@ CONTROL_GRAPHICS = [
     ("Route", "ROUTE", "F", "—"),
 ]
 
-ECHELON_LABELS = [("—", "--"), ("TM", "A-"), ("SEC", "D-"), ("PL", "E-"), ("COY", "F-")]
+# Echelon SIDC codes (letter at index 11) — MIL-STD-2525B: A=Team C=Section
+# D=Platoon E=Company. Matches symbology.ECHELON and the web client.
+ECHELON_LABELS = [("—", "--"), ("TM", "-A"), ("SEC", "-C"), ("PL", "-D"), ("COY", "-E")]
 
 _BLUE = "#3b82f6"
 _RED = "#ef4444"
@@ -426,8 +428,11 @@ class DrawPanel(QWidget):
             self._active_aff = aff
             btn.setStyleSheet(self._gfx_btn_style(color, True))
             self._cancel_btn.setEnabled(True)
+            # draw_graphic carries the affiliation (F/H) and already configures
+            # the map's draw mode via setDrawGraphic. Do NOT also emit
+            # draw_mode_changed here — set_draw_mode → setDrawMode resets the
+            # affiliation back to friendly, turning every enemy graphic blue.
             self.draw_graphic.emit(gtype, aff)
-            self.draw_mode_changed.emit(gtype)
         else:
             self._cancel()
 
