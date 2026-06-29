@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+{% block title %}System Monitor — Arrow{% endblock %}
+{% block content %}
+<style>
+/* ── Monitor page ─────────────────────────────────────────────────── */
+.mon-page {
+  padding: 1.25rem 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.mon-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+.mon-header h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: .05em;
+  margin: 0;
+}
+.mon-ts {
+  font-size: .78rem;
+  color: #64748b;
+  font-family: 'Courier New', monospace;
+}
+#mon-refresh-btn {
+  margin-left: auto;
+  padding: .35rem .9rem;
+  font-size: .82rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background .15s;
+}
+#mon-refresh-btn:hover { background: #273344; color: #e2e8f0; }
+#mon-refresh-btn.spinning { opacity: .6; cursor: wait; }
+
+/* grid of probe cards */
+.mon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: .9rem;
+  margin-bottom: 1.5rem;
+}
+.mon-card {
+  background: #0f1923;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: .85rem 1rem;
+  position: relative;
+  transition: border-color .2s;
+}
+.mon-card.up    { border-left: 3px solid #22c55e; }
+.mon-card.down  { border-left: 3px solid #ef4444; }
+.mon-card.warn  { border-left: 3px solid #f59e0b; }
+.mon-card.idle  { border-left: 3px solid #475569; }
+
+.mon-card-title {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: .45rem;
+}
+.mon-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .82rem;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+}
+.mon-badge .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.up   .dot { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+.down .dot { background: #ef4444; box-shadow: 0 0 6px #ef444488; }
+.warn .dot { background: #f59e0b; box-shadow: 0 0 6px #f59e0b88; }
+.idle .dot { background: #475569; }
+.up   .mon-badge { color: #22c55e; }
+.down .mon-badge { color: #ef4444; }
+.warn .mon-badge { color: #f59e0b; }
+.idle .mon-badge { color: #64748b; }
+
+.mon-detail {
+  margin-top: .5rem;
+  font-size: .78rem;
+  color: #94a3b8;
+  font-family: 'Courier New', monospace;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.mon-ms {
+  position: absolute;
+  top: .7rem;
+  right: .8rem;
+  font-size: .72rem;
+  color: #475569;
+  font-family: 'Courier New', monospace;
+}
+
+/* stats table */
+.mon-section { margin-bottom: 1.5rem; }
+.mon-section h2 {
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #475569;
+  margin-bottom: .6rem;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: .4rem;
+}
+.mon-kv-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.2rem;
+  margin-bottom: .7rem;
+}
+.mon-kv {
+  background: #0f1923;
+  border: 1px solid #1e293b;
+  border-radius: 4px;
+  padding: .3rem .7rem;
+  font-size: .82rem;
+  font-family: 'Courier New', monospace;
+  color: #94a3b8;
+}
+.mon-kv span { color: #e2e8f0; font-weight: 700; margin-left: .4rem; }
+
+/* ATAK device list */
+.mon-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .8rem;
+  font-family: 'Courier New', monospace;
+}
+.mon-table th {
+  text-align: left;
+  color: #475569;
+  font-weight: 600;
+  padding: .3rem .6rem;
+  border-bottom: 1px solid #1e293b;
+}
+.mon-table td {
+  padding: .35rem .6rem;
+  color: #94a3b8;
+  border-bottom: 1px solid #0f1923;
+}
+.mon-table tr:hover td { background: #111a26; }
+.mon-empty { color: #475569; font-size: .8rem; font-family: 'Courier New', monospace; padding: .4rem 0; }
+</style>
+
+<div class="mon-page">
+  <div class="mon-header">
+    <h1>📡 SYSTEM MONITOR</h1>
+    <span class="mon-ts">Last check: <span id="mon-ts">—</span></span>
+    <button id="mon-refresh-btn" onclick="runProbes()">⟳ Refresh</button>
+  </div>
+
+  <!-- Status cards -->
+  <div class="mon-grid">
+
+    <div class="mon-card idle" id="card-api">
+      <div class="mon-card-title">Backend API</div>
+      <div class="mon-badge"><span class="dot"></span><span id="api-status">—</span></div>
+      <span class="mon-ms" id="api-ms"></span>
+      <div class="mon-detail" id="api-detail"></div>
+    </div>
+
+    <div class="mon-card idle" id="card-db">
+      <div class="mon-card-title">Database (PostgreSQL)</div>
+      <div class="mon-badge"><span class="dot"></span><span id="db-status">—</span></div>
+      <span class="mon-ms" id="db-ms"></span>
+      <div class="mon-detail" id="db-detail"></div>
+    </div>
+
+    <div class="mon-card idle" id="card-ws">
+      <div class="mon-card-title">WebSocket</div>
+      <div class="mon-badge"><span class="dot"></span><span id="ws-status">—</span></div>
+      <div class="mon-detail" id="ws-detail"></div>
+    </div>
+
+    <div class="mon-card idle" id="card-cot">
+      <div class="mon-card-title">CoT / ATAK Bridge (TCP)</div>
+      <div class="mon-badge"><span class="dot"></span><span id="cot-status">—</span></div>
+      <span class="mon-ms" id="cot-ms"></span>
+      <div class="mon-detail" id="cot-detail"></div>
+    </div>
+
+    <div class="mon-card idle" id="card-mumble">
+      <div class="mon-card-title">Mumble Voice</div>
+      <div class="mon-badge"><span class="dot"></span><span id="mumble-status">—</span></div>
+      <span class="mon-ms" id="mumble-ms"></span>
+      <div class="mon-detail" id="mumble-detail"></div>
+    </div>
+
+    <div class="mon-card idle" id="card-mapserver">
+      <div class="mon-card-title">MapServer (WMS/WFS)</div>
+      <div class="mon-badge"><span class="dot"></span><span id="map-status">—</span></div>
+      <span class="mon-ms" id="map-ms"></span>
+      <div class="mon-detail" id="map-detail"></div>
+    </div>
+
+  </div>
+
+  <!-- Operator stats -->
+  <div class="mon-section" id="section-stats" style="display:none">
+    <h2>Operator &amp; Activity Snapshot</h2>
+    <div class="mon-kv-row" id="stats-kv"></div>
+  </div>
+
+  <!-- Connected ATAK devices -->
+  <div class="mon-section" id="section-atak" style="display:none">
+    <h2>Connected ATAK Devices</h2>
+    <div id="atak-body"></div>
+  </div>
+
+  <!-- Mumble channels -->
+  <div class="mon-section" id="section-mumble" style="display:none">
+    <h2>Mumble Channels &amp; Users</h2>
+    <div id="mumble-body"></div>
+  </div>
+</div>
+
+<script>
+/* ── constants ─────────────────────────────────────────────────────── */
+const B   = window.ARROW_BACKEND_URL || '/api';
+const tok = () => localStorage.getItem('arrow_token') || '';
+
+function hdrs() {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok() };
+}
+
+/* ── helpers ────────────────────────────────────────────────────────── */
+function setState(cardId, state, statusText, detail = '', msText = '') {
+  const card = document.getElementById(cardId);
+  card.className = 'mon-card ' + state;
+  card.querySelector('[id$="-status"]').textContent = statusText;
+  card.querySelector('[id$="-detail"]').textContent = detail;
+  const msEl = card.querySelector('[id$="-ms"]');
+  if (msEl) msEl.textContent = msText;
+}
+
+async function timed(fn) {
+  const t0 = performance.now();
+  const result = await fn();
+  return { result, ms: Math.round(performance.now() - t0) };
+}
+
+/* ── probes ─────────────────────────────────────────────────────────── */
+
+async function probeApi() {
+  try {
+    const { result: r, ms } = await timed(() =>
+      fetch(B + '/health', { signal: AbortSignal.timeout(5000) })
+    );
+    if (r.ok) {
+      setState('card-api', 'up', 'UP', '/health → 200 OK', ms + ' ms');
+    } else {
+      setState('card-api', 'down', 'DOWN', '/health → HTTP ' + r.status);
+    }
+  } catch (e) {
+    setState('card-api', 'down', 'DOWN', 'Unreachable — ' + e.message);
+  }
+}
+
+async function probeDb() {
+  if (!tok()) { setState('card-db', 'warn', 'NO TOKEN', 'Login required to probe DB'); return; }
+  try {
+    const { result: r, ms } = await timed(() =>
+      fetch(B + '/stats', { headers: hdrs(), signal: AbortSignal.timeout(8000) })
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const ops = d.operators || {};
+      setState('card-db', 'up', 'UP',
+        `Operators: ${ops.total ?? '—'}  |  Online: ${ops.online ?? '—'}\nAlerts: ${d.alerts?.active ?? 0}  |  Messages: ${d.messages?.total ?? '—'}`,
+        ms + ' ms');
+      renderStats(d);
+    } else if (r.status === 401 || r.status === 403) {
+      setState('card-db', 'warn', 'AUTH', 'Not authorised (need ADMIN role)');
+    } else {
+      setState('card-db', 'down', 'DOWN', 'GET /stats → HTTP ' + r.status);
+    }
+  } catch (e) {
+    setState('card-db', 'down', 'DOWN', 'Query failed — ' + e.message);
+  }
+}
+
+async function probeWs() {
+  if (!tok()) { setState('card-ws', 'warn', 'NO TOKEN', 'Login required to probe WS'); return; }
+  setState('card-ws', 'idle', 'CONNECTING…', '');
+  const wsUrl = B.replace(/^https?/, 'wss').replace(/^http/, 'ws');
+  const url   = wsUrl.replace('/api', '') + '/ws?token=' + encodeURIComponent(tok());
+  return new Promise(resolve => {
+    let done = false;
+    const t0  = performance.now();
+    let ws;
+    const guard = setTimeout(() => {
+      if (!done) { done = true; setState('card-ws', 'down', 'TIMEOUT', 'No response within 5 s'); ws?.close(); resolve(); }
+    }, 5000);
+    try {
+      ws = new WebSocket(url);
+      ws.onopen = () => {
+        if (done) return; done = true; clearTimeout(guard);
+        setState('card-ws', 'up', 'CONNECTED', '/ws handshake OK — ' + Math.round(performance.now() - t0) + ' ms');
+        ws.close();
+        resolve();
+      };
+      ws.onerror = () => {
+        if (done) return; done = true; clearTimeout(guard);
+        setState('card-ws', 'down', 'ERROR', 'WebSocket connection refused');
+        resolve();
+      };
+    } catch(e) {
+      if (!done) { done = true; clearTimeout(guard); setState('card-ws', 'down', 'ERROR', e.message); resolve(); }
+    }
+  });
+}
+
+async function probeCot() {
+  if (!tok()) { setState('card-cot', 'warn', 'NO TOKEN', 'Login required'); return; }
+  try {
+    const { result: r, ms } = await timed(() =>
+      fetch(B + '/cot/tcp/status', { headers: hdrs(), signal: AbortSignal.timeout(5000) })
+    );
+    if (r.ok) {
+      const d = await r.json();
+      const n = d.connected ?? 0;
+      const clients = d.clients || [];
+      const state   = d.running === false ? 'warn' : 'up';
+      const label   = d.running === false ? 'STOPPED' : 'UP';
+      setState('card-cot', state, label,
+        `TCP server: ${d.running === false ? 'stopped' : 'running'}\nATAK devices: ${n}`,
+        ms + ' ms');
+      renderAtak(clients);
+    } else {
+      setState('card-cot', 'down', 'DOWN', 'GET /cot/tcp/status → HTTP ' + r.status);
+    }
+  } catch (e) {
+    setState('card-cot', 'down', 'DOWN', 'Probe failed — ' + e.message);
+  }
+}
+
+async function probeMumble() {
+  if (!tok()) { setState('card-mumble', 'warn', 'NO TOKEN', 'Login required'); return; }
+  try {
+    const { result: r, ms } = await timed(() =>
+      fetch(B + '/mumble/ping', { headers: hdrs(), signal: AbortSignal.timeout(8000) })
+    );
+    if (r.ok) {
+      const d = await r.json();
+      if (!d.ok && d.msg && d.msg.includes('not configured')) {
+        setState('card-mumble', 'idle', 'NOT CONFIGURED', 'Set host in ⚙ Admin → Mumble');
+      } else if (d.ok) {
+        setState('card-mumble', 'up', 'UP',
+          `${d.host}:${d.port}  |  TCP: ${d.tcp_ms} ms\nBot: ${d.bot_connected ? 'connected' : 'disconnected'}  |  Channels: ${d.channels}  |  Users: ${d.users}`,
+          ms + ' ms');
+        renderMumble();
+      } else {
+        setState('card-mumble', 'down', 'DOWN', d.msg || 'Ping failed', ms + ' ms');
+      }
+    } else {
+      setState('card-mumble', 'down', 'DOWN', 'GET /mumble/ping → HTTP ' + r.status);
+    }
+  } catch (e) {
+    setState('card-mumble', 'down', 'DOWN', 'Probe failed — ' + e.message);
+  }
+}
+
+async function probeMapServer() {
+  // Probe the MapServer WMS capabilities via the ARROW_MAPSERVER_URL env.
+  // The backend exposes it at /api/map/sources — we pick the first WMS URL from there.
+  let wmsUrl = null;
+  try {
+    if (tok()) {
+      const r = await fetch(B + '/map/sources', { headers: hdrs(), signal: AbortSignal.timeout(4000) });
+      if (r.ok) {
+        const sources = await r.json();
+        const wms = sources.find(s => s.type === 'wms' && s.tileUrl);
+        if (wms) {
+          // Strip the GetMap query params to form a GetCapabilities URL
+          wmsUrl = wms.tileUrl.replace(/\?.*$/, '') + '?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities';
+        }
+      }
+    }
+  } catch (_) { /* proceed without WMS URL */ }
+
+  if (!wmsUrl) {
+    // Fallback: try the default mapserver path
+    wmsUrl = '/mapserver?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetCapabilities';
+  }
+
+  try {
+    const { result: r, ms } = await timed(() =>
+      fetch(wmsUrl, { signal: AbortSignal.timeout(6000) })
+    );
+    if (r.ok) {
+      const text = await r.text();
+      const hasCapabilities = text.includes('WMS_Capabilities') || text.includes('WMT_MS_Capabilities');
+      if (hasCapabilities) {
+        const layerCount = (text.match(/<Layer/g) || []).length;
+        setState('card-mapserver', 'up', 'UP',
+          `WMS GetCapabilities → 200 OK\nLayers: ${Math.max(0, layerCount - 1)}`,
+          ms + ' ms');
+      } else {
+        setState('card-mapserver', 'warn', 'DEGRADED', `HTTP ${r.status} but not WMS XML`, ms + ' ms');
+      }
+    } else {
+      setState('card-mapserver', 'down', 'DOWN', `GetCapabilities → HTTP ${r.status}`, ms + ' ms');
+    }
+  } catch (e) {
+    setState('card-mapserver', 'down', 'DOWN', 'MapServer unreachable — ' + e.message);
+  }
+}
+
+/* ── render sub-sections ─────────────────────────────────────────────── */
+
+function renderStats(d) {
+  const ops = d.operators || {};
+  const pairs = [
+    ['Operators', ops.total ?? '—'],
+    ['Online', ops.online ?? '—'],
+    ['Unassigned', ops.unassigned ?? '—'],
+    ['Active Alerts', d.alerts?.active ?? '—'],
+    ['Reports', d.reports?.total ?? '—'],
+    ['Messages', d.messages?.total ?? '—'],
+    ['Tactical Objects', d.tactical_objects?.total ?? '—'],
+  ];
+  if (ops.by_role) {
+    Object.entries(ops.by_role).forEach(([role, cnt]) => pairs.push([role, cnt]));
+  }
+  document.getElementById('stats-kv').innerHTML =
+    pairs.map(([k, v]) => `<div class="mon-kv">${k}<span>${v}</span></div>`).join('');
+  document.getElementById('section-stats').style.display = '';
+}
+
+function renderAtak(clients) {
+  const el = document.getElementById('atak-body');
+  const sec = document.getElementById('section-atak');
+  if (!clients.length) {
+    el.innerHTML = '<span class="mon-empty">No ATAK devices currently connected</span>';
+  } else {
+    el.innerHTML = `<table class="mon-table">
+      <thead><tr><th>UID</th><th>Callsign</th><th>IP</th><th>Connected</th><th>Last seen</th></tr></thead>
+      <tbody>${clients.map(c => `<tr>
+        <td>${c.uid || '—'}</td>
+        <td>${c.callsign || '—'}</td>
+        <td>${c.addr || '—'}</td>
+        <td>${c.connected_ago_s != null ? fmtAgo(c.connected_ago_s) : '—'}</td>
+        <td>${c.last_seen_ago_s != null ? fmtAgo(c.last_seen_ago_s) : '—'}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+  sec.style.display = '';
+}
+
+async function renderMumble() {
+  if (!tok()) return;
+  try {
+    const r = await fetch(B + '/mumble/status', { headers: hdrs(), signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return;
+    const d = await r.json();
+    const channels = d.channels || [];
+    const users    = d.users || [];
+    const sec = document.getElementById('section-mumble');
+    const el  = document.getElementById('mumble-body');
+    if (!channels.length && !users.length) {
+      el.innerHTML = '<span class="mon-empty">Bot not connected — no channel data</span>';
+    } else {
+      el.innerHTML = `<table class="mon-table">
+        <thead><tr><th>Channel</th><th>Users</th></tr></thead>
+        <tbody>${channels.map(ch => {
+          const chUsers = users.filter(u => u.channel_id === ch.id).map(u => u.name).join(', ');
+          return `<tr><td>${ch.name}</td><td>${chUsers || '—'}</td></tr>`;
+        }).join('')}</tbody>
+      </table>`;
+    }
+    sec.style.display = '';
+  } catch(_) {}
+}
+
+function fmtAgo(s) {
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  return Math.floor(s/3600) + 'h ago';
+}
+
+/* ── orchestrator ────────────────────────────────────────────────────── */
+
+async function runProbes() {
+  const btn = document.getElementById('mon-refresh-btn');
+  btn.classList.add('spinning');
+  btn.textContent = '⟳ Checking…';
+
+  // reset all cards to idle while probing
+  document.querySelectorAll('.mon-card').forEach(c => {
+    c.className = 'mon-card idle';
+    const s = c.querySelector('[id$="-status"]');
+    if (s) s.textContent = 'checking…';
+    const d = c.querySelector('[id$="-detail"]');
+    if (d) d.textContent = '';
+    const m = c.querySelector('[id$="-ms"]');
+    if (m) m.textContent = '';
+  });
+
+  await Promise.all([
+    probeApi(),
+    probeDb(),
+    probeWs(),
+    probeCot(),
+    probeMumble(),
+    probeMapServer(),
+  ]);
+
+  document.getElementById('mon-ts').textContent = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+  btn.classList.remove('spinning');
+  btn.textContent = '⟳ Refresh';
+}
+
+/* ── auto-refresh every 30 s ─────────────────────────────────────────── */
+runProbes();
+let _autoTimer = setInterval(runProbes, 30000);
+
+// Stop auto-refresh when page hidden, resume on return
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { clearInterval(_autoTimer); }
+  else { runProbes(); _autoTimer = setInterval(runProbes, 30000); }
+});
+</script>
+{% endblock %}

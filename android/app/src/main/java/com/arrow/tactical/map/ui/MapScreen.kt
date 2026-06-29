@@ -903,8 +903,7 @@ fun MapScreen(
 
         val visibleEnemies = if (showLegacyHostiles)
             enemies.filter {
-                !MilSymbolRenderer.isTacticalGraphic(it.type) &&
-                !MilSymbolRenderer.isTacticalLineOrPolygon(it.type) &&
+                !com.arrow.tactical.map.TacticalGraphicRenderer.isTacticalControl(it.type) &&
                 !isFreeDraw(it.type) &&
                 passesOverlay(it.id)
             }
@@ -1046,8 +1045,7 @@ fun MapScreen(
 
         val visibleGraphics = if (tgVisible && visibility.tacticalObjects)
             enemies.filter {
-                (MilSymbolRenderer.isTacticalGraphic(it.type) ||
-                 MilSymbolRenderer.isTacticalLineOrPolygon(it.type)) &&
+                com.arrow.tactical.map.TacticalGraphicRenderer.isTacticalControl(it.type) &&
                 passesOverlay(it.id)
             }
         else emptyList()
@@ -2531,50 +2529,30 @@ private fun renderTacticalGraphic(
     res: android.content.res.Resources,
     g: TacticalObjectDto,
 ) {
-    val titleSuffix = " · ${g.affiliation}" +
-        (if (g.echelon.isNotBlank()) " · ${g.echelon}" else "")
+    val coords = parseGeometryCoords(g.geometry)
+
+    // Primary: line/area rendering when geometry has ≥2 waypoints
+    if (coords != null && coords.size >= 2 &&
+        com.arrow.tactical.map.TacticalGraphicRenderer.isTacticalControl(g.type)
+    ) {
+        com.arrow.tactical.map.TacticalGraphicRenderer
+            .buildTacticalGraphicOverlays(map, res, g, coords)
+            .forEach { map.overlays.add(it) }
+        return
+    }
+
+    // Fallback: legacy single-point icon (Android-created TGs before line rendering)
     if (com.arrow.tactical.map.MilSymbolRenderer.isTacticalGraphic(g.type)) {
-        // Oriented point graphic
         val drawable = com.arrow.tactical.map.MilSymbolRenderer
             .tacticalGraphic(res, g.type, g.rotation, g.echelon, g.affiliation) ?: return
         Marker(map).apply {
             position = GeoPoint(g.latitude, g.longitude)
-            title    = "${g.type.replace('_', ' ')}$titleSuffix"
+            title    = "${g.type.replace('_', ' ')} · ${g.affiliation}"
             snippet  = g.notes.ifBlank { "heading ${g.rotation.toInt()}°" }
             icon     = drawable
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             map.overlays.add(this)
         }
-        return
-    }
-    val style = com.arrow.tactical.map.MilSymbolRenderer
-        .tacticalLineStyle(g.type, g.affiliation) ?: return
-    val coords = parseGeometryCoords(g.geometry) ?: listOf(GeoPoint(g.latitude, g.longitude))
-    if (coords.size < 2) return
-    val dp = res.displayMetrics.density
-    if (com.arrow.tactical.map.MilSymbolRenderer.isTacticalPolygon(g.type)) {
-        val poly = org.osmdroid.views.overlay.Polygon(map).apply {
-            points = coords
-            fillPaint.color = (style.color and 0x00FFFFFF) or 0x33000000
-            outlinePaint.color = style.color
-            outlinePaint.strokeWidth = style.widthDp * dp
-            title    = "${g.type.replace('_', ' ')}$titleSuffix"
-            snippet  = g.notes
-        }
-        map.overlays.add(poly)
-    } else {
-        val line = org.osmdroid.views.overlay.Polyline(map).apply {
-            setPoints(coords)
-            outlinePaint.color = style.color
-            outlinePaint.strokeWidth = style.widthDp * dp
-            if (style.dashOnDp > 0) {
-                outlinePaint.pathEffect = android.graphics.DashPathEffect(
-                    floatArrayOf(style.dashOnDp * dp, style.dashOffDp * dp), 0f)
-            }
-            title    = "${g.type.replace('_', ' ')}$titleSuffix"
-            snippet  = g.notes
-        }
-        map.overlays.add(line)
     }
 }
 

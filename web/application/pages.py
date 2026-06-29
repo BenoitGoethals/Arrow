@@ -123,3 +123,6 @@ class PageService:
 
     def osint(self) -> PageView:
         return PageView("osint.html")
+
+    def monitor(self) -> PageView:
+        return PageView("monitor.html")

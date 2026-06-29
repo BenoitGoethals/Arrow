@@ -31,6 +31,7 @@ from web.presentation.blueprints import (
     logrep,
     mapserver,
     medcop,
+    monitor,
     osint,
     messaging,
     missions,
@@ -126,6 +127,7 @@ def create_app(
         cop,
         weather,
         mapserver,
+        monitor,
     ):
         app.register_blueprint(module.build_blueprint(service, renderer))
     shell_routes.register(app, service, renderer)
