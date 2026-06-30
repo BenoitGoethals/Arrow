@@ -906,6 +906,18 @@ function closeSymbolPicker(){
   document.getElementById('sym-overlay').classList.remove('active');
 }
 
+// Symbol placement armed from the Front Draw panel: the NEXT left-click on the
+// map opens the picker at that point (one-shot), instead of the radial menu.
+let _armSymAff = null;
+function armSymbolPlacement(aff){
+  _armSymAff = aff || 'FRIENDLY';
+  try { map.getContainer().style.cursor = 'crosshair'; } catch(_){}
+}
+function disarmSymbolPlacement(){
+  _armSymAff = null;
+  try { map.getContainer().style.cursor = ''; } catch(_){}
+}
+
 // Close on click outside the panel (no backdrop — same pattern as radial menu)
 document.getElementById('sym-overlay').addEventListener('mousedown', function(e){
   if (!document.getElementById('sym-panel').contains(e.target)) closeSymbolPicker();
@@ -3049,6 +3061,8 @@ map.getContainer().addEventListener('touchmove', ()=>clearTimeout(_pressTimer), 
 map.on('mousemove',function(e){const mg=latLonToMGRS(e.latlng.lat,e.latlng.lng);if(bridge)bridge.onCoordsChanged(e.latlng.lat,e.latlng.lng,mg);});
 map.on('click',function(e){
   if(_tobjMoveId!==null){_doTobjMove(e.latlng);return;}
+  // Symbol placement armed from the Draw panel: one-shot open of the picker.
+  if(_armSymAff){const aff=_armSymAff;disarmSymbolPlacement();openSymbolPicker(e.latlng.lat,e.latlng.lng,aff);return;}
   // Left-click on the empty map (default pointer mode) opens the radial menu.
   // Active tools (draw / measure / range / free-draw / route) keep their own
   // click handlers, so only pointer mode triggers the radial.
@@ -3260,10 +3274,15 @@ function computeActiveOverlayIds(){
 }
 // True if objId should be visible under the given filter.
 // Unassigned objects always show; assigned objects only when their layer is active.
-function _ovAllowed(objId, filter){
+// Member ids may be server ints OR local string ids ("L7"), and graphics keys are
+// always strings — so check both the raw key and its numeric form.
+function _ovAllowed(rawId, filter){
   if(!filter) return true;
-  if(!filter.assigned.has(objId)) return true;
-  return filter.active.has(objId);
+  const n=Number(rawId);
+  const hasNum=!Number.isNaN(n);
+  const inAssigned = filter.assigned.has(rawId) || (hasNum && filter.assigned.has(n));
+  if(!inAssigned) return true;
+  return filter.active.has(rawId) || (hasNum && filter.active.has(n));
 }
 function isFdType(t){ return t==='FREEDRAW_LINE'||t==='FREEDRAW_TEXT'; }
 
@@ -3273,16 +3292,28 @@ function _applyOverlayFilterOne(id){
   const lyr=graphics[id], home=objHomeLayer[id];
   if(!lyr||!home) return;
   const filter=computeActiveOverlayIds();
-  const show=_ovAllowed(Number(id), filter);
+  const show=_ovAllowed(id, filter);
   if(show){ if(!home.hasLayer(lyr)) home.addLayer(lyr); }
   else if(home.hasLayer(lyr)) home.removeLayer(lyr);
 }
 // Re-apply the filter to every tactical object (overlays activated / changed).
 function applyOverlayFilter(){ Object.keys(graphics).forEach(id=>_applyOverlayFilterOne(id)); }
 
-// Single active overlay id (for "draw on overlays"), else 0.
+// Single active overlay id (for "draw on overlays"), else 0. Local layers
+// (string ids) are driven by the Front Draw panel, so they never feed this.
 function _fdActiveOverlayId(){
-  return (ovState.canEdit && ovState.active.size===1) ? [...ovState.active][0] : 0;
+  if(!(ovState.canEdit && ovState.active.size===1)) return 0;
+  const id=[...ovState.active][0];
+  return (typeof id==='number') ? id : 0;
+}
+
+// Python → page: check/uncheck one overlay (used when the Draw panel selects a
+// layer as the active draw target, so what you draw stays visible).
+function setOverlayActive(id, on){
+  if(on) ovState.active.add(id); else ovState.active.delete(id);
+  persistActiveOverlays();
+  renderOverlayList();
+  applyOverlayFilter();
 }
 
 // Python → page: replace the overlay list and re-render.
@@ -3324,13 +3355,17 @@ function renderOverlayList(){
       if(pts.length) map.fitBounds(L.latLngBounds(pts),{padding:[40,40]});
     });
     row.appendChild(fit);
-    const exp=document.createElement('button'); exp.className='ov-btn'; exp.title='Export overlay to file'; exp.textContent='⬇';
-    exp.addEventListener('click',()=>{ if(bridge) bridge.onLayerExport('OVERLAY', ov.id); });
-    row.appendChild(exp);
-    if(ovState.canEdit){
-      const del=document.createElement('button'); del.className='ov-btn'; del.title='Delete overlay'; del.textContent='🗑';
-      del.addEventListener('click',()=>{ if(confirm(`Delete overlay "${ov.name}"?`) && bridge) bridge.onOverlayDelete(ov.id); });
-      row.appendChild(del);
+    // Local layers are managed from the Front Draw panel (their ids are strings
+    // the server CRUD slots can't take) — show only the checkbox + zoom here.
+    if(!ov.local){
+      const exp=document.createElement('button'); exp.className='ov-btn'; exp.title='Export overlay to file'; exp.textContent='⬇';
+      exp.addEventListener('click',()=>{ if(bridge) bridge.onLayerExport('OVERLAY', ov.id); });
+      row.appendChild(exp);
+      if(ovState.canEdit){
+        const del=document.createElement('button'); del.className='ov-btn'; del.title='Delete overlay'; del.textContent='🗑';
+        del.addEventListener('click',()=>{ if(confirm(`Delete overlay "${ov.name}"?`) && bridge) bridge.onOverlayDelete(ov.id); });
+        row.appendChild(del);
+      }
     }
     list.appendChild(row);
   }

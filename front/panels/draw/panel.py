@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QScrollArea,
     QButtonGroup,
+    QComboBox,
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
@@ -64,20 +65,20 @@ CONTROL_GRAPHICS = [
 
 # SOF / Paracommando point markers and lines — shared vocab with web + android.
 SOF_GRAPHICS = [
-    ("OP",       "SOF_OP",       "F", "⬡"),
-    ("LUP",      "SOF_LUP",      "F", "⬡"),
-    ("IP",       "SOF_IP",       "F", "⬡"),
-    ("FUP",      "SOF_FUP",      "F", "⬡"),
-    ("CP",       "SOF_CP",       "F", "⬡"),
-    ("RV",       "SOF_RV",       "F", "⬡"),
-    ("ERV",      "SOF_ERV",      "F", "⬡"),
-    ("Bivouac",  "SOF_BIVAK",    "F", "⬡"),
-    ("PUP",      "SOF_PUP",      "F", "⬡"),
-    ("DP",       "SOF_DP",       "F", "⬡"),
-    ("HLZ",      "SOF_HLZ",      "F", "⬡"),
-    ("DZ",       "SOF_DZ",       "F", "⬡"),
+    ("OP", "SOF_OP", "F", "⬡"),
+    ("LUP", "SOF_LUP", "F", "⬡"),
+    ("IP", "SOF_IP", "F", "⬡"),
+    ("FUP", "SOF_FUP", "F", "⬡"),
+    ("CP", "SOF_CP", "F", "⬡"),
+    ("RV", "SOF_RV", "F", "⬡"),
+    ("ERV", "SOF_ERV", "F", "⬡"),
+    ("Bivouac", "SOF_BIVAK", "F", "⬡"),
+    ("PUP", "SOF_PUP", "F", "⬡"),
+    ("DP", "SOF_DP", "F", "⬡"),
+    ("HLZ", "SOF_HLZ", "F", "⬡"),
+    ("DZ", "SOF_DZ", "F", "⬡"),
     ("Baseline", "SOF_BASELINE", "F", "━"),
-    ("Flank",    "SOF_FLANK",    "F", "➤"),
+    ("Flank", "SOF_FLANK", "F", "➤"),
 ]
 
 # Echelon SIDC codes (letter at index 11) — MIL-STD-2525B: A=Team C=Section
@@ -114,6 +115,17 @@ class DrawPanel(QWidget):
     free_draw_undo = pyqtSignal()
     free_draw_clear = pyqtSignal()
     delete_all_graphics = pyqtSignal()  # wipe every tactical object/graphic
+    # Surface symbol placement + KML layer upload in this panel.
+    place_symbol_requested = pyqtSignal(str)  # affiliation (FRIENDLY/HOSTILE/...)
+    add_layer_requested = pyqtSignal()  # upload a KML/KMZ layer
+    # Drawing layers (CRUD + active-target). Keys: "map:server", "map:local",
+    # "local:<id>" (local layer), "overlay:<id>" (distributed server overlay).
+    layer_target_changed = pyqtSignal(str)  # active draw target key
+    layer_create_requested = pyqtSignal()  # + New layer
+    layer_rename_requested = pyqtSignal(str)  # rename layer with key
+    layer_delete_requested = pyqtSignal(str)  # delete layer with key
+    layer_distribute_requested = pyqtSignal(str)  # push local layer → server
+    layer_export_requested = pyqtSignal(str)  # export layer to file
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -136,6 +148,12 @@ class DrawPanel(QWidget):
             "color:#8b949e;font-size:13px;padding:6px 8px;background:#161b22;border-bottom:1px solid #21262d;"
         )
         outer.addWidget(hdr)
+
+        # Drawing-layer selector + CRUD. The active target receives every draw
+        # action below (graphics, symbols, free-draw).
+        self._build_layers_row(outer)
+        # Quick actions: place a MIL-STD-2525 symbol, add a KML/KMZ layer.
+        self._build_place_layer_row(outer)
 
         # Echelon row
         ech_row = QHBoxLayout()
@@ -230,6 +248,133 @@ class DrawPanel(QWidget):
         del_all_btn.clicked.connect(self.delete_all_graphics.emit)
         outer.addWidget(del_all_btn)
 
+    # ---- Drawing layers + quick actions ---------------------------------
+
+    def _build_layers_row(self, outer: QVBoxLayout):
+        # Header label
+        lbl = QLabel("  LAYER")
+        lbl.setStyleSheet(
+            "color:#6e7681;font-size:12px;font-weight:700;letter-spacing:1.5px;"
+            "padding:4px 4px 0;"
+        )
+        outer.addWidget(lbl)
+
+        # Active-target combo. Items carry their key in userData.
+        self._layer_combo = QComboBox()
+        self._layer_combo.setFixedHeight(28)
+        self._layer_combo.setStyleSheet(
+            "QComboBox{background:#161b22;border:1px solid #30363d;color:#c9d1d9;"
+            "font-size:13px;padding:2px 6px;margin:2px 8px;}"
+            "QComboBox QAbstractItemView{background:#161b22;color:#c9d1d9;"
+            "selection-background-color:#1f6feb;}"
+        )
+        self._layer_combo.currentIndexChanged.connect(self._on_layer_combo_changed)
+        outer.addWidget(self._layer_combo)
+
+        # CRUD button row
+        row = QHBoxLayout()
+        row.setContentsMargins(8, 0, 8, 4)
+        row.setSpacing(4)
+        defs = [
+            ("＋ New", _BLUE, "Create a new drawing layer", self._emit_create),
+            ("✎", _AMBER, "Rename the selected layer", self._emit_rename),
+            ("🗑", _RED, "Delete the selected layer", self._emit_delete),
+            (
+                "📤",
+                _BLUE,
+                "Distribute (push local layer → server)",
+                self._emit_distribute,
+            ),
+            ("⤓", _AMBER, "Export the selected layer to a file", self._emit_export),
+        ]
+        for text, color, tip, slot in defs:
+            b = QPushButton(text)
+            b.setFixedHeight(26)
+            b.setToolTip(tip)
+            b.setStyleSheet(self._action_btn_style(color))
+            b.clicked.connect(slot)
+            row.addWidget(b, 1)
+        outer.addLayout(row)
+
+    def _build_place_layer_row(self, outer: QVBoxLayout):
+        row = QHBoxLayout()
+        row.setContentsMargins(8, 2, 8, 6)
+        row.setSpacing(4)
+
+        sym_f = QPushButton("📍 Symbol")
+        sym_f.setToolTip("Place a friendly MIL-STD-2525 symbol into the active layer")
+        sym_f.setFixedHeight(28)
+        sym_f.setStyleSheet(self._action_btn_style(_BLUE))
+        sym_f.clicked.connect(lambda: self.place_symbol_requested.emit("FRIENDLY"))
+        row.addWidget(sym_f, 1)
+
+        sym_h = QPushButton("📍 Enemy")
+        sym_h.setToolTip("Place a hostile MIL-STD-2525 symbol into the active layer")
+        sym_h.setFixedHeight(28)
+        sym_h.setStyleSheet(self._action_btn_style(_RED))
+        sym_h.clicked.connect(lambda: self.place_symbol_requested.emit("HOSTILE"))
+        row.addWidget(sym_h, 1)
+
+        add_layer = QPushButton("🗺 KML")
+        add_layer.setToolTip("Upload a KML/KMZ file as a layer")
+        add_layer.setFixedHeight(28)
+        add_layer.setStyleSheet(self._action_btn_style(_AMBER))
+        add_layer.clicked.connect(self.add_layer_requested.emit)
+        row.addWidget(add_layer, 1)
+
+        outer.addLayout(row)
+
+    # ---- Layer combo plumbing -------------------------------------------
+
+    def set_layers(self, entries: list[tuple[str, str]], active_key: str = ""):
+        """Populate the target combo. ``entries`` = [(key, label), ...].
+
+        Called by the main window whenever the local-layer set or the server
+        overlays change. Signals are blocked so repopulating does not look like
+        a user target switch.
+        """
+        combo = self._layer_combo
+        combo.blockSignals(True)
+        combo.clear()
+        idx_to_select = 0
+        for i, (key, label) in enumerate(entries):
+            combo.addItem(label, key)
+            if key == active_key:
+                idx_to_select = i
+        if combo.count():
+            combo.setCurrentIndex(idx_to_select)
+        combo.blockSignals(False)
+
+    def current_layer_key(self) -> str:
+        data = self._layer_combo.currentData()
+        return str(data) if data is not None else "map:server"
+
+    def _on_layer_combo_changed(self, _idx: int):
+        self.layer_target_changed.emit(self.current_layer_key())
+
+    def _emit_create(self):
+        self.layer_create_requested.emit()
+
+    def _emit_rename(self):
+        self.layer_rename_requested.emit(self.current_layer_key())
+
+    def _emit_delete(self):
+        self.layer_delete_requested.emit(self.current_layer_key())
+
+    def _emit_distribute(self):
+        self.layer_distribute_requested.emit(self.current_layer_key())
+
+    def _emit_export(self):
+        self.layer_export_requested.emit(self.current_layer_key())
+
+    @staticmethod
+    def _action_btn_style(color: str) -> str:
+        return (
+            f"QPushButton{{background:#161b22;border:1px solid #30363d;"
+            f"color:#8b949e;font-size:12px;}}"
+            f"QPushButton:hover{{background:{color}15;border-color:{color};color:{color};}}"
+        )
+
     # ---- Free Draw -------------------------------------------------------
 
     def _build_free_draw_section(self, layout: QVBoxLayout):
@@ -256,9 +401,9 @@ class DrawPanel(QWidget):
         # Thickness row
         thick_row = QHBoxLayout()
         thick_row.setSpacing(4)
-        thick_row.addWidget(
-            QLabel("PX", styleSheet="color:#6e7681;font-size:12px;font-weight:700;")
-        )
+        px_lbl = QLabel("PX")
+        px_lbl.setStyleSheet("color:#6e7681;font-size:12px;font-weight:700;")
+        thick_row.addWidget(px_lbl)
         self._fd_thick_btns: list[QPushButton] = []
         for t in _FD_THICK:
             btn = QPushButton(str(t))
@@ -436,7 +581,9 @@ class DrawPanel(QWidget):
         # Stop any active free draw tool
         self._stop_free_draw_tools()
         # Deselect all others
-        all_btns = self._friendly_btns + self._enemy_btns + self._control_btns + self._sof_btns
+        all_btns = (
+            self._friendly_btns + self._enemy_btns + self._control_btns + self._sof_btns
+        )
         for b in all_btns:
             if b is not btn:
                 b.setChecked(False)
@@ -465,7 +612,9 @@ class DrawPanel(QWidget):
             self._stop_free_draw_tools()
             self.free_draw_changed.emit("none", self._fd_color, self._fd_thick)
         # Stop tactical graphic drawing
-        for b in self._friendly_btns + self._enemy_btns + self._control_btns + self._sof_btns:
+        for b in (
+            self._friendly_btns + self._enemy_btns + self._control_btns + self._sof_btns
+        ):
             b.setChecked(False)
             b.setStyleSheet(self._gfx_btn_style(b.property("color"), False))
         self._cancel_btn.setEnabled(False)

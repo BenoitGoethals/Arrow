@@ -59,6 +59,7 @@ from front.utils.location_provider import (
 )
 from front.panels.mbtiles.dialog import MBTilesDialog
 from front.panels.routes.panel import RoutesPanel, RoutePropertiesDialog
+from front.storage.local_store import LocalStore
 
 CBRN_TYPES = {"CBRN_1", "CBRN_2", "CBRN_3", "CBRN_4", "CBRN_5", "CBRN_6"}
 
@@ -109,6 +110,14 @@ class MainWindow(QMainWindow):
         # navigator.geolocation does not resolve a fix on macOS, so on darwin we
         # source the own-position fix natively and push it into the map HUD.
         self._location = LocationProvider(self)
+
+        # Active draw target (where new graphics / symbols / free-draw go). Keys:
+        #   "map:server"  → POST to backend, no layer (distributed + WS broadcast)
+        #   "map:local"   → LocalStore, loose (offline; distribute later)
+        #   "local:<id>"  → a local drawing layer (offline)
+        #   "overlay:<id>"→ a distributed layer (server overlay; auto-attach)
+        self._active_layer_key: str = "map:server"
+        self._local_store = LocalStore()
 
         # Pending route colors: route_id → color (set when draw is requested)
         self._pending_route_colors: dict[str, str] = {}
@@ -196,7 +205,6 @@ class MainWindow(QMainWindow):
         self._info.add_panel("reports", "≡", "RPTS", self._reports_panel, "5")
         self._info.add_panel("messages", "◎", "MSG", self._messages_panel, "6")
         self._info.add_panel("alerts", "⚡", "ALRT", self._alerts_panel, "7")
-        self._info.add_panel("draw", "✚", "DRAW", self._draw_panel, "8")
         self._info.add_panel("media", "🖼", "MEDIA", self._media_panel, "9")
         self._info.add_panel("mumble", "🎙", "VOICE", self._mumble_panel, "0")
         self._info.add_panel("log", "📋", "LOG", self._log_panel, "L")
@@ -212,6 +220,7 @@ class MainWindow(QMainWindow):
         self._left_panel = ActivityPanel(side="left", default_width=270)
         self._left_panel.add_panel("orbat", "⊟", "ORBAT", self._orbat_panel, "O")
         self._left_panel.add_panel("devices", "📶", "DEVS", self._devices_panel, "D")
+        self._left_panel.add_panel("draw", "✚", "DRAW", self._draw_panel, "8")
         # (self._right_panel was created above with all feature panels added.)
 
         # ---- Splitter (fills the whole central area) ------------------
@@ -233,7 +242,9 @@ class MainWindow(QMainWindow):
         self._left_panel.bind_splitter(self._splitter, 0, fallback=_fallback)
         self._right_panel.bind_splitter(self._splitter, 2, fallback=_fallback)
 
-        # Defer collapse until after window is shown and splitter has real px dimensions
+        # Defer collapse until after window is shown and splitter has real px
+        # dimensions. Both side panels start collapsed — only the icon bars show.
+        QTimer.singleShot(0, self._left_panel.collapse)
         QTimer.singleShot(0, self._right_panel.collapse)
 
         # Map always stretches; panels have fixed initial sizes
@@ -316,6 +327,14 @@ class MainWindow(QMainWindow):
         self._draw_panel.free_draw_undo.connect(self._map.free_draw_undo)
         self._draw_panel.free_draw_clear.connect(self._map.free_draw_clear)
         self._draw_panel.delete_all_graphics.connect(self._on_delete_all_graphics)
+        self._draw_panel.place_symbol_requested.connect(self._on_place_symbol)
+        self._draw_panel.add_layer_requested.connect(self._import_kml_file)
+        self._draw_panel.layer_target_changed.connect(self._on_layer_target_changed)
+        self._draw_panel.layer_create_requested.connect(self._on_layer_create)
+        self._draw_panel.layer_rename_requested.connect(self._on_layer_rename)
+        self._draw_panel.layer_delete_requested.connect(self._on_layer_delete)
+        self._draw_panel.layer_distribute_requested.connect(self._on_layer_distribute)
+        self._draw_panel.layer_export_requested.connect(self._export_layer_target)
         self._map.bridge.symbol_selected.connect(self._on_symbol_placed)
         self._map.bridge.free_draw_saved.connect(self._on_free_draw_saved)
         self._map.bridge.overlay_create_requested.connect(self._on_overlay_create)
@@ -446,6 +465,7 @@ class MainWindow(QMainWindow):
         self._load_alerts()
         self._load_reports()
         self._load_messages()
+        self._load_local_objects()
         self._suppress_toasts = False
 
     # ================================================================
@@ -495,7 +515,6 @@ class MainWindow(QMainWindow):
             ("Reports", "reports"),
             ("Messages", "messages"),
             ("Alerts", "alerts"),
-            ("Draw", "draw"),
             ("Media Gallery", "media"),
         ]:
             act = QAction(name, self)
@@ -503,6 +522,13 @@ class MainWindow(QMainWindow):
                 lambda _, p=panel: (self._right_panel.expand(), self._info.activate(p))
             )
             view_menu.addAction(act)
+
+        # Draw now lives in the left activity bar alongside ORBAT/Devices.
+        act_draw = QAction("Draw", self)
+        act_draw.triggered.connect(
+            lambda _: (self._left_panel.expand(), self._left_panel.activate("draw"))
+        )
+        view_menu.addAction(act_draw)
 
         # ── Fire Support ────────────────────────────────────────────
         fs_menu = mb.addMenu("Fire Support")
@@ -884,8 +910,36 @@ class MainWindow(QMainWindow):
     def _can_edit_overlays(self) -> bool:
         return self._role in ("ADMIN", "BATTLE_CAPTAIN")
 
+    def _overlay_payload(self) -> list[dict]:
+        """Right-panel overlay list = server overlays + local layers (as pseudo-
+        overlays so they get a checkbox and the same visibility filter)."""
+        out: list[dict] = list(self._overlays.values())
+        for layer in self._local_store.list_layers():
+            ids = [o["id"] for o in self._local_store.objects_for_layer(layer["id"])]
+            out.append(
+                {
+                    "id": f"local:{layer['id']}",
+                    "name": f"💾 {layer['name']}",
+                    "object_ids": ids,
+                    "local": True,
+                }
+            )
+        return out
+
     def _push_overlays(self):
-        self._map.set_overlays(list(self._overlays.values()), self._can_edit_overlays())
+        # canEdit reflects server-overlay rights; local entries hide their CRUD
+        # in the panel and are managed from the Draw panel instead.
+        self._map.set_overlays(self._overlay_payload(), self._can_edit_overlays())
+        self._refresh_layer_combo()
+
+    def _activate_target_overlay(self):
+        """Check the active draw-target layer in the right panel so what you draw
+        into it stays visible (members are hidden unless their layer is on)."""
+        k = self._active_layer_key
+        if k.startswith("local:"):
+            self._map.set_overlay_active(k, True)
+        elif k.startswith("overlay:"):
+            self._map.set_overlay_active(int(k.split(":", 1)[1]), True)
 
     def _load_overlays(self):
         try:
@@ -1101,9 +1155,11 @@ class MainWindow(QMainWindow):
         if not self._suppress_toasts:
             self._toasts.alert(alert_type, operator)
             self._voice.play(alert_type)
-        if alert_type in ("TIC", "DRONE_SPOTTED"):
-            self._right_panel.expand()
-            self._info.activate("alerts")
+            # Only pop the panel open for LIVE alerts — historical alerts replayed
+            # during _load_all must not re-expand the (default-collapsed) panel.
+            if alert_type in ("TIC", "DRONE_SPOTTED"):
+                self._right_panel.expand()
+                self._info.activate("alerts")
 
     def _on_report(self, data: dict):
         self._reports_panel.add_report(data)
@@ -1400,7 +1456,14 @@ class MainWindow(QMainWindow):
         mode = "READ-ONLY" if not self._token else "COP"
         self.setWindowTitle(f"ARROW FRONT  —  {self._callsign.upper()}  —  {mode}")
 
-    def _on_symbol_placed(self, sidc: str, designation: str, lat: float, lon: float, active_overlay_id: int = 0):
+    def _on_symbol_placed(
+        self,
+        sidc: str,
+        designation: str,
+        lat: float,
+        lon: float,
+        active_overlay_id: int = 0,
+    ):
         """User placed a symbol via the picker — save to server as tactical object."""
         from PyQt6.QtWidgets import (
             QDialog,
@@ -1423,7 +1486,9 @@ class MainWindow(QMainWindow):
         obj_type = "ENEMY" if affiliation == "HOSTILE" else "MARKER"
         echelon = _sidc_echelon(sidc)
 
-        # Offer optional photo attachment
+        # Offer optional photo attachment — server targets only (photos live on
+        # the backend, so they don't apply to local layers; the dialog is built
+        # but only shown when the active target is a server one).
         photo_id: Optional[int] = None
         dlg = QDialog(self)
         dlg.setWindowTitle("Attach Photo/Video?")
@@ -1466,37 +1531,32 @@ class MainWindow(QMainWindow):
         btns.rejected.connect(dlg.reject)
         layout.addWidget(btns)
 
-        if dlg.exec() == QDialog.DialogCode.Accepted and file_path:
-            try:
-                photo_id = self._client.upload_media(file_path[0])
-            except Exception as e:
-                self.statusBar().showMessage(f"Upload failed: {e}", 4000)
+        if not self._target_is_local() and dlg.exec() == QDialog.DialogCode.Accepted:
+            if file_path:
+                try:
+                    photo_id = self._client.upload_media(file_path[0])
+                except Exception as e:
+                    self._statusbar.showMessage(f"Upload failed: {e}", 4000)
 
+        geometry = {"type": "point", "coords": [[lat, lon]]}
         try:
-            obj = self._client.post_tactical_object(
+            obj = self._save_drawn(
                 obj_type,
-                {"type": "point", "coords": [[lat, lon]]},
+                geometry,
                 notes=designation or "",
                 affiliation=affiliation,
                 symbol_code=sidc,
                 echelon=echelon,
                 photo_id=photo_id,
+                fallback_overlay_id=active_overlay_id,
             )
-            self._attach_to_active_overlay(obj["id"], active_overlay_id)
         except Exception as e:
-            self.statusBar().showMessage(f"Symbol not saved: {e}", 3000)
-        self._map.add_tactical_object(
-            {
-                "id": f"local_{id(sidc)}",
-                "type": obj_type,
-                "symbol_code": sidc,
-                "latitude": lat,
-                "longitude": lon,
-                "affiliation": affiliation,
-                "notes": designation,
-                "echelon": echelon,
-            }
-        )
+            self._statusbar.showMessage(f"Symbol not saved: {e}", 3000)
+            return
+        # Local symbols are already rendered by _save_drawn; for server symbols
+        # render immediately (the picker has no optimistic preview).
+        if obj is not None and not obj.get("local"):
+            self._map.add_tactical_object(obj)
 
     def _on_mode_from_toolbar(self, mode: str):
         """Route toolbar mode changes — handle measure modes separately."""
@@ -1900,36 +1960,25 @@ class MainWindow(QMainWindow):
             geom = json.loads(geom_json)
             if not geom.get("coords"):
                 return
-            obj = self._client.post_tactical_object(
+            obj = self._save_drawn(
                 obj_type,
                 geom,
                 notes=notes_json,
                 affiliation="NEUTRAL",
+                fallback_overlay_id=active_overlay_id,
             )
         except Exception as e:
-            self.statusBar().showMessage(f"Free draw not saved: {e}", 3000)
+            self._statusbar.showMessage(f"Free draw not saved: {e}", 3000)
             return
-
-        if active_overlay_id and self._can_edit_overlays():
-            ov = self._overlays.get(active_overlay_id)
-            if ov is not None:
-                ids = sorted({*ov.get("object_ids", []), obj["id"]})
-                try:
-                    updated = self._client.patch_overlay(
-                        active_overlay_id, object_ids=ids
-                    )
-                    self._overlays[updated["id"]] = updated
-                    # Push membership BEFORE rendering so the stroke isn't filtered out.
-                    self._push_overlays()
-                except Exception:
-                    pass
-
-        self._attach_to_active_overlay(obj["id"], active_overlay_id)
-        # Render the canonical keyed object now rather than waiting for the WS echo.
-        try:
-            self._map.add_tactical_object(obj)
-        except Exception:
-            pass
+        # Local objects are already drawn by _save_drawn; for server objects we
+        # render the canonical keyed object now (replaces the optimistic preview
+        # via the FREEDRAW FIFO) rather than waiting for the WS echo. Overlay
+        # membership was patched first, so the stroke isn't filtered out.
+        if obj is not None and not obj.get("local"):
+            try:
+                self._map.add_tactical_object(obj)
+            except Exception:
+                pass
 
     def _attach_to_active_overlay(self, obj_id: int, active_overlay_id: int) -> None:
         """Add obj_id to overlay active_overlay_id (0 = skip)."""
@@ -1959,6 +2008,11 @@ class MainWindow(QMainWindow):
         # blocking HTTP call; the server enforces per-object permissions, so
         # only objects the user may remove actually go — 403s are skipped).
         self._map.clear_all_graphics()
+        # Also wipe locally-saved objects so they don't reappear on next launch.
+        try:
+            self._local_store.clear()
+        except Exception:
+            pass
         self.statusBar().showMessage("Deleting all graphics…", 3000)
 
         import threading
@@ -2073,7 +2127,10 @@ class MainWindow(QMainWindow):
             self._map.add_route(r)
 
     def _on_graphic_drawn(
-        self, gtype: str, geojson_str: str, affiliation: str = "FRIENDLY",
+        self,
+        gtype: str,
+        geojson_str: str,
+        affiliation: str = "FRIENDLY",
         active_overlay_id: int = 0,
     ):
         """Persist a drawn tactical graphic to the backend (synced to web + android).
@@ -2086,15 +2143,401 @@ class MainWindow(QMainWindow):
             geom = json.loads(geojson_str)
             if not (geom.get("coords") or []):
                 return
-            obj = self._client.post_tactical_object(
+            # Server graphics render via the WS echo; local ones render in
+            # _save_drawn — so nothing extra to draw here.
+            self._save_drawn(
                 gtype,
                 geom,
-                notes="",
                 affiliation=affiliation or "FRIENDLY",
+                fallback_overlay_id=active_overlay_id,
             )
-            self._attach_to_active_overlay(obj["id"], active_overlay_id)
         except Exception as e:
-            self.statusBar().showMessage(f"Graphic not saved: {e}", 3000)
+            self._statusbar.showMessage(f"Graphic not saved: {e}", 3000)
+
+    # ================================================================
+    # DRAW PANEL — symbol placement, layer add, local save mode
+    # ================================================================
+    def _on_place_symbol(self, affiliation: str):
+        """Arm one-shot symbol placement: next map click opens the picker."""
+        self._map.arm_symbol_placement(affiliation)
+        self._statusbar.showMessage(
+            f"Click the map to place a {affiliation.lower()} symbol…", 4000
+        )
+
+    # ---- Active draw target (layers) ------------------------------------
+    def _target_is_local(self) -> bool:
+        k = self._active_layer_key
+        return k == "map:local" or k.startswith("local:")
+
+    def _save_drawn(
+        self,
+        obj_type: str,
+        geometry: dict,
+        notes: str = "",
+        affiliation: str = "UNKNOWN",
+        symbol_code: str = "",
+        echelon: str = "",
+        photo_id: Optional[int] = None,
+        fallback_overlay_id: int = 0,
+    ) -> Optional[dict]:
+        """Save one drawn element into the ACTIVE draw target.
+
+        Returns the render-ready object (local: rendered already; server:
+        caller decides). ``fallback_overlay_id`` is the in-map active overlay,
+        honoured only for the default "map:server" target so the existing
+        in-map "draw on overlays" workflow keeps working.
+        """
+        key = self._active_layer_key
+        if key == "map:local" or key.startswith("local:"):
+            layer_id = int(key.split(":", 1)[1]) if key.startswith("local:") else None
+            obj = self._local_store.add(
+                obj_type,
+                geometry,
+                notes=notes,
+                affiliation=affiliation,
+                symbol_code=symbol_code,
+                echelon=echelon,
+                layer_id=layer_id,
+            )
+            self._map.add_tactical_object(obj)
+            if layer_id is not None:
+                # Refresh the right panel so the new element joins the layer's
+                # membership (and bump the left combo count).
+                self._push_overlays()
+            return obj
+        # Server targets
+        obj = self._client.post_tactical_object(
+            obj_type,
+            geometry,
+            notes=notes,
+            affiliation=affiliation,
+            symbol_code=symbol_code,
+            echelon=echelon,
+            photo_id=photo_id,
+        )
+        overlay_id = (
+            int(key.split(":", 1)[1])
+            if key.startswith("overlay:")
+            else fallback_overlay_id
+        )
+        if overlay_id:
+            self._attach_to_active_overlay(obj["id"], overlay_id)
+        return obj
+
+    def _layer_entries(self) -> list[tuple[str, str]]:
+        """Combined target list: map defaults + local layers + server overlays."""
+        entries: list[tuple[str, str]] = [
+            ("map:server", "📡 Map · Distribute"),
+            ("map:local", "💾 Map · Local"),
+        ]
+        for layer in self._local_store.list_layers():
+            entries.append(
+                (f"local:{layer['id']}", f"💾 {layer['name']} ({layer['count']})")
+            )
+        for oid in sorted(self._overlays):
+            ov = self._overlays[oid]
+            n = len(ov.get("object_ids") or [])
+            entries.append((f"overlay:{oid}", f"📡 {ov.get('name', 'overlay')} ({n})"))
+        return entries
+
+    def _refresh_layer_combo(self):
+        entries = self._layer_entries()
+        keys = {k for k, _ in entries}
+        if self._active_layer_key not in keys:
+            self._active_layer_key = "map:server"
+        self._draw_panel.set_layers(entries, self._active_layer_key)
+        # Keep the authoritative key in sync with what the combo actually shows.
+        self._active_layer_key = self._draw_panel.current_layer_key()
+
+    def _on_layer_target_changed(self, key: str):
+        self._active_layer_key = key or "map:server"
+        # Selecting a layer checks it in the right panel so its elements (and
+        # whatever you draw next) stay visible under the overlay filter.
+        self._activate_target_overlay()
+        label = {
+            "map:server": "Map · Distribute (server)",
+            "map:local": "Map · Local (this device)",
+        }.get(self._active_layer_key, "")
+        if not label:
+            kind = "local" if self._active_layer_key.startswith("local:") else "shared"
+            label = f"active {kind} layer"
+        self._statusbar.showMessage(f"Draw target: {label}", 3000)
+
+    def _import_kml_file(self):
+        """Upload a .kml/.kmz file as a new layer (BATTLE_CAPTAIN/ADMIN)."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Add KML / KMZ Layer",
+            "",
+            "KML/KMZ (*.kml *.kmz);;All Files (*)",
+        )
+        if not path:
+            return
+        try:
+            layer = self._client.upload_kml(path)
+        except Exception as e:
+            msg = (
+                "Permission denied (need BATTLE_CAPTAIN/ADMIN)."
+                if "403" in str(e)
+                else str(e)
+            )
+            QMessageBox.critical(self, "KML Upload Failed", msg)
+            return
+        try:
+            self._map.add_kml_layer(layer)
+        except Exception:
+            pass
+        self._toasts.show(
+            "info", "LAYER ADDED", str(layer.get("name", "")).upper() or "KML"
+        )
+
+    def _load_local_objects(self):
+        """Render every locally-saved element (offline-first) on the map."""
+        try:
+            for obj in self._local_store.all():
+                self._map.add_tactical_object(obj)
+        except Exception:
+            pass
+        self._refresh_layer_combo()
+
+    # ---- Layer CRUD -----------------------------------------------------
+    def _on_layer_create(self):
+        """Create a new drawing layer (local or distributed) and make it active."""
+        from PyQt6.QtWidgets import QInputDialog
+
+        name, ok = QInputDialog.getText(self, "New Layer", "Layer name:")
+        name = (name or "").strip()
+        if not ok or not name:
+            return
+        distributed = False
+        if self._token:
+            ans = QMessageBox.question(
+                self,
+                "Layer Type",
+                f"Distribute “{name}” to the server (shared with all clients)?\n\n"
+                "Yes — distributed (server overlay)\n"
+                "No — local only (this device)",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            distributed = ans == QMessageBox.StandardButton.Yes
+        if distributed:
+            try:
+                ov = self._client.create_overlay(name, "", [])
+            except Exception as e:
+                QMessageBox.critical(self, "Create Layer", str(e))
+                return
+            self._overlays[ov["id"]] = ov
+            self._active_layer_key = f"overlay:{ov['id']}"
+        else:
+            layer = self._local_store.create_layer(name)
+            self._active_layer_key = f"local:{layer['id']}"
+        # Show the new layer in the right panel and make it the active (checked)
+        # target so drawing into it is visible immediately.
+        self._push_overlays()
+        self._activate_target_overlay()
+        self._statusbar.showMessage(f"Active layer: {name}", 3000)
+
+    def _on_layer_rename(self, key: str):
+        from PyQt6.QtWidgets import QInputDialog
+
+        if key.startswith("local:"):
+            lid = int(key.split(":", 1)[1])
+            cur = self._local_store.layer(lid).get("name", "")
+            name, ok = QInputDialog.getText(self, "Rename Layer", "New name:", text=cur)
+            if ok and name.strip():
+                self._local_store.rename_layer(lid, name.strip())
+                self._refresh_layer_combo()
+        elif key.startswith("overlay:"):
+            oid = int(key.split(":", 1)[1])
+            cur = self._overlays.get(oid, {}).get("name", "")
+            name, ok = QInputDialog.getText(self, "Rename Layer", "New name:", text=cur)
+            if ok and name.strip():
+                try:
+                    ov = self._client.patch_overlay(oid, name=name.strip())
+                except Exception as e:
+                    QMessageBox.critical(self, "Rename Layer", str(e))
+                    return
+                self._overlays[ov["id"]] = ov
+                self._push_overlays()
+        else:
+            self._statusbar.showMessage("The Map target cannot be renamed.", 3000)
+
+    def _on_layer_delete(self, key: str):
+        if key.startswith("local:"):
+            lid = int(key.split(":", 1)[1])
+            info = self._local_store.layer(lid)
+            if not info:
+                return
+            ans = QMessageBox.question(
+                self,
+                "Delete Layer",
+                f"Delete local layer “{info['name']}” and its "
+                f"{info['count']} element(s)?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+            for o in self._local_store.objects_for_layer(lid):
+                self._map.remove_tactical_object(o["id"])
+            self._local_store.delete_layer(lid)
+        elif key.startswith("overlay:"):
+            oid = int(key.split(":", 1)[1])
+            info = self._overlays.get(oid, {})
+            ans = QMessageBox.question(
+                self,
+                "Delete Layer",
+                f"Delete distributed layer “{info.get('name', '')}”?\n\n"
+                "The overlay grouping is removed for all clients "
+                "(the objects themselves remain).",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                self._client.delete_overlay(oid)
+            except Exception as e:
+                QMessageBox.critical(self, "Delete Layer", str(e))
+                return
+            self._overlays.pop(oid, None)
+        else:
+            self._statusbar.showMessage("The Map target cannot be deleted.", 3000)
+            return
+        if self._active_layer_key == key:
+            self._active_layer_key = "map:server"
+        self._push_overlays()  # also refreshes the combo
+
+    def _on_layer_distribute(self, key: str):
+        """Push a LOCAL layer's elements to the server (into a new overlay)."""
+        if not self._token:
+            QMessageBox.information(self, "Distribute", "Not connected to a server.")
+            return
+        lid: Optional[int] = None
+        layer_name: Optional[str] = None
+        if key == "map:local":
+            items = [o for o in self._local_store.all() if o.get("layer_id") is None]
+        elif key.startswith("local:"):
+            lid = int(key.split(":", 1)[1])
+            items = self._local_store.objects_for_layer(lid)
+            layer_name = self._local_store.layer(lid).get("name", "Layer")
+        else:
+            self._statusbar.showMessage("Only local layers can be distributed.", 3000)
+            return
+        if not items:
+            self._toasts.show("info", "NOTHING TO DISTRIBUTE", "No local elements")
+            return
+        ans = QMessageBox.question(
+            self,
+            "Distribute Layer",
+            f"Push {len(items)} element(s) to the server"
+            + (f" as overlay “{layer_name}”" if layer_name else "")
+            + "?\n\nThey will be broadcast to all connected clients.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        overlay_id: Optional[int] = None
+        if layer_name:
+            try:
+                ov = self._client.create_overlay(layer_name, "", [])
+                overlay_id = ov["id"]
+                self._overlays[overlay_id] = ov
+            except Exception:
+                overlay_id = None
+        new_ids: list[int] = []
+        failed = 0
+        for it in items:
+            try:
+                geom_str = it.get("geometry") or ""
+                geom = (
+                    json.loads(geom_str)
+                    if geom_str
+                    else {
+                        "type": "point",
+                        "coords": [[it["latitude"], it["longitude"]]],
+                    }
+                )
+                obj = self._client.post_tactical_object(
+                    it["type"],
+                    geom,
+                    notes=it.get("notes", ""),
+                    affiliation=it.get("affiliation", "UNKNOWN"),
+                    symbol_code=it.get("symbol_code", ""),
+                    echelon=it.get("echelon", ""),
+                )
+            except Exception:
+                failed += 1
+                continue
+            self._map.remove_tactical_object(it["id"])
+            self._local_store.delete(it["local_id"])
+            self._map.add_tactical_object(obj)
+            new_ids.append(obj["id"])
+        if overlay_id and new_ids:
+            try:
+                ov = self._client.patch_overlay(overlay_id, object_ids=new_ids)
+                self._overlays[ov["id"]] = ov
+            except Exception:
+                pass
+        # Drop the now-empty local layer only if everything was distributed.
+        if lid is not None and failed == 0:
+            self._local_store.delete_layer(lid)
+        self._active_layer_key = f"overlay:{overlay_id}" if overlay_id else "map:server"
+        self._push_overlays()
+        # Keep the freshly-distributed overlay visible (members hide otherwise).
+        self._activate_target_overlay()
+        if failed:
+            self._statusbar.showMessage(
+                f"Distributed {len(items) - failed}/{len(items)} — {failed} failed",
+                6000,
+            )
+        else:
+            self._toasts.show(
+                "info", "DISTRIBUTED", f"{len(items)} element(s) sent to server"
+            )
+
+    def _export_layer_target(self, key: str):
+        """Export the selected layer to a JSON file (server overlay or local)."""
+        if key.startswith("overlay:"):
+            self._on_layer_export("OVERLAY", int(key.split(":", 1)[1]))
+            return
+        if key.startswith("local:") or key == "map:local":
+            if key.startswith("local:"):
+                lid = int(key.split(":", 1)[1])
+                name = self._local_store.layer(lid).get("name", "layer")
+                objs = self._local_store.objects_for_layer(lid)
+            else:
+                name = "local"
+                objs = [o for o in self._local_store.all() if o.get("layer_id") is None]
+            if not objs:
+                self._statusbar.showMessage("Layer has no elements to export.", 3000)
+                return
+            envelope = {
+                "kind": "LOCAL_LAYER",
+                "name": name,
+                "objects": [
+                    {
+                        "type": o["type"],
+                        "geometry": o.get("geometry", ""),
+                        "notes": o.get("notes", ""),
+                        "affiliation": o.get("affiliation", "UNKNOWN"),
+                        "symbol_code": o.get("symbol_code", ""),
+                        "echelon": o.get("echelon", ""),
+                    }
+                    for o in objs
+                ],
+            }
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Export layer", f"{name}.local.json", "JSON (*.json)"
+            )
+            if not path:
+                return
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(envelope, f, indent=2)
+                self._statusbar.showMessage(f"Exported to {path}", 4000)
+            except OSError as e:
+                self._statusbar.showMessage(f"Could not write file: {e}", 4000)
+            return
+        self._statusbar.showMessage("The Map target cannot be exported.", 3000)
 
     def _focus_operator(self, operator_id: int):
         try:

@@ -213,6 +213,31 @@ class ArrowClient:
     def kml_layer(self, layer_id: int) -> dict:
         return self._get(f"/kml-layers/{layer_id}")
 
+    def upload_kml(self, file_path: str) -> dict:
+        """Upload a .kml/.kmz file to /kml-layers; returns the full KmlLayerOut
+        (including parsed `features`), ready to hand straight to
+        MapView.add_kml_layer. Requires BATTLE_CAPTAIN/ADMIN server-side."""
+        import os
+
+        lower = file_path.lower()
+        mime = (
+            "application/vnd.google-earth.kmz"
+            if lower.endswith(".kmz")
+            else "application/vnd.google-earth.kml+xml"
+        )
+        with open(file_path, "rb") as f:
+            data = f.read()
+        files = {"file": (os.path.basename(file_path), data, mime)}
+        r = httpx.post(
+            f"{self.base_url}/kml-layers",
+            headers=self._headers(),
+            files=files,
+            timeout=60.0,
+            verify=_VERIFY,
+        )
+        r.raise_for_status()
+        return r.json()
+
     # ---- Fire missions ----------------------------------------------
     def fire_missions(self) -> list:
         return self._get("/fire-missions")

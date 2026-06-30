@@ -408,6 +408,10 @@ class MapView(QWebEngineView):
         """Push the Saved-overlays list to the in-map panel."""
         self._js(f"setOverlays({json.dumps(overlays)}, {json.dumps(bool(can_edit))})")
 
+    def set_overlay_active(self, overlay_id, on: bool = True):
+        """Check/uncheck one overlay in the in-map panel (id may be int or str)."""
+        self._js(f"setOverlayActive({json.dumps(overlay_id)}, {json.dumps(bool(on))})")
+
     def remove_kml_layer(self, layer_id: str):
         self._js(f"removeKmlLayer({json.dumps(layer_id)})")
 
@@ -416,6 +420,13 @@ class MapView(QWebEngineView):
 
     def open_symbol_picker(self, lat: float, lon: float, affiliation: str = "FRIENDLY"):
         self._js(f"openSymbolPicker({lat}, {lon}, {json.dumps(affiliation)})")
+
+    def arm_symbol_placement(self, affiliation: str = "FRIENDLY"):
+        """Arm one-shot symbol placement: the next map click opens the picker."""
+        self._js(f"armSymbolPlacement({json.dumps(affiliation)})")
+
+    def disarm_symbol_placement(self):
+        self._js("disarmSymbolPlacement()")
 
     def set_gps_config(
         self,
