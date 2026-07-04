@@ -104,6 +104,11 @@ async def patch_object(
     from backend.cot.tcp_server import broadcast_tactical_object_to_atak
 
     await broadcast_tactical_object_to_atak(obj)
+
+    # Push the edit/move to an external JDSSArrow gateway as a contact update.
+    from backend.jdss import bridge as _jdss
+
+    await _jdss.publish_tactical_object(obj)
     return obj
 
 
