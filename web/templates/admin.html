@@ -2291,11 +2291,62 @@ main { padding: 0; }
   let _jdssRefreshTimer = null;
 
   async function renderJdss(el) {
-    const [status, cfg] = await Promise.all([
-      api('/jdss/status').then(r => r.ok ? r.json() : null),
-      api('/jdss/config').then(r => r.ok ? r.json() : {}),
-    ]);
-    if (!status) { el.innerHTML = '<p style="color:#ef4444">Could not reach JDSS bridge status endpoint.</p>'; return; }
+    // Config form is built ONCE from /jdss/config; the periodic refresh only
+    // repaints #jdss-live, so typing in the URL field is never clobbered.
+    const cfg = await api('/jdss/config').then(r => r.ok ? r.json() : {});
+
+    el.innerHTML = `
+    <div class="sec-header">
+      <h2>🛰 JDSS Gateway Bridge</h2>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-ghost" onclick="refreshJdssLive()">↻ Refresh</button>
+        <button class="btn btn-ghost" onclick="jdssRestart()">↺ Restart bridge</button>
+      </div>
+    </div>
+
+    <!-- Live status — refreshed on a timer, rebuilt independently of the config form -->
+    <div id="jdss-live"><p style="color:#64748b;font-size:.85rem">Loading status…</p></div>
+
+    <!-- Bridge config — static; safe to edit without the refresh overwriting it -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>Bridge Configuration</h3>
+      <div style="padding:.75rem 1rem 1rem">
+        <div class="field" style="margin:0 0 .9rem">
+          <label>JDSS gateway URL</label>
+          <input id="jdss-base-url" class="adm-input" value="${_e(cfg.base_url||'http://192.168.0.202:8000')}" placeholder="http://192.168.0.202:8000"/>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
+          <input type="checkbox" id="jdss-enabled" ${cfg.enabled!==false ? 'checked' : ''} style="width:15px;height:15px"/>
+          <label for="jdss-enabled" style="font-size:.85rem;color:#e2e8f0;cursor:pointer">Bridge enabled on startup</label>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,auto);gap:1rem;justify-content:start">
+          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-presence" ${cfg.publish_presence!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-presence" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish presence</label></div>
+          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-contacts" ${cfg.publish_contacts!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-contacts" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish contacts</label></div>
+          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-chat" ${cfg.publish_chat!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-chat" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish chat</label></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="jdss-save-msg" style="min-height:1.4rem;font-size:.85rem;color:#34d399;margin-bottom:.6rem"></div>
+    <div style="display:flex;gap:.75rem">
+      <button class="btn btn-primary" onclick="saveJdssCfg()">💾 Save</button>
+      <button class="btn btn-ghost"   onclick="jdssRestart()">↺ Apply &amp; restart</button>
+    </div>`;
+
+    refreshJdssLive();
+    clearInterval(_jdssRefreshTimer);
+    _jdssRefreshTimer = setInterval(() => {
+      if (document.getElementById('jdss-live')) refreshJdssLive();
+      else clearInterval(_jdssRefreshTimer);
+    }, 5000);
+  }
+
+  // Repaint ONLY the live-status block (#jdss-live) — never the config inputs.
+  async function refreshJdssLive() {
+    const box = document.getElementById('jdss-live');
+    if (!box) return;
+    const status = await api('/jdss/status').then(r => r.ok ? r.json() : null);
+    if (!status) { box.innerHTML = '<p style="color:#ef4444">Could not reach JDSS bridge status endpoint.</p>'; return; }
 
     const run  = status.running;
     const conn = status.ws_connected;
@@ -2303,18 +2354,9 @@ main { padding: 0; }
     const connBadge = conn
       ? '<span class="badge badge-ok" style="font-size:.75rem">CONNECTED</span>'
       : `<span class="badge badge-err" style="font-size:.75rem">${run ? 'CONNECTING' : 'STOPPED'}</span>`;
-    const snap = status.snapshot || {};
     const peers = status.peers || [];
 
-    el.innerHTML = `
-    <div class="sec-header">
-      <h2>🛰 JDSS Gateway Bridge</h2>
-      <div style="display:flex;gap:.5rem">
-        <button class="btn btn-ghost" onclick="refreshJdss()">↻ Refresh</button>
-        <button class="btn btn-${run ? 'ghost' : 'primary'}" onclick="jdssRestart()">↺ ${run ? 'Restart bridge' : 'Start bridge'}</button>
-      </div>
-    </div>
-
+    box.innerHTML = `
     <div class="stat-grid" style="margin-bottom:1.5rem">
       <div class="stat-card">
         <div class="val" style="font-size:1.3rem">${dotEl} ${connBadge}</div>
@@ -2344,7 +2386,6 @@ main { padding: 0; }
 
     ${status.last_error ? `<div class="cfg-section" style="margin-bottom:1.5rem"><p style="padding:.6rem 1rem;color:#fbbf24;font-size:.8rem;margin:0">⚠ ${_e(status.last_error)}</p></div>` : ''}
 
-    <!-- Outbound counters -->
     <div class="cfg-section" style="margin-bottom:1.5rem">
       <h3>Arrow → JDSS published</h3>
       <div style="padding:.75rem 1rem 1rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;font-size:.85rem">
@@ -2354,7 +2395,6 @@ main { padding: 0; }
       </div>
     </div>
 
-    <!-- Coalition peers -->
     <div class="cfg-section" style="margin-bottom:1.5rem">
       <h3>Coalition Peers <span style="color:#475569;font-weight:400">(${peers.length})</span></h3>
       ${!peers.length
@@ -2369,44 +2409,7 @@ main { padding: 0; }
               </tr>`).join('')}
             </tbody>
           </table>`}
-    </div>
-
-    <!-- Bridge config -->
-    <div class="cfg-section" style="margin-bottom:1.5rem">
-      <h3>Bridge Configuration</h3>
-      <div style="padding:.75rem 1rem 1rem">
-        <div class="field" style="margin:0 0 .9rem">
-          <label>JDSS gateway URL</label>
-          <input id="jdss-base-url" class="adm-input" value="${_e(cfg.base_url||'http://192.168.0.202:8000')}" placeholder="http://192.168.0.202:8000"/>
-        </div>
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
-          <input type="checkbox" id="jdss-enabled" ${cfg.enabled!==false ? 'checked' : ''} style="width:15px;height:15px"/>
-          <label for="jdss-enabled" style="font-size:.85rem;color:#e2e8f0;cursor:pointer">Bridge enabled on startup</label>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(3,auto);gap:1rem;justify-content:start">
-          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-presence" ${cfg.publish_presence!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-presence" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish presence</label></div>
-          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-contacts" ${cfg.publish_contacts!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-contacts" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish contacts</label></div>
-          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-chat" ${cfg.publish_chat!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-chat" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish chat</label></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="jdss-save-msg" style="min-height:1.4rem;font-size:.85rem;color:#34d399;margin-bottom:.6rem"></div>
-    <div style="display:flex;gap:.75rem">
-      <button class="btn btn-primary" onclick="saveJdssCfg()">💾 Save</button>
-      <button class="btn btn-ghost"   onclick="jdssRestart()">↺ Apply &amp; restart</button>
     </div>`;
-
-    clearInterval(_jdssRefreshTimer);
-    _jdssRefreshTimer = setInterval(() => {
-      if (document.getElementById('jdss-save-msg')) refreshJdss();
-      else clearInterval(_jdssRefreshTimer);
-    }, 5000);
-  }
-
-  async function refreshJdss() {
-    const el = document.getElementById('adm-main');
-    if (el && document.getElementById('jdss-save-msg')) renderJdss(el);
   }
 
   window.saveJdssCfg = async function() {
@@ -2430,7 +2433,7 @@ main { padding: 0; }
     if (r.ok) {
       const s = await r.json();
       if (msg) { msg.style.color='#34d399'; msg.textContent = `✓ Bridge ${s.running ? 'started → '+s.base_url : 'stopped'}`; }
-      setTimeout(refreshJdss, 800);
+      setTimeout(refreshJdssLive, 800);
     } else if (msg) {
       msg.style.color='#ef4444'; msg.textContent = `Restart failed (${r.status})`;
     }
