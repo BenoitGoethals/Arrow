@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
 )
 from front.app.activity_panel import ActivityPanel
-from PyQt6.QtCore import Qt, QTimer, QSettings
+from PyQt6.QtCore import Qt, QTimer, QSettings, QProcess
 from PyQt6.QtGui import QKeySequence, QShortcut, QAction
 
 from front.map.view import MapView
@@ -484,6 +484,13 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
+        act_logout = QAction("Log Out…", self)
+        act_logout.setStatusTip("Sign out and return to the login screen")
+        act_logout.triggered.connect(self._logout)
+        file_menu.addAction(act_logout)
+
+        file_menu.addSeparator()
+
         act_exit = QAction("Exit Arrow Front", self)
         act_exit.triggered.connect(self._confirm_exit)
         file_menu.addAction(act_exit)
@@ -591,6 +598,28 @@ class MainWindow(QMainWindow):
         )
         if ans == QMessageBox.StandardButton.Yes:
             sys.exit(0)
+
+    def _logout(self):
+        ans = QMessageBox.question(
+            self,
+            "Log Out",
+            f"Log out {self._callsign}?\nYou'll return to the login screen.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        # Forget the saved token so auto-login won't silently reconnect. Keep the
+        # server URL + callsign so the login dialog stays pre-filled.
+        try:
+            from front.client import auth as keyring_auth
+
+            keyring_auth.clear_token(self._server_url)
+        except Exception:
+            pass
+        # Relaunch a fresh process — with the token gone, it lands on the login
+        # dialog. Detach first, then exit this instance.
+        QProcess.startDetached(sys.executable, sys.argv)
+        sys.exit(0)
 
     def _confirm_delete_all_missions(self):
         missions = []
