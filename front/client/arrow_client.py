@@ -48,6 +48,21 @@ class ArrowClient:
         r.raise_for_status()
         return r.json()
 
+    def _put(self, path: str, body: Optional[dict] = None) -> Any:
+        t0 = time.monotonic()
+        r = httpx.request(
+            "PUT",
+            f"{self.base_url}{path}",
+            headers=self._headers(),
+            json=body or {},
+            timeout=8.0,
+            verify=_VERIFY,
+        )
+        ms = int((time.monotonic() - t0) * 1000)
+        log.debug("PUT %s → %d  (%d ms)", path, r.status_code, ms)
+        r.raise_for_status()
+        return r.json()
+
     def _delete(self, path: str) -> None:
         r = httpx.request(
             "DELETE",
@@ -110,6 +125,23 @@ class ArrowClient:
     def cot_clients(self) -> list:
         """Currently connected ATAK TCP clients (callsign, ip, platform, …)."""
         return self._get("/cot/clients")
+
+    # ---- JDSS gateway bridge ----------------------------------------
+    def jdss_status(self) -> dict:
+        """Bridge status: connection, rx/tx counters, coalition peers."""
+        return self._get("/jdss/status")
+
+    def jdss_config(self) -> dict:
+        """Current bridge config (ADMIN/BATTLE_CAPTAIN)."""
+        return self._get("/jdss/config")
+
+    def jdss_update_config(self, patch: dict) -> dict:
+        """Update bridge config (ADMIN)."""
+        return self._put("/jdss/config", patch)
+
+    def jdss_restart(self) -> dict:
+        """Restart the bridge to pick up new base_url / enabled (ADMIN)."""
+        return self._post("/jdss/restart")
 
     # ---- Tactical objects -------------------------------------------
     def tactical_objects(self) -> list:

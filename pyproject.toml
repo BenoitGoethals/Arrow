@@ -25,21 +25,15 @@ dependencies = [
     "reportlab>=4.2",
     "psycopg[binary]>=3.2",
     "smbprotocol>=1.16.1",
-    "pyqt6-sip>=13.11.1",
-    "pyqt6>=6.11.0",
-    "pyqt6-webengine>=6.11.0",
-    "keyring>=25.7.0",
-    "mgrs>=1.5.4",
     "pymumble>=1.6",
-    "numpy>=2.4.6",
-    "sounddevice>=0.5.5",
-    # Native own-position fix for the front desktop COP. QtWebEngine's
-    # navigator.geolocation does not resolve on macOS, so we query Core Location
-    # directly (GPS when present, Wi-Fi/network otherwise). macOS-only.
-    "pyobjc-framework-CoreLocation>=10.0; sys_platform == 'darwin'",
-    "pyproj>=3.7.2",
-    "wxpython>=4.2.4",
 ]
+# NOTE: Desktop/GUI dependencies (PyQt6, wxPython, keyring, sounddevice, numpy,
+# pyproj, mgrs, …) live in the `desktop`/`front`/`cot-sim` extras below — NOT in
+# the core dependencies. The backend + web server images build with
+# `uv sync --no-dev` (no extras), so they must never pull the GUI stack: wxPython
+# has no Linux wheel and would try to compile (needs gcc, absent in python:slim),
+# and the ~190 MB Qt binaries have no place on a headless server. Desktop apps
+# install them explicitly, e.g. `uv run --extra desktop arrow-front`.
 
 [project.optional-dependencies]
 dev = [
@@ -56,10 +50,34 @@ cot-sim = [
 ]
 # Arrow Front — Python tactical desktop COP (Frontline-style). Requires Qt6 +
 # PyQt6-WebEngine. On Linux: apt install libgl1 libglib2.0-0 libegl1
+# Run with:  uv run --extra front arrow-front
 front = [
-    "pyqt6>=6.7",
-    "pyqt6-webengine>=6.7",
-    "keyring>=25",
+    "pyqt6-sip>=13.11.1",
+    "pyqt6>=6.11.0",
+    "pyqt6-webengine>=6.11.0",
+    "keyring>=25.7.0",
+    "sounddevice>=0.5.5",
+    "numpy>=2.4.6",
+    "mgrs>=1.5.4",
+    # Native own-position fix for the front desktop COP. QtWebEngine's
+    # navigator.geolocation does not resolve on macOS, so we query Core Location
+    # directly (GPS when present, Wi-Fi/network otherwise). macOS-only.
+    "pyobjc-framework-CoreLocation>=10.0; sys_platform == 'darwin'",
+]
+# Umbrella extra for every Python desktop tool (front COP, MortarCalc, sim GUI,
+# CoT simulator). Superset of `front` + wxPython + pyproj. Run e.g.:
+#   uv run --extra desktop arrow-front | arrow-mortarcalc | arrow-sim-gui
+desktop = [
+    "pyqt6-sip>=13.11.1",
+    "pyqt6>=6.11.0",
+    "pyqt6-webengine>=6.11.0",
+    "keyring>=25.7.0",
+    "sounddevice>=0.5.5",
+    "numpy>=2.4.6",
+    "mgrs>=1.5.4",
+    "pyproj>=3.7.2",
+    "pyobjc-framework-CoreLocation>=10.0; sys_platform == 'darwin'",
+    "wxpython==4.2.4; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 # Package Arrow Front as a macOS .app bundle (needed for Core Location to work —
 # see setup_front_app.py). Build with: uv run --extra front-bundle python setup_front_app.py py2app

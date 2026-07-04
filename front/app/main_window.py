@@ -559,6 +559,13 @@ class MainWindow(QMainWindow):
 
         self._admin_menu.addSeparator()
 
+        act_jdss = QAction("JDSS Gateway…", self)
+        act_jdss.setStatusTip("Configure & monitor the JDSSArrow coalition bridge")
+        act_jdss.triggered.connect(self._open_jdss_gateway)
+        self._admin_menu.addAction(act_jdss)
+
+        self._admin_menu.addSeparator()
+
         act_reload = QAction("Reload All Data", self)
         act_reload.triggered.connect(self._reload_all)
         self._admin_menu.addAction(act_reload)
@@ -736,6 +743,11 @@ class MainWindow(QMainWindow):
         dlg.trails_changed.connect(lambda on: self._map.toggle_layer("operTrails", on))
         dlg.voice_alerts_changed.connect(lambda on: setattr(self._voice, "enabled", on))
         dlg.exec()
+
+    def _open_jdss_gateway(self):
+        from front.app.jdss_dialog import JdssGatewayDialog
+
+        JdssGatewayDialog(self, client=self._client, role=self._role).exec()
 
     _native_loc_wired = False
 
