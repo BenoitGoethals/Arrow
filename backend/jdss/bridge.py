@@ -52,8 +52,49 @@ log = logging.getLogger("backend.jdss")
 
 _CFG_FILE = Path("data/jdss_config.json")
 
-# JDSS ContactSighting.identity is an APP-6 StandardIdentity IntEnum.
-_IDENTITY_TO_AFFILIATION = {3: "FRIENDLY", 4: "NEUTRAL", 6: "HOSTILE"}
+# JDSS ContactSighting.identity is an APP-6D StandardIdentity IntEnum
+# (PENDING=0, UNKNOWN=1, ASSUMED_FRIEND=2, FRIEND=3, NEUTRAL=4, SUSPECT=5, HOSTILE=6).
+_IDENTITY_TO_AFFILIATION = {
+    0: "UNKNOWN",
+    1: "UNKNOWN",
+    2: "FRIENDLY",
+    3: "FRIENDLY",
+    4: "NEUTRAL",
+    5: "HOSTILE",
+    6: "HOSTILE",
+}
+
+# Inverse: Arrow affiliation → APP-6D standard-identity digit. Sent on every
+# outbound message so the receiving JDSS client renders the correct symbol
+# frame/colour instead of defaulting a contact to HOSTILE.
+_AFFILIATION_TO_IDENTITY = {
+    "FRIENDLY": 3,
+    "FRIEND": 3,
+    "ASSUMED_FRIEND": 2,
+    "NEUTRAL": 4,
+    "SUSPECT": 5,
+    "HOSTILE": 6,
+    "ENEMY": 6,
+    "UNKNOWN": 1,
+    "PENDING": 0,
+}
+
+#: StandardIdentity digit for a friendly own-force element.
+_IDENTITY_FRIEND = 3
+
+
+def _object_identity(obj: Any) -> int:
+    """APP-6D standard-identity digit for a tactical object, from its affiliation.
+
+    Falls back to the object type (an ``ENEMY`` object is hostile) and finally to
+    UNKNOWN, so a symbol is never silently mis-framed as hostile.
+    """
+    aff = (getattr(obj, "affiliation", "") or "").upper()
+    if aff in _AFFILIATION_TO_IDENTITY:
+        return _AFFILIATION_TO_IDENTITY[aff]
+    if (getattr(obj, "type", "") or "").upper() == "ENEMY":
+        return _AFFILIATION_TO_IDENTITY["HOSTILE"]
+    return _AFFILIATION_TO_IDENTITY["UNKNOWN"]
 
 
 # ── Persistent config ─────────────────────────────────────────────────────────
@@ -611,6 +652,9 @@ async def publish_operator_presence(op: Any) -> None:
                 "lon": op.longitude,
                 "callsign": op.callsign,
                 "battery_pct": None,
+                # Own forces are friendly — carry the affiliation so the receiving
+                # client frames the symbol as friendly (blue), not the default.
+                "identity": _IDENTITY_FRIEND,
             },
         )
         _state.tx_presence += 1
@@ -626,12 +670,21 @@ async def publish_tactical_object(obj: Any) -> None:
         return
     try:
         assert _client is not None
+        label = (obj.notes or obj.type or "")[:200]
         await _client.post(
             "/api/publish/contact",
             json={
                 "lat": obj.latitude,
                 "lon": obj.longitude,
-                "description": (obj.notes or obj.type or "")[:200],
+                "description": label,
+                # Structured APP-6D attributes so JDSS renders the right symbol:
+                # affiliation drives the frame/colour; symbol_code is a hint the
+                # gateway uses only if it is a valid 20-digit 2525D SIDC (Arrow's
+                # 2525C letter codes are ignored, and JDSS builds one from identity).
+                "identity": _object_identity(obj),
+                "callsign": ((getattr(obj, "notes", "") or obj.type or "")[:60])
+                or None,
+                "sidc": getattr(obj, "symbol_code", "") or None,
             },
         )
         _state.tx_contacts += 1

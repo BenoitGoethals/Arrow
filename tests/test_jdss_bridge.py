@@ -290,25 +290,48 @@ def test_publish_operator_presence():
     bridge._cfg["publish_presence"] = True
     op = types.SimpleNamespace(latitude=50.1, longitude=4.2, callsign="A1")
     asyncio.run(bridge.publish_operator_presence(op))
-    assert fake.calls == [
-        (
-            "/api/publish/presence",
-            {"lat": 50.1, "lon": 4.2, "callsign": "A1", "battery_pct": None},
-        )
-    ]
+    url, payload = fake.calls[0]
+    assert url == "/api/publish/presence"
+    assert payload["lat"] == 50.1 and payload["callsign"] == "A1"
+    assert payload["identity"] == 3  # FRIEND — own forces are friendly
     assert bridge._state.tx_presence == 1
 
 
-def test_publish_tactical_object():
+def test_publish_tactical_object_carries_affiliation():
     fake = _use_fake_client()
     bridge._cfg["publish_contacts"] = True
     obj = types.SimpleNamespace(
-        latitude=51.0, longitude=4.0, notes="tank", type="ENEMY"
+        latitude=51.0,
+        longitude=4.0,
+        notes="tank",
+        type="ENEMY",
+        affiliation="HOSTILE",
+        symbol_code="SHGPUCI-----",  # 2525C letter code — not a valid 2525D SIDC
     )
     asyncio.run(bridge.publish_tactical_object(obj))
-    assert fake.calls[0][0] == "/api/publish/contact"
-    assert fake.calls[0][1]["description"] == "tank"
+    url, payload = fake.calls[0]
+    assert url == "/api/publish/contact"
+    assert payload["description"] == "tank"
+    assert payload["identity"] == 6  # HOSTILE
+    assert payload["callsign"] == "tank"
+    assert (
+        payload["sidc"] == "SHGPUCI-----"
+    )  # passed as a hint; JDSS ignores if invalid
     assert bridge._state.tx_contacts == 1
+
+
+@pytest.mark.parametrize(
+    "affiliation,expected",
+    [("FRIENDLY", 3), ("NEUTRAL", 4), ("UNKNOWN", 1), ("HOSTILE", 6), ("ENEMY", 6)],
+)
+def test_publish_tactical_object_identity_mapping(affiliation, expected):
+    fake = _use_fake_client()
+    bridge._cfg["publish_contacts"] = True
+    obj = types.SimpleNamespace(
+        latitude=1.0, longitude=2.0, notes="x", type="MARKER", affiliation=affiliation
+    )
+    asyncio.run(bridge.publish_tactical_object(obj))
+    assert fake.calls[0][1]["identity"] == expected
 
 
 def test_publish_chat_broadcast():
