@@ -155,6 +155,7 @@ main { padding: 0; }
 
     <h4>Interoperability</h4>
     <button class="nav-btn" onclick="show('tak',this)"><span class="ico">📡</span> TAK / ATAK</button>
+    <button class="nav-btn" onclick="show('jdss',this)"><span class="ico">🛰</span> JDSS Gateway</button>
     <button class="nav-btn" onclick="show('logs',this)"><span class="ico">📜</span> Logs</button>
 
     <h4>System</h4>
@@ -406,6 +407,7 @@ main { padding: 0; }
             case 'octopus':         main.innerHTML = ''; renderOctopus(main); break;
             case 'strike-packages': main.innerHTML = ''; renderStrikePackages(main); break;
             case 'tak':             main.innerHTML = ''; renderTak(main); break;
+            case 'jdss':            main.innerHTML = ''; renderJdss(main); break;
             case 'logs':            main.innerHTML = ''; renderLogs(main); break;
         }
         if (section !== 'logs' && window._logTimer) { clearInterval(window._logTimer); window._logTimer = null; }
@@ -2284,6 +2286,155 @@ main { padding: 0; }
     if (window._logTimer) clearInterval(window._logTimer);
     window._logTimer = setInterval(poll, 1500);
   }
+
+  // ── JDSS Gateway bridge admin ───────────────────────────────────────────────
+  let _jdssRefreshTimer = null;
+
+  async function renderJdss(el) {
+    const [status, cfg] = await Promise.all([
+      api('/jdss/status').then(r => r.ok ? r.json() : null),
+      api('/jdss/config').then(r => r.ok ? r.json() : {}),
+    ]);
+    if (!status) { el.innerHTML = '<p style="color:#ef4444">Could not reach JDSS bridge status endpoint.</p>'; return; }
+
+    const run  = status.running;
+    const conn = status.ws_connected;
+    const dotEl = conn ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>';
+    const connBadge = conn
+      ? '<span class="badge badge-ok" style="font-size:.75rem">CONNECTED</span>'
+      : `<span class="badge badge-err" style="font-size:.75rem">${run ? 'CONNECTING' : 'STOPPED'}</span>`;
+    const snap = status.snapshot || {};
+    const peers = status.peers || [];
+
+    el.innerHTML = `
+    <div class="sec-header">
+      <h2>🛰 JDSS Gateway Bridge</h2>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-ghost" onclick="refreshJdss()">↻ Refresh</button>
+        <button class="btn btn-${run ? 'ghost' : 'primary'}" onclick="jdssRestart()">↺ ${run ? 'Restart bridge' : 'Start bridge'}</button>
+      </div>
+    </div>
+
+    <div class="stat-grid" style="margin-bottom:1.5rem">
+      <div class="stat-card">
+        <div class="val" style="font-size:1.3rem">${dotEl} ${connBadge}</div>
+        <div class="lbl">Live feed</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" style="font-size:.95rem;font-family:monospace;color:#34d399">${_e(status.base_url||'—')}</div>
+        <div class="lbl">Gateway URL</div>
+      </div>
+      <div class="stat-card">
+        <div class="val">${status.rx_messages || 0}</div>
+        <div class="lbl">Msgs from JDSS</div>
+      </div>
+      <div class="stat-card">
+        <div class="val">${(status.tx_presence||0)+(status.tx_contacts||0)+(status.tx_chat||0)}</div>
+        <div class="lbl">Msgs to JDSS</div>
+      </div>
+      <div class="stat-card">
+        <div class="val">${peers.length}</div>
+        <div class="lbl">Coalition peers</div>
+      </div>
+      <div class="stat-card ${status.last_error ? 'warn' : ''}">
+        <div class="val" style="font-size:.8rem">${status.last_event_ago_s != null ? status.last_event_ago_s + 's' : '—'}</div>
+        <div class="lbl">Last event</div>
+      </div>
+    </div>
+
+    ${status.last_error ? `<div class="cfg-section" style="margin-bottom:1.5rem"><p style="padding:.6rem 1rem;color:#fbbf24;font-size:.8rem;margin:0">⚠ ${_e(status.last_error)}</p></div>` : ''}
+
+    <!-- Outbound counters -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>Arrow → JDSS published</h3>
+      <div style="padding:.75rem 1rem 1rem;display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;font-size:.85rem">
+        <div><div style="color:#64748b;font-size:.7rem;text-transform:uppercase">Presence</div><div style="font-family:monospace;font-size:1.1rem;color:#34d399">${status.tx_presence||0}</div></div>
+        <div><div style="color:#64748b;font-size:.7rem;text-transform:uppercase">Contacts</div><div style="font-family:monospace;font-size:1.1rem;color:#34d399">${status.tx_contacts||0}</div></div>
+        <div><div style="color:#64748b;font-size:.7rem;text-transform:uppercase">Chat</div><div style="font-family:monospace;font-size:1.1rem;color:#34d399">${status.tx_chat||0}</div></div>
+      </div>
+    </div>
+
+    <!-- Coalition peers -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>Coalition Peers <span style="color:#475569;font-weight:400">(${peers.length})</span></h3>
+      ${!peers.length
+        ? `<p style="padding:.75rem 1rem;color:#475569;font-size:.85rem;margin:0">No peers reported by the gateway.</p>`
+        : `<table class="adm-table">
+            <thead><tr><th>ID</th><th>Callsign</th><th>Details</th></tr></thead>
+            <tbody>${peers.map(p => `
+              <tr>
+                <td style="font-family:monospace;font-size:.75rem;color:#94a3b8">${_e(p.originator_id||p.id||'—')}</td>
+                <td><b>${_e(p.callsign||'—')}</b></td>
+                <td style="font-size:.75rem;color:#64748b">${_e(JSON.stringify(p).slice(0,120))}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>`}
+    </div>
+
+    <!-- Bridge config -->
+    <div class="cfg-section" style="margin-bottom:1.5rem">
+      <h3>Bridge Configuration</h3>
+      <div style="padding:.75rem 1rem 1rem">
+        <div class="field" style="margin:0 0 .9rem">
+          <label>JDSS gateway URL</label>
+          <input id="jdss-base-url" class="adm-input" value="${_e(cfg.base_url||'http://192.168.0.202:8000')}" placeholder="http://192.168.0.202:8000"/>
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
+          <input type="checkbox" id="jdss-enabled" ${cfg.enabled!==false ? 'checked' : ''} style="width:15px;height:15px"/>
+          <label for="jdss-enabled" style="font-size:.85rem;color:#e2e8f0;cursor:pointer">Bridge enabled on startup</label>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,auto);gap:1rem;justify-content:start">
+          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-presence" ${cfg.publish_presence!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-presence" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish presence</label></div>
+          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-contacts" ${cfg.publish_contacts!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-contacts" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish contacts</label></div>
+          <div style="display:flex;align-items:center;gap:.4rem"><input type="checkbox" id="jdss-pub-chat" ${cfg.publish_chat!==false ? 'checked' : ''} style="width:15px;height:15px"/><label for="jdss-pub-chat" style="font-size:.82rem;color:#e2e8f0;cursor:pointer">Publish chat</label></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="jdss-save-msg" style="min-height:1.4rem;font-size:.85rem;color:#34d399;margin-bottom:.6rem"></div>
+    <div style="display:flex;gap:.75rem">
+      <button class="btn btn-primary" onclick="saveJdssCfg()">💾 Save</button>
+      <button class="btn btn-ghost"   onclick="jdssRestart()">↺ Apply &amp; restart</button>
+    </div>`;
+
+    clearInterval(_jdssRefreshTimer);
+    _jdssRefreshTimer = setInterval(() => {
+      if (document.getElementById('jdss-save-msg')) refreshJdss();
+      else clearInterval(_jdssRefreshTimer);
+    }, 5000);
+  }
+
+  async function refreshJdss() {
+    const el = document.getElementById('adm-main');
+    if (el && document.getElementById('jdss-save-msg')) renderJdss(el);
+  }
+
+  window.saveJdssCfg = async function() {
+    const msg = document.getElementById('jdss-save-msg');
+    msg.textContent = 'Saving…'; msg.style.color = '#94a3b8';
+    const r = await api('/jdss/config', { method:'PUT', body: JSON.stringify({
+      base_url:         document.getElementById('jdss-base-url').value.trim(),
+      enabled:          document.getElementById('jdss-enabled').checked,
+      publish_presence: document.getElementById('jdss-pub-presence').checked,
+      publish_contacts: document.getElementById('jdss-pub-contacts').checked,
+      publish_chat:     document.getElementById('jdss-pub-chat').checked,
+    }) });
+    msg.style.color = r.ok ? '#34d399' : '#ef4444';
+    msg.textContent = r.ok ? '✓ Saved — click Apply & restart to activate' : `Save failed (${r.status})`;
+  };
+
+  window.jdssRestart = async function() {
+    const msg = document.getElementById('jdss-save-msg');
+    if (msg) { msg.style.color='#94a3b8'; msg.textContent='Restarting bridge…'; }
+    const r = await api('/jdss/restart', { method:'POST' });
+    if (r.ok) {
+      const s = await r.json();
+      if (msg) { msg.style.color='#34d399'; msg.textContent = `✓ Bridge ${s.running ? 'started → '+s.base_url : 'stopped'}`; }
+      setTimeout(refreshJdss, 800);
+    } else if (msg) {
+      msg.style.color='#ef4444'; msg.textContent = `Restart failed (${r.status})`;
+    }
+  };
 
   async function renderTak(el) {
     const [status, cfg, tls] = await Promise.all([

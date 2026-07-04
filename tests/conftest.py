@@ -34,6 +34,14 @@ async def _noop() -> None: ...
 _cot_tcp.start = _noop
 _cot_tcp.stop = _noop
 
+# ── Disable the JDSS bridge so tests don't dial an external gateway ───────────
+# The lifespan calls jdss.bridge.start(); patch it to a no-op so tests never
+# open a socket to the configured gateway (default 192.168.0.202:8000).
+import backend.jdss.bridge as _jdss_bridge
+
+_jdss_bridge.start = _noop
+_jdss_bridge.stop = _noop
+
 # ── Disable default account seeding during tests ──────────────────────────────
 # The lifespan calls seed_db() which inserts benoit/capt/ops1/ops2/ops3.
 # Tests use _seed_admin() to insert only a minimal admin account, and they

@@ -145,4 +145,9 @@ async def send_message(
 
     await broadcast_chat_to_atak(msg, current)
 
+    # Bridge Arrow chat to an external JDSSArrow gateway as a Chat message.
+    from backend.jdss import bridge as _jdss
+
+    await _jdss.publish_chat(msg, current)
+
     return msg

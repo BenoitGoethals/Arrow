@@ -16,6 +16,7 @@ from backend.octopus.router import router as octopus_router
 from backend.fire_missions.router import router as fire_missions_router
 from backend.history.router import router as history_router
 from backend.cot.router import router as cot_router
+from backend.jdss.router import router as jdss_router
 from backend.photos.router import router as photos_router
 from backend.marti.router import router as marti_router
 from backend.api.companies import router as companies_router
@@ -145,6 +146,7 @@ def _configure_logging() -> None:
         "backend.alerts",
         "backend.messaging",
         "backend.auth",
+        "backend.jdss",
         "arrow.security",
     ):
         logging.getLogger(ns).setLevel(level)
@@ -190,8 +192,14 @@ async def lifespan(app: FastAPI):
 
     await _cot_tcp.start()
 
+    # Bridge to an external JDSSArrow coalition gateway (optional; configured in admin)
+    from backend.jdss import bridge as _jdss
+
+    await _jdss.start()
+
     yield
 
+    await _jdss.stop()
     await _cot_tcp.stop()
     _mumble_monitor.stop()
 
@@ -256,6 +264,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_api_router)
     app.include_router(apk_router)
     app.include_router(cot_router)
+    app.include_router(jdss_router)
     app.include_router(auth_router)
     app.include_router(operators_router)
     app.include_router(teams_router)

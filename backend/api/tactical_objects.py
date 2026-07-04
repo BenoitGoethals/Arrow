@@ -61,6 +61,11 @@ async def create_object(
 
     await broadcast_tactical_object_to_atak(obj)
 
+    # Bridge the tactical object to an external JDSSArrow gateway as a contact.
+    from backend.jdss import bridge as _jdss
+
+    await _jdss.publish_tactical_object(obj)
+
     # Bridge geo-pinned photos to connected ATAK devices as an image CoT.
     if obj.photo_id:
         from backend.cot.tcp_server import broadcast_photo_to_atak

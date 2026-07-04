@@ -75,6 +75,11 @@ async def update_position(
 
     await broadcast_operator_cot(current)
 
+    # Push live position to an external JDSSArrow gateway as a Presence message.
+    from backend.jdss import bridge as _jdss
+
+    await _jdss.publish_operator_presence(current)
+
     return current
 
 

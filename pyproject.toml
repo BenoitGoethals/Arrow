@@ -38,6 +38,7 @@ dependencies = [
     # directly (GPS when present, Wi-Fi/network otherwise). macOS-only.
     "pyobjc-framework-CoreLocation>=10.0; sys_platform == 'darwin'",
     "pyproj>=3.7.2",
+    "wxpython>=4.2.4",
 ]
 
 [project.optional-dependencies]
