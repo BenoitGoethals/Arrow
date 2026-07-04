@@ -24,8 +24,9 @@ Outbound
 Wire shapes (fixed external contract):
   * ``/ws/events`` event  →  flat: ``{direction, type, originator_id, callsign,
     message_id, classification, releasable_to, body}`` (``body`` is the typed
-    message body); plus ``{direction:"snapshot", snapshot:{...}}`` on connect and
-    ``{direction:"heartbeat"}`` every 15 s.
+    message body). ``direction`` is ``"received"`` for coalition traffic and
+    ``"sent"`` for messages this node originated; plus ``{direction:"snapshot",
+    snapshot:{...}}`` on connect and ``{direction:"heartbeat"}`` every 15 s.
   * ``/api/messages``     →  nested: ``{header:{message_id, originator_id, ...},
     body:{type, ...}}``.
 """
@@ -138,6 +139,7 @@ def get_status() -> dict:
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 _task: asyncio.Task | None = None
+_poller: asyncio.Task | None = None
 _client: httpx.AsyncClient | None = None
 _seen: collections.deque[str] = collections.deque(maxlen=2000)
 _seen_set: set[str] = set()
@@ -157,7 +159,7 @@ def _mark_seen(message_id: str | None) -> bool:
 
 
 async def start() -> None:
-    global _task, _client
+    global _task, _poller, _client
     load_config()
     if not _cfg.get("enabled", True):
         log.info("JDSS bridge disabled in config")
@@ -168,22 +170,30 @@ async def start() -> None:
         return
     _client = httpx.AsyncClient(base_url=base_url, timeout=10.0)
     _task = asyncio.create_task(_run_loop())
+    _poller = asyncio.create_task(_status_poll_loop())
     log.info("JDSS bridge started → %s", base_url)
 
 
+async def _cancel(task: asyncio.Task | None) -> None:
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        pass
+
+
 async def stop() -> None:
-    global _task, _client
-    if _task is not None:
-        _task.cancel()
-        try:
-            await _task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
+    global _task, _poller, _client
+    await _cancel(_task)
+    await _cancel(_poller)
     if _client is not None:
         await _client.aclose()
     _task = None
+    _poller = None
     _client = None
     _state.ws_connected = False
     log.info("JDSS bridge stopped")
@@ -240,6 +250,13 @@ async def _consume_ws() -> None:
                 log.debug("JDSS event handling error: %s", exc)
 
 
+#: JDSSArrow emits ``direction="received"`` for coalition traffic and ``"sent"``
+#: for messages this gateway node originated (which includes Arrow's own
+#: ``/api/publish/*`` calls). Older/other builds may use ``"in"``/``"out"`` — accept
+#: both spellings for the inbound side.
+_INBOUND_DIRECTIONS = frozenset({"received", "in"})
+
+
 async def _handle_event(evt: dict) -> None:
     """Dispatch one live ``/ws/events`` frame."""
     _state.last_event_at = time.time()
@@ -249,9 +266,36 @@ async def _handle_event(evt: dict) -> None:
         return
     if direction == "heartbeat":
         return
-    if direction != "in":  # skip our own outbound + non-message frames
+    if direction not in _INBOUND_DIRECTIONS:
+        # "sent"/"out" (or any non-message frame) — skip. These include the
+        # messages this node originated via Arrow's own publish calls.
+        return
+    # Never re-ingest a message this gateway node itself originated (e.g. an
+    # Arrow-published contact that loops back over multicast) — that would echo
+    # Arrow data onto its own map. Real coalition peers carry their own ids.
+    own = (_state.snapshot or {}).get("node_id")
+    if own and evt.get("originator_id") == own:
         return
     await _ingest_message(evt)
+
+
+async def _status_poll_loop() -> None:
+    """Keep ``_state.peers`` / ``_state.snapshot`` fresh for the admin panel.
+
+    The WebSocket stream carries message events but not the peer roster, so the
+    "Coalition peers" panel would otherwise stay empty while the WS is connected.
+    Poll the monitor endpoints on a slow cadence, independent of the WS loop.
+    """
+    while True:
+        try:
+            if _client is not None:
+                _state.peers = (await _client.get("/api/monitor/peers")).json()
+                _state.snapshot = (await _client.get("/api/monitor/snapshot")).json()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.debug("JDSS status poll failed: %s", exc)
+        await asyncio.sleep(15)
 
 
 async def _poll_once() -> None:

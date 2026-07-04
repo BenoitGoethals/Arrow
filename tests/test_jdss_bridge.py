@@ -176,17 +176,60 @@ def test_ingest_casevac_creates_report_and_alert(client, monkeypatch):
         assert db.query(Alert).filter(Alert.type == "MEDEVAC").first() is not None
 
 
-def test_direction_out_is_not_ingested(client, monkeypatch):
+def test_received_direction_is_ingested(client, monkeypatch):
+    # "received" is JDSSArrow's real inbound marker (not "in").
     events = _capture(monkeypatch)
     evt = {
-        "direction": "out",  # Arrow's own published data echoed back — must skip
+        "direction": "received",
+        "type": "Presence",
+        "originator_id": "rifleman-1",
+        "callsign": "RIF-1",
+        "message_id": "rcv1",
+        "body": {
+            "type": "Presence",
+            "location": {"lat": 51.0, "lon": 4.1},
+            "callsign": "RIF-1",
+        },
+    }
+    asyncio.run(bridge._handle_event(evt))
+    assert any(e["channel"] == "cot-track" for e in events)
+    assert bridge._state.rx_messages == 1
+
+
+@pytest.mark.parametrize("direction", ["sent", "out"])
+def test_outbound_directions_not_ingested(client, monkeypatch, direction):
+    # "sent"/"out" = messages this node originated (incl. Arrow's publishes) → skip.
+    events = _capture(monkeypatch)
+    evt = {
+        "direction": direction,
         "type": "Presence",
         "originator_id": "SELF",
-        "message_id": "out1",
+        "message_id": f"{direction}1",
         "body": {
             "type": "Presence",
             "location": {"lat": 1.0, "lon": 2.0},
             "callsign": "X",
+        },
+    }
+    asyncio.run(bridge._handle_event(evt))
+    assert events == []
+    assert bridge._state.rx_messages == 0
+
+
+def test_own_node_origination_not_ingested(client, monkeypatch):
+    # A message received back that this gateway node itself originated must be
+    # skipped (echo guard) — identified by originator_id == snapshot node_id.
+    events = _capture(monkeypatch)
+    bridge._state.snapshot = {"node_id": "node-a"}
+    evt = {
+        "direction": "received",
+        "type": "ContactSighting",
+        "originator_id": "node-a",  # our own gateway → Arrow-published, don't echo
+        "message_id": "echo1",
+        "body": {
+            "type": "ContactSighting",
+            "location": {"lat": 5.0, "lon": 6.0},
+            "identity": 6,
         },
     }
     asyncio.run(bridge._handle_event(evt))
