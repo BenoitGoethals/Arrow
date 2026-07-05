@@ -53,6 +53,7 @@ class EpicProjectOut(BaseModel):
     created_by: int
     created_at: datetime
     mission_id: int | None
+    classification: int = 0
     node_count: int = 0
 
 
@@ -231,6 +232,7 @@ def _project_out(proj: EpicProject) -> EpicProjectOut:
         created_by=proj.created_by,
         created_at=proj.created_at,
         mission_id=proj.mission_id,
+        classification=proj.classification,
         node_count=len(proj.nodes),
     )
 
@@ -256,6 +258,7 @@ def list_projects(
         q = q.filter(
             or_(EpicProject.mission_id == mission.id, EpicProject.mission_id.is_(None))
         )
+    q = q.filter(EpicProject.classification <= _op.clearance)
     projs = q.order_by(EpicProject.created_at.desc()).all()
     return [_project_out(p) for p in projs]
 
@@ -269,12 +272,15 @@ def create_project(
     op: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> EpicProjectOut:
+    from backend.classification import resolve_default_and_cap
+
     proj = EpicProject(
         name=body.name.strip(),
         description=body.description,
         color=body.color,
         created_by=op.id,
         mission_id=mission.id if mission else None,
+        classification=resolve_default_and_cap(mission, op, None),
     )
     db.add(proj)
     db.commit()

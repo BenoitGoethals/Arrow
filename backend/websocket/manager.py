@@ -17,13 +17,16 @@ class ConnectionManager:
     """
 
     def __init__(self) -> None:
-        self._connections: set[WebSocket] = set()
+        # websocket → the operator's security clearance (0..4). A message is only
+        # delivered to connections whose clearance >= the message's classification,
+        # so a classified element never leaves the server to an uncleared client.
+        self._connections: dict[WebSocket, int] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket, clearance: int = 0) -> None:
         await websocket.accept()
         async with self._lock:
-            self._connections.add(websocket)
+            self._connections[websocket] = int(clearance or 0)
             n = len(self._connections)
         client = getattr(websocket, "client", None)
         log.info(
@@ -32,13 +35,26 @@ class ConnectionManager:
 
     async def disconnect(self, websocket: WebSocket) -> None:
         async with self._lock:
-            self._connections.discard(websocket)
+            self._connections.pop(websocket, None)
             n = len(self._connections)
         log.info("WS disconnect  (total=%d)", n, extra=_CONN)
 
     async def broadcast(self, message: dict[str, Any]) -> None:
+        # Classification of this message (default 0 → delivered to everyone, so
+        # presence/tracking/*-deleted and other system events always flow).
+        required = 0
+        data = message.get("data")
+        if isinstance(data, dict):
+            try:
+                required = int(data.get("classification", 0) or 0)
+            except (TypeError, ValueError):
+                required = 0
         async with self._lock:
-            targets = list(self._connections)
+            targets = [
+                ws
+                for ws, clearance in self._connections.items()
+                if clearance >= required
+            ]
         dead: list[WebSocket] = []
         for ws in targets:
             try:
@@ -48,7 +64,7 @@ class ConnectionManager:
         if dead:
             async with self._lock:
                 for ws in dead:
-                    self._connections.discard(ws)
+                    self._connections.pop(ws, None)
 
 
 broadcaster = ConnectionManager()

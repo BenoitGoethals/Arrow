@@ -14,7 +14,7 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 @router.get("", response_model=list[AlertOut])
 def list_alerts(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[Alert]:
     q = (
@@ -24,6 +24,7 @@ def list_alerts(
     )
     if mission:
         q = q.filter(Alert.mission_id == mission.id)
+    q = q.filter(Alert.classification <= current.clearance)
     return q.limit(200).all()
 
 
@@ -34,6 +35,8 @@ async def trigger_alert(
     current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> Alert:
+    from backend.classification import resolve_default_and_cap
+
     alert = Alert(
         type=payload.type,
         operator_id=current.id,
@@ -42,6 +45,7 @@ async def trigger_alert(
             payload.longitude if payload.longitude is not None else current.longitude
         ),
         mission_id=mission.id if mission else current.mission_id,
+        classification=resolve_default_and_cap(mission, current, payload.classification),
     )
     db.add(alert)
     db.commit()

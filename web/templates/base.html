@@ -165,6 +165,9 @@
         <span id="nav-mission-status"
               style="font-size:.68rem;padding:1px 6px;border-radius:4px;
                      background:#1e3a5f;color:#60a5fa"></span>
+        <span id="nav-class-badge"
+              style="font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:4px;
+                     letter-spacing:.06em;display:none"></span>
     </span>
     <span id="nav-user" class="nav-user"></span>
     <a id="nav-auth" href="{{ url_for('login') }}">Sign in</a>
@@ -280,6 +283,30 @@
 <div id="arrow-toast-container"></div>
 <div id="arrow-chat-toast-container"></div>
 
+<!-- ── Classification banner (active mission's marking) ───────────────────── -->
+<div id="class-banner" style="
+    display:none;position:sticky;top:0;z-index:8500;width:100%;
+    text-align:center;font-weight:700;font-size:.72rem;letter-spacing:.12em;
+    padding:2px 0;color:#fff;font-family:'Courier New',monospace;"></div>
+
+<!-- ── Mandatory mission gate — blocks the app until a mission is active ───── -->
+<div id="mission-gate" style="
+    display:none;position:fixed;inset:0;z-index:9500;
+    background:rgba(2,6,23,.94);align-items:center;justify-content:center;">
+  <div style="background:#111827;border:1px solid #2a3142;border-radius:10px;
+      width:460px;max-width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.85);
+      color:#e2e8f0;overflow:hidden;">
+    <div style="padding:18px 22px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:1.4rem">🎯</span>
+      <div>
+        <div style="font-size:1rem;font-weight:700;color:#38bdf8;letter-spacing:.04em">SELECT A MISSION</div>
+        <div style="font-size:.75rem;color:#64748b;margin-top:1px">You must be in a mission to use Arrow.</div>
+      </div>
+    </div>
+    <div id="mission-gate-body" style="padding:16px 22px 20px;display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto;"></div>
+  </div>
+</div>
+
 <!-- ── No-mission modal — shown automatically when no missions exist ──────── -->
 <div id="new-mission-modal" style="
     display:none;position:fixed;inset:0;z-index:9000;
@@ -312,6 +339,19 @@
                          color:#e2e8f0;border-radius:5px;padding:8px 11px;font-size:.88rem;resize:vertical;"
                   placeholder="Optional brief…"></textarea>
       </div>
+      <div>
+        <label style="font-size:.72rem;color:#94a3b8;letter-spacing:.05em">CLASSIFICATION</label>
+        <select id="nm-class"
+                style="width:100%;box-sizing:border-box;background:#1e293b;border:1px solid #334155;
+                       color:#e2e8f0;border-radius:5px;padding:8px 11px;font-size:.88rem;">
+          <option value="0" selected>UNCLASSIFIED</option>
+          <option value="1">RESTRICTED</option>
+          <option value="2">CONFIDENTIAL</option>
+          <option value="3">SECRET</option>
+          <option value="4">TOP SECRET</option>
+        </select>
+        <span style="font-size:.68rem;color:#64748b">Ceiling for everything in the mission (capped at your clearance).</span>
+      </div>
       <p id="nm-msg" style="font-size:.8rem;color:#f87171;min-height:1.2em;margin:0"></p>
       <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
         <button type="submit"
@@ -335,6 +375,75 @@
     // ── Mission context ───────────────────────────────────────────────────────
     // Active mission id is stored in localStorage['arrow_mission_id'].
     // Every API call goes through arrowFetch() which injects the header.
+    // ── Security classification (must match backend/classification.py) ────────
+    window.ARROW_CLASS_NAMES  = ['UNCLASSIFIED','RESTRICTED','CONFIDENTIAL','SECRET','TOP SECRET'];
+    window.ARROW_CLASS_COLORS = ['#16a34a','#0e7490','#2563eb','#dc2626','#ea580c'];
+    window.arrowClassName = function(l){ return window.ARROW_CLASS_NAMES[Math.max(0,Math.min(4, l||0))]; };
+    window.arrowRenderClassBadge = function(level) {
+        const el = document.getElementById('nav-class-badge');
+        if (el) {
+            if (level === null || level === undefined) { el.style.display = 'none'; }
+            else {
+                const l = Math.max(0, Math.min(4, level || 0));
+                el.textContent = window.ARROW_CLASS_NAMES[l];
+                el.style.background = window.ARROW_CLASS_COLORS[l];
+                el.style.color = '#fff';
+                el.style.display = 'inline-block';
+            }
+        }
+        // Top classification banner (whole-page marking).
+        const b = document.getElementById('class-banner');
+        if (b) {
+            if (level === null || level === undefined) { b.style.display = 'none'; }
+            else {
+                const l = Math.max(0, Math.min(4, level || 0));
+                b.textContent = window.ARROW_CLASS_NAMES[l];
+                b.style.background = window.ARROW_CLASS_COLORS[l];
+                b.style.display = 'block';
+            }
+        }
+    };
+
+    // Blocking gate: force a mission choice before the app is usable.
+    window.arrowShowMissionGate = function(missions, role) {
+        const gate = document.getElementById('mission-gate');
+        const body = document.getElementById('mission-gate-body');
+        if (!gate || !body) return;
+        const active = (missions || []).filter(m => m.status !== 'ENDED');
+        if (role === 'ADMIN') {
+            if (active.length) {
+                body.innerHTML = active.map(m =>
+                    `<button onclick="arrowPickMission(${m.id})" style="text-align:left;
+                        background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:6px;
+                        padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+                        <span>${_esc(m.name)} <span style="color:#64748b;font-size:.75rem">[${m.status}]</span></span>
+                        <span style="font-size:.62rem;font-weight:700;padding:1px 6px;border-radius:4px;color:#fff;
+                              background:${window.ARROW_CLASS_COLORS[Math.max(0,Math.min(4,m.classification||0))]}">
+                              ${window.arrowClassName(m.classification||0)}</span>
+                     </button>`).join('') +
+                    `<button onclick="document.getElementById('mission-gate').style.display='none';document.getElementById('new-mission-modal').style.display='flex'"
+                        style="margin-top:6px;background:#0ea5e9;border:none;color:#fff;border-radius:6px;padding:9px;cursor:pointer;font-weight:600">✚ Create a new mission</button>`;
+            } else {
+                // No missions yet — hand off to the create modal.
+                gate.style.display = 'none';
+                document.getElementById('new-mission-modal').style.display = 'flex';
+                return;
+            }
+        } else {
+            body.innerHTML =
+                `<p style="color:#fca5a5;font-size:.9rem;margin:0 0 10px">No mission is assigned to you.</p>
+                 <p style="color:#94a3b8;font-size:.82rem;margin:0 0 14px">Ask an administrator to assign you to a mission, then sign in again.</p>
+                 <a href="/logout" style="background:#334155;color:#e2e8f0;border-radius:6px;padding:9px 12px;text-align:center;text-decoration:none">Sign out</a>`;
+        }
+        gate.style.display = 'flex';
+    };
+    window.arrowPickMission = function(id) {
+        arrowSetMission(id);
+        document.getElementById('mission-gate').style.display = 'none';
+        _refreshNavMission();
+        window.dispatchEvent(new Event('arrow-mission-changed'));
+    };
+
     window.arrowGetMissionId = function() {
         return parseInt(localStorage.getItem('arrow_mission_id') || '0') || null;
     };
@@ -475,9 +584,17 @@
                     arrowSetMissionId(null);
                 }
             }
+            // Non-admins are LOCKED to their assigned mission — no switching.
+            const isAdmin = role === 'ADMIN';
+            sel.disabled = !isAdmin;
+            sel.title = isAdmin ? '' : 'Locked to your assigned mission (ADMIN only can switch)';
+            // Non-admin: auto-select their (single) assigned mission if none set.
+            if (!isAdmin && activeMissions.length && !arrowGetMissionId()) {
+                arrowSetMission(activeMissions[0].id);
+            }
             sel.innerHTML = '<option value="">— none —</option>' +
                 activeMissions.map(m =>
-                    `<option value="${m.id}" ${m.id === cur ? 'selected' : ''}>
+                    `<option value="${m.id}" ${m.id === arrowGetMissionId() ? 'selected' : ''}>
                         ${_esc(m.name)} [${m.status}]
                     </option>`
                 ).join('');
@@ -491,13 +608,13 @@
                 badge.style.background = (colors[active.status] || '#475569') + '22';
                 badge.style.color = colors[active.status] || '#94a3b8';
             }
-            // Show create-mission modal when no missions exist and user can create them
-            const modal = document.getElementById('new-mission-modal');
-            if (modal && missions.length === 0 &&
-                ['ADMIN','BATTLE_CAPTAIN'].includes(role) &&
-                !sessionStorage.getItem('nm-skipped')) {
-                modal.style.display = 'flex';
-                document.getElementById('nm-name')?.focus();
+            window.arrowRenderClassBadge(active ? (active.classification || 0) : null);
+            // Mandatory mission gate — block the app until an active mission is set.
+            const gate = document.getElementById('mission-gate');
+            if (!arrowGetMissionId()) {
+                window.arrowShowMissionGate(missions, role);
+            } else if (gate) {
+                gate.style.display = 'none';
             }
         }).catch(() => {});
     }
@@ -529,7 +646,8 @@
                 const r = await fetch(window.ARROW_BACKEND_URL + '/missions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
-                    body: JSON.stringify({ name, description: desc }),
+                    body: JSON.stringify({ name, description: desc,
+                        classification: parseInt(document.getElementById('nm-class')?.value || '0') }),
                 });
                 if (!r.ok) {
                     const err = await r.json().catch(() => ({}));

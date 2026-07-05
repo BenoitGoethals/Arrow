@@ -40,6 +40,7 @@ class MissionRepository(
     suspend fun createMission(
         name: String,
         description: String = "",
+        classification: Int = 0,
         mapCenterLat: Double? = null,
         mapCenterLng: Double? = null,
         mapZoom: Int = 13,
@@ -47,6 +48,7 @@ class MissionRepository(
         val body = buildJsonObject {
             put("name", name)
             put("description", description)
+            put("classification", classification)
             put("map_zoom", mapZoom)
             if (mapCenterLat != null && mapCenterLng != null) {
                 put("map_center_lat", mapCenterLat)

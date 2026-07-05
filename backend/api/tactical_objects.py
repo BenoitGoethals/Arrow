@@ -15,7 +15,7 @@ router = APIRouter(prefix="/tactical-objects", tags=["tactical"])
 @router.get("", response_model=list[TacticalObjectOut])
 def list_objects(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[TacticalObject]:
     q = db.query(TacticalObject)
@@ -28,6 +28,8 @@ def list_objects(
                 TacticalObject.mission_id.is_(None),
             )
         )
+    # Classification enforcement — never return anything above the viewer's clearance.
+    q = q.filter(TacticalObject.classification <= current.clearance)
     return q.all()
 
 
@@ -38,10 +40,16 @@ async def create_object(
     current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> TacticalObject:
+    from backend.classification import resolve_default_and_cap
+
+    fields = payload.model_dump()
+    fields["classification"] = resolve_default_and_cap(
+        mission, current, fields.pop("classification", None)
+    )
     obj = TacticalObject(
         created_by=current.id,
         mission_id=mission.id if mission else None,
-        **payload.model_dump(),
+        **fields,
     )
     db.add(obj)
     db.commit()
@@ -82,12 +90,22 @@ async def patch_object(
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
 ) -> TacticalObject:
+    from backend.classification import can_see, resolve_default_and_cap
+
     obj = db.get(TacticalObject, object_id)
     if not obj:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if not can_see(obj.classification, current.clearance):
+        raise HTTPException(status.HTTP_404_NOT_FOUND)  # don't reveal it exists
     if obj.created_by != current.id and current.role not in {"ADMIN", "BATTLE_CAPTAIN"}:
         raise HTTPException(status.HTTP_403_FORBIDDEN)
-    for field, value in payload.model_dump(exclude_none=True).items():
+    changes = payload.model_dump(exclude_none=True)
+    if "classification" in changes:
+        obj_mission = db.get(Mission, obj.mission_id) if obj.mission_id else None
+        changes["classification"] = resolve_default_and_cap(
+            obj_mission, current, changes["classification"]
+        )
+    for field, value in changes.items():
         setattr(obj, field, value)
     db.commit()
     db.refresh(obj)

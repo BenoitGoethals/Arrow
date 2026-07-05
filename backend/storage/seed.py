@@ -41,6 +41,9 @@ def _ensure(
         rank=rank,
         role=role,
         password_hash=hash_password(password),
+        # ADMINs get top clearance so the mission-classification gate can't lock
+        # them out of their own missions; everyone else starts UNCLASSIFIED.
+        clearance=4 if role == "ADMIN" else 0,
     )
     db.add(op)
     return op, True

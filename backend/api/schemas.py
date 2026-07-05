@@ -71,6 +71,7 @@ class OperatorOut(ORMModel):
     altitude: float | None
     position_source: str | None = None
     last_seen: datetime
+    clearance: int = 0
 
     @computed_field  # type: ignore[misc]
     @property
@@ -91,6 +92,7 @@ class OperatorUpdate(BaseModel):
     team_id: int | None = None
     team_role: str | None = None
     mission_id: int | None = None
+    clearance: int | None = None  # ADMIN-only (enforced in the router)
 
 
 class OpsStatusUpdate(BaseModel):
@@ -120,6 +122,8 @@ class TacticalObjectIn(BaseModel):
     # every TG type (attack, ambush, defense, etc.) can be drawn as either
     # FRIENDLY (blue) or ENEMY (red) or UNKNOWN (yellow). Defaults to FRIENDLY.
     affiliation: str = "FRIENDLY"
+    # Security level 0..4; None → defaults to the mission's classification.
+    classification: int | None = None
 
 
 class TacticalObjectPatch(BaseModel):
@@ -130,6 +134,7 @@ class TacticalObjectPatch(BaseModel):
     # Full {"type":"line|polygon","coords":[[lat,lon],...]} JSON — sent when a
     # line/polygon graphic is dragged so the whole shape moves, not just the anchor.
     geometry: str | None = None
+    classification: int | None = None
 
 
 class TacticalObjectOut(ORMModel):
@@ -147,6 +152,7 @@ class TacticalObjectOut(ORMModel):
     geometry: str = ""
     echelon: str = ""
     affiliation: str = "FRIENDLY"
+    classification: int = 0
 
 
 class PhotoOut(BaseModel):
@@ -158,6 +164,7 @@ class AlertIn(BaseModel):
     type: str
     latitude: float | None = None
     longitude: float | None = None
+    classification: int | None = None
 
 
 class AlertOut(ORMModel):
@@ -169,6 +176,7 @@ class AlertOut(ORMModel):
     longitude: float | None
     timestamp: datetime
     status: str
+    classification: int = 0
 
     @model_validator(mode="before")
     @classmethod
@@ -187,6 +195,7 @@ class AlertOut(ORMModel):
                 "longitude": data.longitude,
                 "timestamp": data.timestamp,
                 "status": data.status,
+                "classification": getattr(data, "classification", 0),
             }
         return data
 
@@ -198,6 +207,7 @@ class MessageIn(BaseModel):
     content: str = ""
     message_type: str = "DIRECT"  # DIRECT | BROADCAST | ROOM
     photo_id: int | None = None
+    classification: int | None = None
 
 
 class ChatRoomMemberOut(ORMModel):
@@ -236,6 +246,7 @@ class MessageOut(ORMModel):
     message_type: str
     photo_id: int | None
     photo_mime_type: str | None = None
+    classification: int = 0
 
 
 class PositionIn(BaseModel):
@@ -270,6 +281,7 @@ class BattleOut(ORMModel):
 class ReportIn(BaseModel):
     type: str
     payload: dict
+    classification: int | None = None
 
 
 class DroneSpotIn(BaseModel):
@@ -309,6 +321,7 @@ class ReportOut(ORMModel):
     fo_operator_id: int | None = None
     tic: bool = False
     mission_id: int | None = None
+    classification: int = 0
 
 
 class LogrepRouteIn(BaseModel):
@@ -395,6 +408,7 @@ class CasAssetOut(ORMModel):
     created_by: int
     created_at: datetime
     updated_at: datetime
+    classification: int = 0
 
 
 class FireMissionIn(BaseModel):
@@ -406,6 +420,7 @@ class FireMissionIn(BaseModel):
     ammunition: str  # HE | ILLUM | SMOKE | WP | ICM | MIXED
     quantity: int = 1
     description: str = ""
+    classification: int | None = None
 
 
 class FireMissionUpdate(BaseModel):
@@ -429,6 +444,7 @@ class FireMissionOut(ORMModel):
     fdc_operator_id: int | None
     timestamp: datetime
     notes: str
+    classification: int = 0
 
 
 class CotTrackOut(ORMModel):
@@ -444,6 +460,7 @@ class CotTrackOut(ORMModel):
     team: str
     remarks: str | None = None
     last_seen: datetime
+    classification: int = 0
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -462,3 +479,4 @@ class AtakShapeOut(ORMModel):
     callsign: str
     geometry_json: str
     last_seen: datetime
+    classification: int = 0

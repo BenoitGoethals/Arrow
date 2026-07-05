@@ -47,6 +47,7 @@ def list_messages(
     q = db.query(Message).filter(or_(*clauses))
     if mission:
         q = q.filter(Message.mission_id == mission.id)
+    q = q.filter(Message.classification <= current.clearance)
     msgs = q.order_by(Message.timestamp.desc()).limit(200).all()
 
     photo_ids = {m.photo_id for m in msgs if m.photo_id}
@@ -116,6 +117,8 @@ async def send_message(
         mtype = "DIRECT"
         receiver_id = payload.receiver_id
 
+    from backend.classification import resolve_default_and_cap
+
     msg = Message(
         sender_id=current.id,
         receiver_id=receiver_id,
@@ -124,6 +127,7 @@ async def send_message(
         message_type=mtype,
         photo_id=payload.photo_id,
         mission_id=mission.id if mission else current.mission_id,
+        classification=resolve_default_and_cap(mission, current, payload.classification),
     )
     db.add(msg)
     db.commit()

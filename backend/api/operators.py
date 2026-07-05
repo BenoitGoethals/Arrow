@@ -49,6 +49,10 @@ def update_operator(
     if not op:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     changes = payload.model_dump(exclude_unset=True)
+    if "clearance" in changes and changes["clearance"] is not None:
+        from backend.classification import clamp
+
+        changes["clearance"] = clamp(changes["clearance"])
     for field, value in changes.items():
         setattr(op, field, value)
     db.commit()

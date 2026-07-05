@@ -269,12 +269,23 @@ def test_delete_mission_purges_dependent_rows(client) -> None:
     """Regression: `DELETE /missions/{id}` must not 500 on the
     `alerts_mission_id_fkey` (or any sibling) FK violation. Mission-scoped
     rows are cascade-deleted; preserved tables get mission_id NULLed."""
-    _, op_tok, _ = register(client, "OPERATOR")
+    _, op_tok, op_id = register(client, "OPERATOR")
     _, admin_tok, _ = register(client, "ADMIN")
 
     m = client.post("/missions", headers=auth(admin_tok), json={"name": "DOOMED"})
     assert m.status_code == 201, m.text
     mid = m.json()["id"]
+
+    # Non-admins are locked to their assigned mission (the X-Mission-ID header is
+    # ignored for them), so assign the operator to DOOMED before they create in it.
+    assert (
+        client.post(
+            f"/missions/{mid}/operators",
+            headers=auth(admin_tok),
+            json={"operator_ids": [op_id]},
+        ).status_code
+        == 204
+    )
 
     # Create one of each FK-referencing record so the delete used to 500.
     # Alerts are the canonical 500-trigger (alerts_mission_id_fkey).

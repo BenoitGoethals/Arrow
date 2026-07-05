@@ -43,7 +43,17 @@ async def websocket_endpoint(
     callsign = payload.get("sub", "unknown")
     _touch_operator(callsign, online=True)
 
-    await broadcaster.connect(websocket)
+    # Load the operator's clearance so the broadcaster filters classified events.
+    clearance = 0
+    try:
+        with SessionLocal() as db:
+            op = db.query(Operator).filter(Operator.callsign.ilike(callsign)).first()
+            if op:
+                clearance = op.clearance
+    except Exception:
+        clearance = 0
+
+    await broadcaster.connect(websocket, clearance)
     await broadcaster.broadcast(
         {"channel": "presence", "event": "online", "data": {"callsign": callsign}}
     )

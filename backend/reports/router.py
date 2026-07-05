@@ -55,7 +55,7 @@ VALID_STATUSES = {"RECEIVED", "ACKNOWLEDGED", "PROCESSED", "REJECTED"}
 @router.get("", response_model=list[ReportOut])
 def list_reports(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[Report]:
     q = db.query(Report).order_by(Report.timestamp.desc())
@@ -63,6 +63,7 @@ def list_reports(
         # Always include global reports (mission_id=NULL) alongside mission reports
         # so CBRN imports, weather, and persistent intel are always visible.
         q = q.filter(or_(Report.mission_id == mission.id, Report.mission_id.is_(None)))
+    q = q.filter(Report.classification <= current.clearance)
     return q.limit(200).all()
 
 
@@ -76,12 +77,15 @@ async def submit_report(
     rtype = payload.type.upper()
     if rtype not in VALID_TYPES:
         rtype = "CONTACT"
+    from backend.classification import resolve_default_and_cap
+
     rep = Report(
         type=rtype,
         operator_id=current.id,
         payload=json.dumps(payload.payload),
         status="RECEIVED",
         mission_id=mission.id if mission else current.mission_id,
+        classification=resolve_default_and_cap(mission, current, payload.classification),
     )
     db.add(rep)
     db.commit()
@@ -98,6 +102,7 @@ async def submit_report(
                 "status": rep.status,
                 "operator_id": rep.operator_id,
                 "payload": payload.payload,
+                "classification": rep.classification,
             },
         }
     )
@@ -140,12 +145,16 @@ async def import_cbrn(
         # Tag the source filename so operators can trace the import.
         parsed["source_file"] = up.filename or "uploaded.cbrn"
 
+        from backend.classification import resolve_default_and_cap
+
+        level = resolve_default_and_cap(mission, current, None)
         rep = Report(
             type=rtype,
             operator_id=current.id,
             payload=json.dumps(parsed),
             status="RECEIVED",
             mission_id=mission.id if mission else None,
+            classification=level,
         )
         db.add(rep)
         db.commit()
@@ -162,6 +171,7 @@ async def import_cbrn(
                     "status": rep.status,
                     "operator_id": rep.operator_id,
                     "payload": parsed,
+                    "classification": rep.classification,
                 },
             }
         )
@@ -179,6 +189,7 @@ async def submit_drone_spot(
     spot: DroneSpotIn,
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> Report:
     """Operator-submitted drone observation.
 
@@ -201,11 +212,16 @@ async def submit_drone_spot(
         "observer_callsign": current.callsign,
         "dtg": datetime.now(timezone.utc).isoformat(),
     }
+    from backend.classification import resolve_default_and_cap
+
+    level = resolve_default_and_cap(mission, current, None)
     rep = Report(
         type="DRONE_SPOT",
         operator_id=current.id,
         payload=json.dumps(payload),
         status="RECEIVED",
+        mission_id=mission.id if mission else current.mission_id,
+        classification=level,
     )
     db.add(rep)
     db.commit()
@@ -219,6 +235,8 @@ async def submit_drone_spot(
         latitude=spot.latitude,
         longitude=spot.longitude,
         status="ACTIVE",
+        mission_id=mission.id if mission else current.mission_id,
+        classification=level,
     )
     db.add(alert)
     db.commit()
@@ -235,6 +253,7 @@ async def submit_drone_spot(
                 "status": rep.status,
                 "operator_id": rep.operator_id,
                 "payload": payload,
+                "classification": rep.classification,
             },
         }
     )
@@ -249,6 +268,7 @@ async def submit_drone_spot(
                 "operator_id": alert.operator_id,
                 "latitude": alert.latitude,
                 "longitude": alert.longitude,
+                "classification": alert.classification,
                 "drone_type": payload["drone_type"],
                 "behavior": payload["behavior"],
                 "altitude_m": payload["altitude_m"],
@@ -291,12 +311,15 @@ async def import_logrep_text(
             parsed = parse_logrep_text(raw)
         parsed["source_file"] = up.filename or "uploaded.logrep"
 
+        from backend.classification import resolve_default_and_cap
+
         rep = Report(
             type="LOGREP",
             operator_id=current.id,
             payload=json.dumps(parsed),
             status="RECEIVED",
             mission_id=mission.id if mission else current.mission_id,
+            classification=resolve_default_and_cap(mission, current, None),
         )
         db.add(rep)
         db.commit()
@@ -313,6 +336,7 @@ async def import_logrep_text(
                     "status": rep.status,
                     "operator_id": rep.operator_id,
                     "payload": parsed,
+                    "classification": rep.classification,
                 },
             }
         )
@@ -340,12 +364,15 @@ async def import_logrep_cot_endpoint(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "No <logrep> element found in CoT XML"
         )
 
+    from backend.classification import resolve_default_and_cap
+
     rep = Report(
         type="LOGREP",
         operator_id=current.id,
         payload=json.dumps(parsed),
         status="RECEIVED",
         mission_id=mission.id if mission else current.mission_id,
+        classification=resolve_default_and_cap(mission, current, None),
     )
     db.add(rep)
     db.commit()
@@ -361,6 +388,7 @@ async def import_logrep_cot_endpoint(
                 "status": "RECEIVED",
                 "operator_id": rep.operator_id,
                 "payload": parsed,
+                "classification": rep.classification,
             },
         }
     )

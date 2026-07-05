@@ -253,6 +253,34 @@ def _migrate() -> None:
         "CREATE INDEX IF NOT EXISTS ix_report_photos_report ON report_photos(report_id)",
         # Frozen, self-contained layer attachments (overlays/KML/OSINT) on an OPORD
         "ALTER TABLE opords ADD COLUMN attached_layers TEXT DEFAULT '[]'",
+        # ── Security classification (0..4) — see backend/classification.py ──────
+        "ALTER TABLE operators ADD COLUMN clearance INTEGER DEFAULT 0",
+        "ALTER TABLE missions ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE tactical_objects ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE alerts ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE reports ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE fire_missions ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE messages ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE chatrooms ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE vehicles ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE cot_tracks ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE atak_shapes ADD COLUMN classification INTEGER DEFAULT 0",
+        # Layers become mission-linked (nullable = global/legacy) + classified
+        "ALTER TABLE overlays ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE overlays ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE kml_layers ADD COLUMN mission_id INTEGER REFERENCES missions(id)",
+        "ALTER TABLE kml_layers ADD COLUMN classification INTEGER DEFAULT 0",
+        # COP-dashboard modules
+        "ALTER TABLE cas_assets ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE strike_packages ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE cop_documents ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE epic_projects ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE logcop_supply ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE logcop_vehicles ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE logcop_convoys ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE logcop_supply_points ADD COLUMN classification INTEGER DEFAULT 0",
+        # Elevate existing admins so the mission-clearance gate can't lock them out.
+        "UPDATE operators SET clearance = 4 WHERE role = 'ADMIN'",
     ]
     for sql in migrations:
         try:

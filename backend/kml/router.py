@@ -18,8 +18,9 @@ from sqlalchemy.orm import Session
 from backend.auth.dependencies import get_current_operator
 from backend.auth.jwt_auth import require_role
 from backend.kml.parser import KmlParseError, parse_kml
+from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import KmlLayer, Operator
+from backend.storage.models import KmlLayer, Mission, Operator
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/kml-layers", tags=["kml"])
@@ -42,6 +43,8 @@ class KmlLayerSummary(BaseModel):
     uploaded_at: datetime
     feature_count: int
     bbox: list[float] | None = None
+    classification: int = 0
+    mission_id: int | None = None
 
 
 class KmlLayerOut(KmlLayerSummary):
@@ -52,6 +55,7 @@ class KmlLayerPatch(BaseModel):
     name: str | None = None
     description: str | None = None
     visible: bool | None = None
+    classification: int | None = None
 
 
 def _to_summary(row: KmlLayer) -> KmlLayerSummary:
@@ -72,15 +76,22 @@ def _to_summary(row: KmlLayer) -> KmlLayerSummary:
         uploaded_at=row.uploaded_at,
         feature_count=row.feature_count,
         bbox=bbox_list,
+        classification=row.classification,
+        mission_id=row.mission_id,
     )
 
 
 @router.get("", response_model=list[KmlLayerSummary])
 def list_layers(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> list[KmlLayerSummary]:
-    rows = db.query(KmlLayer).order_by(KmlLayer.uploaded_at.desc()).all()
+    rows = (
+        db.query(KmlLayer)
+        .filter(KmlLayer.classification <= current.clearance)
+        .order_by(KmlLayer.uploaded_at.desc())
+        .all()
+    )
     return [_to_summary(r) for r in rows]
 
 
@@ -88,10 +99,12 @@ def list_layers(
 def get_layer(
     layer_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> KmlLayerOut:
+    from backend.classification import can_see
+
     row = db.get(KmlLayer, layer_id)
-    if row is None:
+    if row is None or not can_see(row.classification, current.clearance):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown layer")
     summary = _to_summary(row)
     try:
@@ -123,6 +136,7 @@ async def upload_layer(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> KmlLayerOut:
     filename = (file.filename or "layer.kml").strip() or "layer.kml"
     lower = filename.lower()
@@ -174,6 +188,8 @@ async def upload_layer(
         except KmlParseError:
             raw_xml = b""
 
+    from backend.classification import resolve_default_and_cap
+
     layer = KmlLayer(
         name=stem,
         uploaded_by=current.id,
@@ -181,6 +197,8 @@ async def upload_layer(
         features=json.dumps(features, separators=(",", ":")),
         bbox=",".join(f"{v:.6f}" for v in bbox) if bbox else "",
         raw_kml=raw_xml.decode("utf-8", errors="replace"),
+        mission_id=mission.id if mission else None,
+        classification=resolve_default_and_cap(mission, current, None),
     )
     db.add(layer)
     db.commit()

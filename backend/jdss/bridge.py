@@ -418,12 +418,15 @@ async def _ingest_presence(m: dict) -> None:
     from backend.cot.cot import cot_type_to_sidc
     from backend.storage.models import CotTrack
 
+    from backend.classification import jdss_inbound
+
     body = m["body"]
     loc = body.get("location") or {}
     lat, lon = loc.get("lat"), loc.get("lon")
     cot_uid = f"JDSS.{m['originator_id']}"
     callsign = m.get("callsign") or body.get("callsign") or m["originator_id"]
     cot_type = "a-f-G-U-C-I"  # friendly ground combat infantry (blue)
+    level = jdss_inbound(m.get("classification"))
     battery = body.get("battery_pct")
     remarks = f"JDSS {body.get('type', '')}"
     if battery is not None:
@@ -442,6 +445,7 @@ async def _ingest_presence(m: dict) -> None:
             track.longitude = lon
         track.hae = loc.get("alt_m") or 0.0
         track.remarks = remarks
+        track.classification = level
         track.last_seen = datetime.now(timezone.utc)
         db.commit()
         db.refresh(track)
@@ -458,6 +462,7 @@ async def _ingest_presence(m: dict) -> None:
             "course": track.course,
             "team": track.team,
             "remarks": track.remarks or "",
+            "classification": track.classification,
             "last_seen": track.last_seen.isoformat(),
         }
 
@@ -471,6 +476,7 @@ async def _ingest_contact(m: dict) -> None:
     """JDSS ContactSighting → create an enemy/contact TacticalObject."""
     import backend.storage.database as _db
     from backend.api.schemas import TacticalObjectOut
+    from backend.classification import jdss_inbound
     from backend.storage.models import TacticalObject
 
     body = m["body"]
@@ -494,6 +500,7 @@ async def _ingest_contact(m: dict) -> None:
             longitude=lon,
             notes=notes,
             affiliation=affiliation,
+            classification=jdss_inbound(m.get("classification")),
         )
         db.add(obj)
         db.commit()
@@ -534,11 +541,14 @@ async def _ingest_chat(m: dict) -> None:
             )
             if target is not None:
                 mtype, receiver_id = "DIRECT", target.id
+        from backend.classification import jdss_inbound
+
         msg = Message(
             sender_id=sender_id,
             content=text,
             message_type=mtype,
             receiver_id=receiver_id,
+            classification=jdss_inbound(m.get("classification")),
         )
         db.add(msg)
         db.commit()
@@ -569,11 +579,15 @@ async def _ingest_casevac(m: dict) -> None:
         if op_id is None:
             log.warning("JDSS casevac dropped: no operators exist to attribute it to")
             return
+        from backend.classification import jdss_inbound
+
+        level = jdss_inbound(m.get("classification"))
         rep = Report(
             type="CASEVAC",
             operator_id=op_id,
             payload=json.dumps(body),
             status="RECEIVED",
+            classification=level,
         )
         db.add(rep)
         alert = Alert(
@@ -582,6 +596,7 @@ async def _ingest_casevac(m: dict) -> None:
             latitude=lat,
             longitude=lon,
             status="ACTIVE",
+            classification=level,
         )
         db.add(alert)
         db.commit()
@@ -604,6 +619,7 @@ async def _ingest_casevac(m: dict) -> None:
                 "sender": callsign,
                 "source": "JDSS",
                 "payload": json.dumps(body),
+                "classification": level,
             },
         }
     )
@@ -621,6 +637,7 @@ async def _ingest_casevac(m: dict) -> None:
                 "longitude": lon,
                 "status": "ACTIVE",
                 "timestamp": al_ts.isoformat() if al_ts else None,
+                "classification": level,
             },
         }
     )

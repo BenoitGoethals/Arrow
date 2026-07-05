@@ -42,6 +42,7 @@ def list_assets(
         q = q.filter(
             (CasAsset.mission_id == mission.id) | (CasAsset.mission_id.is_(None))
         )
+    q = q.filter(CasAsset.classification <= current.clearance)
     return q.all()
 
 
@@ -57,6 +58,8 @@ async def create_asset(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"status must be one of {sorted(_VALID_ASSET_STATUSES)}",
         )
+    from backend.classification import resolve_default_and_cap
+
     asset = CasAsset(
         callsign=body.callsign,
         aircraft_type=body.aircraft_type,
@@ -68,6 +71,7 @@ async def create_asset(
         notes=body.notes,
         mission_id=body.mission_id or (mission.id if mission else None),
         created_by=current.id,
+        classification=resolve_default_and_cap(mission, current, None),
     )
     db.add(asset)
     db.commit()
@@ -224,6 +228,8 @@ async def submit_cas_request(
         "dtg": datetime.now(timezone.utc).isoformat(),
     }
 
+    from backend.classification import resolve_default_and_cap
+
     rep = Report(
         type="CAS",
         operator_id=current.id,
@@ -232,6 +238,7 @@ async def submit_cas_request(
         fo_operator_id=body.fo_operator_id,
         tic=body.tic,
         mission_id=mission.id if mission else current.mission_id,
+        classification=resolve_default_and_cap(mission, current, None),
     )
     db.add(rep)
 
@@ -299,4 +306,5 @@ def _asset_dict(a: CasAsset) -> dict:
         "available_to": a.available_to.isoformat() if a.available_to else None,
         "notes": a.notes,
         "mission_id": a.mission_id,
+        "classification": a.classification,
     }

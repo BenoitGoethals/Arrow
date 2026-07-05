@@ -172,10 +172,12 @@ def list_cot_clients(
 @router.get("/tracks", response_model=list[CotTrackOut])
 def list_cot_tracks(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> list[CotTrack]:
     """Return all live CoT track entities for the tactical map to load on startup."""
-    return db.query(CotTrack).all()
+    return (
+        db.query(CotTrack).filter(CotTrack.classification <= current.clearance).all()
+    )
 
 
 @router.get("/shapes")

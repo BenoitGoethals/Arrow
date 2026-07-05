@@ -129,6 +129,7 @@ class StrikePackageOut(ORMModel):
     name: str
     status: str
     mission_id: int | None
+    classification: int = 0
     created_by: int
     created_at: datetime
     updated_at: datetime

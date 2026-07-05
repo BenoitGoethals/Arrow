@@ -1452,6 +1452,23 @@ fun MapScreen(
                     androidx.compose.animation.fadeOut(),
         ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            // Security classification banner for the active mission.
+            activeMission?.let { m ->
+                val cls = m.classification.coerceIn(0, 4)
+                Surface(
+                    color = com.arrow.tactical.mission.ui.CLASS_COLORS[cls],
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        com.arrow.tactical.mission.ui.CLASS_NAMES[cls],
+                        color = androidx.compose.ui.graphics.Color.White,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        fontSize = 11.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    )
+                }
+            }
             SitawareTopBar(
                 brand   = "ARROW",
                 mgrs    = mgrs,

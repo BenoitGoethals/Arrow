@@ -13,6 +13,7 @@ class MissionCreate(BaseModel):
     map_center_lat: float | None = None
     map_center_lng: float | None = None
     map_zoom: int = 13
+    classification: int = 0  # capped at the creator's clearance in the router
 
 
 class MissionUpdate(BaseModel):
@@ -21,6 +22,7 @@ class MissionUpdate(BaseModel):
     map_center_lat: float | None = None
     map_center_lng: float | None = None
     map_zoom: int | None = None
+    classification: int | None = None
 
 
 class MissionOut(BaseModel):
@@ -38,6 +40,7 @@ class MissionOut(BaseModel):
     map_center_lat: float | None
     map_center_lng: float | None
     map_zoom: int
+    classification: int = 0
 
     @computed_field  # type: ignore[prop-decorator]
     @property

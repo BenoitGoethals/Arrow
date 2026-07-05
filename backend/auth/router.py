@@ -157,4 +157,6 @@ def me(current: Operator = Depends(get_current_operator)) -> dict:
         "status": current.status,
         "team_id": current.team_id,
         "mfa_enabled": current.mfa_enabled,
+        "mission_id": current.mission_id,
+        "clearance": current.clearance,
     }

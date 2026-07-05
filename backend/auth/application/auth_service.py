@@ -110,6 +110,9 @@ def register_elevated(
         team_id=team_id,
         password_hash=password_hasher.hash_password(password),
         session_jti=jti,
+        # ADMINs get top clearance so the mission-classification gate can't lock
+        # them out; other elevated roles start UNCLASSIFIED (raise via admin PATCH).
+        clearance=4 if role_upper == "ADMIN" else 0,
     )
     db.add(op)
     db.commit()

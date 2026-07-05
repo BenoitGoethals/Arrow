@@ -68,6 +68,7 @@ class SupplyOut(BaseModel):
     threshold_red: float
     notes: str
     updated_at: datetime
+    classification: int = 0
 
     class Config:
         from_attributes = True
@@ -84,11 +85,12 @@ class SupplyIn(BaseModel):
 def list_supply(
     db: Session = Depends(get_db),
     mission: Mission | None = Depends(get_active_mission),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> list[LogcopSupply]:
     rows = (
         db.query(LogcopSupply)
         .filter(LogcopSupply.mission_id == _mission_id(mission))
+        .filter(LogcopSupply.classification <= current.clearance)
         .order_by(LogcopSupply.id)
         .all()
     )
@@ -157,6 +159,7 @@ class VehicleOut(BaseModel):
     pmc: int
     notes: str
     updated_at: datetime
+    classification: int = 0
 
     class Config:
         from_attributes = True
@@ -175,11 +178,12 @@ class VehicleIn(BaseModel):
 def list_vehicles(
     db: Session = Depends(get_db),
     mission: Mission | None = Depends(get_active_mission),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> list[LogcopVehicle]:
     return (
         db.query(LogcopVehicle)
         .filter(LogcopVehicle.mission_id == _mission_id(mission))
+        .filter(LogcopVehicle.classification <= current.clearance)
         .order_by(LogcopVehicle.unit_name)
         .all()
     )
@@ -194,6 +198,8 @@ async def create_vehicle(
     current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
     mission: Mission | None = Depends(get_active_mission),
 ) -> LogcopVehicle:
+    from backend.classification import resolve_default_and_cap
+
     row = LogcopVehicle(
         mission_id=_mission_id(mission),
         unit_name=payload.unit_name,
@@ -203,6 +209,7 @@ async def create_vehicle(
         pmc=payload.pmc,
         notes=payload.notes,
         updated_by=current.id,
+        classification=resolve_default_and_cap(mission, current, None),
     )
     db.add(row)
     db.commit()
@@ -261,6 +268,7 @@ class ConvoyOut(BaseModel):
     lng: float | None
     notes: str
     updated_at: datetime
+    classification: int = 0
 
     class Config:
         from_attributes = True
@@ -282,11 +290,12 @@ class ConvoyIn(BaseModel):
 def list_convoys(
     db: Session = Depends(get_db),
     mission: Mission | None = Depends(get_active_mission),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> list[LogcopConvoy]:
     return (
         db.query(LogcopConvoy)
         .filter(LogcopConvoy.mission_id == _mission_id(mission))
+        .filter(LogcopConvoy.classification <= current.clearance)
         .order_by(LogcopConvoy.updated_at.desc())
         .all()
     )
@@ -299,9 +308,12 @@ async def create_convoy(
     current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
     mission: Mission | None = Depends(get_active_mission),
 ) -> LogcopConvoy:
+    from backend.classification import resolve_default_and_cap
+
     row = LogcopConvoy(
         mission_id=_mission_id(mission),
         created_by=current.id,
+        classification=resolve_default_and_cap(mission, current, None),
         **payload.model_dump(),
     )
     db.add(row)
@@ -356,6 +368,7 @@ class SupplyPointOut(BaseModel):
     lng: float
     notes: str
     created_at: datetime
+    classification: int = 0
 
     class Config:
         from_attributes = True
@@ -373,11 +386,12 @@ class SupplyPointIn(BaseModel):
 def list_supply_points(
     db: Session = Depends(get_db),
     mission: Mission | None = Depends(get_active_mission),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> list[LogcopSupplyPoint]:
     return (
         db.query(LogcopSupplyPoint)
         .filter(LogcopSupplyPoint.mission_id == _mission_id(mission))
+        .filter(LogcopSupplyPoint.classification <= current.clearance)
         .all()
     )
 

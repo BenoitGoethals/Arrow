@@ -57,12 +57,13 @@ def list_missions(
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
 ) -> list[Mission]:
-    if current.role in {"ADMIN", "BATTLE_CAPTAIN"}:
-        return db.query(Mission).order_by(Mission.created_at.desc()).all()
-    # Regular operators only see their assigned mission
+    # Never list a mission above the caller's clearance.
+    q = db.query(Mission).filter(Mission.classification <= current.clearance)
+    if current.role == "ADMIN":
+        return q.order_by(Mission.created_at.desc()).all()
+    # Everyone else (incl. BATTLE_CAPTAIN) is locked to their assigned mission.
     if current.mission_id:
-        m = db.get(Mission, current.mission_id)
-        return [m] if m else []
+        return q.filter(Mission.id == current.mission_id).all()
     return []
 
 
@@ -70,8 +71,10 @@ def list_missions(
 async def create_mission(
     payload: MissionCreate,
     db: Session = Depends(get_db),
-    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+    current: Operator = Depends(require_role("ADMIN")),
 ) -> Mission:
+    from backend.classification import clamp
+
     m = Mission(
         name=payload.name,
         description=payload.description,
@@ -79,6 +82,8 @@ async def create_mission(
         map_center_lat=payload.map_center_lat,
         map_center_lng=payload.map_center_lng,
         map_zoom=payload.map_zoom,
+        # Cap the mission ceiling at the creator's clearance.
+        classification=min(clamp(payload.classification), clamp(current.clearance)),
     )
     db.add(m)
     db.commit()
@@ -97,11 +102,14 @@ async def create_mission(
 def get_mission(
     mission_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> Mission:
+    from backend.classification import require_mission_clearance
+
     m = db.get(Mission, mission_id)
     if not m:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    require_mission_clearance(m, current)
     return m
 
 
@@ -110,8 +118,10 @@ async def update_mission(
     mission_id: int,
     payload: MissionUpdate,
     db: Session = Depends(get_db),
-    _: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+    current: Operator = Depends(require_role("ADMIN")),
 ) -> Mission:
+    from backend.classification import clamp
+
     m = db.get(Mission, mission_id)
     if not m:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -125,6 +135,8 @@ async def update_mission(
         m.map_center_lng = payload.map_center_lng
     if payload.map_zoom is not None:
         m.map_zoom = payload.map_zoom
+    if payload.classification is not None:
+        m.classification = min(clamp(payload.classification), clamp(current.clearance))
     db.commit()
     db.refresh(m)
     await broadcaster.broadcast(
@@ -355,17 +367,29 @@ async def assign_operators(
     if not m:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
 
-    # Reject if any operator is already assigned to a different mission
+    from backend.classification import clamp
+
+    # Reject if any operator is already assigned to a different mission, or lacks
+    # the clearance for this mission's classification.
     conflicts = []
     for op_id in payload.operator_ids:
         op = db.get(Operator, op_id)
-        if op and op.mission_id is not None and op.mission_id != mission_id:
+        if op is None:
+            continue
+        if op.mission_id is not None and op.mission_id != mission_id:
             other = db.get(Mission, op.mission_id)
             conflicts.append(
                 {
                     "callsign": op.callsign,
                     "mission_id": op.mission_id,
                     "mission_name": other.name if other else f"#{op.mission_id}",
+                }
+            )
+        elif clamp(m.classification) > clamp(op.clearance):
+            conflicts.append(
+                {
+                    "callsign": op.callsign,
+                    "reason": "insufficient clearance for this mission",
                 }
             )
     if conflicts:

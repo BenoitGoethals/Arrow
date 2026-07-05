@@ -24,6 +24,7 @@ data class OperatorProfile(
     val companyName: String? = null,
     val missionId: Int? = null,
     val missionName: String? = null,
+    val clearance: Int = 0,
 )
 
 class ProfileStore(private val context: Context) {
@@ -40,6 +41,7 @@ class ProfileStore(private val context: Context) {
     private val kCompanyName = stringPreferencesKey("op_company_name")
     private val kMissionId   = intPreferencesKey("op_mission_id")
     private val kMissionName = stringPreferencesKey("op_mission_name")
+    private val kClearance   = intPreferencesKey("op_clearance")
 
     val profile: Flow<OperatorProfile?> = context.profileDataStore.data.map { p ->
         val callsign = p[kCallsign] ?: return@map null
@@ -56,6 +58,7 @@ class ProfileStore(private val context: Context) {
             companyName = p[kCompanyName],
             missionId   = p[kMissionId],
             missionName = p[kMissionName],
+            clearance   = p[kClearance] ?: 0,
         )
     }
 
@@ -75,6 +78,7 @@ class ProfileStore(private val context: Context) {
             if (p.companyName != null) prefs[kCompanyName] = p.companyName else prefs.remove(kCompanyName)
             if (p.missionId   != null) prefs[kMissionId]   = p.missionId   else prefs.remove(kMissionId)
             if (p.missionName != null) prefs[kMissionName] = p.missionName else prefs.remove(kMissionName)
+            prefs[kClearance] = p.clearance
         }
     }
 

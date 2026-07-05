@@ -126,6 +126,7 @@ class AuthRepository(
             companyName = companyName,
             missionId   = meResult.missionId,
             missionName = missionName,
+            clearance   = meResult.clearance,
         )
         profileStore.save(profile)
         // Keep callsign in sync so tracking service picks it up

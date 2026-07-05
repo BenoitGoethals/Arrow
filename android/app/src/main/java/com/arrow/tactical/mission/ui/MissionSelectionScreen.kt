@@ -34,9 +34,15 @@ fun MissionSelectionScreen(
     var newName     by remember { mutableStateOf("") }
     var newMgrs     by remember { mutableStateOf("") }
     var newZoom     by remember { mutableStateOf("13") }
+    var newClass    by remember { mutableStateOf(0) }
     var creating    by remember { mutableStateOf(false) }
 
     val activeMission by container.missionRepository.activeMission.collectAsState()
+    val profile by container.profileStore.profile.collectAsState(initial = null)
+    // Only ADMIN may create or switch missions; everyone else is locked to the
+    // single mission the backend returns for them.
+    val isAdmin = profile?.role == "ADMIN"
+    val clearance = profile?.clearance ?: 0
 
     LaunchedEffect(Unit) {
         container.missionRepository.listMissions()
@@ -47,8 +53,10 @@ fun MissionSelectionScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text("Select Mission") }) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showCreate = true }) {
-                Icon(Icons.Default.Add, "New mission")
+            if (isAdmin) {
+                FloatingActionButton(onClick = { showCreate = true }) {
+                    Icon(Icons.Default.Add, "New mission")
+                }
             }
         },
     ) { padding ->
@@ -60,19 +68,11 @@ fun MissionSelectionScreen(
                     modifier = Modifier.align(Alignment.Center).padding(16.dp))
                 else -> LazyColumn(contentPadding = PaddingValues(12.dp),
                                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item {
-                        NoMissionCard(
-                            isActive = activeMission == null,
-                            onSelect = {
-                                container.missionRepository.clearMission()
-                                onMissionSelected()
-                            },
-                        )
-                    }
                     if (missions.isEmpty()) {
                         item {
                             Text(
-                                "No missions yet — tap + to create one",
+                                if (isAdmin) "No missions yet — tap + to create one"
+                                else "No mission assigned — contact an administrator.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(8.dp),
                             )
@@ -95,7 +95,7 @@ fun MissionSelectionScreen(
 
     if (showCreate) {
         AlertDialog(
-            onDismissRequest = { showCreate = false; newName = ""; newMgrs = ""; newZoom = "13" },
+            onDismissRequest = { showCreate = false; newName = ""; newMgrs = ""; newZoom = "13"; newClass = 0 },
             title   = { Text("New Mission") },
             text    = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -121,6 +121,18 @@ fun MissionSelectionScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Text("Classification", fontSize = 12.sp,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val short = listOf("UNCL", "REST", "CONF", "SECR", "TS")
+                        (0..clearance.coerceIn(0, 4)).forEach { lvl ->
+                            FilterChip(
+                                selected = newClass == lvl,
+                                onClick = { newClass = lvl },
+                                label = { Text(short[lvl], fontSize = 11.sp) },
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
@@ -135,6 +147,7 @@ fun MissionSelectionScreen(
                             else null
                             container.missionRepository.createMission(
                                 name         = newName.trim(),
+                                classification = newClass,
                                 mapCenterLat = center?.first,
                                 mapCenterLng = center?.second,
                                 mapZoom      = zoom,
@@ -142,7 +155,7 @@ fun MissionSelectionScreen(
                                 .onSuccess { m ->
                                     missions = missions + m
                                     showCreate = false
-                                    newName = ""; newMgrs = ""; newZoom = "13"
+                                    newName = ""; newMgrs = ""; newZoom = "13"; newClass = 0
                                     container.missionRepository.selectMission(m)
                                     onMissionSelected()
                                 }
@@ -154,48 +167,10 @@ fun MissionSelectionScreen(
             },
             dismissButton = {
                 TextButton(onClick = {
-                    showCreate = false; newName = ""; newMgrs = ""; newZoom = "13"
+                    showCreate = false; newName = ""; newMgrs = ""; newZoom = "13"; newClass = 0
                 }) { Text("Cancel") }
             },
         )
-    }
-}
-
-@Composable
-private fun NoMissionCard(
-    isActive: Boolean,
-    onSelect: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onSelect),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isActive)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            else MaterialTheme.colorScheme.surfaceVariant,
-        ),
-        border = if (isActive) androidx.compose.foundation.BorderStroke(
-            1.5.dp, MaterialTheme.colorScheme.primary
-        ) else null,
-    ) {
-        Row(
-            Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(
-                if (isActive) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                contentDescription = null,
-                tint = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-            )
-            Text(
-                "No mission",
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-        }
     }
 }
 
@@ -251,18 +226,38 @@ private fun MissionCard(
                     )
                 }
             }
-            Surface(
-                color = statusColor.copy(alpha = 0.15f),
-                shape = MaterialTheme.shapes.small,
-            ) {
-                Text(
-                    mission.status,
-                    fontSize = 11.sp,
-                    color = statusColor,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                )
+            Column(horizontalAlignment = Alignment.End,
+                   verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Surface(
+                    color = statusColor.copy(alpha = 0.15f),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        mission.status,
+                        fontSize = 11.sp,
+                        color = statusColor,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+                val cls = mission.classification.coerceIn(0, 4)
+                Surface(color = CLASS_COLORS[cls], shape = MaterialTheme.shapes.small) {
+                    Text(
+                        CLASS_NAMES[cls],
+                        fontSize = 10.sp,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
             }
         }
     }
 }
+
+// Classification levels — must match backend/classification.py.
+val CLASS_NAMES = listOf("UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET", "TOP SECRET")
+val CLASS_COLORS = listOf(
+    Color(0xFF16A34A), Color(0xFF0E7490), Color(0xFF2563EB),
+    Color(0xFFDC2626), Color(0xFFEA580C),
+)

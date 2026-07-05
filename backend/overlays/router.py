@@ -12,8 +12,9 @@ from sqlalchemy.orm import Session
 
 from backend.auth.dependencies import get_current_operator
 from backend.auth.jwt_auth import require_role
+from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
-from backend.storage.models import Operator, Overlay, TacticalObject
+from backend.storage.models import Mission, Operator, Overlay, TacticalObject
 from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/overlays", tags=["overlays"])
@@ -23,12 +24,14 @@ class OverlayIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=160)
     description: str = ""
     object_ids: list[int] = Field(default_factory=list)
+    classification: int | None = None
 
 
 class OverlayPatch(BaseModel):
     name: str | None = None
     description: str | None = None
     object_ids: list[int] | None = None
+    classification: int | None = None
 
 
 class OverlayOut(BaseModel):
@@ -41,6 +44,8 @@ class OverlayOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     object_ids: list[int]
+    classification: int = 0
+    mission_id: int | None = None
 
 
 def _to_out(row: Overlay) -> OverlayOut:
@@ -49,7 +54,7 @@ def _to_out(row: Overlay) -> OverlayOut:
         if not isinstance(ids, list):
             ids = []
         ids = [int(x) for x in ids]
-    except json.JSONDecodeError, ValueError, TypeError:
+    except (json.JSONDecodeError, ValueError, TypeError):
         ids = []
     return OverlayOut(
         id=row.id,
@@ -59,6 +64,8 @@ def _to_out(row: Overlay) -> OverlayOut:
         created_at=row.created_at,
         updated_at=row.updated_at,
         object_ids=ids,
+        classification=row.classification,
+        mission_id=row.mission_id,
     )
 
 
@@ -80,9 +87,14 @@ def _validate_ids(db: Session, ids: list[int]) -> list[int]:
 @router.get("", response_model=list[OverlayOut])
 def list_overlays(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> list[OverlayOut]:
-    rows = db.query(Overlay).order_by(Overlay.updated_at.desc()).all()
+    rows = (
+        db.query(Overlay)
+        .filter(Overlay.classification <= current.clearance)
+        .order_by(Overlay.updated_at.desc())
+        .all()
+    )
     return [_to_out(r) for r in rows]
 
 
@@ -90,10 +102,12 @@ def list_overlays(
 def get_overlay(
     overlay_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> OverlayOut:
+    from backend.classification import can_see
+
     row = db.get(Overlay, overlay_id)
-    if row is None:
+    if row is None or not can_see(row.classification, current.clearance):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown overlay")
     return _to_out(row)
 
@@ -103,13 +117,18 @@ async def create_overlay(
     payload: OverlayIn,
     db: Session = Depends(get_db),
     current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
+    mission: Mission | None = Depends(get_active_mission),
 ) -> OverlayOut:
+    from backend.classification import resolve_default_and_cap
+
     ids = _validate_ids(db, payload.object_ids)
     row = Overlay(
         name=payload.name.strip(),
         description=payload.description,
         created_by=current.id,
         object_ids=json.dumps(ids, separators=(",", ":")),
+        mission_id=mission.id if mission else None,
+        classification=resolve_default_and_cap(mission, current, payload.classification),
     )
     db.add(row)
     db.commit()

@@ -30,6 +30,7 @@ class CopDocumentOut(BaseModel):
     uploaded_by: int
     uploaded_at: datetime
     mission_id: int | None
+    classification: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -37,12 +38,13 @@ class CopDocumentOut(BaseModel):
 @router.get("/documents", response_model=list[CopDocumentOut])
 def list_documents(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[CopDocument]:
     q = db.query(CopDocument).order_by(CopDocument.uploaded_at.desc())
     if mission:
         q = q.filter(CopDocument.mission_id == mission.id)
+    q = q.filter(CopDocument.classification <= current.clearance)
     return q.limit(200).all()
 
 
@@ -83,6 +85,8 @@ async def upload_document(
             text_preview = ""
 
     title = filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
+    from backend.classification import resolve_default_and_cap
+
     doc = CopDocument(
         title=title,
         filename=filename,
@@ -91,6 +95,7 @@ async def upload_document(
         text_preview=text_preview,
         uploaded_by=current.id,
         mission_id=mission.id if mission else current.mission_id,
+        classification=resolve_default_and_cap(mission, current, None),
     )
     db.add(doc)
     db.commit()
@@ -109,10 +114,12 @@ async def upload_document(
 def download_document(
     doc_id: int,
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
 ) -> Response:
+    from backend.classification import can_see
+
     doc = db.get(CopDocument, doc_id)
-    if doc is None:
+    if doc is None or not can_see(doc.classification, current.clearance):
         raise HTTPException(status_code=404, detail="Document not found")
     mime = (
         "text/plain"

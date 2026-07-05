@@ -257,6 +257,15 @@ main { padding: 0; }
     <div class="field"><label>Mission <span style="color:#475569">(optional — links operator to a mission)</span></label>
       <select id="edit-mission"><option value="">— no mission —</option></select>
     </div>
+    <div class="field"><label>Security clearance <span style="color:#475569">(max classification this operator may see)</span></label>
+      <select id="edit-clearance">
+        <option value="0">UNCLASSIFIED</option>
+        <option value="1">RESTRICTED</option>
+        <option value="2">CONFIDENTIAL</option>
+        <option value="3">SECRET</option>
+        <option value="4">TOP SECRET</option>
+      </select>
+    </div>
     <hr style="border-color:#2a3142;margin:1rem 0">
     <div class="field"><label>New password <span style="color:#475569">(leave blank = no change)</span></label>
       <input id="edit-password" type="password" placeholder="new password…"/>
@@ -465,7 +474,7 @@ main { padding: 0; }
         ${warnBanner}
         <table class="adm-table">
             <thead><tr>
-                <th></th><th>Callsign</th><th>Rank</th><th>Role</th>
+                <th></th><th>Callsign</th><th>Rank</th><th>Role</th><th>Clearance</th>
                 <th>Team</th><th>Mission</th><th>Status</th><th>Last seen</th><th>Actions</th>
             </tr></thead>
             <tbody>
@@ -480,6 +489,7 @@ main { padding: 0; }
                     <td style="font-weight:600">${esc(op.callsign)}</td>
                     <td><code style="font-size:0.78rem">${esc(op.rank)}</code></td>
                     <td><span class="badge ${badge}">${op.role}</span></td>
+                    <td style="font-size:.72rem;color:#cbd5e1">${['UNCLASSIFIED','RESTRICTED','CONFIDENTIAL','SECRET','TOP SECRET'][op.clearance||0]}</td>
                     <td style="color:#94a3b8">${esc(team)}</td>
                     <td style="color:#64748b;font-size:0.78rem">${esc(mission)}</td>
                     <td><span class="badge ${op.online?'badge-ok':'badge-warn'}">${op.online?'ONLINE':'OFFLINE'}</span>${(op.ops_status && op.ops_status !== 'OPS') ? ` <span class="badge" style="background:#7f1d1d;color:#fecaca">${esc(op.ops_status)}</span>` : ''}</td>
@@ -533,6 +543,7 @@ main { padding: 0; }
         const mSel = document.getElementById('edit-mission');
         mSel.innerHTML = '<option value="">— no mission —</option>' +
             missions.map(m => `<option value="${m.id}" ${m.id == op.mission_id ? 'selected' : ''}>${esc(m.name)} (${m.status})</option>`).join('');
+        document.getElementById('edit-clearance').value = String(op.clearance ?? 0);
         document.getElementById('edit-password').value = '';
         document.getElementById('edit-op-err').textContent = '';
         populateTeamSelect('edit-team', op.team_id);
@@ -552,6 +563,7 @@ main { padding: 0; }
             team_id:    document.getElementById('edit-team').value
                         ? parseInt(document.getElementById('edit-team').value) : null,
             mission_id: missionVal ? parseInt(missionVal) : null,
+            clearance:  parseInt(document.getElementById('edit-clearance').value || '0'),
         };
         const r = await api(`/operators/${id}`, { method:'PATCH', body: JSON.stringify(body) });
         if (!r.ok) { errEl.textContent = `Save failed: ${r.status}`; return; }

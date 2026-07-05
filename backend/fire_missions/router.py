@@ -56,12 +56,13 @@ class MortarPlanIn(BaseModel):
 @router.get("", response_model=list[FireMissionOut])
 def list_missions(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[FireMission]:
     q = db.query(FireMission).order_by(FireMission.timestamp.desc())
     if mission:
         q = q.filter(FireMission.mission_id == mission.id)
+    q = q.filter(FireMission.classification <= current.clearance)
     return q.limit(200).all()
 
 
@@ -79,6 +80,8 @@ async def submit_mission(
     if ammo not in VALID_AMMO:
         ammo = "HE"
 
+    from backend.classification import resolve_default_and_cap
+
     fm = FireMission(
         operator_id=current.id,
         mission_id=mission.id if mission else current.mission_id,
@@ -90,6 +93,7 @@ async def submit_mission(
         ammunition=ammo,
         quantity=payload.quantity,
         description=payload.description,
+        classification=resolve_default_and_cap(mission, current, payload.classification),
     )
     db.add(fm)
     db.commit()

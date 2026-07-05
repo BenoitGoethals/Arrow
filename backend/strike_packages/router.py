@@ -67,12 +67,13 @@ async def _broadcast(event: str, pkg: StrikePackage, extra: dict | None = None) 
 @router.get("", response_model=list[StrikePackageOut])
 def list_packages(
     db: Session = Depends(get_db),
-    _: Operator = Depends(get_current_operator),
+    current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
 ) -> list[StrikePackage]:
     q = db.query(StrikePackage).order_by(StrikePackage.created_at.desc())
     if mission:
         q = q.filter(StrikePackage.mission_id == mission.id)
+    q = q.filter(StrikePackage.classification <= current.clearance)
     return q.limit(100).all()
 
 
@@ -95,10 +96,13 @@ async def create_package(
     current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
     mission: Mission | None = Depends(get_active_mission),
 ) -> StrikePackage:
+    from backend.classification import resolve_default_and_cap
+
     pkg = StrikePackage(
         name=payload.name,
         mission_id=payload.mission_id or (mission.id if mission else None),
         created_by=current.id,
+        classification=resolve_default_and_cap(mission, current, None),
         target_lat=payload.target_lat,
         target_lon=payload.target_lon,
         target_description=payload.target_description,

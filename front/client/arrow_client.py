@@ -15,9 +15,16 @@ class ArrowClient:
     def __init__(self, base_url: str, token: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self._token = token
+        # Active mission — attached as X-Mission-ID on every request so the
+        # backend scopes + clearance-filters everything to it. Non-admins are
+        # locked to their assigned mission server-side regardless.
+        self.active_mission_id: Optional[int] = None
 
     def _headers(self) -> dict:
-        return {"Authorization": f"Bearer {self._token}"} if self._token else {}
+        h = {"Authorization": f"Bearer {self._token}"} if self._token else {}
+        if self.active_mission_id:
+            h["X-Mission-ID"] = str(self.active_mission_id)
+        return h
 
     def _get(self, path: str, **params) -> Any:
         t0 = time.monotonic()
@@ -440,8 +447,13 @@ class ArrowClient:
         )
         r.raise_for_status()
 
-    def create_mission(self, name: str, description: str = "") -> dict:
-        return self._post("/missions", {"name": name, "description": description})
+    def create_mission(
+        self, name: str, description: str = "", classification: int = 0
+    ) -> dict:
+        return self._post(
+            "/missions",
+            {"name": name, "description": description, "classification": classification},
+        )
 
     def start_mission(self, mission_id: int) -> dict:
         return self._post(f"/missions/{mission_id}/start")

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QMessageBox,
     QFileDialog,
+    QLabel,
 )
 from front.app.activity_panel import ActivityPanel
 from PyQt6.QtCore import Qt, QTimer, QSettings, QProcess
@@ -88,15 +89,24 @@ def _sidc_echelon(sidc: str) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, server_url: str, token: str, callsign: str):
+    def __init__(
+        self,
+        server_url: str,
+        token: str,
+        callsign: str,
+        mission_id: Optional[int] = None,
+    ):
         super().__init__()
         self._server_url = server_url
         self._token = token
         self._callsign = callsign
         self._client = ArrowClient(server_url, token)
+        # Scope every request to the chosen mission (X-Mission-ID header).
+        self._client.active_mission_id = mission_id
         self._role = "OPERATOR"
+        self._clearance = 0
         self._my_operator_id: Optional[int] = None
-        self._active_mission_id: Optional[int] = None
+        self._active_mission_id: Optional[int] = mission_id
         self._overlays: dict[int, dict] = {}  # Saved overlays, id → dto
         self._ws: Optional[WSListener] = None
         self._toasts = ToastManager(self)
@@ -813,6 +823,7 @@ class MainWindow(QMainWindow):
         try:
             me = self._client.me()
             self._role = me.get("role", "OPERATOR")
+            self._clearance = int(me.get("clearance", 0) or 0)
             self._my_operator_id = me.get("id")
             self._callsign = me.get("callsign", self._callsign)
             log.info("Authenticated: callsign=%s role=%s", self._callsign, self._role)
@@ -825,8 +836,35 @@ class MainWindow(QMainWindow):
                 f"ARROW FRONT  —  {self._callsign.upper()}"
                 f"  [{self._role}]  —  {mode}"
             )
+            self._render_classification_banner()
         except Exception:
             pass
+
+    def _render_classification_banner(self):
+        """Show the active mission's classification as a colour-coded menu-bar badge."""
+        from front.app.mission_dialog import CLASS_COLORS, class_name
+
+        level = 0
+        try:
+            if self._active_mission_id:
+                level = int(
+                    self._client.mission(self._active_mission_id).get("classification", 0)
+                    or 0
+                )
+        except Exception:
+            level = 0
+        level = max(0, min(4, level))
+        badge = getattr(self, "_class_badge", None)
+        if badge is None:
+            badge = QLabel()
+            badge.setContentsMargins(10, 0, 10, 0)
+            self.menuBar().setCornerWidget(badge, Qt.Corner.TopRightCorner)
+            self._class_badge = badge
+        badge.setText(f" {class_name(level)} ")
+        badge.setStyleSheet(
+            f"background:{CLASS_COLORS[level]};color:#fff;font-weight:700;"
+            "font-size:11px;letter-spacing:.08em;border-radius:4px;"
+        )
 
     def _load_hierarchy(self):
         try:

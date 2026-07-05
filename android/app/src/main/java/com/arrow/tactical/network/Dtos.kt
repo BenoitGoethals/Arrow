@@ -19,6 +19,8 @@ data class MissionDto(
     @SerialName("map_center_lng")  val mapCenterLng: Double? = null,
     @SerialName("map_zoom")        val mapZoom: Int = 13,
     @SerialName("map_center_mgrs") val mapCenterMgrs: String? = null,
+    // Security ceiling (0..4). See classification levels in the backend.
+    val classification: Int = 0,
 )
 
 @Serializable
@@ -52,6 +54,8 @@ data class OperatorDto(
     val online: Boolean = false,   // computed by backend: status=ONLINE + last_seen ≤ 90s
     // Source of the last position fix: "ATAK" (device via CoT TCP), "APP", or null.
     @SerialName("position_source") val positionSource: String? = null,
+    // Security clearance (0..4) — the max classification this operator may see.
+    val clearance: Int = 0,
 )
 
 @Serializable
@@ -107,6 +111,7 @@ data class TacticalObjectDto(
     val echelon: String = "",
     // NATO affiliation drives the TG colour (FRIENDLY/ENEMY/UNKNOWN).
     val affiliation: String = "FRIENDLY",
+    val classification: Int = 0,
 )
 
 @Serializable
@@ -139,6 +144,7 @@ data class AlertDto(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val status: String,
+    val classification: Int = 0,
 )
 
 @Serializable
@@ -163,6 +169,7 @@ data class MessageDto(
     @SerialName("photo_id") val photoId: Int? = null,
     @SerialName("photo_mime_type") val photoMimeType: String? = null,
     @SerialName("sender_callsign") val senderCallsign: String? = null,
+    val classification: Int = 0,
 )
 
 @Serializable
@@ -238,6 +245,7 @@ data class FireMissionDto(
     @SerialName("fdc_operator_id") val fdcOperatorId: Int? = null,
     val timestamp:      String? = null,
     val notes:          String  = "",
+    val classification: Int     = 0,
 )
 
 // ── L16 81mm mortar plan ─────────────────────────────────────────────────────

@@ -46,6 +46,8 @@ class Mission(Base):
     map_center_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     map_center_lng: Mapped[float | None] = mapped_column(Float, nullable=True)
     map_zoom: Mapped[int] = mapped_column(Integer, default=13)
+    # Security ceiling for everything in this mission (0..4; see backend/classification.py).
+    classification: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Company(Base):
@@ -142,6 +144,10 @@ class Operator(Base):
     # field is valid; a new login overwrites it, instantly invalidating all others.
     session_jti: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
+    # Security clearance (0..4; see backend/classification.py). An operator may only
+    # see/create elements at or below this level. ADMINs are seeded at 4 (TOP SECRET).
+    clearance: Mapped[int] = mapped_column(Integer, default=0)
+
     team: Mapped[Team | None] = relationship(back_populates="operators")
     positions: Mapped[list["OperatorPosition"]] = relationship(
         back_populates="operator",
@@ -195,6 +201,7 @@ class Vehicle(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     callsign: Mapped[str] = mapped_column(String(60))
     vehicle_type: Mapped[str] = mapped_column(String(80), default="")
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     # MIL-STD-2525 equipment SIDC (rendered on the map); empty = generic equipment.
     symbol_code: Mapped[str] = mapped_column(String(40), default="")
     affiliation: Mapped[str] = mapped_column(String(12), default="FRIENDLY")
@@ -312,6 +319,7 @@ class TacticalObject(Base):
     mission_id: Mapped[int | None] = mapped_column(
         ForeignKey("missions.id"), nullable=True
     )
+    classification: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class CotTrack(Base):
@@ -326,6 +334,7 @@ class CotTrack(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cot_uid: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     cot_type: Mapped[str] = mapped_column(String(40))
     callsign: Mapped[str] = mapped_column(String(60), default="")
     latitude: Mapped[float] = mapped_column(Float)
@@ -349,6 +358,7 @@ class AtakShape(Base):
     uid: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     cot_type: Mapped[str] = mapped_column(String(40), default="")
     shape_type: Mapped[str] = mapped_column(String(20), default="LINE")
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     title: Mapped[str] = mapped_column(String(200), default="")
     callsign: Mapped[str] = mapped_column(String(80), default="")
     geometry_json: Mapped[str] = mapped_column(Text, default="")
@@ -362,6 +372,7 @@ class Alert(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[str] = mapped_column(String(40))  # TIC, MEDICAL, EVAC, LOST_COMMS
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
     operator: Mapped["Operator"] = relationship()
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -399,6 +410,7 @@ class Message(Base):
     chatroom_id: Mapped[int | None] = mapped_column(
         ForeignKey("chatrooms.id"), nullable=True
     )
+    classification: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ChatRoom(Base):
@@ -421,6 +433,7 @@ class ChatRoom(Base):
     )
     # Origin tag so an ATAK-created room is distinguishable from a native one.
     origin: Mapped[str] = mapped_column(String(10), default="ARROW")  # ARROW | ATAK
+    classification: Mapped[int] = mapped_column(Integer, default=0)
 
     members: Mapped[list["ChatRoomMember"]] = relationship(
         back_populates="chatroom",
@@ -469,6 +482,7 @@ class FireMission(Base):
     direction: Mapped[float] = mapped_column(Float)  # azimuth °
     mission_type: Mapped[str] = mapped_column(String(30))  # ADJUST_FIRE etc.
     ammunition: Mapped[str] = mapped_column(String(40))  # HE / ILLUM / SMOKE …
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     quantity: Mapped[int] = mapped_column(default=1)
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="PENDING")
@@ -507,6 +521,7 @@ class Report(Base):
         ForeignKey("operators.id"), nullable=True
     )
     tic: Mapped[bool] = mapped_column(default=False)
+    classification: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ReportPhoto(Base):
@@ -540,6 +555,7 @@ class CasAsset(Base):
     )  # A-10, F-16, AH-64 …
     ordnance: Mapped[str] = mapped_column(Text, default="")  # e.g. "2×GBU-12, 20mm×500"
     frequency: Mapped[str] = mapped_column(String(40), default="")  # primary radio freq
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="AVAILABLE")
     # Availability window — both nullable (open-ended slot)
     available_from: Mapped[datetime | None] = mapped_column(
@@ -705,6 +721,11 @@ class Overlay(Base):
         onupdate=_utcnow,
     )
     object_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of int
+    # Layers are mission-linked (nullable = global/legacy) + classified.
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    classification: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class KmlLayer(Base):
@@ -733,6 +754,11 @@ class KmlLayer(Base):
     raw_kml: Mapped[str] = mapped_column(
         Text, default=""
     )  # original XML for re-download
+    # Layers are mission-linked (nullable = global/legacy) + classified.
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    classification: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class SystemSetting(Base):
@@ -872,6 +898,7 @@ class StrikePackage(Base):
     target_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     target_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
     target_description: Mapped[str] = mapped_column(Text, default="")
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     # JSON id lists — links to existing Arrow objects in the same mission
     operator_ids: Mapped[str] = mapped_column(Text, default="[]")
     tactical_object_ids: Mapped[str] = mapped_column(Text, default="[]")
@@ -896,6 +923,7 @@ class CopDocument(Base):
     title: Mapped[str] = mapped_column(String(200))
     filename: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str] = mapped_column(String(20))  # TXT or WORD
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     file_data: Mapped[bytes] = mapped_column(LargeBinary)
     text_preview: Mapped[str] = mapped_column(Text, default="")
     uploaded_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
@@ -926,6 +954,7 @@ class LogcopSupply(Base):
     current_qty: Mapped[float] = mapped_column(Float, default=0.0)
     unit: Mapped[str] = mapped_column(String(20), default="DOS")
     threshold_amber: Mapped[float] = mapped_column(Float, default=2.0)
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     threshold_red: Mapped[float] = mapped_column(Float, default=1.0)
     notes: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(
@@ -949,6 +978,7 @@ class LogcopVehicle(Base):
     vehicle_type: Mapped[str] = mapped_column(String(80))
     total: Mapped[int] = mapped_column(Integer, default=0)
     fmc: Mapped[int] = mapped_column(Integer, default=0)  # Fully Mission Capable
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     pmc: Mapped[int] = mapped_column(Integer, default=0)  # Partially Mission Capable
     notes: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(
@@ -975,6 +1005,7 @@ class LogcopConvoy(Base):
     origin: Mapped[str] = mapped_column(String(120), default="")
     destination: Mapped[str] = mapped_column(String(120), default="")
     eta: Mapped[str] = mapped_column(String(20), default="")  # "HH:MMZ"
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     lat: Mapped[float | None] = mapped_column(Float, nullable=True)
     lng: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="")
@@ -997,6 +1028,7 @@ class LogcopSupplyPoint(Base):
     )
     name: Mapped[str] = mapped_column(String(120))
     point_type: Mapped[str] = mapped_column(String(20))
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     # BSA | FARP | CTCP | AMMO_DUMP | FUEL_POINT | MED_POST | FSC | MSR
     lat: Mapped[float] = mapped_column(Float)
     lng: Mapped[float] = mapped_column(Float)
@@ -1021,6 +1053,7 @@ class EpicProject(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     color: Mapped[str] = mapped_column(String(20), default="#388bfd")
+    classification: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(
         String(20), default="ACTIVE"
     )  # ACTIVE | ARCHIVED

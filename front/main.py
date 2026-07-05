@@ -81,7 +81,45 @@ def main():
             sys.exit(0)
         server_url, token, callsign = login.result()
 
-    window = MainWindow(server_url=server_url, token=token, callsign=callsign)
+    # ── Mandatory mission selection ──────────────────────────────────────
+    # Every session must be in a mission. Admins pick/create one; everyone else
+    # is locked to their assigned mission (the backend enforces this too).
+    from PyQt6.QtWidgets import QDialog, QMessageBox
+
+    from front.app.mission_dialog import MissionDialog
+    from front.client.arrow_client import ArrowClient
+
+    _client = ArrowClient(server_url, token)
+    try:
+        me = _client.me()
+    except Exception:
+        me = {}
+    role = str(me.get("role", "OPERATOR")).upper()
+    clearance = int(me.get("clearance", 0) or 0)
+    mission_id = me.get("mission_id")
+
+    if role == "ADMIN":
+        dlg = MissionDialog(client=_client, clearance=clearance)
+        if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.selected_id:
+            sys.exit(0)
+        active_mission_id = dlg.selected_id
+    else:
+        if not mission_id:
+            QMessageBox.critical(
+                None,
+                "No mission assigned",
+                "You are not assigned to a mission.\n\n"
+                "Ask an administrator to assign you to one, then sign in again.",
+            )
+            sys.exit(0)
+        active_mission_id = int(mission_id)
+
+    window = MainWindow(
+        server_url=server_url,
+        token=token,
+        callsign=callsign,
+        mission_id=active_mission_id,
+    )
     window.show()
     sys.exit(app.exec())
 
