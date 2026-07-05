@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
 
 # Reuse the settings-dialog visual helpers for a consistent look.
 from front.app.settings_dialog import _lbl, _section
+from front.jdss import direct
 
 _REFRESH_MS = 3000
 
@@ -47,6 +48,8 @@ class JdssGatewayDialog(QDialog):
         self._client = client
         self._role = role
         self._can_write = role == "ADMIN"
+        self._direct = None  # native JdssDirectClient, created on demand
+        self._direct_up = False
 
         self.setWindowTitle("Arrow Front — JDSS Gateway")
         self.setMinimumSize(560, 620)
@@ -160,6 +163,46 @@ class JdssGatewayDialog(QDialog):
                 self._pub_chat,
             ):
                 wgt.setEnabled(False)
+
+        # ── Direct connection (native — bypasses the Arrow backend) ───
+        lay.addWidget(_section("Direct connection (native)"))
+        dnote = QLabel(
+            "Talk straight to the gateway, bypassing the Arrow backend — for "
+            "standalone / backend-down use. Everything above configures the "
+            "server-side bridge; this connects THIS app directly."
+        )
+        dnote.setWordWrap(True)
+        dnote.setStyleSheet("color:#8b949e;font-size:9px;")
+        lay.addWidget(dnote)
+
+        drow = QHBoxLayout()
+        self._direct_btn = QPushButton("Connect direct")
+        self._direct_btn.setFixedWidth(130)
+        self._direct_btn.clicked.connect(self._direct_toggle)
+        drow.addWidget(self._direct_btn)
+        self._direct_dot = QLabel("●")
+        self._direct_dot.setStyleSheet("color:#6e7681;font-size:14px;")
+        drow.addWidget(self._direct_dot)
+        self._direct_state = _mono()
+        self._direct_state.setText("disconnected")
+        drow.addWidget(self._direct_state, 1)
+        lay.addLayout(drow)
+
+        self._direct_feed = QListWidget()
+        self._direct_feed.setFont(QFont("Courier New", 10))
+        self._direct_feed.setMaximumHeight(110)
+        lay.addWidget(self._direct_feed)
+
+        trow = QHBoxLayout()
+        self._direct_pres_btn = QPushButton("Send test presence")
+        self._direct_pres_btn.clicked.connect(self._direct_test_presence)
+        self._direct_con_btn = QPushButton("Send test contact")
+        self._direct_con_btn.clicked.connect(self._direct_test_contact)
+        for b in (self._direct_pres_btn, self._direct_con_btn):
+            b.setEnabled(False)
+            trow.addWidget(b)
+        trow.addStretch()
+        lay.addLayout(trow)
 
         lay.addStretch()
 
@@ -285,6 +328,94 @@ class JdssGatewayDialog(QDialog):
         )
         self._refresh_status()
 
+    # ── Direct native connection ─────────────────────────────────────────
+    def _direct_toggle(self):
+        if self._direct is not None and self._direct.is_connected():
+            self._stop_direct()
+            self._direct_btn.setText("Connect direct")
+            for b in (self._direct_pres_btn, self._direct_con_btn):
+                b.setEnabled(False)
+            self._update_direct_state()
+            return
+        url = self._base_url.text().strip().rstrip("/")
+        if not url:
+            self._set_status("Enter a gateway URL first.", warn=True)
+            return
+        from front.jdss.client import JdssDirectClient
+
+        self._direct = JdssDirectClient(url, self)
+        self._direct.connected.connect(self._on_direct_connected)
+        self._direct.message.connect(self._on_direct_message)
+        self._direct.start()
+        self._direct_btn.setText("Disconnect")
+        for b in (self._direct_pres_btn, self._direct_con_btn):
+            b.setEnabled(True)
+        self._update_direct_state()
+
+    def _on_direct_connected(self, ok: bool):
+        self._direct_up = ok
+        self._direct_dot.setStyleSheet(
+            f"color:{'#3fb950' if ok else '#6e7681'};font-size:14px;"
+        )
+        self._update_direct_state()
+
+    def _on_direct_message(self, n: dict):
+        label = f"{(n.get('type') or '?'):<15} {(n.get('callsign') or n.get('originator_id') or ''):<12}"
+        if n.get("lat") is not None and n.get("lon") is not None:
+            label += f" {n['lat']:.4f},{n['lon']:.4f}"
+        if n.get("affiliation"):
+            label += f"  [{n['affiliation']}]"
+        self._direct_feed.insertItem(0, label)
+        while self._direct_feed.count() > 60:
+            self._direct_feed.takeItem(self._direct_feed.count() - 1)
+        self._update_direct_state()
+
+    def _update_direct_state(self):
+        d = self._direct
+        if d is None:
+            self._direct_state.setText("disconnected")
+            return
+        if self._direct_up:
+            head = f"connected → {d.base_url}"
+        elif d.is_connected():
+            head = "reconnecting…"
+        else:
+            head = "disconnected"
+        self._direct_state.setText(f"{head}  ·  rx {d.rx} · tx {d.tx}")
+
+    def _direct_test_presence(self):
+        if self._direct is None:
+            return
+        mid = self._direct.publish_presence(50.85, 4.35, "FRONT-DIRECT")
+        self._set_status(
+            "✓ Test presence sent" if mid else "Presence send failed", warn=not mid
+        )
+        self._update_direct_state()
+
+    def _direct_test_contact(self):
+        if self._direct is None:
+            return
+        mid = self._direct.publish_contact(
+            51.05,
+            4.11,
+            "Front direct test contact",
+            identity=direct.affiliation_to_identity("HOSTILE"),
+            callsign="FRONT-1",
+        )
+        self._set_status(
+            "✓ Test contact sent" if mid else "Contact send failed", warn=not mid
+        )
+        self._update_direct_state()
+
+    def _stop_direct(self):
+        if self._direct is not None:
+            try:
+                self._direct.stop()
+            except Exception:
+                pass
+            self._direct = None
+        self._direct_up = False
+
     # ── Helpers ──────────────────────────────────────────────────────────
     def _set_status(self, text: str, *, warn: bool = False):
         self._status_lbl.setText(text)
@@ -294,10 +425,12 @@ class JdssGatewayDialog(QDialog):
 
     def closeEvent(self, event):  # noqa: N802 (Qt override)
         self._timer.stop()
+        self._stop_direct()
         super().closeEvent(event)
 
     def reject(self):
         self._timer.stop()
+        self._stop_direct()
         super().reject()
 
 
