@@ -501,12 +501,81 @@ def test_snapshot_delete_404_when_gone(client) -> None:
     )
 
 
+def test_map_clear_deletes_graphics_but_keeps_accounts(client) -> None:
+    cs, op_tok, op_id = register(client, "OPERATOR")
+    _, admin_tok, _ = register(client, "ADMIN")
+
+    _make_object(client, op_tok, "ENEMY", notes="hostile")
+    _make_object(client, op_tok, "POI", notes="cache")
+    # Give the operator a live position.
+    assert (
+        client.post(
+            "/tracking/position",
+            headers=auth(op_tok),
+            json={"latitude": 50.1, "longitude": 4.2},
+        ).status_code
+        == 200
+    )
+    assert client.get("/tracking/live", headers=auth(admin_tok)).json()  # not empty
+
+    r = client.post("/admin/map/clear", headers=auth(admin_tok), json={})
+    assert r.status_code == 201, r.text
+    out = r.json()
+    assert out["counts"]["tactical_objects"] == 2
+    assert out["id"] >= 1  # a snapshot was saved
+
+    # Map graphics gone, operator dropped off the live map…
+    assert client.get("/tactical-objects", headers=auth(admin_tok)).json() == []
+    assert client.get("/tracking/live", headers=auth(admin_tok)).json() == []
+    # …but the account itself survives and can still authenticate.
+    me = client.get("/auth/me", headers=auth(op_tok))
+    assert me.status_code == 200 and me.json()["id"] == op_id
+
+
+def test_reset_defaults_restores_settings(client) -> None:
+    _, admin_tok, _ = register(client, "ADMIN")
+
+    # Turn a visibility flag off and set a non-default session timeout.
+    client.put(
+        "/admin/map-visibility",
+        headers=auth(admin_tok),
+        json={"tactical_objects": False},
+    )
+    client.put(
+        "/admin/session-config",
+        headers=auth(admin_tok),
+        json={"inactivity_timeout_minutes": 30},
+    )
+
+    r = client.post("/admin/reset-defaults", headers=auth(admin_tok))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["map_visibility"]["tactical_objects"] is True
+    assert body["session"]["inactivity_timeout_minutes"] == 0
+
+    # Persisted, not just echoed.
+    assert (
+        client.get("/admin/map-visibility", headers=auth(admin_tok)).json()[
+            "tactical_objects"
+        ]
+        is True
+    )
+    assert (
+        client.get("/admin/session-config", headers=auth(admin_tok)).json()[
+            "inactivity_timeout_minutes"
+        ]
+        == 0
+    )
+
+
 def test_endpoints_are_admin_only(client) -> None:
     _, op_tok, _ = register(client, "OPERATOR")
     _, bc_tok, _ = register(client, "BATTLE_CAPTAIN")
 
     for path, method in [
         ("/admin/map/reset", "POST"),
+        ("/admin/map/clear", "POST"),
+        ("/admin/reset-defaults", "POST"),
         ("/admin/map/snapshots", "GET"),
         ("/admin/map/snapshots/1", "GET"),
         ("/admin/map/snapshots/1", "DELETE"),

@@ -17,6 +17,7 @@ from backend.config.xml_config import load_config
 from backend.storage.database import get_db
 from backend.storage.models import (
     Alert,
+    AtakShape,
     AuditLog,
     CotTrack,
     FireMission,
@@ -512,6 +513,123 @@ async def map_reset(
         "created_at": snap.created_at.isoformat(),
         "object_count": snap.object_count,
         "counts": {k: len(v) for k, v in state.items()},
+    }
+
+
+@router.post("/map/clear", status_code=status.HTTP_201_CREATED)
+async def map_clear(
+    request: Request,
+    db: Session = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Clear every element off the map without touching accounts or missions.
+
+    Snapshots first (restorable), then deletes the map picture — tactical
+    objects, CoT tracks, ATAK-drawn shapes, KML layers, saved overlays, fire
+    missions and alerts — and clears every operator's live position + trail
+    (the operator accounts, hierarchy, missions, chat and reports all survive;
+    operators simply drop off the map until they report a new fix).
+    """
+    body = await request.json() if (await request.body()) else {}
+    name = (body.get("name") or "").strip() or (
+        f"Map clear {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}"
+    )
+
+    state = _capture_state(db)
+    snap = MapSnapshot(
+        name=name,
+        created_by=current.id,
+        object_count=_state_total(state),
+        payload=json.dumps(state),
+    )
+    db.add(snap)
+
+    deleted_to = [o.id for o in db.query(TacticalObject).all()]
+
+    # Map graphics + tracks.
+    db.query(TacticalObject).delete(synchronize_session=False)
+    db.query(CotTrack).delete(synchronize_session=False)
+    db.query(AtakShape).delete(synchronize_session=False)
+    db.query(KmlLayer).delete(synchronize_session=False)
+    db.query(Overlay).delete(synchronize_session=False)
+    db.query(FireMission).delete(synchronize_session=False)
+    db.query(Alert).delete(synchronize_session=False)
+
+    # Clear live operator positions + trails, keeping the accounts intact.
+    db.query(OperatorPosition).delete(synchronize_session=False)
+    from sqlalchemy import text
+
+    db.execute(
+        text(
+            "UPDATE operators SET latitude = NULL, longitude = NULL, "
+            "altitude = NULL, position_source = NULL"
+        )
+    )
+
+    db.commit()
+    db.refresh(snap)
+
+    for oid in deleted_to:
+        await broadcaster.broadcast(
+            {"channel": "tactical-object", "event": "deleted", "data": {"id": oid}}
+        )
+    for ch in (
+        "cot-track",
+        "atak-shape",
+        "kml-layer",
+        "overlay",
+        "fire-mission",
+        "alert",
+        "tracking",
+        "presence",
+    ):
+        try:
+            await broadcaster.broadcast(
+                {"channel": ch, "event": "reset", "data": {"snapshot_id": snap.id}}
+            )
+        except Exception:
+            pass
+    await broadcaster.broadcast(
+        {
+            "channel": "admin",
+            "event": "map-cleared",
+            "data": {"snapshot_id": snap.id, "deleted": snap.object_count},
+        }
+    )
+
+    return {
+        "id": snap.id,
+        "name": snap.name,
+        "object_count": snap.object_count,
+        "counts": {k: len(v) for k, v in state.items()},
+    }
+
+
+@router.post("/reset-defaults")
+async def reset_defaults(
+    db: Session = Depends(get_db),
+    current: Operator = Depends(require_role("ADMIN")),
+) -> dict:
+    """Reset admin settings to their built-in defaults. No data is deleted.
+
+    Resets map visibility (all categories + notifications ON) and the session
+    inactivity timeout (disabled). Integration configs (TAK, JDSS, Octopus) are
+    intentionally left untouched — reset those from their own panels.
+    """
+    row = _get_or_create_visibility(db)
+    for field in _VIS_FIELDS:
+        setattr(row, field, True)
+    _set_setting(db, "session.inactivity_timeout", "0")
+    db.commit()
+    db.refresh(row)
+
+    vis = _visibility_payload(row)
+    await broadcaster.broadcast(
+        {"channel": "map-visibility", "event": "updated", "data": vis}
+    )
+    return {
+        "map_visibility": vis,
+        "session": {"inactivity_timeout_minutes": 0},
     }
 
 

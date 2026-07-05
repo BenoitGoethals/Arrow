@@ -1222,9 +1222,17 @@ main { padding: 0; }
         el.innerHTML = `
         <div class="sec-header">
             <h2>Map snapshots</h2>
-            <button class="btn btn-danger" onclick="snapReset()">
-                ⚠ Reset map (snapshot &amp; clear all)
-            </button>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                <button class="btn btn-danger" onclick="mapClearAll()">
+                    🗑 Delete all map elements
+                </button>
+                <button class="btn btn-ghost" onclick="resetDefaults()">
+                    ↺ Reset settings to defaults
+                </button>
+                <button class="btn btn-danger" onclick="snapReset()">
+                    ⚠ Reset map (snapshot &amp; clear all)
+                </button>
+            </div>
         </div>
         <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem">
             <span style="color:#94a3b8;font-size:0.78rem;margin-right:0.3rem">Live state:</span>
@@ -1298,6 +1306,47 @@ main { padding: 0; }
         const el = document.getElementById(`snap-bd-${id}`);
         if (el) el.textContent = parts.length ? parts.join(' · ') : '— empty —';
     }
+
+    window.mapClearAll = async function() {
+        if (!confirm(
+            "Delete ALL elements on the map?\n\n" +
+            "Removes from the live map:\n" +
+            "  • tactical objects (enemies, OBJs, axes, FLET, …)\n" +
+            "  • CoT tracks + ATAK-drawn shapes\n" +
+            "  • KML layers + saved overlays\n" +
+            "  • fire missions + alerts\n" +
+            "  • every operator's live position and trail\n\n" +
+            "A snapshot is saved first so you can restore later.\n" +
+            "Operator accounts, missions, hierarchy, chat and reports are kept."
+        )) return;
+        const r = await api('/admin/map/clear', {
+            method: 'POST',
+            body:    JSON.stringify({}),
+        });
+        if (r.ok) {
+            const out = await r.json();
+            alert(`Map cleared. Snapshot #${out.id} saved with ${out.object_count} record(s).`);
+            renderSnapshots(document.getElementById('adm-main'));
+        } else {
+            alert(`Clear failed (${r.status}).`);
+        }
+    };
+
+    window.resetDefaults = async function() {
+        if (!confirm(
+            "Reset all settings to defaults?\n\n" +
+            "  • Map visibility → all categories + notifications ON\n" +
+            "  • Session inactivity timeout → disabled\n\n" +
+            "No operational data is deleted. Integration configs " +
+            "(TAK / JDSS / Octopus) are left unchanged — reset those from their own panels."
+        )) return;
+        const r = await api('/admin/reset-defaults', { method: 'POST' });
+        if (r.ok) {
+            alert("Settings reset to defaults.");
+        } else {
+            alert(`Reset failed (${r.status}).`);
+        }
+    };
 
     window.snapReset = async function() {
         if (!confirm(
