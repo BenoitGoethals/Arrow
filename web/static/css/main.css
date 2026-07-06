@@ -71,7 +71,8 @@ main { padding: 1.5rem; }
 ul { padding-left: 1.2rem; }
 code { background: #1a1f29; padding: 0.1rem 0.4rem; border-radius: 4px; }
 .spacer { flex: 1; }
-.nav-user { color: #94a3b8; font-size: 0.85rem; }
+.nav-user { display: flex; align-items: center; color: #94a3b8; font-size: 0.85rem; white-space: nowrap; }
+#nav-auth { display: flex; align-items: center; font-size: 0.85rem; white-space: nowrap; margin-left: 12px; }
 .auth { max-width: 420px; margin: 2rem auto; }
 .auth form { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.5rem; padding: 1rem; background: #161b25; border: 1px solid #2a3142; border-radius: 8px; }
 .auth label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: #94a3b8; }
