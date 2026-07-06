@@ -21,7 +21,34 @@
     .arrow-cluster span { line-height: 1; }
     .arrow-cluster.arrow-cluster-md { border-color: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.4); }
     .arrow-cluster.arrow-cluster-lg { border-color: #f87171; box-shadow: 0 0 10px rgba(248, 113, 113, 0.5); }
-    .map-shell { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 60px); gap: 0; }
+    /* The whole-page classification banner has no scroll room on the map (content is
+       exactly 100vh − nav), so it would fall to the bottom of the window. The nav badge
+       already carries the marking here, so suppress the banner on this page only. */
+    #class-banner { display: none !important; }
+    .map-shell { display: grid; grid-template-columns: 320px 1fr auto; height: calc(100vh - 60px); gap: 0; }
+    /* ── Right dock: icon rail + expandable panel (Front-app style) ──────────── */
+    #right-dock { display: flex; height: 100%; }
+    #right-panel { width: 0; overflow: hidden; background: #161b25; border-left: 1px solid #2a3142;
+                   transition: width .16s ease; display: flex; flex-direction: column; }
+    #right-dock.open #right-panel { width: 330px; }
+    #right-panel .rp-head { display: flex; align-items: center; justify-content: space-between;
+                            padding: .55rem .75rem; border-bottom: 1px solid #2a3142; flex-shrink: 0; }
+    #right-panel .rp-title { font-size: .75rem; letter-spacing: .15em; text-transform: uppercase; color: #94a3b8; white-space: nowrap; }
+    #right-panel .rp-close { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 1rem; line-height: 1; }
+    #right-panel .rp-close:hover { color: #e2e8f0; }
+    #right-panel .rp-body { flex: 1; overflow-y: auto; padding: .75rem; min-width: 330px; }
+    .rp-section { display: none; }
+    .rp-section.active { display: block; }
+    #right-rail { width: 48px; flex-shrink: 0; background: #111827; border-left: 1px solid #2a3142;
+                  display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 6px; }
+    .rail-btn { position: relative; width: 40px; height: 42px; border: 0; border-radius: 8px;
+                background: #1a2233; color: #94a3b8; cursor: pointer; display: flex; flex-direction: column;
+                align-items: center; justify-content: center; gap: 1px; font: inherit; }
+    .rail-btn:hover { background: #1f2937; color: #e2e8f0; }
+    .rail-btn.active { background: #1e3a2f; color: #34d399; }
+    .rail-btn .rail-ico { font-size: 1.05rem; line-height: 1; }
+    .rail-btn .rail-num { font-size: .58rem; color: #64748b; line-height: 1; }
+    .rail-btn.active .rail-num { color: #34d399; }
     #sidebar { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.75rem; }
     #sidebar h3 { margin: 0.25rem 0 0.5rem; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: #94a3b8; }
     .tree details { margin-left: 0.5rem; }
@@ -275,39 +302,12 @@
 {% block content %}
 <div class="map-shell">
     <aside id="sidebar">
-        <div class="filter-bar" style="border-bottom:0;border-radius:6px;margin-bottom:0.5rem">
-            <label><input type="checkbox" id="online-only"/> Online only</label>
-            <button id="select-all">Show all</button>
-            <button id="clear-sel">Clear</button>
-        </div>
-        <h3>Hierarchy</h3>
-        <div id="tree" class="tree">Loading…</div>
-        <details class="sb-section" style="margin-top:1rem">
+        <!-- Hierarchy, Fire Missions, Alerts & Reports moved to the right dock (#right-dock). -->
+        <details class="sb-section" style="margin-top:0.25rem">
             <summary><h3 style="display:inline">Tactical Objects</h3>
                 <span id="enemies-count" class="sb-count">0</span>
             </summary>
             <div id="enemies"></div>
-        </details>
-
-        <details class="sb-section" style="margin-top:1rem">
-            <summary><h3 style="display:inline">Fire Missions</h3>
-                <span id="fm-count" class="sb-count">0</span>
-            </summary>
-            <div id="map-fire-missions"><small style="color:#475569">Loading…</small></div>
-        </details>
-
-        <details class="sb-section" style="margin-top:1rem">
-            <summary><h3 style="display:inline">Reports</h3>
-                <span id="reports-count" class="sb-count">0</span>
-            </summary>
-            <div id="map-reports"><small style="color:#475569">Loading…</small></div>
-        </details>
-
-        <details class="sb-section" style="margin-top:1rem">
-            <summary><h3 style="display:inline">Alerts</h3>
-                <span id="alerts-count" class="sb-count">0</span>
-            </summary>
-            <div id="map-alerts"><small style="color:#475569">Loading…</small></div>
         </details>
 
 
@@ -751,6 +751,45 @@
         </div>
         <div id="map"></div>
     </div>
+
+    <!-- ── Right dock: icon rail + expandable panel (closed by default) ────── -->
+    <div id="right-dock">
+      <div id="right-panel">
+        <div class="rp-head">
+          <span class="rp-title" id="rp-title">Hierarchy</span>
+          <button class="rp-close" onclick="rpClose()" title="Close">✕</button>
+        </div>
+        <div class="rp-body">
+          <div class="rp-section" id="rp-hierarchy">
+            <div class="filter-bar" style="border-bottom:0;border-radius:6px;margin-bottom:0.5rem">
+              <label><input type="checkbox" id="online-only"/> Online only</label>
+              <button id="select-all">Show all</button>
+              <button id="clear-sel">Clear</button>
+            </div>
+            <div id="tree" class="tree">Loading…</div>
+          </div>
+          <div class="rp-section" id="rp-fire">
+            <div id="map-fire-missions"><small style="color:#475569">Loading…</small></div>
+          </div>
+          <div class="rp-section" id="rp-alerts">
+            <div id="map-alerts"><small style="color:#475569">Loading…</small></div>
+          </div>
+          <div class="rp-section" id="rp-reports">
+            <div id="map-reports"><small style="color:#475569">Loading…</small></div>
+          </div>
+        </div>
+      </div>
+      <nav id="right-rail">
+        <button class="rail-btn" data-rp="hierarchy" title="Hierarchy" onclick="rpToggle('hierarchy')">
+          <span class="rail-ico">⌂</span></button>
+        <button class="rail-btn" data-rp="fire" title="Fire Missions" onclick="rpToggle('fire')">
+          <span class="rail-ico">✚</span><span class="rail-num" id="fm-count">0</span></button>
+        <button class="rail-btn" data-rp="alerts" title="Alerts" onclick="rpToggle('alerts')">
+          <span class="rail-ico">⚡</span><span class="rail-num" id="alerts-count">0</span></button>
+        <button class="rail-btn" data-rp="reports" title="Reports" onclick="rpToggle('reports')">
+          <span class="rail-ico">≡</span><span class="rail-num" id="reports-count">0</span></button>
+      </nav>
+    </div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -758,6 +797,31 @@
 <script src="{{ url_for('static', filename='vendor/markercluster/leaflet.markercluster.js') }}"></script>
 <script src="https://unpkg.com/milsymbol@2.2.0/dist/milsymbol.js"></script>
 <script>
+// ── Right dock (Front-app style): icon rail toggles one panel section at a time.
+(function () {
+    const TITLES = { hierarchy: 'Hierarchy', fire: 'Fire Missions', alerts: 'Alerts', reports: 'Reports' };
+    let openSection = null;
+    function apply() {
+        const dock = document.getElementById('right-dock');
+        if (!dock) return;
+        dock.classList.toggle('open', openSection !== null);
+        document.querySelectorAll('.rp-section').forEach(el => {
+            el.classList.toggle('active', el.id === 'rp-' + openSection);
+        });
+        document.querySelectorAll('.rail-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.rp === openSection);
+        });
+        if (openSection) {
+            const t = document.getElementById('rp-title');
+            if (t) t.textContent = TITLES[openSection] || '';
+        }
+    }
+    window.rpToggle = function (section) {
+        openSection = (openSection === section) ? null : section;
+        apply();
+    };
+    window.rpClose = function () { openSection = null; apply(); };
+})();
 (function () {
     const token = localStorage.getItem('arrow_token');
     if (!token) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
