@@ -25,22 +25,29 @@
        exactly 100vh − nav), so it would fall to the bottom of the window. The nav badge
        already carries the marking here, so suppress the banner on this page only. */
     #class-banner { display: none !important; }
-    .map-shell { display: grid; grid-template-columns: 320px 1fr auto; height: calc(100vh - 60px); gap: 0; }
-    /* ── Right dock: icon rail + expandable panel (Front-app style) ──────────── */
-    #right-dock { display: flex; height: 100%; }
-    #right-panel { width: 0; overflow: hidden; background: #161b25; border-left: 1px solid #2a3142;
-                   transition: width .16s ease; display: flex; flex-direction: column; }
-    #right-dock.open #right-panel { width: 330px; }
-    #right-panel .rp-head { display: flex; align-items: center; justify-content: space-between;
-                            padding: .55rem .75rem; border-bottom: 1px solid #2a3142; flex-shrink: 0; }
-    #right-panel .rp-title { font-size: .75rem; letter-spacing: .15em; text-transform: uppercase; color: #94a3b8; white-space: nowrap; }
-    #right-panel .rp-close { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 1rem; line-height: 1; }
-    #right-panel .rp-close:hover { color: #e2e8f0; }
-    #right-panel .rp-body { flex: 1; overflow-y: auto; padding: .75rem; min-width: 330px; }
+    .map-shell { display: grid; grid-template-columns: auto 1fr auto; height: calc(100vh - 60px); gap: 0; }
+    /* ── Docks: icon rail + expandable panel (Front-app style), both sides ──── */
+    /* Both the left and right panels are closed by default; a rail icon opens one
+       section at a time. Left rail sits on the far left, right rail on the far right. */
+    .dock { display: flex; height: 100%; }
+    .dock-panel { width: 0; overflow: hidden; background: #161b25; transition: width .16s ease;
+                  display: flex; flex-direction: column; }
+    .dock.open .dock-panel { width: 330px; }
+    #left-dock  .dock-panel { border-right: 1px solid #2a3142; }
+    #right-dock .dock-panel { border-left: 1px solid #2a3142; }
+    .dock-head { display: flex; align-items: center; justify-content: space-between;
+                 padding: .55rem .75rem; border-bottom: 1px solid #2a3142; flex-shrink: 0; }
+    .dock-title { font-size: .75rem; letter-spacing: .15em; text-transform: uppercase; color: #94a3b8; white-space: nowrap; }
+    .dock-close { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 1rem; line-height: 1; }
+    .dock-close:hover { color: #e2e8f0; }
+    .dock-body { flex: 1; overflow-y: auto; padding: .75rem; min-width: 330px; }
+    .dock-body h3 { margin: 0.25rem 0 0.5rem; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: #94a3b8; }
     .rp-section { display: none; }
     .rp-section.active { display: block; }
-    #right-rail { width: 48px; flex-shrink: 0; background: #111827; border-left: 1px solid #2a3142;
-                  display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 6px; }
+    .dock-rail { width: 48px; flex-shrink: 0; background: #111827;
+                 display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 6px; }
+    #left-dock  .dock-rail { border-right: 1px solid #2a3142; }
+    #right-dock .dock-rail { border-left: 1px solid #2a3142; }
     .rail-btn { position: relative; width: 40px; height: 42px; border: 0; border-radius: 8px;
                 background: #1a2233; color: #94a3b8; cursor: pointer; display: flex; flex-direction: column;
                 align-items: center; justify-content: center; gap: 1px; font: inherit; }
@@ -49,8 +56,6 @@
     .rail-btn .rail-ico { font-size: 1.05rem; line-height: 1; }
     .rail-btn .rail-num { font-size: .58rem; color: #64748b; line-height: 1; }
     .rail-btn.active .rail-num { color: #34d399; }
-    #sidebar { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.75rem; }
-    #sidebar h3 { margin: 0.25rem 0 0.5rem; font-size: 0.75rem; letter-spacing: 0.15em; text-transform: uppercase; color: #94a3b8; }
     .tree details { margin-left: 0.5rem; }
     .tree summary { cursor: pointer; padding: 0.2rem 0; user-select: none; }
     .tree summary::marker { color: #6ee7b7; }
@@ -301,27 +306,27 @@
 {% endblock %}
 {% block content %}
 <div class="map-shell">
-    <aside id="sidebar">
-        <!-- Hierarchy, Fire Missions, Alerts & Reports moved to the right dock (#right-dock). -->
-        <details class="sb-section" style="margin-top:0.25rem">
-            <summary><h3 style="display:inline">Tactical Objects</h3>
-                <span id="enemies-count" class="sb-count">0</span>
-            </summary>
-            <div id="enemies"></div>
-        </details>
-
-
-        <details class="sb-section" style="margin-top:1rem" open>
-            <summary><h3 style="display:inline">Live Devices</h3>
-                <span id="atak-count" class="sb-count">0</span>
-            </summary>
+    <!-- ── Left dock: icon rail + expandable panel (closed by default) ──────── -->
+    <!-- Tactical Objects moved to the right dock (#right-dock). -->
+    <div id="left-dock" class="dock">
+      <nav class="dock-rail">
+        <button class="rail-btn" data-rp="devices" title="Live Devices" onclick="dockToggle('left','devices')">
+          <span class="rail-ico">📡</span><span class="rail-num" id="atak-count">0</span></button>
+        <button class="rail-btn" data-rp="graphics" title="Tactical Graphics" onclick="dockToggle('left','graphics')">
+          <span class="rail-ico">✦</span><span class="rail-num" id="tg-count">0</span></button>
+        <button class="rail-btn" data-rp="draw" title="Free Draw" onclick="dockToggle('left','draw')">
+          <span class="rail-ico">✏</span></button>
+      </nav>
+      <div class="dock-panel">
+        <div class="dock-head">
+          <span class="dock-title">Live Devices</span>
+          <button class="dock-close" onclick="dockClose('left')" title="Close">✕</button>
+        </div>
+        <div class="dock-body">
+          <div class="rp-section" id="left-sec-devices">
             <div id="atak-clients"><small style="color:#475569">Checking…</small></div>
-        </details>
-
-        <details class="sb-section" style="margin-top:1rem">
-            <summary><h3 style="display:inline">Tactical Graphics</h3>
-                <span id="tg-count" class="sb-count">0</span>
-            </summary>
+          </div>
+          <div class="rp-section" id="left-sec-graphics">
             <div class="tg-status" id="tg-status">Pick a graphic, then click on the map.</div>
             <div class="tg-ech-label">Echelon</div>
             <div class="tg-ech-row" id="tg-ech-row">
@@ -393,11 +398,9 @@
                 <button class="tg-btn tg-sof" data-tg="SOF_FLANK"    data-aff="FRIENDLY"><span class="tg-glyph">➤</span>Flank</button>
             </div>
             <button class="tg-btn tg-cancel" id="tg-cancel">✕ Cancel drawing</button>
-        </details>
-
-        <!-- ── Free Draw ───────────────────────────────────────────── -->
-        <details class="sb-section" style="margin-top:1rem" id="fd-section">
-            <summary><h3 style="display:inline">Free Draw</h3></summary>
+          </div>
+          <!-- ── Free Draw ─────────────────────────────────────────── -->
+          <div class="rp-section" id="left-sec-draw">
             <div class="fd-section-label">Color</div>
             <div class="fd-colors" id="fd-colors">
                 <button class="fd-color-swatch" style="background:#ef4444" data-color="#ef4444" title="Red"></button>
@@ -423,8 +426,10 @@
                 <button class="fd-tool-btn" id="fd-undo-btn" onclick="fdUndo()">↩ Undo</button>
                 <button class="fd-tool-btn danger" id="fd-clear-btn" onclick="fdClear()">✕ Clear</button>
             </div>
-        </details>
-    </aside>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Free-draw text input overlay -->
     <div id="fd-text-overlay">
@@ -753,14 +758,14 @@
     </div>
 
     <!-- ── Right dock: icon rail + expandable panel (closed by default) ────── -->
-    <div id="right-dock">
-      <div id="right-panel">
-        <div class="rp-head">
-          <span class="rp-title" id="rp-title">Hierarchy</span>
-          <button class="rp-close" onclick="rpClose()" title="Close">✕</button>
+    <div id="right-dock" class="dock">
+      <div class="dock-panel">
+        <div class="dock-head">
+          <span class="dock-title">Hierarchy</span>
+          <button class="dock-close" onclick="dockClose('right')" title="Close">✕</button>
         </div>
-        <div class="rp-body">
-          <div class="rp-section" id="rp-hierarchy">
+        <div class="dock-body">
+          <div class="rp-section" id="right-sec-hierarchy">
             <div class="filter-bar" style="border-bottom:0;border-radius:6px;margin-bottom:0.5rem">
               <label><input type="checkbox" id="online-only"/> Online only</label>
               <button id="select-all">Show all</button>
@@ -768,25 +773,30 @@
             </div>
             <div id="tree" class="tree">Loading…</div>
           </div>
-          <div class="rp-section" id="rp-fire">
+          <div class="rp-section" id="right-sec-tobjects">
+            <div id="enemies"></div>
+          </div>
+          <div class="rp-section" id="right-sec-fire">
             <div id="map-fire-missions"><small style="color:#475569">Loading…</small></div>
           </div>
-          <div class="rp-section" id="rp-alerts">
+          <div class="rp-section" id="right-sec-alerts">
             <div id="map-alerts"><small style="color:#475569">Loading…</small></div>
           </div>
-          <div class="rp-section" id="rp-reports">
+          <div class="rp-section" id="right-sec-reports">
             <div id="map-reports"><small style="color:#475569">Loading…</small></div>
           </div>
         </div>
       </div>
-      <nav id="right-rail">
-        <button class="rail-btn" data-rp="hierarchy" title="Hierarchy" onclick="rpToggle('hierarchy')">
+      <nav class="dock-rail">
+        <button class="rail-btn" data-rp="hierarchy" title="Hierarchy" onclick="dockToggle('right','hierarchy')">
           <span class="rail-ico">⌂</span></button>
-        <button class="rail-btn" data-rp="fire" title="Fire Missions" onclick="rpToggle('fire')">
+        <button class="rail-btn" data-rp="tobjects" title="Tactical Objects" onclick="dockToggle('right','tobjects')">
+          <span class="rail-ico">◎</span><span class="rail-num" id="enemies-count">0</span></button>
+        <button class="rail-btn" data-rp="fire" title="Fire Missions" onclick="dockToggle('right','fire')">
           <span class="rail-ico">✚</span><span class="rail-num" id="fm-count">0</span></button>
-        <button class="rail-btn" data-rp="alerts" title="Alerts" onclick="rpToggle('alerts')">
+        <button class="rail-btn" data-rp="alerts" title="Alerts" onclick="dockToggle('right','alerts')">
           <span class="rail-ico">⚡</span><span class="rail-num" id="alerts-count">0</span></button>
-        <button class="rail-btn" data-rp="reports" title="Reports" onclick="rpToggle('reports')">
+        <button class="rail-btn" data-rp="reports" title="Reports" onclick="dockToggle('right','reports')">
           <span class="rail-ico">≡</span><span class="rail-num" id="reports-count">0</span></button>
       </nav>
     </div>
@@ -797,30 +807,36 @@
 <script src="{{ url_for('static', filename='vendor/markercluster/leaflet.markercluster.js') }}"></script>
 <script src="https://unpkg.com/milsymbol@2.2.0/dist/milsymbol.js"></script>
 <script>
-// ── Right dock (Front-app style): icon rail toggles one panel section at a time.
+// ── Docks (Front-app style): each icon rail toggles one panel section at a time.
+// Both the left and right panels are closed by default and independent of each other.
 (function () {
-    const TITLES = { hierarchy: 'Hierarchy', fire: 'Fire Missions', alerts: 'Alerts', reports: 'Reports' };
-    let openSection = null;
-    function apply() {
-        const dock = document.getElementById('right-dock');
+    const TITLES = {
+        hierarchy: 'Hierarchy', tobjects: 'Tactical Objects', fire: 'Fire Missions',
+        alerts: 'Alerts', reports: 'Reports',
+        devices: 'Live Devices', graphics: 'Tactical Graphics', draw: 'Free Draw',
+    };
+    const openMap = { left: null, right: null };
+    function apply(side) {
+        const dock = document.getElementById(side + '-dock');
         if (!dock) return;
-        dock.classList.toggle('open', openSection !== null);
-        document.querySelectorAll('.rp-section').forEach(el => {
-            el.classList.toggle('active', el.id === 'rp-' + openSection);
+        const cur = openMap[side];
+        dock.classList.toggle('open', cur !== null);
+        dock.querySelectorAll('.rp-section').forEach(el => {
+            el.classList.toggle('active', el.id === side + '-sec-' + cur);
         });
-        document.querySelectorAll('.rail-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.rp === openSection);
+        dock.querySelectorAll('.rail-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.rp === cur);
         });
-        if (openSection) {
-            const t = document.getElementById('rp-title');
-            if (t) t.textContent = TITLES[openSection] || '';
+        if (cur) {
+            const t = dock.querySelector('.dock-title');
+            if (t) t.textContent = TITLES[cur] || '';
         }
     }
-    window.rpToggle = function (section) {
-        openSection = (openSection === section) ? null : section;
-        apply();
+    window.dockToggle = function (side, section) {
+        openMap[side] = (openMap[side] === section) ? null : section;
+        apply(side);
     };
-    window.rpClose = function () { openSection = null; apply(); };
+    window.dockClose = function (side) { openMap[side] = null; apply(side); };
 })();
 (function () {
     const token = localStorage.getItem('arrow_token');
