@@ -553,6 +553,7 @@ async def _ingest_chat(m: dict) -> None:
             message_type=mtype,
             receiver_id=receiver_id,
             classification=jdss_inbound(m.get("classification")),
+            source="JDSS",
         )
         db.add(msg)
         db.commit()

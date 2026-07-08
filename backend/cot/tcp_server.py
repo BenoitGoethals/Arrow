@@ -557,6 +557,7 @@ async def _handle_geochat(chat: dict) -> None:
             message_type=mtype,
             receiver_id=receiver_id,
             chatroom_id=chatroom_id,
+            source="ATAK",
         )
         db.add(msg)
         db.commit()

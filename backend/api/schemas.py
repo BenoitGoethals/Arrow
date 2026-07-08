@@ -247,6 +247,7 @@ class MessageOut(ORMModel):
     photo_id: int | None
     photo_mime_type: str | None = None
     classification: int = 0
+    source: str = "ARROW"
 
 
 class PositionIn(BaseModel):

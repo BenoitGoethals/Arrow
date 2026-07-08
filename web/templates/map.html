@@ -5573,10 +5573,14 @@
         if (state.me && d.sender_id === state.me.id) return;
         const type = (d.message_type || 'DIRECT').toUpperCase();
         const tag  = type === 'BROADCAST' ? '📢' : type === 'ROOM' ? '#' : '✉';
+        const src = (d.source || 'ARROW').toUpperCase();
+        const srcLbl = src === 'ATAK' ? 'TAK' : src;
         const from = d.sender_callsign || ('#' + d.sender_id);
         const body = d.content || (d.photo_id ? '📷 photo' : '');
-        const colour = type === 'BROADCAST' ? '#60a5fa' : '#34d399';
-        toast(`${tag} ${from}: ${body}`.slice(0, 160), colour);
+        const colour = src === 'JDSS' ? '#fcd34d'
+            : src === 'ATAK' ? '#7dd3fc'
+            : (type === 'BROADCAST' ? '#60a5fa' : '#34d399');
+        toast(`${tag} [${srcLbl}] ${from}: ${body}`.slice(0, 170), colour);
     }
 
     // ── LOGREP notification toast ─────────────────────────────────────────────

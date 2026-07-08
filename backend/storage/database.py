@@ -10,7 +10,9 @@ from backend.config.xml_config import load_config
 _cfg = load_config()
 engine = create_engine(
     _cfg.database.url,
-    connect_args={"check_same_thread": False} if _cfg.database.url.startswith("sqlite") else {},
+    connect_args=(
+        {"check_same_thread": False} if _cfg.database.url.startswith("sqlite") else {}
+    ),
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
@@ -261,6 +263,7 @@ def _migrate() -> None:
         "ALTER TABLE reports ADD COLUMN classification INTEGER DEFAULT 0",
         "ALTER TABLE fire_missions ADD COLUMN classification INTEGER DEFAULT 0",
         "ALTER TABLE messages ADD COLUMN classification INTEGER DEFAULT 0",
+        "ALTER TABLE messages ADD COLUMN source VARCHAR(12) DEFAULT 'ARROW'",
         "ALTER TABLE chatrooms ADD COLUMN classification INTEGER DEFAULT 0",
         "ALTER TABLE vehicles ADD COLUMN classification INTEGER DEFAULT 0",
         "ALTER TABLE cot_tracks ADD COLUMN classification INTEGER DEFAULT 0",

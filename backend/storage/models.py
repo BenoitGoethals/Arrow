@@ -411,6 +411,8 @@ class Message(Base):
         ForeignKey("chatrooms.id"), nullable=True
     )
     classification: Mapped[int] = mapped_column(Integer, default=0)
+    #: origin system — "ARROW" (native), "JDSS" (coalition gateway), "ATAK" (TAK/CoT).
+    source: Mapped[str] = mapped_column(String(12), default="ARROW")
 
 
 class ChatRoom(Base):

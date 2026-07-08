@@ -157,6 +157,7 @@ def test_ingest_chat_broadcasts_message(client, monkeypatch):
         m = db.query(Message).filter(Message.content == "contact front").first()
         assert m is not None
         assert m.message_type == "BROADCAST"
+        assert m.source == "JDSS"  # persisted origin marker survives reload
 
 
 def test_ingest_casevac_creates_report_and_alert(client, monkeypatch):

@@ -26,6 +26,10 @@
     .chat-log { overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.4rem; }
     .bubble { max-width: 70%; padding: 0.5rem 0.75rem; border-radius: 12px; line-height: 1.35; word-wrap: break-word; }
     .bubble .from { font-size: 0.7rem; color: #94a3b8; margin-bottom: 2px; }
+    .src-badge { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.05em; padding: 0 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+    .src-badge.src-arrow { background: #14532d; color: #86efac; }
+    .src-badge.src-jdss  { background: #78350f; color: #fcd34d; }
+    .src-badge.src-tak   { background: #0c4a6e; color: #7dd3fc; }
     .row.mine { align-self: flex-end; }
     .row.mine .bubble { background: #065f46; color: #ecfdf5; }
     .row.other { align-self: flex-start; }
@@ -254,7 +258,7 @@
             const photoHtml = mediaHtml;
             return `<div class="row ${mine ? 'mine' : 'other'}">
                 <div class="bubble ${cls}">
-                    <div class="from">${escapeHtml(sender)} · ${m.message_type}${roomName ? ' / # ' + escapeHtml(roomName) : ''}
+                    <div class="from">${escapeHtml(sender)} · ${m.message_type}${roomName ? ' / # ' + escapeHtml(roomName) : ''}${srcBadge(m)}
                         <button class="msg-fwd" onclick="msgForward(${m.id})"
                                 title="Forward this message"
                                 style="background:none;border:0;color:#94a3b8;cursor:pointer;
@@ -266,6 +270,14 @@
             </div>`;
         }).join('') || '<small style="color:#94a3b8;align-self:center">no messages in this channel yet</small>';
         log.scrollTop = log.scrollHeight;
+    }
+
+    // Origin marker on every chat/room message: ARROW (native), JDSS, or TAK.
+    function srcBadge(m) {
+        const s = (m.source || 'ARROW').toUpperCase();
+        const label = s === 'ATAK' ? 'TAK' : s;
+        const cls = s === 'JDSS' ? 'src-jdss' : (s === 'ATAK' || s === 'TAK') ? 'src-tak' : 'src-arrow';
+        return `<span class="src-badge ${cls}">${label}</span>`;
     }
 
     function escapeHtml(s) {
