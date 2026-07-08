@@ -2,6 +2,10 @@
 {% block title %}Messaging — Arrow{% endblock %}
 {% block head %}
 <style>
+    /* The full-page grid is exactly 100vh − nav, so there's no scroll room for the
+       sticky classification banner — it drops into the middle of the window as a stray
+       coloured line. The nav badge already carries the marking, so hide it here. */
+    #class-banner { display: none !important; }
     .chat-shell { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 60px); }
     .recipients { background: #161b25; border-right: 1px solid #2a3142; overflow-y: auto; padding: 0.5rem; }
     .recipients h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; color: #94a3b8; margin: 0.5rem 0.25rem; }
@@ -59,7 +63,13 @@
         </h3>
         <div id="rooms-list"><small style="color:#94a3b8">none</small></div>
         <h3>Direct</h3>
-        <div id="operators-list">Loading…</div>
+        <select id="direct-picker"
+                style="box-sizing:border-box;width:100%;background:#0e1217;color:#e6e6e6;
+                       border:1px solid #2a3142;border-radius:6px;padding:0.4rem 0.5rem;
+                       font:inherit;font-size:0.82rem;margin-bottom:0.5rem;cursor:pointer">
+            <option value="">＋ Message an operator…</option>
+        </select>
+        <div id="operators-list"></div>
     </aside>
     <section class="chat-pane">
         <header class="chat-header">
@@ -126,6 +136,36 @@
         }
     }
 
+    // Operator ids I have an actual DIRECT thread with (either direction).
+    function directThreadOpIds() {
+        const meId = state.me?.id;
+        const ids = new Set();
+        for (const m of state.messages) {
+            if (m.message_type !== 'DIRECT') continue;
+            if (m.sender_id === meId && m.receiver_id != null) ids.add(m.receiver_id);
+            else if (m.receiver_id === meId && m.sender_id != null) ids.add(m.sender_id);
+        }
+        return ids;
+    }
+
+    // The picker lists every operator so a new direct thread can be started.
+    // Rebuild only when the roster changes, so a 5 s refresh never collapses an
+    // open dropdown mid-selection.
+    let _pickerSig = '';
+    function renderDirectPicker() {
+        const sel = document.getElementById('direct-picker');
+        if (!sel) return;
+        const meId = state.me?.id;
+        const ops = state.operators
+            .filter(o => o.id !== meId)
+            .sort((a, b) => a.callsign.localeCompare(b.callsign));
+        const sig = ops.map(o => o.id + ':' + o.callsign).join('|');
+        if (sig === _pickerSig) return;
+        _pickerSig = sig;
+        sel.innerHTML = '<option value="">＋ Message an operator…</option>' +
+            ops.map(o => `<option value="${o.id}">${escapeHtml(o.callsign)} · ${escapeHtml(o.rank || o.role || '')}</option>`).join('');
+    }
+
     function renderRecipients() {
         // Chat rooms
         const rl = document.getElementById('rooms-list');
@@ -138,15 +178,24 @@
                 </span>
             </div>`).join('') : '<small style="color:#94a3b8">none</small>';
 
-        // Direct operators
+        // Direct operators — only those with an existing thread (+ the one currently
+        // open). Everyone else is reachable via the picker dropdown above.
+        const meId = state.me?.id;
+        const threadIds = directThreadOpIds();
+        if (state.recipient.kind === 'direct') threadIds.add(state.recipient.op.id);
+        const threadOps = state.operators
+            .filter(o => o.id !== meId && threadIds.has(o.id))
+            .sort((a, b) => a.callsign.localeCompare(b.callsign));
         const list = document.getElementById('operators-list');
-        list.innerHTML = state.operators.length ? state.operators
-            .filter(o => state.me ? o.id !== state.me.id : true)
+        list.innerHTML = threadOps.length ? threadOps
             .map(o => `<div class="item" data-recipient="direct:${o.id}">
                 <span class="dot ${o.status === 'ONLINE' ? 'online' : 'offline'}"></span>
                 <span>${escapeHtml(o.callsign)}</span>
                 <span class="meta">${o.rank} ${badgesFor(o)}</span>
-            </div>`).join('') : '<small style="color:#94a3b8">no operators</small>';
+            </div>`).join('')
+            : '<small style="color:#94a3b8">no direct messages yet — pick an operator above</small>';
+
+        renderDirectPicker();
 
         // Highlight + wire clicks
         document.querySelectorAll('.recipients .item').forEach(el => {
@@ -314,6 +363,17 @@
     };
 
     document.getElementById('new-room-btn').addEventListener('click', createRoom);
+
+    // Picking an operator from the dropdown opens (or starts) that direct thread.
+    document.getElementById('direct-picker').addEventListener('change', (e) => {
+        const id = e.target.value;
+        e.target.value = '';
+        if (!id) return;
+        setRecipientFromTag('direct:' + id);
+        document.getElementById('chat-title').textContent = recipientTitle(state.recipient);
+        renderRecipients();
+        renderMessages();
+    });
 
     // ── Photo attachment ──────────────────────────────────────────────────────
     let pendingPhotoId = null;

@@ -5567,6 +5567,18 @@
         setTimeout(() => { card.style.opacity = '0'; setTimeout(() => card.remove(), 450); }, 3500);
     }
 
+    // Incoming chat/broadcast → transient toast on the map (skip my own messages).
+    function _chatToast(msg) {
+        const d = msg.data || {};
+        if (state.me && d.sender_id === state.me.id) return;
+        const type = (d.message_type || 'DIRECT').toUpperCase();
+        const tag  = type === 'BROADCAST' ? '📢' : type === 'ROOM' ? '#' : '✉';
+        const from = d.sender_callsign || ('#' + d.sender_id);
+        const body = d.content || (d.photo_id ? '📷 photo' : '');
+        const colour = type === 'BROADCAST' ? '#60a5fa' : '#34d399';
+        toast(`${tag} ${from}: ${body}`.slice(0, 160), colour);
+    }
+
     // ── LOGREP notification toast ─────────────────────────────────────────────
     function showLogrepToast(msg, color) {
         color = color || '#0ea5e9';
@@ -5777,6 +5789,7 @@
                 refreshVehicles();
             } else if (msg.channel === 'chat') {
                 loadMapMessages();
+                _chatToast(msg);
             } else if (msg.channel === 'report') {
                 loadMapReports();
                 loadCbrnReports();

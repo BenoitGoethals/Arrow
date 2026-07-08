@@ -795,8 +795,10 @@
         if (meId && data.sender_id === meId) return;
         // Admin can mute chat toasts globally via the Map visibility page.
         if (!notifVis.notif_chat) return;
-        // Suppress in-page toast when already viewing messaging and tab is focused
-        if (location.pathname.startsWith('/messaging') && document.visibilityState === 'visible') return;
+        // Suppress the base corner toast when the current page shows its own chat toast
+        // (messaging pane; map has its own map-native toast) and the tab is focused.
+        if ((location.pathname.startsWith('/messaging') || location.pathname.startsWith('/map'))
+                && document.visibilityState === 'visible') return;
 
         const from     = evt.from || 'Unknown';
         const content  = data.content || '';
