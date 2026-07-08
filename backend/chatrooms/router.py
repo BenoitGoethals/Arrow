@@ -8,6 +8,7 @@ ROOM messages to it (see backend.messaging.router).
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import and_, false, or_
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import ChatRoomIn, ChatRoomMemberIn, ChatRoomOut
@@ -120,23 +121,35 @@ def list_rooms(
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
 ) -> list[dict]:
-    """Rooms the caller belongs to (ADMIN / BATTLE_CAPTAIN see all rooms)."""
+    """Rooms visible to the caller.
+
+    ADMIN / BATTLE_CAPTAIN see every room. Everyone else sees rooms they belong
+    to, plus **bridged rooms** (ATAK / JDSS origin) which are visible mission-wide:
+    to every operator in the room's mission (or global rooms), capped by clearance.
+    """
     if current.role in _MGR_ROLES:
         rooms = db.query(ChatRoom).order_by(ChatRoom.name).all()
     else:
-        ids = [
+        member_ids = [
             m.chatroom_id
             for m in db.query(ChatRoomMember)
             .filter(ChatRoomMember.operator_id == current.id)
             .all()
         ]
+        member_cond = ChatRoom.id.in_(member_ids) if member_ids else false()
+        bridged_cond = and_(
+            ChatRoom.origin != "ARROW",
+            ChatRoom.classification <= current.clearance,
+            or_(
+                ChatRoom.mission_id.is_(None),
+                ChatRoom.mission_id == current.mission_id,
+            ),
+        )
         rooms = (
             db.query(ChatRoom)
-            .filter(ChatRoom.id.in_(ids))
+            .filter(or_(member_cond, bridged_cond))
             .order_by(ChatRoom.name)
             .all()
-            if ids
-            else []
         )
     return [room_out(db, r) for r in rooms]
 
