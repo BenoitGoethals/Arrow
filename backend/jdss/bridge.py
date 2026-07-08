@@ -400,7 +400,11 @@ async def _ingest_message(obj: dict) -> None:
         await _ingest_chat(m)
     elif mtype == "CasevacRequest":
         await _ingest_casevac(m)
-    else:  # Sketch, Overlay — logged only in v1
+    elif mtype == "Sketch":
+        await _ingest_sketch(m)
+    elif mtype == "Overlay":
+        await _ingest_overlay(m)
+    else:
         log.info("JDSS %s from %s (not mapped)", mtype, m["originator_id"])
 
 
@@ -648,6 +652,120 @@ async def _ingest_casevac(m: dict) -> None:
         lon,
         rep_id,
         al_id,
+    )
+
+
+async def _upsert_shape(
+    *,
+    uid: str,
+    cot_type: str,
+    shape_type: str,
+    title: str,
+    callsign: str,
+    geometry: dict,
+    classification: int,
+) -> None:
+    """Upsert a JDSS-sourced drawing as an AtakShape and broadcast it.
+
+    Reuses the existing ``atak-shape`` channel + ``AtakShape`` table so the web map
+    renders JDSS Sketch/Overlay graphics through the same path as ATAK CoT drawings.
+    """
+    import backend.storage.database as _db
+    from backend.api.schemas import AtakShapeOut
+    from backend.storage.models import AtakShape
+
+    with _db.SessionLocal() as db:
+        obj = db.query(AtakShape).filter(AtakShape.uid == uid).first()
+        if obj is None:
+            obj = AtakShape(uid=uid)
+            db.add(obj)
+        obj.cot_type = cot_type
+        obj.shape_type = shape_type
+        obj.title = title
+        obj.callsign = callsign
+        obj.geometry_json = json.dumps(geometry)
+        obj.classification = classification
+        obj.last_seen = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(obj)
+        data = AtakShapeOut.model_validate(obj).model_dump(mode="json")
+
+    await broadcaster.broadcast(
+        {"channel": "atak-shape", "event": "upsert", "data": data}
+    )
+
+
+async def _ingest_sketch(m: dict) -> None:
+    """JDSS Sketch → freehand polyline AtakShape (GeoJSON LineString)."""
+    from backend.classification import jdss_inbound
+
+    body = m["body"]
+    coords: list[list[float]] = []
+    for p in body.get("points") or []:
+        loc = p.get("location") or {}
+        if loc.get("lat") is not None and loc.get("lon") is not None:
+            coords.append([loc["lon"], loc["lat"]])
+    if len(coords) < 2:
+        log.debug("JDSS sketch dropped: fewer than 2 located points")
+        return
+
+    await _upsert_shape(
+        uid=f"jdss-sketch:{m['message_id']}",
+        cot_type="u-d-f",
+        shape_type="LINE",
+        title=body.get("title") or "sketch",
+        callsign=m["originator_id"],
+        geometry={"type": "LineString", "coordinates": coords},
+        classification=jdss_inbound(m.get("classification")),
+    )
+    log.info(
+        "JDSS sketch '%s' (%d pts) from %s",
+        body.get("title"),
+        len(coords),
+        m["originator_id"],
+    )
+
+
+async def _ingest_overlay(m: dict) -> None:
+    """JDSS Overlay → per-point SIDC symbols (custom ``SymbolSet`` geometry).
+
+    Each ``OverlayGraphic`` keeps its own SIDC + label; the web map renders one
+    milsymbol marker per point (see ``_renderAtakShape`` in ``map.html``).
+    """
+    from backend.classification import jdss_inbound
+
+    body = m["body"]
+    points: list[dict] = []
+    for g in body.get("graphics") or []:
+        loc = g.get("location") or {}
+        if loc.get("lat") is None or loc.get("lon") is None:
+            continue
+        points.append(
+            {
+                "lat": loc["lat"],
+                "lon": loc["lon"],
+                "sidc": g.get("sidc") or "",
+                "label": g.get("label") or "",
+            }
+        )
+    if not points:
+        log.debug("JDSS overlay dropped: no located graphics")
+        return
+
+    await _upsert_shape(
+        uid=f"jdss-overlay:{m['message_id']}",
+        cot_type="u-d-*",
+        shape_type="GRAPHICS",
+        title=body.get("name") or "overlay",
+        callsign=m["originator_id"],
+        geometry={"type": "SymbolSet", "points": points},
+        classification=jdss_inbound(m.get("classification")),
+    )
+    log.info(
+        "JDSS overlay '%s' (%d graphics) from %s",
+        body.get("name"),
+        len(points),
+        m["originator_id"],
     )
 
 

@@ -16,7 +16,14 @@ import pytest
 
 import backend.storage.database as _db
 from backend.jdss import bridge
-from backend.storage.models import Alert, CotTrack, Message, Report, TacticalObject
+from backend.storage.models import (
+    Alert,
+    AtakShape,
+    CotTrack,
+    Message,
+    Report,
+    TacticalObject,
+)
 from backend.websocket.manager import broadcaster
 from tests.conftest import auth
 
@@ -174,6 +181,117 @@ def test_ingest_casevac_creates_report_and_alert(client, monkeypatch):
     with _db.SessionLocal() as db:
         assert db.query(Report).filter(Report.type == "CASEVAC").first() is not None
         assert db.query(Alert).filter(Alert.type == "MEDEVAC").first() is not None
+
+
+def test_ingest_sketch_creates_line_shape(client, monkeypatch):
+    events = _capture(monkeypatch)
+    evt = {
+        "direction": "in",
+        "type": "Sketch",
+        "originator_id": "ENGR-1",
+        "message_id": "sk1",
+        "classification": 0,
+        "body": {
+            "type": "Sketch",
+            "title": "obstacle belt",
+            "points": [
+                {"location": {"lat": 50.1, "lon": 4.1}, "label": "a"},
+                {"location": {"lat": 50.2, "lon": 4.2}, "label": "b"},
+                {"location": {"lat": 50.3, "lon": 4.3}, "label": "c"},
+            ],
+        },
+    }
+    asyncio.run(bridge._handle_event(evt))
+
+    shape_events = [e for e in events if e["channel"] == "atak-shape"]
+    assert shape_events and shape_events[0]["event"] == "upsert"
+    with _db.SessionLocal() as db:
+        s = db.query(AtakShape).filter(AtakShape.uid == "jdss-sketch:sk1").first()
+        assert s is not None
+        assert s.shape_type == "LINE"
+        assert s.title == "obstacle belt"
+        geo = json.loads(s.geometry_json)
+        assert geo["type"] == "LineString"
+        assert geo["coordinates"][0] == [4.1, 50.1]  # [lon, lat]
+        assert len(geo["coordinates"]) == 3
+
+
+def test_ingest_sketch_dropped_when_too_few_points(client, monkeypatch):
+    events = _capture(monkeypatch)
+    evt = {
+        "direction": "in",
+        "type": "Sketch",
+        "originator_id": "ENGR-1",
+        "message_id": "sk2",
+        "body": {"type": "Sketch", "points": [{"location": {"lat": 1.0, "lon": 2.0}}]},
+    }
+    asyncio.run(bridge._handle_event(evt))
+    assert not [e for e in events if e["channel"] == "atak-shape"]
+    with _db.SessionLocal() as db:
+        assert (
+            db.query(AtakShape).filter(AtakShape.uid == "jdss-sketch:sk2").first()
+            is None
+        )
+
+
+def test_ingest_overlay_creates_symbolset(client, monkeypatch):
+    events = _capture(monkeypatch)
+    evt = {
+        "direction": "in",
+        "type": "Overlay",
+        "originator_id": "S3",
+        "message_id": "ov1",
+        "classification": 0,
+        "body": {
+            "type": "Overlay",
+            "name": "control measures",
+            "graphics": [
+                {
+                    "sidc": "GFGPGLB-------X",
+                    "location": {"lat": 50.0, "lon": 4.0},
+                    "label": "PL RED",
+                },
+                {
+                    "sidc": "GFGPGLP-------X",
+                    "location": {"lat": 50.5, "lon": 4.5},
+                    "label": "CP 1",
+                },
+            ],
+        },
+    }
+    asyncio.run(bridge._handle_event(evt))
+
+    shape_events = [e for e in events if e["channel"] == "atak-shape"]
+    assert shape_events
+    with _db.SessionLocal() as db:
+        s = db.query(AtakShape).filter(AtakShape.uid == "jdss-overlay:ov1").first()
+        assert s is not None
+        assert s.shape_type == "GRAPHICS"
+        assert s.title == "control measures"
+        geo = json.loads(s.geometry_json)
+        assert geo["type"] == "SymbolSet"
+        assert len(geo["points"]) == 2
+        assert geo["points"][0]["sidc"] == "GFGPGLB-------X"
+        assert geo["points"][0]["label"] == "PL RED"
+        assert geo["points"][0]["lat"] == 50.0 and geo["points"][0]["lon"] == 4.0
+
+
+def test_ingest_overlay_dropped_when_no_located_graphics(client, monkeypatch):
+    events = _capture(monkeypatch)
+    evt = {
+        "direction": "in",
+        "type": "Overlay",
+        "originator_id": "S3",
+        "message_id": "ov2",
+        "body": {"type": "Overlay", "name": "empty", "graphics": [{"sidc": "X"}]},
+    }
+    asyncio.run(bridge._handle_event(evt))
+    assert not [e for e in events if e["channel"] == "atak-shape"]
+    with _db.SessionLocal() as db:
+        assert (
+            db.query(AtakShape).filter(AtakShape.uid == "jdss-overlay:ov2").first()
+            is None
+        )
 
 
 def test_received_direction_is_ingested(client, monkeypatch):

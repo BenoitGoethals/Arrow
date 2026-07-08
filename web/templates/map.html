@@ -200,6 +200,7 @@
     .atak-shape-line  { stroke: #f59e0b; stroke-width: 2.5; fill: none; }
     .atak-shape-route { stroke: #60a5fa; stroke-width: 2.5; fill: none; }
     .atak-shape-area  { stroke: #a78bfa; stroke-width: 2; fill: rgba(167,139,250,.15); }
+    .jdss-overlay-icon { background: none; border: 0; }
     .overlay-btn.active { background: #1e3a2f; color: #34d399; border-color: #34d399; }
     .sb-section > summary { list-style: none; cursor: pointer; user-select: none;
                             display: flex; align-items: center; gap: 6px; }
@@ -4450,9 +4451,25 @@
             layer = L.polyline(geo.coordinates.map(c => [c[1],c[0]]), opts);
         } else if (geo.type === 'Polygon') {
             layer = L.polygon(geo.coordinates[0].map(c => [c[1],c[0]]), opts);
+        } else if (geo.type === 'SymbolSet') {
+            // JDSS Overlay: one milsymbol marker per SIDC-tagged graphic.
+            const grp = L.featureGroup();
+            (geo.points || []).forEach(pt => {
+                if (pt.lat == null || pt.lon == null) return;
+                const sidc = (pt.sidc && pt.sidc.length >= 10) ? pt.sidc : 'SUGP-----------';
+                const sym = msSvg(sidc, 28);
+                const mk = L.marker([pt.lat, pt.lon], {
+                    icon: L.divIcon({ className: 'jdss-overlay-icon', html: sym.svg,
+                                      iconSize: [sym.w, sym.h], iconAnchor: [sym.ax, sym.ay] })
+                });
+                if (pt.label) mk.bindTooltip(escHtml(pt.label), {direction:'top'});
+                mk.addTo(grp);
+            });
+            if (!grp.getLayers().length) return;
+            layer = grp;
         } else { return; }
 
-        const icon = isRoute ? '🗺' : isArea ? '⬡' : '✏';
+        const icon = geo.type === 'SymbolSet' ? '⬡' : isRoute ? '🗺' : isArea ? '⬡' : '✏';
         layer.bindTooltip(`${icon} ${escHtml(s.title || s.callsign)}`, {sticky:true, className:'leaflet-tooltip'});
         layer.bindPopup(
             `<b>${escHtml(s.title || s.uid)}</b><br/>` +
