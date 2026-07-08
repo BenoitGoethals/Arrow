@@ -173,6 +173,7 @@ private fun MessageDto.toEntity() = CachedMessageEntity(
     receiverId = receiverId,
     groupId = groupId,
     syncStatus = "synced",
+    source = source,
 )
 
 private fun ReportDto.toEntity() = CachedReportEntity(

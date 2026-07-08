@@ -170,6 +170,8 @@ data class MessageDto(
     @SerialName("photo_mime_type") val photoMimeType: String? = null,
     @SerialName("sender_callsign") val senderCallsign: String? = null,
     val classification: Int = 0,
+    // Origin system: "ARROW" (native), "JDSS" (coalition gateway), "ATAK" (TAK/CoT).
+    val source: String = "ARROW",
 )
 
 @Serializable

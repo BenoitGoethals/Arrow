@@ -175,7 +175,7 @@
         const rl = document.getElementById('rooms-list');
         rl.innerHTML = state.rooms.length ? state.rooms.map(r => `
             <div class="item" data-recipient="room:${r.id}">
-                <span># ${escapeHtml(r.name)}</span>
+                <span># ${escapeHtml(r.name)}${roomBadge(r.origin)}</span>
                 <span class="meta">${r.member_ids?.length || 0}
                     <button class="room-cog" data-room="${r.id}" title="Manage members"
                         style="background:none;border:0;color:#94a3b8;cursor:pointer;font-size:0.9rem;padding:0 2px">⚙</button>
@@ -278,6 +278,17 @@
         const label = s === 'ATAK' ? 'TAK' : s;
         const cls = s === 'JDSS' ? 'src-jdss' : (s === 'ATAK' || s === 'TAK') ? 'src-tak' : 'src-arrow';
         return `<span class="src-badge ${cls}">${label}</span>`;
+    }
+
+    // Chat rooms are ARROW (native) or ATAK-imported. Mark only non-native rooms so
+    // the compact room list/picker stays clean; a coloured badge in the list, a short
+    // text tag in the native <select> (which can't hold HTML).
+    function roomBadge(origin) {
+        return (origin || 'ARROW').toUpperCase() === 'ATAK'
+            ? '<span class="src-badge src-tak">TAK</span>' : '';
+    }
+    function roomTag(origin) {
+        return (origin || 'ARROW').toUpperCase() === 'ATAK' ? '  · TAK' : '';
     }
 
     function escapeHtml(s) {
@@ -505,7 +516,7 @@
                                        margin-bottom:0.6rem">
                 <option value="">— select recipient —</option>
                 <option value="broadcast">📢 Broadcast (everyone)</option>
-                ${state.rooms.map(r => `<option value="room:${r.id}"># ${escapeHtml(r.name)}</option>`).join('')}
+                ${state.rooms.map(r => `<option value="room:${r.id}"># ${escapeHtml(r.name)}${roomTag(r.origin)}</option>`).join('')}
                 <option disabled>──────────</option>
                 ${opts}
             </select>

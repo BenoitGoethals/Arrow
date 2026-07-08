@@ -40,6 +40,7 @@ import com.arrow.tactical.network.MessageDto
 import com.arrow.tactical.network.OperatorDto
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.jsonPrimitive
 
 private sealed class Recipient(val label: String) {
     data object Broadcast : Recipient("📢 Broadcast (everyone)")
@@ -122,6 +123,25 @@ fun MessagingScreen(container: AppContainer) {
         while (true) { refreshMessages(); refreshRooms(); delay(4_000) }
     }
 
+    // Real-time reception, matching the web client: JDSS/ATAK-bridged chat and
+    // chatroom lifecycle events both arrive on the `chat` WS channel, so refresh
+    // messages + rooms the instant one lands (the poll above is the fallback).
+    LaunchedEffect(Unit) {
+        while (true) {
+            try {
+                container.wsClient.events().collect { event ->
+                    if (event["channel"]?.jsonPrimitive?.content == "chat") {
+                        refreshMessages()
+                        refreshRooms()
+                    }
+                }
+            } catch (_: Exception) {
+                // Socket dropped — back off, then the 4 s poll covers the gap.
+            }
+            delay(3_000)
+        }
+    }
+
     val baseUrl = remember { mutableStateOf("") }
     LaunchedEffect(Unit) { baseUrl.value = container.settingsRepository.currentServerUrl() }
 
@@ -174,7 +194,16 @@ fun MessagingScreen(container: AppContainer) {
                             )
                             rooms.forEach { room ->
                                 DropdownMenuItem(
-                                    text = { Text("# ${room.name}  (${room.memberIds.size})") },
+                                    text = {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            Text("# ${room.name}  (${room.memberIds.size})")
+                                            // Mark ATAK-imported rooms; native rooms stay unmarked.
+                                            if (room.origin.uppercase() == "ATAK") SourceBadge(room.origin)
+                                        }
+                                    },
                                     onClick = { recipient = Recipient.Room(room); menuOpen = false },
                                 )
                             }
@@ -306,6 +335,27 @@ fun MessagingScreen(container: AppContainer) {
     }
 }
 
+// Origin marker on each message: ARROW (native) / JDSS (coalition) / TAK (ATAK CoT).
+@Composable
+private fun SourceBadge(source: String) {
+    val s = source.uppercase()
+    val label = if (s == "ATAK") "TAK" else s
+    val color = when (s) {
+        "JDSS" -> Color(0xFF78350F)
+        "ATAK" -> Color(0xFF0C4A6E)
+        else   -> Color(0xFF14532D)
+    }
+    Surface(color = color, shape = MaterialTheme.shapes.small) {
+        Text(
+            text       = label,
+            style      = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color      = Color.White,
+            modifier   = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+        )
+    }
+}
+
 @Composable
 private fun MessageBubble(
     message: MessageDto,
@@ -332,12 +382,18 @@ private fun MessageBubble(
             "ROOM"      -> "ROOM"
             else        -> "DIRECT"
         }
-        Text(
-            text  = "from #${message.senderId} · $tag",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(horizontal = 8.dp),
-        )
+        ) {
+            Text(
+                text  = "from #${message.senderId} · $tag",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SourceBadge(message.source)
+        }
         Box(
             modifier = Modifier
                 .padding(top = 2.dp)

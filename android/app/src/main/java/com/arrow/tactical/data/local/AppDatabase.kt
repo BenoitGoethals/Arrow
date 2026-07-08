@@ -29,7 +29,8 @@ import com.arrow.tactical.data.local.entity.PendingActionEntity
         CachedTacticalObjectEntity::class,
         CachedStrikePackageEntity::class,
     ],
-    version = 3,
+    // v4: CachedMessageEntity.source (message origin marker ARROW/JDSS/ATAK).
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

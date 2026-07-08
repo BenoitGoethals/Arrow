@@ -126,10 +126,12 @@ class MessageRepository(
 private fun CachedMessageEntity.toDto() = MessageDto(
     id = id.toInt(), senderId = -1, receiverId = receiverId,
     groupId = groupId, content = content, messageType = messageType,
+    source = source,
 )
 
 private fun MessageDto.toEntity() = CachedMessageEntity(
     id = id.toLong(), content = content,
     senderCallsign = senderId.toString(), messageType = messageType,
     receiverId = receiverId, groupId = groupId, syncStatus = "synced",
+    source = source,
 )

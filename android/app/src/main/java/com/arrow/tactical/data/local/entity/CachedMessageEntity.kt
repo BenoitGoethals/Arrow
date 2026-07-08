@@ -15,4 +15,6 @@ data class CachedMessageEntity(
     val createdAt: Long = System.currentTimeMillis(),
     /** "local" | "synced" | "pending" */
     val syncStatus: String = "local",
+    /** Origin system: "ARROW" (native), "JDSS" (coalition), "ATAK" (TAK/CoT). */
+    val source: String = "ARROW",
 )

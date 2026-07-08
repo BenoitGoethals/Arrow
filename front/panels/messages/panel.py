@@ -308,6 +308,18 @@ class MessagesPanel(QWidget):
             )
             scope_tag = f" [# {rname}]" if rname else " [ROOM]"
 
+        # Origin marker: ARROW (native) / JDSS (coalition) / TAK (ATAK CoT).
+        src = (data.get("source") or "ARROW").upper()
+        src_label = "TAK" if src == "ATAK" else src
+        src_fg, src_bg = {
+            "JDSS": ("#fcd34d", "#78350f"),
+            "ATAK": ("#7dd3fc", "#0c4a6e"),
+        }.get(src, ("#86efac", "#14532d"))
+        src_badge = (
+            f'<span style="color:{src_fg};background:{src_bg};font-size:10px;'
+            f'font-weight:bold;padding:0 4px;border-radius:3px;">{src_label}</span>&nbsp;'
+        )
+
         color_sender = "#388bfd" if is_mine else "#3fb950"
         align = "right" if is_mine else "left"
 
@@ -336,6 +348,7 @@ class MessagesPanel(QWidget):
         return (
             f'<div style="margin:3px 0;text-align:{align}">'
             f'<span style="color:#484f58;font-size:12px">{ts}{scope_tag}&nbsp;</span>'
+            f"{src_badge}"
             f'<b style="color:{color_sender}">{_esc(sender)}</b>'
             f'<br><span style="color:#c9d1d9;font-size:13px">'
             f"&nbsp;&nbsp;{_esc(content)}"
@@ -362,7 +375,9 @@ class MessagesPanel(QWidget):
         elif scope == SCOPE_ROOM:
             for r in self._rooms:
                 n = r.get("name", "?")
-                self._recipient_combo.addItem(f"# {n}", userData=r.get("id"))
+                # Mark ATAK-imported rooms; native (ARROW) rooms stay unmarked.
+                tag = " · TAK" if (r.get("origin") or "ARROW").upper() == "ATAK" else ""
+                self._recipient_combo.addItem(f"# {n}{tag}", userData=r.get("id"))
         self._recipient_combo.blockSignals(False)
 
     def _pick_attachment(self):
