@@ -5729,9 +5729,48 @@
         _refreshEnemiesTimer = setTimeout(refreshEnemies, 100);
     }
 
+    // High-frequency position updates are coalesced into a single render per
+    // animation frame. A burst of N updates (many operators moving at once) then
+    // costs one flush instead of N synchronous reflows + cluster/group rebuilds,
+    // which is what caused the map to stall under load (esp. on Windows/Chrome).
+    const _pendingOps = new Set();
+    let _posFlushScheduled = false;
+    function _flushPositions() {
+        _posFlushScheduled = false;
+        const ops = _pendingOps;
+        let groupsDirty = false;
+        ops.forEach(opId => {
+            const op = state.operators.get(opId);
+            if (op) placeOperator(op);
+            groupsDirty = true;
+            state.vehicles.forEach(v => {
+                if (v.operator_id === opId) placeVehicle(v);
+            });
+        });
+        _pendingOps.clear();
+        // refreshGroupMarkers() removes+re-adds every group marker, so run it at
+        // most once per frame regardless of how many operators moved.
+        if (groupsDirty && state.visibility.groups) refreshGroupMarkers();
+    }
+    function _queuePosition(opId) {
+        _pendingOps.add(opId);
+        if (_posFlushScheduled) return;
+        _posFlushScheduled = true;
+        requestAnimationFrame(_flushPositions);
+    }
+
+    let _wsBackoff = 1000;        // reconnect delay, grows on repeated failure
+    let _wsEverConnected = false; // distinguishes first connect from a reconnect
     function connectWS() {
         const wsUrl = window.ARROW_WS_URL.replace(/^http/, 'ws') + '/ws?token=' + encodeURIComponent(token);
         const ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+            _wsBackoff = 1000;  // healthy connection — reset the backoff
+            // Events broadcast while we were disconnected are gone; pull a fresh
+            // snapshot so the map isn't left stale after a reconnect.
+            if (_wsEverConnected) reloadAllMapData();
+            _wsEverConnected = true;
+        };
         ws.onmessage = (ev) => {
             const msg = JSON.parse(ev.data);
             if (msg.channel === 'tracking' && msg.event === 'position') {
@@ -5742,15 +5781,14 @@
                 op.latitude = d.latitude; op.longitude = d.longitude; op.online = true;
                 if (d.position_source) op.position_source = d.position_source;
                 state.operators.set(op.id, op);
-                placeOperator(op);
-                if (state.visibility.groups) refreshGroupMarkers();
-                // Vehicles assigned to this operator inherit its position.
+                // Vehicles assigned to this operator inherit its position (state
+                // updated now; the marker is drawn on the next frame flush).
                 state.vehicles.forEach(v => {
                     if (v.operator_id === d.operator_id) {
                         v.latitude = d.latitude; v.longitude = d.longitude; v.online = true;
-                        placeVehicle(v);
                     }
                 });
+                _queuePosition(op.id);
             } else if (msg.channel === 'cot-track' && msg.event === 'update') {
                 state.cotTracks.set(msg.data.id, msg.data);
                 placeCotTrack(msg.data);
@@ -5838,7 +5876,13 @@
             // there's no WS subscription here — the admin singleton on the
             // server is only consulted for first-time defaults.
         };
-        ws.onclose = () => setTimeout(connectWS, 3000);
+        ws.onclose = () => {
+            // Exponential backoff (1s → 30s cap) so a downed backend isn't
+            // hammered with a reconnect every 3s by every open map tab.
+            setTimeout(connectWS, _wsBackoff);
+            _wsBackoff = Math.min(_wsBackoff * 2, 30000);
+        };
+        ws.onerror = () => { try { ws.close(); } catch (_) {} };
     }
 
     // ── Mission map centre — fly to the selected mission's map centre ─────────
@@ -5867,14 +5911,25 @@
     flyToActiveMission();
 
     loadHierarchy(); loadEnemies(); loadCotTracks(); loadVehicles(); loadFmMarkers(); loadMapFireMissions(); loadMapReports(); loadCbrnReports(); loadMapAlerts(); loadMapMessages(); loadAtakClients(); loadAtakShapes();
-    setInterval(loadVehicles, 20000);
-    setInterval(loadFmMarkers, 20000);
-    setInterval(loadMapFireMissions, 15000);
-    setInterval(loadMapReports, 30000);
-    setInterval(loadCbrnReports, 30000);
-    setInterval(loadMapAlerts, 20000);
-    setInterval(loadMapMessages, 30000);
-    setInterval(loadHierarchy, 15000);  // refresh online flags
+    // Wrap a poller so an interval tick is skipped while its previous call is
+    // still in flight. Without this, a slow backend (see WS broadcast fix) lets
+    // requests pile up faster than they resolve and the UI freezes catching up.
+    function pollGuard(fn) {
+        let inFlight = false;
+        return async () => {
+            if (inFlight) return;
+            inFlight = true;
+            try { await fn(); } finally { inFlight = false; }
+        };
+    }
+    setInterval(pollGuard(loadVehicles), 20000);
+    setInterval(pollGuard(loadFmMarkers), 20000);
+    setInterval(pollGuard(loadMapFireMissions), 15000);
+    setInterval(pollGuard(loadMapReports), 30000);
+    setInterval(pollGuard(loadCbrnReports), 30000);
+    setInterval(pollGuard(loadMapAlerts), 20000);
+    setInterval(pollGuard(loadMapMessages), 30000);
+    setInterval(pollGuard(loadHierarchy), 15000);  // refresh online flags
     connectWS();
 
     // ── URL param auto-zoom (/map/?lat=X&lon=Y&zoom=16) ──────────────────

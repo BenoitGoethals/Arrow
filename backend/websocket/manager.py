@@ -9,6 +9,10 @@ from fastapi import WebSocket
 log = logging.getLogger("backend.websocket")
 _CONN = {"cat": "connections"}
 
+# Per-client send timeout. A slow or half-dead WebSocket is dropped rather than
+# allowed to stall the broadcast to every other operator (head-of-line blocking).
+_SEND_TIMEOUT = 5.0
+
 
 class ConnectionManager:
     """In-memory pub/sub for live tactical updates.
@@ -55,16 +59,27 @@ class ConnectionManager:
                 for ws, clearance in self._connections.items()
                 if clearance >= required
             ]
-        dead: list[WebSocket] = []
-        for ws in targets:
-            try:
-                await ws.send_json(message)
-            except Exception:
-                dead.append(ws)
+        if not targets:
+            return
+        # Send to every client concurrently with a per-client timeout so one slow
+        # or unresponsive socket can't delay delivery to the others. A send that
+        # errors or times out marks that client dead for cleanup.
+        results = await asyncio.gather(
+            *(self._send(ws, message) for ws in targets),
+            return_exceptions=True,
+        )
+        dead = [ws for ws, ok in zip(targets, results) if ok is not True]
         if dead:
             async with self._lock:
                 for ws in dead:
                     self._connections.pop(ws, None)
+
+    async def _send(self, ws: WebSocket, message: dict[str, Any]) -> bool:
+        try:
+            await asyncio.wait_for(ws.send_json(message), timeout=_SEND_TIMEOUT)
+            return True
+        except Exception:
+            return False
 
 
 broadcaster = ConnectionManager()

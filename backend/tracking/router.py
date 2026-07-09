@@ -19,7 +19,7 @@ async def update_position(
     payload: PositionIn,
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
-) -> Operator:
+) -> OperatorOut:
     current.latitude = payload.latitude
     current.longitude = payload.longitude
     current.altitude = payload.altitude
@@ -51,6 +51,14 @@ async def update_position(
         role=current.role,
     ).to_xml_str()
 
+    # Snapshot the response and hand the DB connection back to the pool *before*
+    # the fan-out awaits below. broadcast()/ATAK/JDSS can take a while under load
+    # (many WS clients, slow gateway); holding the session open across them ties
+    # up a pooled connection for no reason. current's scalar columns stay readable
+    # after close() since they're already loaded (refresh above).
+    result = OperatorOut.model_validate(current)
+    db.close()
+
     await broadcaster.broadcast(
         {
             "channel": "tracking",
@@ -80,7 +88,7 @@ async def update_position(
 
     await _jdss.publish_operator_presence(current)
 
-    return current
+    return result
 
 
 @router.get("/live", response_model=list[OperatorOut])
