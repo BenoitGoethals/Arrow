@@ -39,7 +39,7 @@ async def create_object(
     db: Session = Depends(get_db),
     current: Operator = Depends(get_current_operator),
     mission: Mission | None = Depends(get_active_mission),
-) -> TacticalObject:
+) -> TacticalObjectOut:
     from backend.classification import resolve_default_and_cap
 
     fields = payload.model_dump()
@@ -55,12 +55,20 @@ async def create_object(
     db.commit()
     db.refresh(obj)
 
+    # Snapshot the response and release the DB connection before the fan-out
+    # awaits (WS broadcast + ATAK + JDSS). obj's scalar columns stay readable
+    # after close() since refresh() loaded them; the photo bridge opens its own
+    # session. Avoids holding a pooled connection across slow downstream I/O.
+    result = TacticalObjectOut.model_validate(obj)
+    mission_id = mission.id if mission else None
+    db.close()
+
     await broadcaster.broadcast(
         {
             "channel": "tactical-object",
             "event": "created",
-            "mission_id": mission.id if mission else None,
-            "data": TacticalObjectOut.model_validate(obj).model_dump(mode="json"),
+            "mission_id": mission_id,
+            "data": result.model_dump(mode="json"),
         }
     )
 
@@ -80,7 +88,7 @@ async def create_object(
 
         await broadcast_photo_to_atak(obj, current)
 
-    return obj
+    return result
 
 
 @router.patch("/{object_id}", response_model=TacticalObjectOut)

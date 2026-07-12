@@ -16,7 +16,11 @@ _HEARTBEAT_INTERVAL = 60  # seconds — must be < the 90 s online window
 
 
 def _touch_operator(callsign: str, online: bool) -> None:
-    """Set status + last_seen (when online) for the operator in the DB."""
+    """Set status + last_seen (when online) for the operator in the DB.
+
+    Synchronous (blocking) DB work — always invoke via ``asyncio.to_thread`` from
+    the async endpoint so a slow query never stalls the WebSocket event loop.
+    """
     try:
         with SessionLocal() as db:
             op = db.query(Operator).filter(Operator.callsign.ilike(callsign)).first()
@@ -27,6 +31,18 @@ def _touch_operator(callsign: str, online: bool) -> None:
                 db.commit()
     except Exception:
         pass
+
+
+def _load_clearance(callsign: str) -> int:
+    """Blocking read of the operator's clearance; run via ``asyncio.to_thread``."""
+    try:
+        with SessionLocal() as db:
+            op = db.query(Operator).filter(Operator.callsign.ilike(callsign)).first()
+            if op:
+                return int(op.clearance)
+    except Exception:
+        pass
+    return 0
 
 
 @router.websocket("/ws")
@@ -41,17 +57,10 @@ async def websocket_endpoint(
         return
 
     callsign = payload.get("sub", "unknown")
-    _touch_operator(callsign, online=True)
+    await asyncio.to_thread(_touch_operator, callsign, True)
 
     # Load the operator's clearance so the broadcaster filters classified events.
-    clearance = 0
-    try:
-        with SessionLocal() as db:
-            op = db.query(Operator).filter(Operator.callsign.ilike(callsign)).first()
-            if op:
-                clearance = op.clearance
-    except Exception:
-        clearance = 0
+    clearance = await asyncio.to_thread(_load_clearance, callsign)
 
     await broadcaster.connect(websocket, clearance)
     await broadcaster.broadcast(
@@ -62,7 +71,7 @@ async def websocket_endpoint(
         """Refresh last_seen every 60 s so the 90 s online window stays open."""
         while True:
             await asyncio.sleep(_HEARTBEAT_INTERVAL)
-            _touch_operator(callsign, online=True)
+            await asyncio.to_thread(_touch_operator, callsign, True)
 
     hb_task = asyncio.create_task(_heartbeat())
     try:
@@ -80,7 +89,7 @@ async def websocket_endpoint(
         pass
     finally:
         hb_task.cancel()
-        _touch_operator(callsign, online=False)
+        await asyncio.to_thread(_touch_operator, callsign, False)
         await broadcaster.disconnect(websocket)
         await broadcaster.broadcast(
             {"channel": "presence", "event": "offline", "data": {"callsign": callsign}}
