@@ -51,6 +51,7 @@ class _DebugPage(QWebEnginePage):
 
 class MapView(QWebEngineView):
     file_dropped = pyqtSignal(str, float, float)  # file_path, lat, lon
+    grouping_state_loaded = pyqtSignal(bool)  # persisted grouping flag, after load
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -110,10 +111,19 @@ class MapView(QWebEngineView):
         # WebEngine frame.  self.update() is deliberately the only call here —
         # no JS — so it never interferes with tile loading.  Reactive JS repaints
         # (map.invalidateSize) are fired once by notify_menu_closed / contextMenuEvent.
-        self._repaint_guard = QTimer(self)
-        self._repaint_guard.setInterval(250)
-        self._repaint_guard.timeout.connect(self.update)
-        self._repaint_guard.start()
+        #
+        # macOS ONLY. This guards against the Qt6/macOS Metal compositor dropping
+        # the WebEngine framebuffer after DOM changes. On Windows/Linux there is
+        # no such compositor bug, and forcing a full-widget repaint 4×/second
+        # continuously fights Leaflet's GPU-composited zoom/pan animation — which
+        # showed up as the map stalling between zoom steps. So it is not installed
+        # off macOS.
+        self._repaint_guard: QTimer | None = None
+        if sys.platform == "darwin":
+            self._repaint_guard = QTimer(self)
+            self._repaint_guard.setInterval(250)
+            self._repaint_guard.timeout.connect(self.update)
+            self._repaint_guard.start()
 
         # Load the map via the local HTTP server (http://127.0.0.1:PORT/map)
         # instead of file:// — avoids the Qt6/macOS Metal compositor black-screen
@@ -210,6 +220,15 @@ class MapView(QWebEngineView):
             self._page.runJavaScript(
                 "typeof L !== 'undefined' ? 'Leaflet OK' : 'Leaflet MISSING'",
                 lambda r: print(f"[MapView] {r}", file=sys.stderr),
+            )
+            # Report the JS-persisted grouping flag so the Admin menu checkmark
+            # reflects the map's actual state (localStorage default is ON, so a
+            # missing/undefined result is treated as enabled).
+            self._page.runJavaScript(
+                "typeof isGroupingEnabled === 'function' ? isGroupingEnabled() : true",
+                lambda v: self.grouping_state_loaded.emit(
+                    True if v is None else bool(v)
+                ),
             )
             # Install drag-drop event filter on the viewport child widget
             vp = self.focusProxy() or self.viewport()
@@ -314,6 +333,10 @@ class MapView(QWebEngineView):
 
     def set_group_auto(self, auto: bool):
         self._js(f"setGroupAuto({json.dumps(auto)})")
+
+    def set_grouping_enabled(self, enabled: bool):
+        """Master on/off for mil-symbol grouping (Admin ▸ Group Mil Symbols)."""
+        self._js(f"setGroupingEnabled({json.dumps(bool(enabled))})")
 
     def fit_tracks(self):
         self._js("fitTracks()")
