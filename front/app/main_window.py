@@ -1665,7 +1665,11 @@ class MainWindow(QMainWindow):
 
     def _on_mode_from_toolbar(self, mode: str):
         """Route toolbar mode changes — handle measure modes separately."""
-        if mode == "measure_dist":
+        if mode == "pointer":
+            # Arrow/Select: fully exit any drawing/measuring tool so the radial
+            # menu works again (set_draw_mode alone wouldn't stop route/measure).
+            self._map.select_mode()
+        elif mode == "measure_dist":
             self._map._js("startMeasure('distance')")
         elif mode == "measure_az":
             self._map._js("startMeasure('azimuth')")

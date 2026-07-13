@@ -319,6 +319,11 @@ class MapView(QWebEngineView):
     def set_draw_mode(self, mode: str):
         self._js(f"setDrawMode({json.dumps(mode)})")
 
+    def select_mode(self):
+        """Exit any active drawing/measuring tool and return to select mode so
+        the right-click radial menu works again (toolbar ↖ SELECT button)."""
+        self._js("enterSelectMode()")
+
     def set_base_layer(self, name: str):
         self._js(f"setBaseLayer({json.dumps(name)})")
 

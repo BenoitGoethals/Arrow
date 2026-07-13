@@ -1573,6 +1573,24 @@ document.addEventListener('keydown',function(e){
   if(_fdTool !== 'none') { _fdStopAll(); drawMode='pointer'; }
 });
 
+// ── Select / Arrow tool ──────────────────────────────────────────────────────
+// Return the map to plain select mode from ANY active tool, so the radial menu
+// (left- or right-click) works again. Wired to the toolbar's ↖ SELECT button.
+// Already-drawn graphics, routes, measurements and range rings are preserved —
+// only the active drawing/measuring interaction is stopped.
+function enterSelectMode(){
+  if(typeof _tobjMoveId!=='undefined' && _tobjMoveId!==null) _cancelTobjMove();
+  cancelRouteDrawing();                 // no-op unless a route is being drawn
+  cancelDraw();                         // graphic draw + free draw + banner/cursor
+  if(typeof _fdStopAll==='function' && _fdTool!=='none') _fdStopAll();
+  if(typeof _stopMeasure==='function' && _measActive) _stopMeasure(null);
+  if(typeof closeRangePanel==='function' && _rangeMode) closeRangePanel();
+  if(typeof disarmSymbolPlacement==='function') disarmSymbolPlacement();
+  drawMode='pointer';
+  map.getContainer().style.cursor='';
+  _setDrawBanner('');
+}
+
 // ================================================================
 // ROUTE PLANNING
 // ================================================================
@@ -3191,9 +3209,14 @@ function _fdStopAll() {
   map.off('click',     _fdTextClick);
   document.removeEventListener('mousemove', _fdDocMove, false);
   document.removeEventListener('mouseup',   _fdDocUp,   false);
-  if (_fdDown) { _fdDown = false; map.dragging.enable(); }
+  _fdDown = false;
+  map.dragging.enable();       // pen mode disables dragging — always restore it
   if (_fdCurLyr) { LAYERS.freedraw.removeLayer(_fdCurLyr); _fdCurLyr = null; }
   _fdPts = [];
+  // Clear the active tool. Without this the map-click handler keeps bailing on
+  // `_fdTool!=='none'`, so the radial menu stays dead after a free-draw even
+  // after ESC / SELECT. setFreeDraw() reassigns _fdTool right after calling us.
+  _fdTool = 'none';
   closeFreeDrawTextInput();
 }
 
