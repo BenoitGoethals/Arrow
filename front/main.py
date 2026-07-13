@@ -3,10 +3,55 @@
 import sys
 import os
 
-_existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
-_flags = {"--no-sandbox"}
-_flags.update(_existing.split())
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = " ".join(sorted(_flags))
+def _build_webengine_flags() -> str:
+    """Platform-tuned Chromium flags for a low-latency, always-live map.
+
+    Must be set before QtWebEngine is imported/initialised (below). Detects the
+    OS and picks the fastest safe GPU/latency options for each; anything already
+    in the env is preserved.
+    """
+    flags = set(os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "").split())
+
+    # Unbundled (uv-launched) process cannot use the sandbox helper.
+    flags.add("--no-sandbox")
+
+    # Real-time COP: never throttle or pause the renderer when the window loses
+    # focus / is occluded / is backgrounded, so live tracks and the map keep
+    # updating with no lag. Also disable the native-window occlusion probe that
+    # can freeze rendering on macOS/Windows.
+    flags.update(
+        {
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-features=CalculateNativeWinOcclusion",
+            "--enable-smooth-scrolling",
+        }
+    )
+
+    if sys.platform == "darwin":
+        # Apple Silicon/Metal: the GPU raster path is fast and stable over
+        # http:// (see MapView) — leave it ON; forcing software raster is laggy.
+        pass
+    elif sys.platform.startswith("linux"):
+        # Many Linux GPUs are on Chromium's blocklist; opt back into hardware
+        # acceleration so tiles/markers stay latency-free.
+        flags.update(
+            {
+                "--ignore-gpu-blocklist",
+                "--enable-gpu-rasterization",
+                "--enable-zero-copy",
+            }
+        )
+    elif sys.platform.startswith("win"):
+        # ANGLE/D3D11 is the fast default on Windows; make it explicit and keep
+        # GPU rasterisation on.
+        flags.update({"--use-angle=d3d11", "--enable-gpu-rasterization"})
+
+    return " ".join(sorted(f for f in flags if f))
+
+
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = _build_webengine_flags()
 
 # macOS: Homebrew opus lives outside the default dyld search path.
 # Must be set before any import that pulls in opuslib (pymumble dependency).
@@ -31,6 +76,20 @@ from front.app.theme import TACTICAL_DARK
 from front.app.login_dialog import LoginDialog
 from front.app.main_window import MainWindow
 from front.map.setup_libs import ensure_libs
+
+
+def _platform_ui_font() -> QFont:
+    """Native UI font per OS — avoids the missing-"Ubuntu" fallback + font-alias
+    cost on macOS/Windows and keeps text rendering fast and crisp everywhere."""
+    if sys.platform == "darwin":
+        family = ".AppleSystemUIFont"  # San Francisco; Qt resolves the alias
+    elif sys.platform.startswith("win"):
+        family = "Segoe UI"
+    else:
+        family = "Ubuntu"  # Linux target ships Ubuntu; falls back to sans-serif
+    font = QFont(family, 12)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    return font
 
 
 def _try_auto_connect() -> tuple[str, str, str] | None:
@@ -61,7 +120,7 @@ def main():
     app.setOrganizationName("Arrow")
     app.setOrganizationDomain("com.arrow")
     app.setStyleSheet(TACTICAL_DARK)
-    app.setFont(QFont("Ubuntu", 12))
+    app.setFont(_platform_ui_font())
 
     # Application icon
     icon_path = Path(__file__).parent / "resources" / "arrow_icon.png"
