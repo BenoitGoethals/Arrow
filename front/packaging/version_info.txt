@@ -1,0 +1,33 @@
+# Windows version resource embedded into ArrowFront.exe by PyInstaller.
+# Keep the four-part versions in sync with arrow-front.iss (AppVersion).
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0),
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          "040904B0",
+          [
+            StringStruct("CompanyName", "Arrow"),
+            StringStruct("FileDescription", "Arrow Front — tactical situational-awareness client"),
+            StringStruct("FileVersion", "1.0.0.0"),
+            StringStruct("InternalName", "ArrowFront"),
+            StringStruct("OriginalFilename", "ArrowFront.exe"),
+            StringStruct("ProductName", "Arrow Front"),
+            StringStruct("ProductVersion", "1.0.0.0"),
+          ],
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),
+  ],
+)
