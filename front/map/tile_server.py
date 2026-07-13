@@ -49,8 +49,8 @@ class _Handler(BaseHTTPRequestHandler):
                 srv: MBTilesServer = self.server._mbtiles_server  # type: ignore
                 tile = srv.get_tile(mbt_id, z, x, tms_y)
                 if tile:
-                    return self._bytes(200, tile, "image/png")
-                return self._bytes(204, b"", "image/png")
+                    return self._bytes(200, tile, srv.tile_mime(mbt_id))
+                return self._bytes(204, b"", srv.tile_mime(mbt_id))
         except Exception:
             pass
 
@@ -157,6 +157,13 @@ class MBTilesServer:
     def get_tile(self, mbt_id: str, z: int, x: int, tms_y: int) -> Optional[bytes]:
         db = self._dbs.get(mbt_id)
         return db.get_tile(z, x, tms_y) if db else None
+
+    def tile_mime(self, mbt_id: str) -> str:
+        """Content-Type for a layer's tiles, honouring the MBTiles image format
+        (JPEG atlases exist alongside PNG ones)."""
+        db = self._dbs.get(mbt_id)
+        fmt = (db.format if db else "png").lower()
+        return "image/jpeg" if fmt in ("jpg", "jpeg") else "image/png"
 
     def _tile_url(self, mbt_id: str) -> str:
         return f"http://127.0.0.1:{self._port}/{mbt_id}/{{z}}/{{x}}/{{y}}.png"

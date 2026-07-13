@@ -305,6 +305,7 @@ class MainWindow(QMainWindow):
         self._map.bridge.coords_changed.connect(self._statusbar.update_coords)
         self._map.bridge.own_position.connect(self._on_own_position)
         self._map.bridge.map_ready.connect(self._load_all)
+        self._map.render_crashed.connect(self._on_render_crashed)
         self._map.bridge.radial_action.connect(self._on_radial_action)
         self._map.bridge.graphic_drawn.connect(self._on_graphic_drawn)
         self._map.bridge.measure_done.connect(
@@ -455,6 +456,7 @@ class MainWindow(QMainWindow):
             return
         self._loaded = True
         self._suppress_toasts = True
+        self._load_default_map()
         self._restore_mbtiles()
         self._load_saved_routes()
         self._apply_gps_config()
@@ -695,6 +697,15 @@ class MainWindow(QMainWindow):
         self._loaded = False
         self._load_all()
         self.statusBar().showMessage("Data reloaded", 3000)
+
+    def _on_render_crashed(self):
+        """The map's render process crashed and MapView is reloading the page.
+
+        Drop the load guard so the fresh page's map_ready re-runs _load_all and
+        re-pushes all data; otherwise the recovered map would come back empty.
+        """
+        self._loaded = False
+        self.statusBar().showMessage("Map renderer restarted — reloading data…", 4000)
 
     def _show_about(self):
         QMessageBox.about(
@@ -2010,6 +2021,36 @@ class MainWindow(QMainWindow):
     def _save_mbtiles_settings(self):
         s = QSettings("Arrow", "ArrowFront")
         s.setValue("mbtiles/paths", [v["path"] for v in self._mbtiles.values()])
+
+    # Bundled offline base map shipped with the app (full-world MapQuest tiles).
+    _DEFAULT_MBTILES_NAME = "mapquest_2014-02-11_084957.mbtiles"
+
+    def _load_default_map(self):
+        """Seed the bundled MapQuest MBTiles as the default map on first run.
+
+        Gives the app a working offline base map out of the box without any
+        online tiles. Seeded once via a QSettings flag, and only when the file
+        exists — so if the user later removes it from the MBTiles manager, it is
+        not silently re-added on the next launch.
+        """
+        from pathlib import Path
+
+        s = QSettings("Arrow", "ArrowFront")
+        if s.value("mbtiles/default_seeded", False, type=bool):
+            return
+        default_path = (
+            Path(__file__).resolve().parent.parent / "map" / self._DEFAULT_MBTILES_NAME
+        )
+        if not default_path.exists():
+            return
+        path = str(default_path)
+        # Don't double-load if the user already added this exact file.
+        if not any(v["path"] == path for v in self._mbtiles.values()):
+            try:
+                self._mbtiles_add(path)
+            except Exception:
+                return  # leave unseeded so a transient failure can retry next run
+        s.setValue("mbtiles/default_seeded", True)
 
     def _restore_mbtiles(self):
         """Reload previously loaded MBTiles files on startup."""

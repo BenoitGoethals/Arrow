@@ -30,7 +30,17 @@ from __future__ import annotations
 
 import sys
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+
+# Default fallback fix used when the OS refuses to provide a location — permission
+# denied, location services off, an unbundled (uv-launched) process with no
+# Info.plist bundle id, Core Location missing, or simply no fix within the
+# timeout. Brussels city centre keeps the map usable instead of leaving the
+# own-position HUD stuck on an error forever.
+DEFAULT_FALLBACK_LAT = 50.8503
+DEFAULT_FALLBACK_LON = 4.3517
+DEFAULT_FALLBACK_NAME = "BXL"
+_FALLBACK_TIMEOUT_MS = 8000  # wait this long for a real fix before defaulting
 
 
 def is_supported() -> bool:
@@ -76,10 +86,32 @@ class LocationProvider(QObject):
         super().__init__(parent)
         self._manager = None
         self._delegate = None
+        self._got_real_fix = False
+        self._fallback_emitted = False
+        self._fallback_enabled = True
+        # Fires once if no real fix has arrived, so a headless/denied process
+        # still ends up centred on the default location.
+        self._fallback_timer = QTimer(self)
+        self._fallback_timer.setSingleShot(True)
+        self._fallback_timer.timeout.connect(self._on_fallback_timeout)
+
+    def set_fallback_enabled(self, enabled: bool) -> None:
+        """Toggle the default-location fallback (on by default)."""
+        self._fallback_enabled = enabled
 
     def start(self, high_accuracy: bool = True) -> bool:
-        """Begin location updates. Returns False if unavailable (caller falls back)."""
+        """Begin location updates. Returns False if unavailable (caller falls back).
+
+        On any unavailable path we also emit the default fallback fix so the map
+        still has a usable own-position instead of an error that never clears.
+        """
+        # A fresh start() supersedes any prior fallback/fix bookkeeping.
+        self._got_real_fix = False
+        self._fallback_emitted = False
+        self._fallback_timer.stop()
+
         if not is_supported():
+            self._emit_fallback()
             return False
         try:
             from CoreLocation import (  # noqa: PLC0415  (lazy: macOS-only dep)
@@ -91,15 +123,15 @@ class LocationProvider(QObject):
             print(
                 f"[LocationProvider] Core Location unavailable: {exc}", file=sys.stderr
             )
-            self.status_changed.emit("NO CORELOC")
+            self._emit_fallback("NO CORELOC")
             return False
 
         if _Delegate is None:
-            self.status_changed.emit("NO CORELOC")
+            self._emit_fallback("NO CORELOC")
             return False
 
         if not CLLocationManager.locationServicesEnabled():
-            self.status_changed.emit("LOC OFF")
+            self._emit_fallback("LOC OFF")
             return False
 
         # macOS only presents the authorisation prompt (and only then delivers
@@ -126,9 +158,13 @@ class LocationProvider(QObject):
         mgr.startUpdatingLocation()
         self._manager = mgr
         self.status_changed.emit("SEARCHING…")
+        # If Core Location never delivers (denied for an unbundled process, no
+        # hardware, etc.), fall back to the default location after a grace period.
+        self._fallback_timer.start(_FALLBACK_TIMEOUT_MS)
         return True
 
     def stop(self):
+        self._fallback_timer.stop()
         if self._manager is not None:
             self._manager.stopUpdatingLocation()
             self._manager.setDelegate_(None)
@@ -139,10 +175,37 @@ class LocationProvider(QObject):
     def _emit_position(
         self, lat: float, lon: float, acc: float, heading: float, source: str
     ):
+        # A real fix wins over the fallback and cancels the pending timer.
+        self._got_real_fix = True
+        self._fallback_timer.stop()
         self.position_changed.emit(lat, lon, acc, heading, source)
 
     def _emit_status(self, text: str):
         self.status_changed.emit(text)
+
+    def _emit_fallback(self, reason: str = ""):
+        """Emit the default (Brussels) fix once, unless a real fix already came in."""
+        if (
+            not self._fallback_enabled
+            or self._got_real_fix
+            or self._fallback_emitted
+        ):
+            return
+        self._fallback_emitted = True
+        self._fallback_timer.stop()
+        label = f"{DEFAULT_FALLBACK_NAME} (default)"
+        self.status_changed.emit(f"{reason} · {label}" if reason else label)
+        # accuracy 0 → no misleading accuracy ring; source "DEFAULT" tags the HUD.
+        self.position_changed.emit(
+            DEFAULT_FALLBACK_LAT, DEFAULT_FALLBACK_LON, 0.0, -1.0, "DEFAULT"
+        )
+
+    def _on_fallback_timeout(self):
+        self._emit_fallback("NO FIX")
+
+    def _on_denied(self):
+        """Permission denied — go straight to the default location."""
+        self._emit_fallback("DENIED")
 
 
 # ---------------------------------------------------------------------------
@@ -182,9 +245,10 @@ if is_supported():
                 )
 
             def locationManager_didFailWithError_(self, manager, error):
-                # kCLErrorDenied == 1; anything else is a transient "no fix yet".
+                # kCLErrorDenied == 1; anything else is a transient "no fix yet"
+                # that the fallback timer will handle if it persists.
                 if int(error.code()) == 1:
-                    self._owner._emit_status("DENIED")
+                    self._owner._on_denied()
                 else:
                     self._owner._emit_status("NO FIX")
 
@@ -196,7 +260,7 @@ if is_supported():
                     return
                 # 0 notDetermined, 1 restricted, 2 denied, 3 always, 4 whenInUse
                 if status in (1, 2):
-                    self._owner._emit_status("DENIED")
+                    self._owner._on_denied()
 
     except Exception as exc:  # pragma: no cover - defensive
         print(f"[LocationProvider] delegate init failed: {exc}", file=sys.stderr)

@@ -42,7 +42,8 @@ parser.add_argument(
     default=sim_utils.load_saved_backend() or "https://78.21.255.210:6200/api",
 )
 parser.add_argument("--seed-admin", default="benoit")
-parser.add_argument("--seed-admin-password", default="ranger14")
+parser.add_argument(
+    "--seed-admin-password", default="ranger14")
 parser.add_argument("--mission-name", default="Operation Bastogne")
 parser.add_argument(
     "--reset",

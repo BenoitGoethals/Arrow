@@ -3513,9 +3513,11 @@ function _renderOwnPos(lat, lon, accRaw, heading, source) {
     _gpsFirstFix = false;
   }
 
-  // Source badge
+  // Source badge. DEFAULT is the coarse fallback location (no real fix), shown
+  // amber like WiFi so it never reads as a precise GPS position.
+  const isDefault = (source === 'DEFAULT');
   const src   = source;
-  const color = viaWifi ? '#d29922' : '#3fb950';
+  const color = (viaWifi || isDefault) ? '#d29922' : '#3fb950';
 
   // Update HUD
   document.getElementById('own-gps-hud').classList.add('has-fix');
@@ -3523,13 +3525,13 @@ function _renderOwnPos(lat, lon, accRaw, heading, source) {
   document.getElementById('own-gps-label').style.color = color;
   document.getElementById('own-gps-mgrs').textContent  = mgrs;
   document.getElementById('own-gps-ll').textContent    = lat.toFixed(5) + ', ' + lon.toFixed(5);
-  document.getElementById('own-gps-acc').textContent   = '±' + acc + ' m';
+  document.getElementById('own-gps-acc').textContent   = isDefault ? 'default' : '±' + acc + ' m';
   document.getElementById('own-gps-acc').style.color   = color;
 
   // Pulsing dot marker
   const ll        = [lat, lon];
-  const dotColor  = viaWifi ? '#d29922' : '#388bfd';
-  const ringColor = viaWifi ? 'rgba(210,153,34,.28)' : 'rgba(56,139,253,.28)';
+  const dotColor  = (viaWifi || isDefault) ? '#d29922' : '#388bfd';
+  const ringColor = (viaWifi || isDefault) ? 'rgba(210,153,34,.28)' : 'rgba(56,139,253,.28)';
 
   if (!_myPosMarker) {
     const icon = L.divIcon({
