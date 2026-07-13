@@ -585,6 +585,23 @@ class MainWindow(QMainWindow):
 
         self._admin_menu.addSeparator()
 
+        # Master toggle for map mil-symbol grouping. Checked = operators collapse
+        # into a single unit badge at the active echelon; unchecked = every symbol
+        # is drawn individually. Mirrors the JS default (grouping ON).
+        self._act_grouping = QAction("Group Mil Symbols", self)
+        self._act_grouping.setCheckable(True)
+        self._act_grouping.setChecked(True)
+        self._act_grouping.setStatusTip(
+            "Collapse operators into one unit badge per echelon "
+            "(toggle live grouping of map mil-symbols)"
+        )
+        self._act_grouping.toggled.connect(self._map.set_grouping_enabled)
+        # Sync the checkmark to the map's persisted state once the page loads.
+        self._map.grouping_state_loaded.connect(self._sync_grouping_action)
+        self._admin_menu.addAction(self._act_grouping)
+
+        self._admin_menu.addSeparator()
+
         act_reload = QAction("Reload All Data", self)
         act_reload.triggered.connect(self._reload_all)
         self._admin_menu.addAction(act_reload)
@@ -598,6 +615,13 @@ class MainWindow(QMainWindow):
     def _unlock_admin_menu(self):
         if self._role in ("ADMIN", "BATTLE_CAPTAIN"):
             self._admin_menu.setEnabled(True)
+
+    def _sync_grouping_action(self, enabled: bool):
+        """Reflect the map's persisted grouping flag on the menu checkmark
+        without re-emitting toggled (which would bounce back into the map)."""
+        self._act_grouping.blockSignals(True)
+        self._act_grouping.setChecked(enabled)
+        self._act_grouping.blockSignals(False)
 
     # ── Menu actions ────────────────────────────────────────────────
 
@@ -859,7 +883,9 @@ class MainWindow(QMainWindow):
         try:
             if self._active_mission_id:
                 level = int(
-                    self._client.mission(self._active_mission_id).get("classification", 0)
+                    self._client.mission(self._active_mission_id).get(
+                        "classification", 0
+                    )
                     or 0
                 )
         except Exception:
@@ -1650,7 +1676,11 @@ class MainWindow(QMainWindow):
 
     def _on_mode_from_toolbar(self, mode: str):
         """Route toolbar mode changes — handle measure modes separately."""
-        if mode == "measure_dist":
+        if mode == "pointer":
+            # Arrow/Select: fully exit any drawing/measuring tool so the radial
+            # menu works again (set_draw_mode alone wouldn't stop route/measure).
+            self._map.select_mode()
+        elif mode == "measure_dist":
             self._map._js("startMeasure('distance')")
         elif mode == "measure_az":
             self._map._js("startMeasure('azimuth')")

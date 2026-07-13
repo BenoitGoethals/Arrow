@@ -16,6 +16,9 @@ LIBS = {
     "leaflet.draw.css": "https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css",
     "milsymbol.js": "https://cdn.jsdelivr.net/npm/milsymbol@2.0.0/dist/milsymbol.js",
     "mgrs.js": "https://cdn.jsdelivr.net/npm/mgrs@1.0.0/dist/mgrs.js",
+    "leaflet.markercluster.js": "https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js",
+    "MarkerCluster.css": "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css",
+    "MarkerCluster.Default.css": "https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css",
 }
 
 

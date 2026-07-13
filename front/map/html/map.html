@@ -5,6 +5,9 @@
 <title>Arrow Front COP</title>
 <link  rel="stylesheet" href="lib/leaflet.css">
 <script src="lib/leaflet.js"></script>
+<link  rel="stylesheet" href="lib/MarkerCluster.css">
+<link  rel="stylesheet" href="lib/MarkerCluster.Default.css">
+<script src="lib/leaflet.markercluster.js"></script>
 <link  rel="stylesheet" href="lib/leaflet.draw.css">
 <script src="lib/leaflet.draw.js"></script>
 <script src="lib/milsymbol.js"></script>
@@ -684,17 +687,68 @@ const mbtileLayers = {}; // mbt_id → {layer, name, visible}
 const WEATHER_LAYERS={};
 let weatherOwmKey='';
 
-// Tactical overlay layer groups
+// Master on/off for mil-symbol proximity grouping (Admin ▸ Group Mil Symbols).
+// When ON, nearby mil-symbols collapse into one count badge; when OFF every
+// symbol is drawn individually. Persisted per browser. Declared before LAYERS
+// because the cluster factory's maxClusterRadius closure reads it.
+let _groupingEnabled = (function(){
+  try { const v = localStorage.getItem('arrow_grouping'); return v === null ? true : v === '1'; }
+  catch(_) { return true; }
+})();
+
+// A markerClusterGroup for mil-symbols. Point markers cluster; non-point layers
+// (tactical-object lines/polygons) pass straight through markercluster's own
+// non-point group, so a mixed layer like tactObjs is safe. maxClusterRadius is a
+// function so the master toggle takes effect on the next rebuild (1px ≈ off).
+function _milCluster(){
+  return L.markerClusterGroup({
+    showCoverageOnHover:false,
+    spiderfyOnMaxZoom:true,
+    zoomToBoundsOnClick:true,
+    disableClusteringAtZoom:18,
+    chunkedLoading:true,
+    maxClusterRadius:function(){ return _groupingEnabled ? 55 : 1; },
+    iconCreateFunction:function(cluster){
+      const n=cluster.getChildCount();
+      const size=n<10?36:n<100?44:52;
+      return L.divIcon({
+        html:`<div style="display:flex;align-items:center;justify-content:center;`+
+             `width:${size}px;height:${size}px;border-radius:50%;`+
+             `background:#0f2744;border:2px solid #388bfd;color:#c9d1d9;`+
+             `font-family:monospace;font-size:13px;font-weight:bold;`+
+             `box-shadow:0 0 8px rgba(56,139,253,0.5)">${n}</div>`,
+        className:'', iconSize:[size,size],
+      });
+    },
+  });
+}
+
+// Tactical overlay layer groups. The mil-symbol point layers are cluster groups
+// (see MIL_CLUSTER_LAYERS); the rest stay plain layer groups.
 const LAYERS={
-  operators:L.layerGroup().addTo(map), operTrails:L.layerGroup().addTo(map),
-  cotTracks:L.layerGroup().addTo(map), enemies:L.layerGroup().addTo(map),
-  tactObjs:L.layerGroup().addTo(map),  fireMissions:L.layerGroup().addTo(map),
-  alerts:L.layerGroup().addTo(map),    graphics:L.layerGroup().addTo(map),
-  kml:L.layerGroup().addTo(map),       cbrn:L.layerGroup().addTo(map),
-  weather:L.layerGroup().addTo(map),   freedraw:L.layerGroup().addTo(map),
-  routes:L.layerGroup().addTo(map),    vehicles:L.layerGroup().addTo(map),
+  operators:_milCluster().addTo(map), operTrails:L.layerGroup().addTo(map),
+  cotTracks:_milCluster().addTo(map), enemies:_milCluster().addTo(map),
+  tactObjs:_milCluster().addTo(map),  fireMissions:_milCluster().addTo(map),
+  alerts:L.layerGroup().addTo(map),   graphics:L.layerGroup().addTo(map),
+  kml:L.layerGroup().addTo(map),      cbrn:L.layerGroup().addTo(map),
+  weather:L.layerGroup().addTo(map),  freedraw:L.layerGroup().addTo(map),
+  routes:L.layerGroup().addTo(map),   vehicles:_milCluster().addTo(map),
   groups:L.layerGroup().addTo(map),
 };
+
+// Layers whose clustering must be rebuilt when the master toggle flips.
+const MIL_CLUSTER_LAYERS=['operators','enemies','cotTracks','vehicles','tactObjs','fireMissions'];
+function _reclusterMil(){
+  MIL_CLUSTER_LAYERS.forEach(function(name){
+    const g=LAYERS[name];
+    if(g && map.hasLayer(g)){ map.removeLayer(g); g.addTo(map); }  // rebuild grid
+  });
+}
+// A clustered marker that moved via setLatLng needs its group re-evaluated, else
+// it lingers in its old cluster cell.
+function _reclusterMarker(layer,marker){
+  if(layer && typeof layer.refreshClusters==='function'){ try{ layer.refreshClusters(marker); }catch(_){} }
+}
 
 // ── Group markers state ──────────────────────────────────────────────────────
 let _hierarchy  = null;
@@ -731,6 +785,15 @@ function setGroupAuto(auto) {
   _groupAuto = auto;
   if (auto) { _groupLevel = _levelFromZoom(map.getZoom()); refreshGroupMarkers(); }
 }
+
+// Master grouping switch — driven from Admin ▸ Group Mil Symbols. Rebuilds every
+// mil-symbol cluster group so the new radius (55px on / 1px off) takes effect.
+function setGroupingEnabled(on) {
+  _groupingEnabled = !!on;
+  try { localStorage.setItem('arrow_grouping', _groupingEnabled ? '1' : '0'); } catch(_){}
+  _reclusterMil();
+}
+function isGroupingEnabled() { return _groupingEnabled; }
 
 function refreshGroupMarkers() {
   Object.values(_groupMarkers).forEach(m => LAYERS.groups.removeLayer(m));
@@ -998,7 +1061,7 @@ function updateTrack(t){
   const layer=t.affiliation==='HOSTILE'?LAYERS.enemies:LAYERS.operators;
   const icon=buildMilIcon(t.sidc,t.callsign,t.unit,t.heading,t.position_source==='ATAK'?'ATAK':'');
   const popup=buildTrackPopup(t);
-  if(tracks[t.id]){tracks[t.id].marker.setLatLng([t.lat,t.lon]).setIcon(icon).setPopupContent(popup);}
+  if(tracks[t.id]){tracks[t.id].marker.setLatLng([t.lat,t.lon]).setIcon(icon).setPopupContent(popup);_reclusterMarker(tracks[t.id].layer,tracks[t.id].marker);}
   else{const m=L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).bindPopup(popup,{maxWidth:260}).on('click',()=>{if(bridge)bridge.onTrackClicked(String(t.id));}).addTo(layer);tracks[t.id]={marker:m,layer};}
   addTrailSeg(LAYERS.operTrails,trails,t.id,t.lat,t.lon,t.online===false?'#6e7681':t.affiliation==='HOSTILE'?'#f85149':'#3fb950');
   if(LAYERS.groups._map) refreshGroupMarkers();
@@ -1016,7 +1079,7 @@ function updateCotTrack(t){
     <div>TYPE ${esc(t.cot_type||'—')}</div><div>MGRS ${latLonToMGRS(t.latitude,t.longitude)}</div>
     ${t.speed?`<div>SPD ${Math.round(t.speed)} kt</div>`:''}${t.course?`<div>HDG ${Math.round(t.course)}°</div>`:''}
   </div>`;
-  if(cotTracks[t.cot_uid]){cotTracks[t.cot_uid].setLatLng([t.latitude,t.longitude]).setIcon(icon).setPopupContent(pop);}
+  if(cotTracks[t.cot_uid]){cotTracks[t.cot_uid].setLatLng([t.latitude,t.longitude]).setIcon(icon).setPopupContent(pop);_reclusterMarker(LAYERS.cotTracks,cotTracks[t.cot_uid]);}
   else{cotTracks[t.cot_uid]=L.marker([t.latitude,t.longitude],{icon}).bindPopup(pop,{maxWidth:250}).addTo(LAYERS.cotTracks);}
 }
 function removeCotTrack(uid){if(cotTracks[uid]){LAYERS.cotTracks.removeLayer(cotTracks[uid]);delete cotTracks[uid];}}
@@ -1043,7 +1106,7 @@ function updateVehicle(v){
     <div>${v.operator_id?('OP #'+v.operator_id):(v.team_id?('TEAM #'+v.team_id):'unassigned')}</div>
   </div>`;
   const op=(st==='OPS')?1:0.5;
-  if(vehicleMarkers[v.id]){vehicleMarkers[v.id].setLatLng([v.latitude,v.longitude]).setIcon(icon).setPopupContent(pop).setOpacity(op);}
+  if(vehicleMarkers[v.id]){vehicleMarkers[v.id].setLatLng([v.latitude,v.longitude]).setIcon(icon).setPopupContent(pop).setOpacity(op);_reclusterMarker(LAYERS.vehicles,vehicleMarkers[v.id]);}
   else{vehicleMarkers[v.id]=L.marker([v.latitude,v.longitude],{icon,opacity:op}).bindPopup(pop,{maxWidth:250}).addTo(LAYERS.vehicles);}
 }
 function removeVehicle(id){if(vehicleMarkers[id]){LAYERS.vehicles.removeLayer(vehicleMarkers[id]);delete vehicleMarkers[id];}}
@@ -1509,6 +1572,24 @@ document.addEventListener('keydown',function(e){
   if(_drawType)          { cancelDraw(); return; }
   if(_fdTool !== 'none') { _fdStopAll(); drawMode='pointer'; }
 });
+
+// ── Select / Arrow tool ──────────────────────────────────────────────────────
+// Return the map to plain select mode from ANY active tool, so the radial menu
+// (left- or right-click) works again. Wired to the toolbar's ↖ SELECT button.
+// Already-drawn graphics, routes, measurements and range rings are preserved —
+// only the active drawing/measuring interaction is stopped.
+function enterSelectMode(){
+  if(typeof _tobjMoveId!=='undefined' && _tobjMoveId!==null) _cancelTobjMove();
+  cancelRouteDrawing();                 // no-op unless a route is being drawn
+  cancelDraw();                         // graphic draw + free draw + banner/cursor
+  if(typeof _fdStopAll==='function' && _fdTool!=='none') _fdStopAll();
+  if(typeof _stopMeasure==='function' && _measActive) _stopMeasure(null);
+  if(typeof closeRangePanel==='function' && _rangeMode) closeRangePanel();
+  if(typeof disarmSymbolPlacement==='function') disarmSymbolPlacement();
+  drawMode='pointer';
+  map.getContainer().style.cursor='';
+  _setDrawBanner('');
+}
 
 // ================================================================
 // ROUTE PLANNING
@@ -3128,9 +3209,14 @@ function _fdStopAll() {
   map.off('click',     _fdTextClick);
   document.removeEventListener('mousemove', _fdDocMove, false);
   document.removeEventListener('mouseup',   _fdDocUp,   false);
-  if (_fdDown) { _fdDown = false; map.dragging.enable(); }
+  _fdDown = false;
+  map.dragging.enable();       // pen mode disables dragging — always restore it
   if (_fdCurLyr) { LAYERS.freedraw.removeLayer(_fdCurLyr); _fdCurLyr = null; }
   _fdPts = [];
+  // Clear the active tool. Without this the map-click handler keeps bailing on
+  // `_fdTool!=='none'`, so the radial menu stays dead after a free-draw even
+  // after ESC / SELECT. setFreeDraw() reassigns _fdTool right after calling us.
+  _fdTool = 'none';
   closeFreeDrawTextInput();
 }
 

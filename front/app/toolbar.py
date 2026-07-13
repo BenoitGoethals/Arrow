@@ -50,8 +50,16 @@ class MainToolbar(QToolBar):
         self._build()
 
     def _build(self):
-        # ---- Pointer / Measure -----------------------------------------
-        self._add_mode_btn("⊹", "pointer", "Pointer (navigate)")
+        # ---- Select / Arrow --------------------------------------------
+        # Returns the map to plain select mode from any draw/measure tool so the
+        # right-click radial menu works again. Default-active tool.
+        select_btn = self._add_mode_btn(
+            "↖ SELECT",
+            "pointer",
+            "Select / Arrow — exit any drawing tool and re-enable the "
+            "right-click radial menu",
+        )
+        select_btn.setChecked(True)
         self.addSeparator()
 
         # ---- Measure dropdown ------------------------------------------

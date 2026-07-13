@@ -51,25 +51,10 @@ class _DebugPage(QWebEnginePage):
 
 class MapView(QWebEngineView):
     file_dropped = pyqtSignal(str, float, float)  # file_path, lat, lon
-    # Emitted after the Chromium render process crashes and we auto-reload the
-    # page, so the owner can reset its "already loaded" guard and re-push data
-    # into the fresh page.
-    render_crashed = pyqtSignal()
-
-    # Cap consecutive crash-reloads so a page that crashes immediately on load
-    # can't spin forever. Reset once a reloaded page survives a while.
-    _CRASH_RELOAD_CAP = 5
-    _CRASH_ALIVE_RESET_MS = 30000
+    grouping_state_loaded = pyqtSignal(bool)  # persisted grouping flag, after load
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._map_url: QUrl | None = None
-        self._crash_reloads = 0
-        # After a load survives this long, treat the page as healthy again and
-        # clear the consecutive-crash counter.
-        self._crash_reset_timer = QTimer(self)
-        self._crash_reset_timer.setSingleShot(True)
-        self._crash_reset_timer.timeout.connect(self._reset_crash_count)
 
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(lambda _: None)
@@ -84,11 +69,15 @@ class MapView(QWebEngineView):
         self._page = _DebugPage(self)
         self.setPage(self._page)
 
-        # The Chromium render process can die under us — notably an OS-level
-        # SIGBUS while CoreText/ImageIO rasterises a colour-emoji glyph on
-        # macOS 26 (crash stack: CTFontDrawGlyphs → CopyEmojiImage → ImageIO).
-        # A crashed renderer leaves the map permanently blank, so auto-reload it.
-        self._page.renderProcessTerminated.connect(self._on_render_terminated)
+        # DIAGNOSTIC: if the map blacks out because the WebEngine render/GPU
+        # process dies, this prints exactly that (no front-end fix can help a
+        # crashed renderer). Remove once the black-out cause is confirmed.
+        self._page.renderProcessTerminated.connect(
+            lambda status, code: print(
+                f"[MapView] *** RENDER PROCESS TERMINATED *** status={status} exitCode={code}",
+                file=sys.stderr,
+            )
+        )
 
         # Grant geolocation permission so navigator.geolocation works
         self._page.permissionRequested.connect(self._on_permission_requested)
@@ -115,10 +104,6 @@ class MapView(QWebEngineView):
         # Inject qwebchannel.js before page scripts run
         self._inject_qwebchannel()
 
-        # Strip colour-emoji from the DOM before it is ever painted (works around
-        # the macOS 26 CoreText/ImageIO SIGBUS that kills the render process).
-        self._inject_emoji_guard()
-
         # Log load result + start repaint guard
         self._page.loadFinished.connect(self._on_load_finished)
 
@@ -126,10 +111,19 @@ class MapView(QWebEngineView):
         # WebEngine frame.  self.update() is deliberately the only call here —
         # no JS — so it never interferes with tile loading.  Reactive JS repaints
         # (map.invalidateSize) are fired once by notify_menu_closed / contextMenuEvent.
-        self._repaint_guard = QTimer(self)
-        self._repaint_guard.setInterval(250)
-        self._repaint_guard.timeout.connect(self.update)
-        self._repaint_guard.start()
+        #
+        # macOS ONLY. This guards against the Qt6/macOS Metal compositor dropping
+        # the WebEngine framebuffer after DOM changes. On Windows/Linux there is
+        # no such compositor bug, and forcing a full-widget repaint 4×/second
+        # continuously fights Leaflet's GPU-composited zoom/pan animation — which
+        # showed up as the map stalling between zoom steps. So it is not installed
+        # off macOS.
+        self._repaint_guard: QTimer | None = None
+        if sys.platform == "darwin":
+            self._repaint_guard = QTimer(self)
+            self._repaint_guard.setInterval(250)
+            self._repaint_guard.timeout.connect(self.update)
+            self._repaint_guard.start()
 
         # Load the map via the local HTTP server (http://127.0.0.1:PORT/map)
         # instead of file:// — avoids the Qt6/macOS Metal compositor black-screen
@@ -168,48 +162,8 @@ class MapView(QWebEngineView):
         else:
             map_html = Path(__file__).parent / "html" / "map.html"
             url = QUrl.fromLocalFile(str(map_html.resolve()))
-        self._map_url = url
         print(f"[MapView] Loading: {url.toString()}", file=sys.stderr)
         self.load(url)
-
-    def _on_render_terminated(self, status, code):
-        """Recover from a Chromium render-process crash by reloading the page.
-
-        The renderer occasionally dies (e.g. the macOS 26 colour-emoji ImageIO
-        SIGBUS) leaving the map blank. Reload it so it self-heals, capped so a
-        crash-on-load can't loop forever. render_crashed lets the owner reset its
-        load guard and re-push data into the fresh page.
-        """
-        print(
-            f"[MapView] *** RENDER PROCESS TERMINATED *** status={status} exitCode={code}",
-            file=sys.stderr,
-        )
-        # A clean exit (e.g. app shutdown) is not something to recover from.
-        normal = QWebEnginePage.RenderProcessTerminationStatus.NormalTerminationStatus
-        if status == normal or self._map_url is None:
-            return
-        if self._crash_reloads >= self._CRASH_RELOAD_CAP:
-            print(
-                "[MapView] render crash-reload cap reached — not reloading again",
-                file=sys.stderr,
-            )
-            return
-        self._crash_reloads += 1
-        print(
-            f"[MapView] auto-reloading map after crash "
-            f"({self._crash_reloads}/{self._CRASH_RELOAD_CAP})",
-            file=sys.stderr,
-        )
-        # Small delay so the GPU/renderer teardown settles before the new load.
-        QTimer.singleShot(600, self._reload_after_crash)
-
-    def _reload_after_crash(self):
-        self.render_crashed.emit()  # owner resets its load guard first
-        if self._map_url is not None:
-            self.load(self._map_url)
-
-    def _reset_crash_count(self):
-        self._crash_reloads = 0
 
     def _force_repaint(self):
         """Nudge the Qt widget to repaint the WebEngine surface.
@@ -263,12 +217,18 @@ class MapView(QWebEngineView):
     def _on_load_finished(self, ok: bool):
         if ok:
             print("[MapView] Page loaded OK", file=sys.stderr)
-            # If this page stays alive a while, consider the renderer healthy
-            # again and clear the consecutive-crash counter.
-            self._crash_reset_timer.start(self._CRASH_ALIVE_RESET_MS)
             self._page.runJavaScript(
                 "typeof L !== 'undefined' ? 'Leaflet OK' : 'Leaflet MISSING'",
                 lambda r: print(f"[MapView] {r}", file=sys.stderr),
+            )
+            # Report the JS-persisted grouping flag so the Admin menu checkmark
+            # reflects the map's actual state (localStorage default is ON, so a
+            # missing/undefined result is treated as enabled).
+            self._page.runJavaScript(
+                "typeof isGroupingEnabled === 'function' ? isGroupingEnabled() : true",
+                lambda v: self.grouping_state_loaded.emit(
+                    True if v is None else bool(v)
+                ),
             )
             # Install drag-drop event filter on the viewport child widget
             vp = self.focusProxy() or self.viewport()
@@ -298,66 +258,6 @@ class MapView(QWebEngineView):
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
         script.setRunsOnSubFrames(False)
         self._page.scripts().insert(script)
-
-    def _inject_emoji_guard(self):
-        """Neutralise colour-emoji glyphs in the page before they are painted.
-
-        macOS 26 crashes the Chromium render process with a SIGBUS deep in
-        CoreText/ImageIO (CTFontDrawGlyphs → CopyEmojiImage → ImageIO PNG decode)
-        whenever it rasterises an Apple Color Emoji glyph. No CSS/font lever
-        avoids it (font-variant-emoji, the U+FE0E selector and font-family
-        overrides all still fall back to Apple Color Emoji), so we remove the
-        emoji codepoints from every text node instead.
-
-        A MutationObserver callback is a microtask, which runs *before* the
-        browser's render step — so text inserted by the app (toasts, marker
-        labels, chat, report data from the backend) is scrubbed in the same tick
-        it is added, before the offending glyph is ever drawn. Variation-selector
-        symbols (⚠\uFE0F, ☢\uFE0F) collapse to their monochrome base; astral emoji (🔥, 📦)
-        and ZWJ joiners are dropped.
-        """
-        source = r"""
-(function(){
-  var ASTRAL = /[\uD83C-\uD83E][\uDC00-\uDFFF]/g;   // astral emoji, flags, skin tones
-  var SEL    = /[\u200D\uFE0E\uFE0F]/g;             // ZWJ + variation selectors
-  var TEST   = /[\uD83C-\uD83E][\uDC00-\uDFFF]|[\u200D\uFE0E\uFE0F]/;
-  function clean(s){ return s.replace(ASTRAL,'').replace(SEL,''); }
-  function scrub(node){
-    var v = node.nodeValue;
-    if(v && TEST.test(v)){ var c = clean(v); if(c!==v) node.nodeValue = c; }
-  }
-  function walk(node){
-    if(node.nodeType===3){ scrub(node); return; }
-    if(node.nodeType!==1) return;
-    var t = node.tagName;
-    if(t==='SCRIPT'||t==='STYLE') return;
-    for(var c=node.firstChild;c;c=c.nextSibling) walk(c);
-  }
-  var obs = new MutationObserver(function(muts){
-    for(var i=0;i<muts.length;i++){
-      var m = muts[i];
-      if(m.type==='characterData'){ scrub(m.target); }
-      else { for(var j=0;j<m.addedNodes.length;j++) walk(m.addedNodes[j]); }
-    }
-  });
-  // Observe the document node itself (always present at DocumentCreation, when
-  // documentElement can still be null) so nodes added while the page is parsing
-  // are scrubbed before their first paint. Sweep again once the DOM exists.
-  obs.observe(document,{childList:true,subtree:true,characterData:true});
-  try{ walk(document.documentElement); }catch(e){}
-  document.addEventListener('DOMContentLoaded',function(){
-    try{ walk(document.body||document.documentElement); }catch(e){}
-  });
-})();
-"""
-        script = QWebEngineScript()
-        script.setName("arrow-emoji-guard.js")
-        script.setSourceCode(source)
-        script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
-        script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
-        script.setRunsOnSubFrames(False)
-        self._page.scripts().insert(script)
-        print("[MapView] emoji-guard injected", file=sys.stderr)
 
     @staticmethod
     def _find_qwebchannel_js() -> str:
@@ -419,6 +319,11 @@ class MapView(QWebEngineView):
     def set_draw_mode(self, mode: str):
         self._js(f"setDrawMode({json.dumps(mode)})")
 
+    def select_mode(self):
+        """Exit any active drawing/measuring tool and return to select mode so
+        the right-click radial menu works again (toolbar ↖ SELECT button)."""
+        self._js("enterSelectMode()")
+
     def set_base_layer(self, name: str):
         self._js(f"setBaseLayer({json.dumps(name)})")
 
@@ -434,6 +339,10 @@ class MapView(QWebEngineView):
     def set_group_auto(self, auto: bool):
         self._js(f"setGroupAuto({json.dumps(auto)})")
 
+    def set_grouping_enabled(self, enabled: bool):
+        """Master on/off for mil-symbol grouping (Admin ▸ Group Mil Symbols)."""
+        self._js(f"setGroupingEnabled({json.dumps(bool(enabled))})")
+
     def fit_tracks(self):
         self._js("fitTracks()")
 
@@ -448,27 +357,16 @@ class MapView(QWebEngineView):
         max_zoom: int = 18,
         name: str = "",
     ):
-        # typeof-guarded: an MBTiles command can race a page (re)load — e.g. the
-        # crash-recovery reload — where the map script isn't defined yet. Skip
-        # quietly instead of throwing ReferenceError; the map_ready-driven reload
-        # re-adds the layer once the page is ready.
         self._js(
-            "if(typeof addMBTilesLayer==='function')"
             f"addMBTilesLayer({json.dumps(mbt_id)}, {json.dumps(tile_url)}, "
             f"{min_zoom}, {max_zoom}, {json.dumps(name)})"
         )
 
     def remove_mbtiles_layer(self, mbt_id: str):
-        self._js(
-            "if(typeof removeMBTilesLayer==='function')"
-            f"removeMBTilesLayer({json.dumps(mbt_id)})"
-        )
+        self._js(f"removeMBTilesLayer({json.dumps(mbt_id)})")
 
     def toggle_mbtiles_layer(self, mbt_id: str, visible: bool):
-        self._js(
-            "if(typeof toggleMBTilesLayer==='function')"
-            f"toggleMBTilesLayer({json.dumps(mbt_id)}, {json.dumps(visible)})"
-        )
+        self._js(f"toggleMBTilesLayer({json.dumps(mbt_id)}, {json.dumps(visible)})")
 
     def update_cot_track(self, track: dict):
         self._js(f"updateCotTrack({json.dumps(track)})")
