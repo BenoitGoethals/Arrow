@@ -200,6 +200,8 @@ google-services.json
 # ./maps/, too large to track in git. Use Git LFS or external storage if
 # you want to version them.
 maps/*.mbtiles
+# Front-app bundled base maps — too large for git (share out-of-band).
+front/map/*.mbtiles
 
 # Simulator local JWT cache — never commit live tokens.
 .arrow_sim_tokens.json
