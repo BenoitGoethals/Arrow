@@ -283,12 +283,6 @@
 <div id="arrow-toast-container"></div>
 <div id="arrow-chat-toast-container"></div>
 
-<!-- ── Classification banner (active mission's marking) ───────────────────── -->
-<div id="class-banner" style="
-    display:none;position:sticky;top:0;z-index:8500;width:100%;
-    text-align:center;font-weight:700;font-size:.72rem;letter-spacing:.12em;
-    padding:2px 0;color:#fff;font-family:'Courier New',monospace;"></div>
-
 <!-- ── Mandatory mission gate — blocks the app until a mission is active ───── -->
 <div id="mission-gate" style="
     display:none;position:fixed;inset:0;z-index:9500;
@@ -389,17 +383,6 @@
                 el.style.background = window.ARROW_CLASS_COLORS[l];
                 el.style.color = '#fff';
                 el.style.display = 'inline-block';
-            }
-        }
-        // Top classification banner (whole-page marking).
-        const b = document.getElementById('class-banner');
-        if (b) {
-            if (level === null || level === undefined) { b.style.display = 'none'; }
-            else {
-                const l = Math.max(0, Math.min(4, level || 0));
-                b.textContent = window.ARROW_CLASS_NAMES[l];
-                b.style.background = window.ARROW_CLASS_COLORS[l];
-                b.style.display = 'block';
             }
         }
     };

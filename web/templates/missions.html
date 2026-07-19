@@ -38,6 +38,19 @@
                   style="width:100%;box-sizing:border-box;background:#0f172a;color:#f8fafc;
                          border:1px solid #334155;border-radius:6px;padding:9px 12px;
                          font-size:.9rem;resize:vertical;margin-bottom:10px"></textarea>
+        <div style="margin-bottom:10px">
+            <label style="font-size:.75rem;color:#94a3b8;display:block;margin-bottom:3px">Classification</label>
+            <select id="new-mission-class"
+                    style="width:100%;box-sizing:border-box;background:#0f172a;color:#f8fafc;
+                           border:1px solid #334155;border-radius:6px;padding:8px 10px;font-size:.88rem">
+                <option value="0" selected>UNCLASSIFIED</option>
+                <option value="1">RESTRICTED</option>
+                <option value="2">CONFIDENTIAL</option>
+                <option value="3">SECRET</option>
+                <option value="4">TOP SECRET</option>
+            </select>
+            <span style="font-size:.72rem;color:#64748b">Ceiling for everything in the mission (capped at your clearance).</span>
+        </div>
         <div style="display:flex;gap:8px;margin-bottom:10px">
             <div style="flex:1">
                 <label style="font-size:.75rem;color:#94a3b8;display:block;margin-bottom:3px">Map Centre (MGRS)</label>
@@ -235,6 +248,7 @@ function showCreateModal() {
     document.getElementById('new-mission-desc').value = '';
     document.getElementById('new-mission-mgrs').value = '';
     document.getElementById('new-mission-zoom').value = '13';
+    document.getElementById('new-mission-class').value = '0';
     document.getElementById('new-mission-mgrs-err').style.display = 'none';
     document.getElementById('create-modal').style.display = 'flex';
     setTimeout(() => document.getElementById('new-mission-name').focus(), 50);
@@ -246,6 +260,7 @@ async function createMission() {
     const desc     = document.getElementById('new-mission-desc').value.trim();
     const mgrsStr  = document.getElementById('new-mission-mgrs').value.trim();
     const zoom     = parseInt(document.getElementById('new-mission-zoom').value) || 13;
+    const classification = parseInt(document.getElementById('new-mission-class').value) || 0;
     const errEl    = document.getElementById('new-mission-mgrs-err');
 
     let map_center_lat = null, map_center_lng = null;
@@ -263,6 +278,7 @@ async function createMission() {
     const r = await api('POST', '/missions', {
         name, description: desc,
         map_center_lat, map_center_lng, map_zoom: zoom,
+        classification,
     });
     if (r.ok) {
         const m = await r.json();
