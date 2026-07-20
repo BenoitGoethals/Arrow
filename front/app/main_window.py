@@ -193,7 +193,7 @@ class MainWindow(QMainWindow):
         self._opord_panel = OpordPanel()
         self._streams_panel = StreamsPanel()
         self._media_panel = MediaPanel()
-        self._mumble_panel = MumblePanel()
+        self._mumble_panel = MumblePanel(client=self._client)
         self._log_panel = LogPanel()
         self._routes_panel = RoutesPanel()
         self._planner_windows: list[StrikePlannerWindow] = []

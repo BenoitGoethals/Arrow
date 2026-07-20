@@ -459,6 +459,51 @@ class ChatRoomMember(Base):
     chatroom: Mapped["ChatRoom"] = relationship(back_populates="members")
 
 
+class VoiceChannel(Base):
+    """Admin-defined named Mumble voice channel.
+
+    An operator picks one of these from a curated list (web dashboard / Front)
+    and the client connects to the referenced Mumble server and auto-joins the
+    named channel. ``host``/``port`` default to the configured monitor-bot
+    server (``data/mumble_config.json``) when ``host`` is blank, so multiple
+    servers are possible without a rewrite while the common case stays simple.
+
+    Access is gated exactly like the rest of Arrow: ``classification`` against
+    the operator's clearance, ``min_role`` against their role, and ``mission_id``
+    (nullable = global) against their active mission.
+    """
+
+    __tablename__ = "voice_channels"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))  # e.g. "Command Net"
+    description: Mapped[str] = mapped_column(Text, default="")
+    # Channel name/path to join on the Mumble server.
+    mumble_channel: Mapped[str] = mapped_column(String(160), default="")
+    # Blank host → use the configured default (monitor-bot) server.
+    host: Mapped[str] = mapped_column(String(255), default="")
+    port: Mapped[int] = mapped_column(Integer, default=64738)
+    # Channel/server password, used server-side on the operator's behalf.
+    password: Mapped[str] = mapped_column(String(255), default="")
+    # Minimum role able to see/join: OPERATOR | BATTLE_CAPTAIN | ADMIN.
+    min_role: Mapped[str] = mapped_column(String(20), default="OPERATOR")
+    classification: Mapped[int] = mapped_column(Integer, default=0)
+    mission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("missions.id"), nullable=True
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("operators.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+    )
+
+
 class Battle(Base):
     __tablename__ = "battles"
 

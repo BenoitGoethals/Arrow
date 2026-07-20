@@ -412,6 +412,53 @@ class CasAssetOut(ORMModel):
     classification: int = 0
 
 
+class VoiceChannelIn(BaseModel):
+    name: str
+    description: str = ""
+    mumble_channel: str = ""
+    host: str = ""
+    port: int = 64738
+    password: str = ""
+    min_role: str = "OPERATOR"
+    classification: int = 0
+    mission_id: int | None = None
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class VoiceChannelUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    mumble_channel: str | None = None
+    host: str | None = None
+    port: int | None = None
+    password: str | None = None
+    min_role: str | None = None
+    classification: int | None = None
+    mission_id: int | None = None
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+class VoiceChannelOut(ORMModel):
+    id: int
+    name: str
+    description: str
+    mumble_channel: str
+    host: str
+    port: int
+    min_role: str
+    classification: int
+    mission_id: int | None
+    sort_order: int
+    is_active: bool
+    created_by: int
+    created_at: datetime
+    updated_at: datetime
+    # Never expose the stored password; only whether one is set.
+    has_password: bool = False
+
+
 class FireMissionIn(BaseModel):
     latitude: float
     longitude: float

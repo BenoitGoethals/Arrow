@@ -1705,13 +1705,26 @@
   <!-- Voice controls -->
   <div style="padding:8px 10px;display:flex;flex-direction:column;gap:6px;">
 
+    <!-- Curated Arrow voice channels -->
+    <div id="mv-channel-row" style="display:flex;align-items:center;gap:6px;">
+      <select id="mv-channel-select"
+              style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;
+                     border-radius:4px;padding:4px 6px;font-size:.75rem;">
+        <option value="">Loading channels…</option>
+      </select>
+      <button onclick="mvJoin()" title="Advanced / custom server"
+              style="background:#1e293b;border:1px solid #334155;color:#64748b;
+                     border-radius:4px;padding:4px 7px;font-size:.72rem;cursor:pointer;
+                     font:inherit">⚙</button>
+    </div>
+
     <!-- Status row -->
     <div style="display:flex;align-items:center;gap:8px;">
       <span id="mv-led" style="width:7px;height:7px;border-radius:50%;
             background:#334155;flex-shrink:0"></span>
       <span id="mv-status" style="font-size:.72rem;color:#475569;
             font-family:monospace;flex:1">Voice not connected</span>
-      <button id="mv-join-btn" onclick="mvJoin()"
+      <button id="mv-join-btn" onclick="mvJoinSelected()"
               style="background:#166534;border:1px solid #16a34a;color:#4ade80;
                      border-radius:4px;padding:3px 10px;font-size:.72rem;cursor:pointer;
                      font:inherit">Join</button>
@@ -1760,7 +1773,7 @@
     <!-- Join dialog (shown before connecting voice) -->
     <div id="mv-join-form" style="display:none;flex-direction:column;gap:5px;">
       <div style="font-size:.68rem;color:#475569;letter-spacing:.08em">
-        YOUR MUMBLE CREDENTIALS
+        ADVANCED — CUSTOM SERVER
       </div>
       <input id="mv-host" placeholder="murmur:64738  or  IP:64738"
              style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;
@@ -1861,11 +1874,36 @@ window.mumbleTogglePanel = function () {
     const panel = document.getElementById('mumble-panel');
     _mumbleVisible = !_mumbleVisible;
     panel.style.display = _mumbleVisible ? 'block' : 'none';
-    if (_mumbleVisible && !_presencePoll) {
-        _presenceFetch();
-        _presencePoll = setInterval(_presenceFetch, 5000);
+    if (_mumbleVisible) {
+        _mvLoadChannels();
+        if (!_presencePoll) {
+            _presenceFetch();
+            _presencePoll = setInterval(_presenceFetch, 5000);
+        }
     }
 };
+
+// Populate the curated Arrow voice-channel dropdown from the backend.
+let _mvChannels = [];
+function _mvLoadChannels() {
+    const tok = localStorage.getItem('arrow_token');
+    if (!tok) return;
+    fetch(window.ARROW_BACKEND_URL + '/mumble/channels', {
+        headers: { Authorization: 'Bearer ' + tok },
+    }).then(r => r.ok ? r.json() : []).then(list => {
+        _mvChannels = Array.isArray(list) ? list.filter(c => c.is_active) : [];
+        const sel = document.getElementById('mv-channel-select');
+        if (!sel) return;
+        const prev = sel.value;
+        if (!_mvChannels.length) {
+            sel.innerHTML = '<option value="">No channels — use ⚙ custom</option>';
+            return;
+        }
+        sel.innerHTML = _mvChannels.map(c =>
+            `<option value="${c.id}">${_e(c.name)}</option>`).join('');
+        if (prev) sel.value = prev;
+    }).catch(() => {});
+}
 
 // Draggable
 (function () {
@@ -2073,7 +2111,19 @@ window.mvHideJoinForm = function mvHideJoinForm() {
     document.getElementById('mv-join-btn').style.display = '';
 }
 
-window.mvConnect = async function mvConnect() {
+// Connect to a curated Arrow voice channel (server resolves host/channel/access).
+window.mvJoinSelected = function mvJoinSelected() {
+    const sel = document.getElementById('mv-channel-select');
+    const id  = sel ? parseInt(sel.value) : NaN;
+    if (!id) { mvJoin(); return; }   // nothing selected → open advanced form
+    const uname = localStorage.getItem('arrow_callsign') || '';
+    const payload = { type: 'connect', channel_id: id };
+    if (uname) payload.username = uname;
+    _mvOpenVoice(payload, document.getElementById('mv-msg'));
+};
+
+// Connect via the advanced / custom-server form.
+window.mvConnect = function mvConnect() {
     const hostFull = document.getElementById('mv-host').value.trim();
     const uname    = document.getElementById('mv-uname').value.trim();
     const pwd      = document.getElementById('mv-pwd').value;
@@ -2087,6 +2137,12 @@ window.mvConnect = async function mvConnect() {
     const host      = colonIdx > 0 ? cleanHost.slice(0, colonIdx) : cleanHost;
     const port      = colonIdx > 0 ? (parseInt(cleanHost.slice(colonIdx + 1)) || 64738) : 64738;
 
+    _mvOpenVoice({ type: 'connect', host, port, username: uname, password: pwd }, msg);
+};
+
+// Shared voice-session opener: requests mic (listen-only fallback), builds the
+// audio graph, opens the WS, and sends `connectPayload` once open.
+async function _mvOpenVoice(connectPayload, msg) {
     // Try mic — degrade gracefully to listen-only if HTTP or permission denied
     const _canMic = window.isSecureContext && !!navigator.mediaDevices;
     if (_canMic) {
@@ -2133,7 +2189,7 @@ window.mvConnect = async function mvConnect() {
     _mvWs.binaryType = 'arraybuffer';
 
     _mvWs.onopen = () => {
-        _mvWs.send(JSON.stringify({ type: 'connect', host, port, username: uname, password: pwd }));
+        _mvWs.send(JSON.stringify(connectPayload));
     };
 
     _mvWs.onmessage = e => {
@@ -2142,8 +2198,8 @@ window.mvConnect = async function mvConnect() {
             if (!_mvDeafened) _mvPlayPCM(e.data);
         } else {
             try {
-                const msg = JSON.parse(e.data);
-                _mvHandleMsg(msg);
+                const m = JSON.parse(e.data);
+                _mvHandleMsg(m);
             } catch (_) {}
         }
     };
@@ -2195,6 +2251,7 @@ function _mvSetState(state, errMsg) {
     const form = document.getElementById('mv-join-form');
     const join = document.getElementById('mv-join-btn');
     const leave= document.getElementById('mv-leave-btn');
+    const chRow= document.getElementById('mv-channel-row');
 
     if (state === 'connecting') {
         led.style.background  = '#d97706';
@@ -2203,6 +2260,7 @@ function _mvSetState(state, errMsg) {
         ctrl.style.display    = 'none';
         join.style.display    = 'none';
         leave.style.display   = '';
+        if (chRow) chRow.style.display = 'none';
     } else if (state === 'connected') {
         led.style.background  = '#22c55e';
         stat.style.color      = '#22c55e';
@@ -2211,6 +2269,7 @@ function _mvSetState(state, errMsg) {
         form.style.display    = 'none';
         join.style.display    = 'none';
         leave.style.display   = '';
+        if (chRow) chRow.style.display = 'none';
         _mvNextTime           = 0;
         _mvSetupPTT();
     } else {                                      // disconnected / error
@@ -2221,6 +2280,7 @@ function _mvSetState(state, errMsg) {
         form.style.display    = 'none';
         join.style.display    = '';
         leave.style.display   = 'none';
+        if (chRow) chRow.style.display = 'flex';
         _mvCleanup();
     }
 }

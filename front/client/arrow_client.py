@@ -109,6 +109,19 @@ class ArrowClient:
     def vehicles(self) -> list:
         return self._get("/vehicles")
 
+    # ---- Voice channels (Mumble) ------------------------------------
+    def voice_channels(self) -> list:
+        """Curated voice channels the operator may join (name + id + metadata)."""
+        return self._get("/mumble/channels")
+
+    def voice_channel_connect(self, channel_id: int) -> dict:
+        """Full connect credentials (incl. password) for a curated channel.
+
+        Access is enforced server-side; used by the Front which connects
+        directly to Mumble rather than via the server-side voice bridge.
+        """
+        return self._get(f"/mumble/channels/{channel_id}/connect")
+
     # ---- Tracking ---------------------------------------------------
     def push_position(
         self, lat: float, lon: float, altitude: Optional[float] = None

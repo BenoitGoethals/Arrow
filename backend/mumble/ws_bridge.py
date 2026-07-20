@@ -55,7 +55,12 @@ class MumbleVoiceSession:
     # ── Public entry point ────────────────────────────────────────────────────
 
     async def run(
-        self, host: str, port: int, username: str, password: str = ""
+        self,
+        host: str,
+        port: int,
+        username: str,
+        password: str = "",
+        channel: str = "",
     ) -> None:
         self._loop = asyncio.get_event_loop()
         await self._send_json({"type": "state", "state": "connecting"})
@@ -82,6 +87,15 @@ class MumbleVoiceSession:
                 m.start()
                 m.is_ready()
                 self._mumble = m
+                # Auto-join the curated target channel (case-insensitive by name).
+                if channel:
+                    try:
+                        for ch in m.channels.values():
+                            if ch.get("name", "").lower() == channel.lower():
+                                ch.move_in()
+                                break
+                    except Exception:
+                        pass
             except Exception as exc:
                 msg = str(exc)
                 if "ConnectionRejectedError" in type(exc).__name__:

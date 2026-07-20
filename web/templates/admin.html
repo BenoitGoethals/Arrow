@@ -152,6 +152,7 @@ main { padding: 0; }
 
     <h4>Operations</h4>
     <button class="nav-btn" onclick="show('strike-packages',this)"><span class="ico">⚡</span> Strike Packages</button>
+    <button class="nav-btn" onclick="show('voice-channels',this)"><span class="ico">🎙</span> Voice Channels</button>
 
     <h4>Interoperability</h4>
     <button class="nav-btn" onclick="show('tak',this)"><span class="ico">📡</span> TAK / ATAK</button>
@@ -415,6 +416,7 @@ main { padding: 0; }
             case 'maps':      main.innerHTML = ''; renderMaps(main); break;
             case 'octopus':         main.innerHTML = ''; renderOctopus(main); break;
             case 'strike-packages': main.innerHTML = ''; renderStrikePackages(main); break;
+            case 'voice-channels':  main.innerHTML = ''; renderVoiceChannels(main); break;
             case 'tak':             main.innerHTML = ''; renderTak(main); break;
             case 'jdss':            main.innerHTML = ''; renderJdss(main); break;
             case 'logs':            main.innerHTML = ''; renderLogs(main); break;
@@ -682,6 +684,148 @@ main { padding: 0; }
         if (!confirm(`Delete vehicle "${callsign}"?`)) return;
         await api(`/vehicles/${id}`, { method:'DELETE' });
         await loadAll(); render('vehicles');
+    };
+
+    // ── Voice channels (Mumble) ────────────────────────────────────────────
+    const VC_CLASS = ['UNCLASSIFIED','RESTRICTED','CONFIDENTIAL','SECRET','TOP SECRET'];
+    let voiceChannels = [];
+
+    async function renderVoiceChannels(el) {
+        const r = await api('/mumble/channels');
+        voiceChannels = r.ok ? await r.json() : [];
+        const missionMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
+        const srv = (c) => (c.host ? `${esc(c.host)}:${c.port}` : '<span style="color:#64748b">default server</span>');
+        el.innerHTML = `
+        <div class="sec-header">
+            <h2>Voice Channels (${voiceChannels.length})</h2>
+            <button class="btn btn-primary" onclick="openVoiceChannel()">➕ New channel</button>
+        </div>
+        <p style="color:#64748b;font-size:0.85rem;margin:0 0 0.8rem">
+            Curated Mumble voice channels operators pick from in the web dashboard and Front.
+            Leave the server blank to use the configured monitor-bot server.
+        </p>
+        <table class="adm-table">
+            <thead><tr>
+                <th>Name</th><th>Mumble channel</th><th>Server</th><th>Min role</th>
+                <th>Classification</th><th>Mission</th><th>Active</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            ${voiceChannels.map(c => `<tr>
+                <td style="font-weight:600">${esc(c.name)}</td>
+                <td style="color:#94a3b8">${esc(c.mumble_channel || '—')}</td>
+                <td style="font-size:.78rem">${srv(c)}</td>
+                <td><code style="font-size:0.78rem">${esc(c.min_role)}</code></td>
+                <td style="font-size:.72rem;color:#cbd5e1">${VC_CLASS[c.classification || 0]}</td>
+                <td style="color:#94a3b8">${c.mission_id ? esc(missionMap[c.mission_id] || '#'+c.mission_id) : '<span style="color:#64748b">global</span>'}</td>
+                <td>${c.is_active ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>'}</td>
+                <td>
+                    <button class="btn btn-ghost btn-sm" onclick='openVoiceChannel(${JSON.stringify(c)})'>Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteVoiceChannel(${c.id}, '${esc(c.name)}')">Del</button>
+                </td>
+            </tr>`).join('') || '<tr><td colspan="8" style="color:#64748b;padding:1rem">No voice channels yet.</td></tr>'}
+            </tbody>
+        </table>
+
+        <div id="vc-form" style="display:none;margin-top:1rem;background:#161b25;
+             border:1px solid #2a3142;border-radius:8px;padding:1rem;max-width:560px">
+            <h3 id="vc-form-title" style="margin:0 0 .8rem;font-size:.95rem">New voice channel</h3>
+            <input type="hidden" id="vc-id">
+            <div class="field"><label>Name</label>
+                <input id="vc-name" placeholder="e.g. Command Net"></div>
+            <div class="field"><label>Description</label>
+                <input id="vc-desc" placeholder="optional"></div>
+            <div class="field"><label>Mumble channel name <span style="color:#475569">(channel to join on the server)</span></label>
+                <input id="vc-mumble" placeholder="e.g. Command"></div>
+            <div style="display:flex;gap:.6rem">
+                <div class="field" style="flex:2"><label>Server host <span style="color:#475569">(blank = default)</span></label>
+                    <input id="vc-host" placeholder="murmur or IP"></div>
+                <div class="field" style="flex:1"><label>Port</label>
+                    <input id="vc-port" type="number" value="64738"></div>
+            </div>
+            <div class="field"><label>Channel password <span style="color:#475569">(optional; leave blank to keep unchanged when editing)</span></label>
+                <input id="vc-pwd" type="password" placeholder="••••••••"></div>
+            <div style="display:flex;gap:.6rem">
+                <div class="field" style="flex:1"><label>Minimum role</label>
+                    <select id="vc-role">
+                        <option value="OPERATOR">OPERATOR</option>
+                        <option value="BATTLE_CAPTAIN">BATTLE_CAPTAIN</option>
+                        <option value="ADMIN">ADMIN</option>
+                    </select></div>
+                <div class="field" style="flex:1"><label>Classification</label>
+                    <select id="vc-class">
+                        ${VC_CLASS.map((l, i) => `<option value="${i}">${l}</option>`).join('')}
+                    </select></div>
+            </div>
+            <div style="display:flex;gap:.6rem">
+                <div class="field" style="flex:2"><label>Mission</label>
+                    <select id="vc-mission">
+                        <option value="">— global —</option>
+                        ${missions.map(m => `<option value="${m.id}">${esc(m.name)} (${m.status})</option>`).join('')}
+                    </select></div>
+                <div class="field" style="flex:1"><label>Sort order</label>
+                    <input id="vc-sort" type="number" value="0"></div>
+            </div>
+            <div class="field"><label><input id="vc-active" type="checkbox" checked> Active</label></div>
+            <div id="vc-err" style="color:#ef4444;font-size:.82rem;min-height:1em;margin-bottom:.5rem"></div>
+            <div style="display:flex;gap:.5rem">
+                <button class="btn btn-primary" onclick="saveVoiceChannel()">Save</button>
+                <button class="btn btn-ghost" onclick="document.getElementById('vc-form').style.display='none'">Cancel</button>
+            </div>
+        </div>`;
+    }
+
+    window.openVoiceChannel = function(c) {
+        c = c || {};
+        document.getElementById('vc-id').value      = c.id || '';
+        document.getElementById('vc-name').value    = c.name || '';
+        document.getElementById('vc-desc').value    = c.description || '';
+        document.getElementById('vc-mumble').value  = c.mumble_channel || '';
+        document.getElementById('vc-host').value    = c.host || '';
+        document.getElementById('vc-port').value    = c.port || 64738;
+        document.getElementById('vc-pwd').value      = '';
+        document.getElementById('vc-pwd').placeholder = c.has_password ? '•••••••• (set)' : '';
+        document.getElementById('vc-role').value    = c.min_role || 'OPERATOR';
+        document.getElementById('vc-class').value   = String(c.classification ?? 0);
+        document.getElementById('vc-mission').value = c.mission_id ? String(c.mission_id) : '';
+        document.getElementById('vc-sort').value    = c.sort_order || 0;
+        document.getElementById('vc-active').checked = c.is_active !== false;
+        document.getElementById('vc-err').textContent = '';
+        document.getElementById('vc-form-title').textContent = c.id ? 'Edit voice channel' : 'New voice channel';
+        document.getElementById('vc-form').style.display = 'block';
+    };
+
+    window.saveVoiceChannel = async function() {
+        const id  = document.getElementById('vc-id').value;
+        const err = document.getElementById('vc-err');
+        const name = document.getElementById('vc-name').value.trim();
+        if (!name) { err.textContent = 'Name is required.'; return; }
+        const missionVal = document.getElementById('vc-mission').value;
+        const body = {
+            name,
+            description:    document.getElementById('vc-desc').value.trim(),
+            mumble_channel: document.getElementById('vc-mumble').value.trim(),
+            host:           document.getElementById('vc-host').value.trim(),
+            port:           parseInt(document.getElementById('vc-port').value) || 64738,
+            min_role:       document.getElementById('vc-role').value,
+            classification: parseInt(document.getElementById('vc-class').value || '0'),
+            mission_id:     missionVal ? parseInt(missionVal) : null,
+            sort_order:     parseInt(document.getElementById('vc-sort').value) || 0,
+            is_active:      document.getElementById('vc-active').checked,
+        };
+        // Only send password when the field was filled (blank = keep existing).
+        const pwd = document.getElementById('vc-pwd').value;
+        if (pwd) body.password = pwd;
+        const r = id
+            ? await api(`/mumble/channels/${id}`, { method:'PATCH', body: JSON.stringify(body) })
+            : await api('/mumble/channels',       { method:'POST',  body: JSON.stringify(body) });
+        if (!r.ok) { err.textContent = `Save failed: ${r.status} ${await r.text()}`; return; }
+        await renderVoiceChannels(document.getElementById('adm-main'));
+    };
+
+    window.deleteVoiceChannel = async function(id, name) {
+        if (!confirm(`Delete voice channel "${name}"?`)) return;
+        await api(`/mumble/channels/${id}`, { method:'DELETE' });
+        await renderVoiceChannels(document.getElementById('adm-main'));
     };
 
     // ── Hierarchy ──────────────────────────────────────────────────────────

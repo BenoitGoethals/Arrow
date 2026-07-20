@@ -39,11 +39,25 @@ _MONO = QFont("Courier New", 12)
 
 
 class _ConnectDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, arrow_client=None):
         super().__init__(parent)
+        self._arrow = arrow_client
+        # channel_id → full connect info dict (host/port/password/channel), lazily
+        # fetched when a curated channel is picked.
+        self._vc_connect: dict[int, dict] = {}
         self.setWindowTitle("Mumble — Connect")
         self.setMinimumWidth(340)
         lay = QVBoxLayout(self)
+
+        # ── Curated Arrow voice channels ─────────────────────────────────
+        self._vc_combo = QComboBox()
+        self._vc_combo.addItem("— Custom server (advanced) —", None)
+        self._vc_combo.currentIndexChanged.connect(self._on_vc_changed)
+        self._load_voice_channels()
+        vc_form = QFormLayout()
+        vc_form.setSpacing(8)
+        vc_form.addRow(_lbl("Voice channel"), self._vc_combo)
+        lay.addLayout(vc_form)
 
         form = QFormLayout()
         form.setSpacing(8)
@@ -114,6 +128,43 @@ class _ConnectDialog(QDialog):
         btns.accepted.connect(self._accept)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
+
+    def _load_voice_channels(self):
+        """Populate the curated-channel dropdown from the backend (best-effort)."""
+        if not self._arrow:
+            return
+        try:
+            channels = self._arrow.voice_channels() or []
+        except Exception:
+            channels = []
+        for c in channels:
+            if c.get("is_active", True):
+                self._vc_combo.addItem(c.get("name", "?"), c.get("id"))
+
+    def _on_vc_changed(self):
+        """Curated channel picked → fill + lock the server fields; None → custom."""
+        # Signal can fire before the advanced fields exist during __init__.
+        if not hasattr(self, "_host"):
+            return
+        cid = self._vc_combo.currentData()
+        manual = cid is None
+        for w in (self._host, self._port, self._pwd, self._chan):
+            w.setEnabled(manual)
+        if manual:
+            return
+        info = self._vc_connect.get(cid)
+        if info is None and self._arrow:
+            try:
+                info = self._arrow.voice_channel_connect(int(cid))
+                self._vc_connect[cid] = info
+            except Exception:
+                info = None
+        if not info:
+            return
+        self._host.setText(info.get("host", ""))
+        self._port.setValue(int(info.get("port", 64738)))
+        self._pwd.setText(info.get("password", "") or "")
+        self._chan.setText(info.get("channel", "") or "")
 
     def _do_test(self):
         host = self._host.text().strip()
@@ -191,9 +242,11 @@ class _ConnectDialog(QDialog):
 class MumblePanel(QWidget):
     """Mumble voice panel — embeds in the right info strip."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, client=None):
         super().__init__(parent)
         self._client = MumbleClient(self)
+        # Backend ArrowClient — used to fetch the curated voice-channel list.
+        self._arrow = client
         self._channels: list[dict] = []
         self._users: list[dict] = []
         self._ptt_held = False
@@ -341,7 +394,7 @@ class MumblePanel(QWidget):
             self._client.disconnect()
             return
 
-        dlg = _ConnectDialog(self)
+        dlg = _ConnectDialog(self, arrow_client=self._arrow)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         p = dlg.params
