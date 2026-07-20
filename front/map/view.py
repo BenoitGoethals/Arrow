@@ -52,6 +52,10 @@ class _DebugPage(QWebEnginePage):
 class MapView(QWebEngineView):
     file_dropped = pyqtSignal(str, float, float)  # file_path, lat, lon
     grouping_state_loaded = pyqtSignal(bool)  # persisted grouping flag, after load
+    render_crashed = pyqtSignal()  # renderer died; page is being auto-reloaded
+
+    # A hard-failing page must not spin forever — cap automatic recoveries.
+    _MAX_RENDER_RECOVERIES = 5
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -69,15 +73,14 @@ class MapView(QWebEngineView):
         self._page = _DebugPage(self)
         self.setPage(self._page)
 
-        # DIAGNOSTIC: if the map blacks out because the WebEngine render/GPU
-        # process dies, this prints exactly that (no front-end fix can help a
-        # crashed renderer). Remove once the black-out cause is confirmed.
-        self._page.renderProcessTerminated.connect(
-            lambda status, code: print(
-                f"[MapView] *** RENDER PROCESS TERMINATED *** status={status} exitCode={code}",
-                file=sys.stderr,
-            )
-        )
+        # Auto-reload self-heal: if the WebEngine render process dies (on macOS
+        # the colour-emoji ImageIO path can SIGBUS it — see
+        # project_front_emoji_crash), the map blacks out and no front-end/CSS fix
+        # can revive a dead renderer. The only cure is to reload the page in a
+        # fresh render process. Recoveries are capped by _MAX_RENDER_RECOVERIES.
+        self._current_url: QUrl | None = None
+        self._render_recoveries = 0
+        self._page.renderProcessTerminated.connect(self._on_render_process_terminated)
 
         # Grant geolocation permission so navigator.geolocation works
         self._page.permissionRequested.connect(self._on_permission_requested)
@@ -163,6 +166,7 @@ class MapView(QWebEngineView):
             map_html = Path(__file__).parent / "html" / "map.html"
             url = QUrl.fromLocalFile(str(map_html.resolve()))
         print(f"[MapView] Loading: {url.toString()}", file=sys.stderr)
+        self._current_url = url
         self.load(url)
 
     def _force_repaint(self):
@@ -214,8 +218,47 @@ class MapView(QWebEngineView):
         except Exception:
             pass
 
+    def _on_render_process_terminated(self, status, exit_code):
+        """Reload the map in a fresh render process when the renderer dies.
+
+        A crashed renderer shows as a black map that no front-end fix recovers;
+        reloading the last URL is the only cure. Normal terminations (app/page
+        shutting down) are ignored, and automatic recoveries are capped so a
+        page that crashes on every load can't loop forever.
+        """
+        normal = QWebEnginePage.RenderProcessTerminationStatus.NormalTerminationStatus
+        print(
+            f"[MapView] *** RENDER PROCESS TERMINATED *** "
+            f"status={status} exitCode={exit_code}",
+            file=sys.stderr,
+        )
+        if status == normal or self._current_url is None:
+            return
+        if self._render_recoveries >= self._MAX_RENDER_RECOVERIES:
+            print(
+                f"[MapView] render process crashed "
+                f"{self._render_recoveries}× — giving up auto-reload",
+                file=sys.stderr,
+            )
+            return
+        self._render_recoveries += 1
+        print(
+            f"[MapView] auto-reloading map "
+            f"(recovery {self._render_recoveries}/{self._MAX_RENDER_RECOVERIES})",
+            file=sys.stderr,
+        )
+        # Tell the app to drop its load-guard so the reloaded page's map_ready
+        # re-pushes all data; otherwise the recovered map comes back empty.
+        self.render_crashed.emit()
+        # Reload on the next event-loop tick — the dead render process must be
+        # fully reaped before load() can spin up a fresh one.
+        QTimer.singleShot(200, lambda: self.load(self._current_url))
+
     def _on_load_finished(self, ok: bool):
         if ok:
+            # A clean load means the renderer is healthy again — forget past
+            # crashes so unrelated future crashes get their full recovery budget.
+            self._render_recoveries = 0
             print("[MapView] Page loaded OK", file=sys.stderr)
             self._page.runJavaScript(
                 "typeof L !== 'undefined' ? 'Leaflet OK' : 'Leaflet MISSING'",
