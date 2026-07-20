@@ -354,6 +354,16 @@ class ArrowClient:
     def post_report(self, report_type: str, payload: dict) -> dict:
         return self._post("/reports", {"type": report_type, "payload": payload})
 
+    # ---- CAS (Close Air Support) ------------------------------------
+    def cas_assets(self) -> list:
+        """List CAS assets (aircraft) with availability/status."""
+        return self._get("/cas/assets")
+
+    def post_cas_request(self, body: dict) -> dict:
+        """Submit a CAS 9-liner (see backend CasNineLinerIn). Backend persists
+        it as a CAS report and broadcasts on the `cas` channel."""
+        return self._post("/cas/requests", body)
+
     # ---- Photos / media ---------------------------------------------
     def upload_media(self, file_path: str) -> int:
         """Upload an image or video file; returns the photo ID."""
@@ -452,7 +462,11 @@ class ArrowClient:
     ) -> dict:
         return self._post(
             "/missions",
-            {"name": name, "description": description, "classification": classification},
+            {
+                "name": name,
+                "description": description,
+                "classification": classification,
+            },
         )
 
     def start_mission(self, mission_id: int) -> dict:

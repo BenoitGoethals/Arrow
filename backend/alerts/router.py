@@ -10,6 +10,18 @@ from backend.websocket.manager import broadcaster
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
+# Canonical alert types. The first four are operator-raised emergencies; the
+# last two are raised programmatically (drone-spot side-effect and ATAK CoT
+# emergency-button ingest) — kept here so validation accepts them too.
+VALID_ALERT_TYPES = {
+    "TIC",
+    "MEDICAL",
+    "EVAC",
+    "LOST_COMMS",
+    "DRONE_SPOTTED",
+    "ATAK_EMERGENCY",
+}
+
 
 @router.get("", response_model=list[AlertOut])
 def list_alerts(
@@ -37,6 +49,12 @@ async def trigger_alert(
 ) -> Alert:
     from backend.classification import resolve_default_and_cap
 
+    if payload.type not in VALID_ALERT_TYPES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"type must be one of {sorted(VALID_ALERT_TYPES)}",
+        )
+
     alert = Alert(
         type=payload.type,
         operator_id=current.id,
@@ -45,7 +63,9 @@ async def trigger_alert(
             payload.longitude if payload.longitude is not None else current.longitude
         ),
         mission_id=mission.id if mission else current.mission_id,
-        classification=resolve_default_and_cap(mission, current, payload.classification),
+        classification=resolve_default_and_cap(
+            mission, current, payload.classification
+        ),
     )
     db.add(alert)
     db.commit()

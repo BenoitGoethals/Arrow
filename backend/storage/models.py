@@ -371,7 +371,10 @@ class Alert(Base):
     __tablename__ = "alerts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    type: Mapped[str] = mapped_column(String(40))  # TIC, MEDICAL, EVAC, LOST_COMMS
+    type: Mapped[str] = mapped_column(
+        String(40)
+    )  # TIC, MEDICAL, EVAC, LOST_COMMS, DRONE_SPOTTED, ATAK_EMERGENCY
+    # (validated against backend.alerts.router.VALID_ALERT_TYPES)
     classification: Mapped[int] = mapped_column(Integer, default=0)
     operator_id: Mapped[int] = mapped_column(ForeignKey("operators.id"))
     operator: Mapped["Operator"] = relationship()

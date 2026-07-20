@@ -238,3 +238,21 @@ def test_mission_clearance_gate_and_assignment(client):
         json={"operator_ids": [op_id]},
     )
     assert r.status_code == 409, r.text
+
+
+# ── Alert type validation ─────────────────────────────────────────────────────
+
+
+def test_alert_type_validation(client):
+    """POST /alerts rejects types outside VALID_ALERT_TYPES with 422."""
+    _, tok, _ = register(client, "OPERATOR")
+    h = auth(tok)
+
+    # All canonical types are accepted.
+    for good in ("TIC", "MEDICAL", "EVAC", "LOST_COMMS", "DRONE_SPOTTED"):
+        r = client.post("/alerts", headers=h, json={"type": good})
+        assert r.status_code == 201, f"{good} should be accepted: {r.text}"
+
+    # An unknown type is rejected.
+    bad = client.post("/alerts", headers=h, json={"type": "BOGUS"})
+    assert bad.status_code == 422

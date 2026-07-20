@@ -42,6 +42,7 @@ from front.windows.strike_planner import StrikePlannerWindow
 from front.windows.opord_window import OpordWindow
 from front.windows.stream_viewer import StreamViewerWindow
 from front.windows.medevac_window import MedevacWindow
+from front.windows.cas_window import CasWindow
 from front.windows.fire_mission_dialog import FireMissionDialog
 from front.client.arrow_client import ArrowClient
 from front.client.ws_listener import WSListener
@@ -199,6 +200,7 @@ class MainWindow(QMainWindow):
         self._opord_windows: list[OpordWindow] = []
         self._stream_viewers: list[StreamViewerWindow] = []
         self._medevac_windows: list[MedevacWindow] = []
+        self._cas_windows: list[CasWindow] = []
         self._fire_windows: list[FireMissionDialog] = []
         self._mortarcalc_windows: list = []
 
@@ -1710,6 +1712,8 @@ class MainWindow(QMainWindow):
             pass  # symbol picker handles placement
         elif action == "medevac":
             self._open_medevac(lat, lon)
+        elif action == "cas":
+            self._open_cas(lat, lon)
         elif action == "poi":
             self._place_poi_with_photo(lat, lon)
         elif action == "fire":
@@ -1768,6 +1772,28 @@ class MainWindow(QMainWindow):
         win.show()
         win.raise_()
         self._medevac_windows.append(win)
+
+    def _open_cas(self, lat: float, lon: float):
+        """Place a CAS target marker on the map and open the 9-liner form."""
+        try:
+            from front.utils.mgrs_util import to_mgrs
+
+            mgrs = to_mgrs(lat, lon)
+        except Exception:
+            mgrs = f"{lat:.5f}, {lon:.5f}"
+
+        # Place a hostile target marker at the strike point immediately
+        self._place_radial_marker(
+            "HOSTILE", lat, lon, notes="CAS TARGET", affiliation="HOSTILE"
+        )
+
+        win = CasWindow(self._client, lat, lon, mgrs, parent=self)
+        win.request_submitted.connect(
+            lambda _: (self._right_panel.expand(), self._info.activate("reports"))
+        )
+        win.show()
+        win.raise_()
+        self._cas_windows.append(win)
 
     def _place_medevac_marker(self, lat: float, lon: float):
         """Place a red-cross MEDEVAC marker on the map at the given position."""

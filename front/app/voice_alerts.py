@@ -20,6 +20,7 @@ _TONE_DELAY = 1.2  # seconds after speech starts before tone kicks in
 # alert_type → (spoken text, tone freq Hz, waveform)
 _VOICES: dict[str, tuple[str, float, str]] = {
     "TIC": ("Contact, contact, contact", 1200, "square"),
+    "ATAK_EMERGENCY": ("Emergency, emergency, emergency", 1200, "square"),
     "DRONE_SPOTTED": ("Drone spotted, drone spotted", 540, "drone"),
     "MEDICAL": ("Medical emergency, medical emergency", 880, "sawtooth"),
     "EVAC": ("Evacuation, evacuation", 660, "sine"),

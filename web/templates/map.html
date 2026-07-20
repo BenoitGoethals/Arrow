@@ -503,6 +503,24 @@
                 <button class="overlay-btn" id="wx-toggle" title="Weather overlays">🌧 Weather</button>
                 <button class="overlay-btn active" id="cluster-toggle" title="Group nearby symbols into cluster badges — click to show all individually">⊞ Group</button>
                 <button class="overlay-btn" id="mgal-btn" title="Media Gallery">📷 Media</button>
+                <button class="overlay-btn" id="alert-raise-toggle" title="Raise emergency alert">⚡ ALERT</button>
+            </div>
+            <!-- ── Raise Alert menu — hidden until "⚡ ALERT" is clicked ─────── -->
+            <div id="alert-raise-panel" style="display:none; position:absolute; top:60px; right:12px;
+                                       background:#0e1217; border:1px solid #2a3142;
+                                       border-radius:6px; padding:10px; z-index:1100;
+                                       min-width:200px; color:#e2e8f0;
+                                       font-size:0.85rem; box-shadow:0 4px 14px rgba(0,0,0,0.5)">
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px">
+                    <strong style="flex:1">⚡ Raise alert</strong>
+                    <button id="alert-raise-close" class="overlay-btn" style="padding:0 8px">×</button>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:4px">
+                    <button class="overlay-btn alert-raise-type" data-alert-type="TIC">🔴 TIC</button>
+                    <button class="overlay-btn alert-raise-type" data-alert-type="MEDICAL">➕ MEDICAL</button>
+                    <button class="overlay-btn alert-raise-type" data-alert-type="EVAC">🚁 EVAC</button>
+                    <button class="overlay-btn alert-raise-type" data-alert-type="LOST_COMMS">📵 LOST_COMMS</button>
+                </div>
             </div>
             <!-- ── KML layers panel — hidden until "📂 KML" is clicked ────── -->
             <div id="kml-panel" style="display:none; position:absolute; top:60px; right:12px;
@@ -5302,6 +5320,39 @@
     });
     document.getElementById('goto-close').addEventListener('click', () => {
         gotoPanel.style.display = 'none';
+    });
+
+    // ── Raise Alert menu ─────────────────────────────────────────────────────
+    // Originates an alert via POST /alerts. Only the 4 operator-facing types are
+    // offered; the backend validates the type server-side. Location = map centre.
+    const alertRaisePanel = document.getElementById('alert-raise-panel');
+    document.getElementById('alert-raise-toggle').addEventListener('click', () => {
+        alertRaisePanel.style.display = alertRaisePanel.style.display === 'none' ? '' : 'none';
+    });
+    document.getElementById('alert-raise-close').addEventListener('click', () => {
+        alertRaisePanel.style.display = 'none';
+    });
+    document.querySelectorAll('.alert-raise-type').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const type = btn.dataset.alertType;
+            const c = map.getCenter();
+            alertRaisePanel.style.display = 'none';
+            try {
+                const r = await fetch(window.ARROW_BACKEND_URL + '/alerts', {
+                    method: 'POST',
+                    headers: missionHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ type, latitude: c.lat, longitude: c.lng }),
+                });
+                if (!r.ok) {
+                    const txt = await r.text().catch(() => '');
+                    toast(`Alert failed (${r.status})${txt ? ': ' + txt.slice(0, 120) : ''}`, '#ef4444');
+                    return;
+                }
+                toast(`⚡ ${type} alert raised`, '#f59e0b');
+            } catch (e) {
+                toast(`Alert failed: ${e.message || e}`, '#ef4444');
+            }
+        });
     });
 
     const kmlFileInput = document.getElementById('kml-file');

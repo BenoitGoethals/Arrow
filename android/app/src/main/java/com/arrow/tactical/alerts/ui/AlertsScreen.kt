@@ -27,6 +27,14 @@ private val ALERT_TYPES = listOf(
     AlertTypeDef("LOST_COMMS", "✕ LOST COMMS",  Color(0xFF2563EB)),
 )
 
+// Received-only alert types — shown in the feed/marker but NOT offered in the
+// raise picker above (DRONE_SPOTTED = drone-spot side-effect; ATAK_EMERGENCY =
+// ATAK CoT emergency button).
+private val ALERT_TYPES_RECEIVED = listOf(
+    AlertTypeDef("DRONE_SPOTTED",  "🛸 DRONE",      Color(0xFFD2A8FF)),
+    AlertTypeDef("ATAK_EMERGENCY", "⚠ ATAK EMERG", Color(0xFFDC2626)),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlertsScreen(repo: AlertRepository) {
@@ -111,7 +119,7 @@ fun AlertsScreen(repo: AlertRepository) {
 
 @Composable
 private fun AlertRow(alert: AlertDto) {
-    val def   = ALERT_TYPES.find { it.key == alert.type }
+    val def   = (ALERT_TYPES + ALERT_TYPES_RECEIVED).find { it.key == alert.type }
     val color = def?.color ?: Color(0xFF64748B)
 
     Row(

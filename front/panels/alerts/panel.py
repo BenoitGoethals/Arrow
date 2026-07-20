@@ -18,6 +18,7 @@ ALERT_COLOR = {
     "EVAC": "#ffa500",
     "LOST_COMMS": "#d29922",
     "DRONE_SPOTTED": "#d2a8ff",
+    "ATAK_EMERGENCY": "#f85149",
 }
 
 ALERT_ICON = {
@@ -26,6 +27,7 @@ ALERT_ICON = {
     "EVAC": "🚁",
     "LOST_COMMS": "📡",
     "DRONE_SPOTTED": "🛸",
+    "ATAK_EMERGENCY": "🆘",
 }
 
 
