@@ -397,8 +397,14 @@ async function saveAssignments() {
                 const body = await r.json();
                 if (body.detail?.conflicts) {
                     msg = body.detail.conflicts
-                        .map(c => `${c.callsign} is already in "${c.mission_name}"`)
+                        .map(c => c.reason
+                            ? `${c.callsign}: ${c.reason}`
+                            : `${c.callsign} is already in "${c.mission_name}"`)
                         .join('; ');
+                } else if (body.detail?.message) {
+                    msg = body.detail.message;
+                } else if (typeof body.detail === 'string') {
+                    msg = body.detail;
                 }
             } catch (_) {}
             if (errEl) { errEl.textContent = msg; return; }
