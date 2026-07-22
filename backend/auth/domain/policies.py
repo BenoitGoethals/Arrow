@@ -9,6 +9,7 @@ VALID_ROLES: frozenset[str] = frozenset(
         "ADMIN",
         "LOG",
         "FO",
+        "FDC",
         "CAS",
         "INTEL",
         "OPS",
