@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Admin — Arrow{% endblock %}
 {% block head %}
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <style>
 /* ── Layout ──────────────────────────────────────────────────────────────── */
 .adm-shell  { display: grid; grid-template-columns: 220px 1fr; height: calc(100vh - 60px); }
@@ -64,13 +65,42 @@
 .modal-footer { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 1.2rem; }
 .form-error { color: #ef4444; font-size: 0.8rem; margin-top: 0.4rem; }
 
-/* ── Hierarchy tree ──────────────────────────────────────────────────────── */
-.htree details { margin-left: 1rem; }
-.htree summary { cursor: pointer; padding: 0.3rem 0; display: flex; align-items: center; gap: 0.5rem; }
-.htree summary::marker { color: #34d399; }
-.htree .h-item { display: flex; align-items: center; gap: 0.5rem; }
-.htree .h-name { flex: 1; font-size: 0.88rem; }
-.htree .h-meta { font-size: 0.72rem; color: #475569; }
+/* ── Personnel (hierarchy tree + operators table) ───────────────────────── */
+.pt-shell    { display: grid; grid-template-columns: 340px 1fr; gap: 1.25rem; align-items: start; }
+.pt-panel    { background: #161b25; border: 1px solid #2a3142; border-radius: 8px; }
+.pt-panel-hdr { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid #2a3142; }
+.pt-panel-hdr h3 { margin: 0; font-size: 0.88rem; flex: 1; }
+.pt-panel-body { padding: 0.6rem 0.75rem; max-height: 70vh; overflow-y: auto; }
+.pt-tree-node { }
+.pt-children  { padding-left: 1.1rem; }
+.pt-row       { display: flex; align-items: center; gap: 0.35rem; padding: 0.22rem 0.3rem; border-radius: 4px; min-height: 26px; }
+.pt-row:hover { background: #1a2233; }
+.pt-toggle    { color: #34d399; font-size: 0.65rem; width: 14px; flex-shrink: 0; cursor: pointer; font-family: monospace; }
+.pt-icon      { font-size: 0.78rem; flex-shrink: 0; }
+.pt-name      { flex: 1; font-size: 0.83rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+.pt-name-input { flex: 1; font-size: 0.83rem; background: #0d1117; color: #e2e8f0; border: 1px solid #34d399; border-radius: 3px; padding: 0 0.3rem; min-width: 0; }
+.pt-meta      { font-size: 0.68rem; color: #475569; white-space: nowrap; flex-shrink: 0; }
+.pt-acts      { display: none; gap: 0.1rem; align-items: center; flex-shrink: 0; }
+.pt-row:hover .pt-acts { display: flex; }
+.pt-team      { border-radius: 5px; border: 1px dashed transparent; transition: background .12s, border-color .12s; }
+.pt-team.dragover { background: #1e3a2f; border-color: #34d399; }
+.pt-chips     { padding: 0.1rem 0 0.15rem 1.5rem; display: flex; flex-direction: column; gap: 1px; }
+.pt-chip      { display: flex; align-items: center; gap: 0.3rem; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.76rem; color: #94a3b8; cursor: grab; user-select: none; }
+.pt-chip:hover { background: #1a2233; }
+.pt-chip.dragging { opacity: 0.35; }
+.pt-dot-on  { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; flex-shrink: 0; display: inline-block; }
+.pt-dot-off { width: 6px; height: 6px; border-radius: 50%; background: #475569; flex-shrink: 0; display: inline-block; }
+.pt-toolbar { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+.pt-search  { background: #0d1117; color: #e2e8f0; border: 1px solid #2a3142; border-radius: 5px; padding: 0.3rem 0.6rem; font: inherit; font-size: 0.82rem; flex: 1; }
+.pt-search:focus { outline: none; border-color: #34d399; }
+.pt-drag-hdl { color: #2a3142; font-size: 0.9rem; cursor: grab; }
+.adm-table tr:hover .pt-drag-hdl { color: #475569; }
+.adm-table tr.dragging td { opacity: 0.35; }
+.pt-preview-tbl { width: 100%; border-collapse: collapse; font-size: 0.76rem; margin-top: 0.6rem; }
+.pt-preview-tbl th { text-align: left; color: #64748b; padding: 0.25rem 0.4rem; border-bottom: 1px solid #2a3142; white-space: nowrap; }
+.pt-preview-tbl td { padding: 0.2rem 0.4rem; border-bottom: 1px solid #1e2736; }
+.pt-import-ok  { background: #166534; color: #86efac; border-radius: 5px; padding: 0.4rem 0.7rem; font-size: 0.8rem; margin-top: 0.5rem; }
+.pt-import-err { background: #7f1d1d; color: #fca5a5; border-radius: 5px; padding: 0.4rem 0.7rem; font-size: 0.8rem; margin-top: 0.5rem; }
 
 /* ── ORBAT org-chart diagram ─────────────────────────────────────────────── */
 .orbat-wrap   { overflow: auto; padding: 1rem 0.5rem 3rem; }
@@ -143,10 +173,9 @@ main { padding: 0; }
     <button class="nav-btn active" onclick="show('overview',this)"><span class="ico">📊</span> Dashboard</button>
 
     <h4>Users</h4>
-    <button class="nav-btn" onclick="show('operators',this)"><span class="ico">👥</span> Operators</button>
+    <button class="nav-btn" onclick="show('operators',this)"><span class="ico">👥</span> Personnel</button>
 
     <h4>Organisation</h4>
-    <button class="nav-btn" onclick="show('hierarchy',this)"><span class="ico">🏛</span> Hierarchy</button>
     <button class="nav-btn" onclick="show('orgchart',this)"><span class="ico">🎖</span> ORBAT Diagram</button>
     <button class="nav-btn" onclick="show('vehicles',this)"><span class="ico">🚙</span> Vehicles</button>
 
@@ -207,6 +236,13 @@ main { padding: 0; }
       <select id="new-team"><option value="">— select a team —</option></select>
       <span class="hint">Every operator must belong to a team.</span>
     </div>
+    <div class="field"><label>Team role</label>
+      <select id="new-team-role">
+        <option value="">— none —</option>
+        {% for tr in ['LEADER','INFANTRY','SNIPER','SAPPER','BREACHER','MEDIC','MACHINE_GUNNER','GRENADIER','RADIO_OPERATOR','DRIVER'] %}
+        <option value="{{ tr }}">{{ tr.replace('_',' ').title() }}</option>{% endfor %}
+      </select>
+    </div>
     <div id="create-op-err" class="form-error"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-create-op')">Cancel</button>
@@ -257,6 +293,13 @@ main { padding: 0; }
       </select>
     </div>
     <div class="field"><label>Team</label><select id="edit-team"><option value="">— unassigned —</option></select></div>
+    <div class="field"><label>Team role</label>
+      <select id="edit-team-role">
+        <option value="">— none —</option>
+        {% for tr in ['LEADER','INFANTRY','SNIPER','SAPPER','BREACHER','MEDIC','MACHINE_GUNNER','GRENADIER','RADIO_OPERATOR','DRIVER'] %}
+        <option value="{{ tr }}">{{ tr.replace('_',' ').title() }}</option>{% endfor %}
+      </select>
+    </div>
     <div class="field"><label>Mission <span style="color:#475569">(optional — links operator to a mission)</span></label>
       <select id="edit-mission"><option value="">— no mission —</option></select>
     </div>
@@ -339,6 +382,43 @@ main { padding: 0; }
   </div>
 </div>
 
+<!-- Excel import (personnel) -->
+<div class="modal-bg" id="modal-pt-import">
+  <div class="modal" style="width:560px">
+    <h3 id="pt-import-title">Import</h3>
+    <div class="field">
+      <label>Excel / CSV file *</label>
+      <input type="file" id="pt-import-file" accept=".xlsx,.xls,.csv"
+             style="color:#e2e8f0" onchange="ptPreviewImport()"/>
+    </div>
+    <div id="pt-import-preview"></div>
+    <div id="pt-import-status"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-pt-import')">Cancel</button>
+      <button class="btn btn-primary" id="pt-import-btn" style="display:none" onclick="ptConfirmImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- JSON hierarchy import (personnel) -->
+<div class="modal-bg" id="modal-pt-json-import">
+  <div class="modal" style="width:480px">
+    <h3>⬆ Import JSON Snapshot</h3>
+    <p style="font-size:.8rem;color:#94a3b8;margin:.3rem 0 .9rem">
+      Select a <code>hierarchy_export.json</code> file. Existing nodes are kept; new ones are created. Operators are upserted by callsign.
+    </p>
+    <div class="field">
+      <label>JSON file *</label>
+      <input type="file" id="pt-json-import-file" accept=".json" style="color:#e2e8f0"/>
+    </div>
+    <div id="pt-json-import-status"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-pt-json-import')">Cancel</button>
+      <button class="btn btn-primary" onclick="ptConfirmJsonImport()">Import</button>
+    </div>
+  </div>
+</div>
+
 <!-- ORBAT node detail drawer -->
 <div class="org-detail" id="org-detail">
   <div class="od-hdr">
@@ -408,7 +488,6 @@ main { padding: 0; }
         switch (section) {
             case 'overview':  main.innerHTML = ''; renderOverview(main); break;
             case 'operators': main.innerHTML = ''; renderOperators(main); break;
-            case 'hierarchy': main.innerHTML = ''; renderHierarchy(main); break;
             case 'orgchart':  main.innerHTML = ''; renderOrgChart(main); break;
             case 'vehicles':  main.innerHTML = ''; renderVehicles(main); break;
             case 'config':    main.innerHTML = ''; renderConfig(main); break;
@@ -460,52 +539,268 @@ main { padding: 0; }
     }
 
     // ── Operators ──────────────────────────────────────────────────────────
+    // Personnel = hierarchy tree (left) + operators table (right), merged from
+    // the old standalone /organisation page and this tab's plain table so
+    // team assignment, team_role, clearance, mission and ops_status all live
+    // in one place instead of two overlapping admin screens.
+    function renderPersonnelTree() {
+        const pltByCo  = groupBy(platoons, p => p.company_id);
+        const secByPlt = groupBy(sections, s => s.platoon_id);
+        const tmBySec  = groupBy(teams,    t => t.section_id);
+        const opByTeam = groupBy(operators.filter(o => o.team_id), o => o.team_id);
+
+        if (!companies.length) {
+            return '<p style="color:#475569;font-size:.83rem">No companies yet — click <strong>+ Company</strong> to start.</p>';
+        }
+        return companies.map(co => buildCoNode(co, pltByCo, secByPlt, tmBySec, opByTeam)).join('');
+    }
+
+    function buildCoNode(co, pltByCo, secByPlt, tmBySec, opByTeam) {
+        const plts = pltByCo[co.id] || [];
+        let opCount = 0;
+        for (const p of plts) for (const s of secByPlt[p.id] || []) for (const t of tmBySec[s.id] || []) opCount += (opByTeam[t.id] || []).length;
+        const childId = `pt-co-ch-${co.id}`;
+        return `
+<div class="pt-tree-node">
+  <div class="pt-row">
+    <button class="pt-toggle" data-toggle="${childId}" onclick="ptToggle('${childId}')">▾</button>
+    <span class="pt-icon">🏢</span>
+    <span class="pt-name" id="pt-nm-co-${co.id}">${esc(co.name)}</span>
+    <span class="pt-meta">${opCount} ops</span>
+    <span class="pt-acts">
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem" onclick="addNode('platoon',${co.id},'${esc(co.name)}')">+plt</button>
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem" onclick="ptStartRename('co',${co.id})">✏</button>
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem;color:#ef4444" onclick="delNode('companies',${co.id},'${esc(co.name)}')">×</button>
+    </span>
+  </div>
+  <div class="pt-children" id="${childId}">
+    ${plts.map(p => buildPltNode(p, secByPlt, tmBySec, opByTeam)).join('')}
+  </div>
+</div>`;
+    }
+
+    function buildPltNode(plt, secByPlt, tmBySec, opByTeam) {
+        const secs = secByPlt[plt.id] || [];
+        const childId = `pt-plt-ch-${plt.id}`;
+        return `
+<div class="pt-tree-node">
+  <div class="pt-row">
+    <button class="pt-toggle" data-toggle="${childId}" onclick="ptToggle('${childId}')">▾</button>
+    <span class="pt-icon">📋</span>
+    <span class="pt-name" id="pt-nm-plt-${plt.id}">${esc(plt.name)}</span>
+    <span class="pt-acts">
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem" onclick="addNode('section',${plt.id},'${esc(plt.name)}')">+sec</button>
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem" onclick="ptStartRename('plt',${plt.id})">✏</button>
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem;color:#ef4444" onclick="delNode('platoons',${plt.id},'${esc(plt.name)}')">×</button>
+    </span>
+  </div>
+  <div class="pt-children" id="${childId}">
+    ${secs.map(s => buildSecNode(s, tmBySec, opByTeam)).join('')}
+  </div>
+</div>`;
+    }
+
+    function buildSecNode(sec, tmBySec, opByTeam) {
+        const tms = tmBySec[sec.id] || [];
+        const childId = `pt-sec-ch-${sec.id}`;
+        return `
+<div class="pt-tree-node">
+  <div class="pt-row">
+    <button class="pt-toggle" data-toggle="${childId}" onclick="ptToggle('${childId}')">▾</button>
+    <span class="pt-icon">📁</span>
+    <span class="pt-name" id="pt-nm-sec-${sec.id}">${esc(sec.name)}</span>
+    <span class="pt-acts">
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem" onclick="addNode('team',${sec.id},'${esc(sec.name)}')">+team</button>
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem" onclick="ptStartRename('sec',${sec.id})">✏</button>
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem;color:#ef4444" onclick="delNode('sections',${sec.id},'${esc(sec.name)}')">×</button>
+    </span>
+  </div>
+  <div class="pt-children" id="${childId}">
+    ${tms.map(t => buildTeamNode(t, opByTeam)).join('')}
+  </div>
+</div>`;
+    }
+
+    function buildTeamNode(t, opByTeam) {
+        const ops = opByTeam[t.id] || [];
+        const chips = ops.map(op => {
+            const tr = op.team_role ? op.team_role.replace(/_/g,' ').toLowerCase() : '';
+            return `
+      <div class="pt-chip" draggable="true" data-op-id="${op.id}">
+        <span class="${op.online ? 'pt-dot-on' : 'pt-dot-off'}"></span>
+        <span>${esc(op.callsign)}</span>
+        <span style="color:#475569;font-size:.7rem">${esc(op.rank)}</span>
+        ${tr ? `<span style="color:#34d399;font-size:.68rem;font-style:italic">${esc(tr)}</span>` : ''}
+      </div>`;
+        }).join('');
+        return `
+<div class="pt-tree-node pt-team" data-team-id="${t.id}">
+  <div class="pt-row">
+    <span style="width:14px;flex-shrink:0"></span>
+    <span class="pt-icon">👥</span>
+    <span class="pt-name" id="pt-nm-team-${t.id}">${esc(t.name)}</span>
+    <span class="pt-meta">${ops.length}</span>
+    <span class="pt-acts">
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem" onclick="ptStartRename('team',${t.id})">✏</button>
+      <button class="btn-ghost btn-sm" style="padding:.1rem .3rem;color:#ef4444" onclick="delNode('teams',${t.id},'${esc(t.name)}')">×</button>
+    </span>
+  </div>
+  <div class="pt-chips">${chips}</div>
+</div>`;
+    }
+
+    window.ptToggle = function(id) {
+        const ch = document.getElementById(id);
+        if (!ch) return;
+        const btn = document.querySelector(`[data-toggle="${id}"]`);
+        const hidden = ch.style.display === 'none';
+        ch.style.display = hidden ? '' : 'none';
+        if (btn) btn.textContent = hidden ? '▾' : '▶';
+    };
+
+    const PT_KIND_TO_PATH = { co:'companies', plt:'platoons', sec:'sections', team:'teams' };
+
+    window.ptStartRename = function(kind, id) {
+        const span = document.getElementById(`pt-nm-${kind}-${id}`);
+        if (!span) return;
+        const original = span.textContent;
+        const inp = document.createElement('input');
+        inp.className = 'pt-name-input';
+        inp.value = original;
+        span.replaceWith(inp);
+        inp.focus(); inp.select();
+        async function commit() {
+            const val = inp.value.trim();
+            if (!val || val === original) { inp.replaceWith(span); return; }
+            const r = await api(`/${PT_KIND_TO_PATH[kind]}/${id}`, { method:'PATCH', body: JSON.stringify({ name: val }) });
+            if (r.ok) { await loadAll(); render('operators'); } else { inp.replaceWith(span); }
+        }
+        inp.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') inp.replaceWith(span);
+        });
+        inp.addEventListener('blur', commit);
+    };
+
+    function ptBindTreeDnD() {
+        document.querySelectorAll('.pt-chip[data-op-id]').forEach(chip => {
+            chip.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('opId', chip.dataset.opId);
+                e.stopPropagation();
+                chip.classList.add('dragging');
+            });
+            chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+        });
+        document.querySelectorAll('.pt-team[data-team-id]').forEach(zone => {
+            zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('dragover'); });
+            zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('dragover'); });
+            zone.addEventListener('drop', async e => {
+                e.preventDefault(); zone.classList.remove('dragover');
+                const opId = e.dataTransfer.getData('opId');
+                if (!opId) return;
+                await api(`/operators/${opId}`, { method:'PATCH', body: JSON.stringify({ team_id: parseInt(zone.dataset.teamId) }) });
+                await loadAll(); render('operators');
+            });
+        });
+        document.querySelectorAll('#pt-ops-tbody tr[data-op-id]').forEach(row => {
+            row.addEventListener('dragstart', e => { e.dataTransfer.setData('opId', row.dataset.opId); row.classList.add('dragging'); });
+            row.addEventListener('dragend', () => row.classList.remove('dragging'));
+        });
+    }
+
+    function ptTeamPaths() {
+        const coMap  = Object.fromEntries(companies.map(c => [c.id, c.name]));
+        const pltMap = Object.fromEntries(platoons.map(p => [p.id, p]));
+        const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
+        const result = {};
+        for (const t of teams) {
+            const sec = secMap[t.section_id];
+            const plt = sec ? pltMap[sec.platoon_id] : null;
+            const co  = plt ? coMap[plt.company_id]  : null;
+            result[t.id] = [co, plt?.name, sec?.name, t.name].filter(Boolean).join(' › ');
+        }
+        return result;
+    }
+
     function renderOperators(el) {
-        const teamMap    = Object.fromEntries(teams.map(t => [t.id, t.name]));
+        const missionMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
+        const teamPath = ptTeamPaths();
+        const q = (el.querySelector('#pt-search')?.value || '').toLowerCase();
+        const filtered = q
+            ? operators.filter(o => o.callsign.toLowerCase().includes(q) || (o.rank||'').toLowerCase().includes(q))
+            : operators;
         const unassigned = operators.filter(o => !o.team_id);
         const warnBanner = unassigned.length
             ? `<div style="background:#78350f22;border:1px solid #d97706;border-radius:6px;padding:0.65rem 1rem;margin-bottom:1rem;color:#fde68a;font-size:0.83rem">
                 ⚠️  <strong>${unassigned.length} operator${unassigned.length>1?'s':''} unassigned</strong>:
                 ${unassigned.map(o => `<span style="font-family:monospace">${esc(o.callsign)}</span>`).join(', ')}
-                — edit each operator and assign a team.
+                — drag to a team or edit.
                </div>` : '';
-        const missionMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
+
         el.innerHTML = `
         <div class="sec-header">
-            <h2>Operators (${operators.length})</h2>
+            <h2>Personnel (${operators.length})</h2>
             <button class="btn btn-primary" onclick="openCreateOp()">➕ New operator</button>
         </div>
-        ${warnBanner}
-        <table class="adm-table">
-            <thead><tr>
-                <th></th><th>Callsign</th><th>Rank</th><th>Role</th><th>Clearance</th>
-                <th>Team</th><th>Mission</th><th>Status</th><th>Last seen</th><th>Actions</th>
-            </tr></thead>
-            <tbody>
-            ${operators.map(op => {
-                const badge = op.role === 'ADMIN' ? 'badge-adm' : op.role === 'BATTLE_CAPTAIN' ? 'badge-bc' : 'badge-op';
-                const dot   = op.online ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>';
-                const team  = op.team_id ? teamMap[op.team_id] || `#${op.team_id}` : '—';
-                const mission = op.mission_id ? missionMap[op.mission_id] || `#${op.mission_id}` : '—';
-                const ts    = (op.last_seen || '').slice(0, 16).replace('T', ' ');
-                return `<tr>
-                    <td>${dot}</td>
-                    <td style="font-weight:600">${esc(op.callsign)}</td>
-                    <td><code style="font-size:0.78rem">${esc(op.rank)}</code></td>
-                    <td><span class="badge ${badge}">${op.role}</span></td>
-                    <td style="font-size:.72rem;color:#cbd5e1">${['UNCLASSIFIED','RESTRICTED','CONFIDENTIAL','SECRET','TOP SECRET'][op.clearance||0]}</td>
-                    <td style="color:#94a3b8">${esc(team)}</td>
-                    <td style="color:#64748b;font-size:0.78rem">${esc(mission)}</td>
-                    <td><span class="badge ${op.online?'badge-ok':'badge-warn'}">${op.online?'ONLINE':'OFFLINE'}</span>${(op.ops_status && op.ops_status !== 'OPS') ? ` <span class="badge" style="background:#7f1d1d;color:#fecaca">${esc(op.ops_status)}</span>` : ''}</td>
-                    <td style="color:#64748b;font-size:0.78rem">${ts}</td>
-                    <td>
-                        <button class="btn btn-ghost btn-sm" onclick='openEditOp(${JSON.stringify(op)})'>Edit</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteOp(${op.id}, '${esc(op.callsign)}')">Del</button>
-                    </td>
-                </tr>`;
-            }).join('')}
-            </tbody>
-        </table>`;
+        <div class="pt-shell">
+          <div class="pt-panel">
+            <div class="pt-panel-hdr">
+              <h3>🏛 Hierarchy</h3>
+              <button class="btn btn-ghost btn-sm" onclick="ptOpenImportModal('hierarchy')" title="Import Excel">⬆ XLS</button>
+              <button class="btn btn-ghost btn-sm" onclick="ptDownloadTemplate('hierarchy')" title="Download Excel template">⬇ XLS</button>
+              <button class="btn btn-ghost btn-sm" onclick="ptImportHierarchyJson()" title="Import JSON snapshot">⬆ JSON</button>
+              <button class="btn btn-ghost btn-sm" onclick="ptExportHierarchyJson()" title="Export JSON snapshot">⬇ JSON</button>
+              <button class="btn btn-primary btn-sm" onclick="addNode('company',null,'')">+ Company</button>
+            </div>
+            <div class="pt-panel-body">${renderPersonnelTree()}</div>
+          </div>
+          <div class="pt-panel">
+            <div class="pt-panel-hdr">
+              <h3>👥 Operators</h3>
+              <button class="btn btn-ghost btn-sm" onclick="ptOpenImportModal('operators')" title="Import Excel">⬆</button>
+              <button class="btn btn-ghost btn-sm" onclick="ptDownloadTemplate('operators')" title="Download template">⬇</button>
+            </div>
+            <div class="pt-panel-body" style="max-height:none">
+              <div class="pt-toolbar"><input class="pt-search" id="pt-search" placeholder="Search callsign / rank…" oninput="render('operators')"/></div>
+              ${warnBanner}
+              <table class="adm-table">
+                <thead><tr>
+                    <th style="width:20px"></th><th style="width:10px"></th>
+                    <th>Callsign</th><th>Rank</th><th>Role</th><th>Team role</th><th>Clearance</th>
+                    <th>Team</th><th>Mission</th><th>Status</th><th>Last seen</th><th></th>
+                </tr></thead>
+                <tbody id="pt-ops-tbody">
+                ${filtered.map(op => {
+                    const badge = op.role === 'ADMIN' ? 'badge-adm' : op.role === 'BATTLE_CAPTAIN' ? 'badge-bc' : 'badge-op';
+                    const team  = op.team_id ? teamPath[op.team_id] || `#${op.team_id}` : '—';
+                    const trLabel = op.team_role ? op.team_role.replace(/_/g,' ').toLowerCase() : '—';
+                    const mission = op.mission_id ? missionMap[op.mission_id] || `#${op.mission_id}` : '—';
+                    const ts = (op.last_seen || '').slice(0, 16).replace('T', ' ');
+                    const opJson = esc(JSON.stringify(op));
+                    return `<tr draggable="true" data-op-id="${op.id}">
+                        <td><span class="pt-drag-hdl" title="Drag to assign to a team">⋮⋮</span></td>
+                        <td>${op.online ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>'}</td>
+                        <td style="font-weight:600">${esc(op.callsign)}</td>
+                        <td><code style="font-size:0.78rem">${esc(op.rank)}</code></td>
+                        <td><span class="badge ${badge}">${op.role === 'BATTLE_CAPTAIN' ? 'BC' : op.role}</span></td>
+                        <td style="color:#94a3b8;font-size:.78rem;text-transform:capitalize">${esc(trLabel)}</td>
+                        <td style="font-size:.72rem;color:#cbd5e1">${['UNCLASSIFIED','RESTRICTED','CONFIDENTIAL','SECRET','TOP SECRET'][op.clearance||0]}</td>
+                        <td style="color:#94a3b8;font-size:0.78rem">${esc(team)}</td>
+                        <td style="color:#64748b;font-size:0.78rem">${esc(mission)}</td>
+                        <td><span class="badge ${op.online?'badge-ok':'badge-warn'}">${op.online?'ONLINE':'OFFLINE'}</span>${(op.ops_status && op.ops_status !== 'OPS') ? ` <span class="badge" style="background:#7f1d1d;color:#fecaca">${esc(op.ops_status)}</span>` : ''}</td>
+                        <td style="color:#64748b;font-size:0.78rem">${ts}</td>
+                        <td>
+                            <button class="btn btn-ghost btn-sm" onclick='openEditOp(${opJson})'>Edit</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteOp(${op.id}, '${esc(op.callsign)}')">Del</button>
+                        </td>
+                    </tr>`;
+                }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>`;
+        ptBindTreeDnD();
     }
 
     window.openCreateOp = function() {
@@ -513,24 +808,26 @@ main { padding: 0; }
         document.getElementById('new-password').value = '';
         document.getElementById('new-rank').value = 'OR-3';
         document.getElementById('new-role').value = 'OPERATOR';
+        document.getElementById('new-team-role').value = '';
         document.getElementById('create-op-err').textContent = '';
         populateTeamSelect('new-team', null);
         openModal('modal-create-op');
     };
 
     window.createOperator = async function() {
-        const callsign = document.getElementById('new-callsign').value.trim();
-        const password = document.getElementById('new-password').value;
-        const rank     = document.getElementById('new-rank').value;
-        const role     = document.getElementById('new-role').value;
-        const team_val = document.getElementById('new-team').value;
-        const errEl    = document.getElementById('create-op-err');
+        const callsign  = document.getElementById('new-callsign').value.trim();
+        const password  = document.getElementById('new-password').value;
+        const rank      = document.getElementById('new-rank').value;
+        const role      = document.getElementById('new-role').value;
+        const team_val  = document.getElementById('new-team').value;
+        const team_role = document.getElementById('new-team-role').value || null;
+        const errEl     = document.getElementById('create-op-err');
         if (!callsign || !password) { errEl.textContent = 'Callsign and password are required.'; return; }
         if (!team_val) { errEl.textContent = 'Please assign the operator to a team.'; return; }
         const team_id = parseInt(team_val);
         // Admin-only endpoint — creates operators with any role
         const r = await api('/auth/register/admin', { method:'POST',
-            body: JSON.stringify({ callsign, password, rank, role, team_id }) });
+            body: JSON.stringify({ callsign, password, rank, role, team_id, team_role }) });
         if (!r.ok) { errEl.textContent = `Error ${r.status}: ${await r.text()}`; return; }
         closeModal('modal-create-op');
         await loadAll(); render('operators');
@@ -543,6 +840,7 @@ main { padding: 0; }
         document.getElementById('edit-role').value   = op.role;
         document.getElementById('edit-status').value = op.status;
         document.getElementById('edit-ops-status').value = op.ops_status || 'OPS';
+        document.getElementById('edit-team-role').value = op.team_role || '';
         // Populate mission select
         const mSel = document.getElementById('edit-mission');
         mSel.innerHTML = '<option value="">— no mission —</option>' +
@@ -566,6 +864,7 @@ main { padding: 0; }
             ops_status: document.getElementById('edit-ops-status').value,
             team_id:    document.getElementById('edit-team').value
                         ? parseInt(document.getElementById('edit-team').value) : null,
+            team_role:  document.getElementById('edit-team-role').value || null,
             mission_id: missionVal ? parseInt(missionVal) : null,
             clearance:  parseInt(document.getElementById('edit-clearance').value || '0'),
         };
@@ -584,6 +883,137 @@ main { padding: 0; }
         if (!confirm(`Delete operator "${callsign}"? This cannot be undone.`)) return;
         await api(`/operators/${id}`, { method:'DELETE' });
         await loadAll(); render('operators');
+    };
+
+    // ── Excel / JSON import (personnel) ─────────────────────────────────────
+    let _ptImpKind = 'hierarchy', _ptImpRows = [];
+
+    window.ptOpenImportModal = function(kind) {
+        _ptImpKind = kind; _ptImpRows = [];
+        document.getElementById('pt-import-title').textContent = kind === 'hierarchy' ? '⬆ Import Hierarchy' : '⬆ Import Operators';
+        document.getElementById('pt-import-file').value = '';
+        document.getElementById('pt-import-preview').innerHTML = '';
+        document.getElementById('pt-import-status').innerHTML = '';
+        document.getElementById('pt-import-btn').style.display = 'none';
+        openModal('modal-pt-import');
+    };
+
+    window.ptPreviewImport = function() {
+        const file = document.getElementById('pt-import-file').files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const wb = XLSX.read(e.target.result, { type: 'binary' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            _ptImpRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+            if (!_ptImpRows.length) {
+                document.getElementById('pt-import-preview').innerHTML = '<p style="color:#f59e0b;font-size:.8rem">No rows found.</p>';
+                return;
+            }
+            const cols = Object.keys(_ptImpRows[0]);
+            const rows = _ptImpRows.slice(0, 6);
+            document.getElementById('pt-import-preview').innerHTML = `
+                <table class="pt-preview-tbl">
+                  <thead><tr>${cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+                  <tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${esc(r[c])}</td>`).join('')}</tr>`).join('')}</tbody>
+                </table>
+                <p style="font-size:.72rem;color:#64748b;margin-top:.35rem">${_ptImpRows.length} rows total${_ptImpRows.length > 6 ? ' (showing first 6)' : ''}.</p>`;
+            document.getElementById('pt-import-btn').style.display = '';
+            document.getElementById('pt-import-status').innerHTML = '';
+        };
+        reader.readAsBinaryString(file);
+    };
+
+    window.ptConfirmImport = async function() {
+        const statusEl = document.getElementById('pt-import-status');
+        const btn = document.getElementById('pt-import-btn');
+        statusEl.innerHTML = '<span style="color:#94a3b8;font-size:.8rem">Importing…</span>';
+        btn.disabled = true;
+        let path, body;
+        if (_ptImpKind === 'hierarchy') {
+            const rows = _ptImpRows.map(r => ({
+                company: String(r.Company || r.company || '').trim(),
+                platoon: String(r.Platoon || r.platoon || '').trim(),
+                section: String(r.Section || r.section || '').trim(),
+                team:    String(r.Team    || r.team    || '').trim(),
+            })).filter(r => r.company && r.platoon && r.section && r.team);
+            path = '/import/hierarchy'; body = { rows };
+        } else {
+            const rows = _ptImpRows.map(r => ({
+                callsign:  String(r.Callsign  || r.callsign  || '').trim(),
+                password:  String(r.Password  || r.password  || 'changeme').trim(),
+                rank:      String(r.Rank      || r.rank      || 'OR-1').trim(),
+                role:      String(r.Role      || r.role      || 'OPERATOR').trim().toUpperCase(),
+                team:      String(r.Team      || r.team      || '').trim() || null,
+                team_role: String(r['Team Role'] || r.team_role || r.TeamRole || '').trim().toUpperCase().replace(/ /g,'_') || null,
+            })).filter(r => r.callsign);
+            path = '/import/operators'; body = { rows };
+        }
+        const r = await api(path, { method:'POST', body: JSON.stringify(body) });
+        btn.disabled = false;
+        if (r.ok) {
+            const res = await r.json();
+            const msg = _ptImpKind === 'hierarchy'
+                ? `✓ ${res.created} nodes created, ${res.total_rows} rows processed.`
+                : `✓ ${res.created} created, ${res.updated} updated.`;
+            statusEl.innerHTML = `<div class="pt-import-ok">${msg}</div>`;
+            await loadAll(); render('operators');
+        } else {
+            statusEl.innerHTML = `<div class="pt-import-err">Error ${r.status}: ${esc(await r.text())}</div>`;
+        }
+    };
+
+    window.ptDownloadTemplate = function(kind) {
+        const [headers, ...rows] = kind === 'hierarchy' ? [
+            ['Company','Platoon','Section','Team'],
+            ['Alpha Company','1st Platoon','HQ Section','Command Team'],
+            ['Alpha Company','1st Platoon','Assault Section','Assault Team 1'],
+            ['Alpha Company','2nd Platoon','Support Section','Weapons Team'],
+        ] : [
+            ['Callsign','Password','Rank','Role','Team','Team Role'],
+            ['ALPHA-6','changeme','OF-2','BATTLE_CAPTAIN','Command Team','LEADER'],
+            ['BRAVO-1','changeme','OR-5','OPERATOR','Assault Team 1','INFANTRY'],
+            ['CHARLIE-3','changeme','OR-3','OPERATOR','','SNIPER'],
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([headers, ...rows]), 'Import');
+        XLSX.writeFile(wb, `arrow_${kind}_template.xlsx`);
+    };
+
+    window.ptExportHierarchyJson = async function() {
+        const r = await api('/export/hierarchy');
+        if (!r.ok) { alert(`Export failed (${r.status})`); return; }
+        const blob = new Blob([JSON.stringify(await r.json(), null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'hierarchy_export.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    };
+
+    window.ptImportHierarchyJson = function() {
+        document.getElementById('pt-json-import-file').value = '';
+        document.getElementById('pt-json-import-status').innerHTML = '';
+        openModal('modal-pt-json-import');
+    };
+
+    window.ptConfirmJsonImport = async function() {
+        const statusEl = document.getElementById('pt-json-import-status');
+        const file = document.getElementById('pt-json-import-file').files[0];
+        if (!file) { statusEl.innerHTML = '<span style="color:#f59e0b;font-size:.8rem">Select a file first.</span>'; return; }
+        statusEl.innerHTML = '<span style="color:#94a3b8;font-size:.8rem">Importing…</span>';
+        let payload;
+        try { payload = JSON.parse(await file.text()); } catch {
+            statusEl.innerHTML = '<span style="color:#ef4444;font-size:.8rem">Invalid JSON file.</span>'; return;
+        }
+        const r = await api('/import/hierarchy-json', { method:'POST', body: JSON.stringify(payload) });
+        if (r.ok) {
+            const res = await r.json();
+            statusEl.innerHTML = `<div class="pt-import-ok">✓ Companies: +${res.companies_created}  Platoons: +${res.platoons_created}  Sections: +${res.sections_created}  Teams: +${res.teams_created}  Operators: +${res.operators_created} created / ${res.operators_updated} updated.</div>`;
+            await loadAll(); render('operators');
+        } else {
+            statusEl.innerHTML = `<div class="pt-import-err">Error ${r.status}: ${esc(await r.text())}</div>`;
+        }
     };
 
     // ── Vehicles ───────────────────────────────────────────────────────────
@@ -831,65 +1261,6 @@ main { padding: 0; }
     };
 
     // ── Hierarchy ──────────────────────────────────────────────────────────
-    function renderHierarchy(el) {
-        const secMap = Object.fromEntries(sections.map(s => [s.id, s]));
-        const pltMap = Object.fromEntries(platoons.map(p => [p.id, p]));
-
-        const teamsBySection  = groupBy(teams,    t => t.section_id);
-        const sectionsByPlt   = groupBy(sections, s => s.platoon_id);
-        const platoonsByCo    = groupBy(platoons, p => p.company_id);
-        const teamOpCount     = Object.fromEntries(teams.map(t => [t.id, operators.filter(o => o.team_id === t.id).length]));
-
-        const treeHtml = companies.length === 0
-            ? '<p style="color:#475569">No companies yet.</p>'
-            : companies.map(co => `
-              <details>
-                <summary>
-                  <span class="h-item">
-                    <strong>${esc(co.name)}</strong>
-                    <span class="h-meta">${(platoonsByCo[co.id]||[]).length} platoons</span>
-                    <button class="btn btn-ghost btn-sm" onclick="addNode('platoon',${co.id},'${esc(co.name)}')">+ Platoon</button>
-                    <button class="btn btn-danger btn-sm" onclick="delNode('companies',${co.id},'${esc(co.name)}')">×</button>
-                  </span>
-                </summary>
-                ${(platoonsByCo[co.id]||[]).map(plt => `
-                  <details>
-                    <summary>
-                      <span class="h-item">
-                        ${esc(plt.name)}
-                        <span class="h-meta">${(sectionsByPlt[plt.id]||[]).length} sections</span>
-                        <button class="btn btn-ghost btn-sm" onclick="addNode('section',${plt.id},'${esc(plt.name)}')">+ Section</button>
-                        <button class="btn btn-danger btn-sm" onclick="delNode('platoons',${plt.id},'${esc(plt.name)}')">×</button>
-                      </span>
-                    </summary>
-                    ${(sectionsByPlt[plt.id]||[]).map(sec => `
-                      <details>
-                        <summary>
-                          <span class="h-item">
-                            ${esc(sec.name)}
-                            <span class="h-meta">${(teamsBySection[sec.id]||[]).length} teams</span>
-                            <button class="btn btn-ghost btn-sm" onclick="addNode('team',${sec.id},'${esc(sec.name)}')">+ Team</button>
-                            <button class="btn btn-danger btn-sm" onclick="delNode('sections',${sec.id},'${esc(sec.name)}')">×</button>
-                          </span>
-                        </summary>
-                        ${(teamsBySection[sec.id]||[]).map(t => `
-                          <div style="margin-left:1rem;padding:0.25rem 0;display:flex;align-items:center;gap:0.5rem">
-                            <span style="font-size:0.82rem">${esc(t.name)}</span>
-                            <span class="h-meta">${teamOpCount[t.id]||0} ops</span>
-                            <button class="btn btn-danger btn-sm" onclick="delNode('teams',${t.id},'${esc(t.name)}')">×</button>
-                          </div>`).join('')}
-                      </details>`).join('')}
-                  </details>`).join('')}
-              </details>`).join('');
-
-        el.innerHTML = `
-        <div class="sec-header">
-            <h2>Hierarchy</h2>
-            <button class="btn btn-primary" onclick="addNode('company',null,'')">➕ Add Company</button>
-        </div>
-        <div class="htree">${treeHtml}</div>`;
-    }
-
     let _nodeType = '', _nodeParentId = null;
 
     window.addNode = function(type, parentId, parentName) {
@@ -917,14 +1288,14 @@ main { padding: 0; }
         const r = await api(`/${paths[_nodeType]}`, { method:'POST', body: JSON.stringify(bodies[_nodeType]) });
         if (!r.ok) { errEl.textContent = `Failed: ${r.status} ${await r.text()}`; return; }
         closeModal('modal-add-node');
-        await loadAll(); render('hierarchy');
+        await loadAll(); render('operators');
     };
 
     window.delNode = async function(path, id, name) {
         if (!confirm(`Delete "${name}"? This will also delete all children.`)) return;
         const r = await api(`/${path}/${id}`, { method:'DELETE' });
         if (!r.ok) alert(`Delete failed: ${r.status}`);
-        await loadAll(); render('hierarchy');
+        await loadAll(); render('operators');
     };
 
     // ── ORBAT org-chart diagram ────────────────────────────────────────────

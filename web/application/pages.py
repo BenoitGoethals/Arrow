@@ -80,9 +80,6 @@ class PageService:
     def cas_capacity(self) -> PageView:
         return PageView("cas.html")
 
-    def organisation(self) -> PageView:
-        return PageView("organisation.html")
-
     def cbrn(self) -> PageView:
         return PageView("cbrn.html")
 
