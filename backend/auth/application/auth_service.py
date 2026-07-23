@@ -34,6 +34,12 @@ class AuthResult:
     mfa_session: str | None = None
 
 
+# Client/device types we record on the operator so the COP can filter by source.
+# Mirrors the set accepted by the tracking endpoint (tracking/router.py); anything
+# else is ignored here and left to a later position fix to classify.
+_KNOWN_APP_CLIENTS = {"FRONT", "ANDROID"}
+
+
 def _require_password_strength(password: str) -> None:
     if len(password) < MIN_PASSWORD_LEN:
         raise HTTPException(
@@ -177,6 +183,7 @@ def login(
     username: str,
     password: str,
     ip: str | None,
+    client: str | None = None,
 ) -> AuthResult:
     op = db.query(Operator).filter(Operator.callsign == username).first()
 
@@ -202,6 +209,12 @@ def login(
 
     jti = str(uuid.uuid4())
     op.session_jti = jti
+    # Record the device the operator signed in from (from the X-Client-Type header)
+    # so the COP categorises them immediately, before any position fix is posted.
+    # A later /tracking/position fix overwrites this with its own source.
+    _client = (client or "").strip().upper()
+    if _client in _KNOWN_APP_CLIENTS:
+        op.position_source = _client
     db.commit()
     log_event(db, "LOGIN_SUCCESS", operator_id=op.id, ip_address=ip)
     return AuthResult(

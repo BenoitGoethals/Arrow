@@ -86,6 +86,7 @@ def login(
         username=form.username,
         password=form.password,
         ip=_client_ip(request),
+        client=request.headers.get("X-Client-Type"),
     )
     return _token_out(result)
 
