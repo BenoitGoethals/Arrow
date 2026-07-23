@@ -25,7 +25,11 @@ async def update_position(
     current.altitude = payload.altitude
     current.last_seen = datetime.now(timezone.utc)
     current.status = "ONLINE"
-    current.position_source = "APP"  # fix arrived from the mobile/web app GPS
+    # Tag the reporting client so the COP can filter devices by source. ATAK is
+    # set on the CoT/TCP path; here we only accept the known app clients and fall
+    # back to the generic "APP" for anything unrecognised or unspecified.
+    _client = (payload.client or "").strip().upper()
+    current.position_source = _client if _client in {"FRONT", "ANDROID"} else "APP"
 
     # Persist every fix for track history and behaviour analytics.
     db.add(
@@ -73,7 +77,7 @@ async def update_position(
                 "team_id": current.team_id,
                 "mission_id": current.mission_id,
                 "cot_type": cot_type,
-                "position_source": "APP",
+                "position_source": current.position_source,
             },
         }
     )

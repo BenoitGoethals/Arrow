@@ -321,6 +321,12 @@
         </div>
         <div class="dock-body">
           <div class="rp-section" id="left-sec-devices">
+            <div class="filter-bar" style="border-bottom:0;border-radius:6px;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.25rem 0.7rem">
+              <label><input type="checkbox" class="devtype-filter" value="ATAK" checked/> ATAK</label>
+              <label><input type="checkbox" class="devtype-filter" value="FRONT" checked/> Front</label>
+              <label><input type="checkbox" class="devtype-filter" value="ANDROID" checked/> Android</label>
+              <label><input type="checkbox" class="devtype-filter" value="OTHER" checked/> Other</label>
+            </div>
             <div id="atak-clients"><small style="color:#475569">Checking…</small></div>
           </div>
           <div class="rp-section" id="left-sec-graphics">
@@ -1196,6 +1202,9 @@
         fmImpactLayers: new Map(),  // fm id -> Leaflet LayerGroup of impact splashes
         selection: new Set(),
         onlineOnly: false,
+        // Device-type filter (Live Devices panel). Category derived from
+        // position_source: ATAK / FRONT / ANDROID / OTHER. All on by default.
+        deviceTypes: new Set(['ATAK', 'FRONT', 'ANDROID', 'OTHER']),
         overlayMode: 'all',
         me: null,
         myPlatoonOpIds: new Set(),
@@ -1465,12 +1474,22 @@
         state.markers.set(key, m);
     }
 
+    // Map an operator's reporting client to a device-filter category.
+    // position_source is "ATAK" (CoT/TCP), "FRONT"/"ANDROID" (app self-ID), or
+    // "APP"/null/unknown → "OTHER".
+    function opDeviceCategory(op) {
+        const s = (op && op.position_source || '').toUpperCase();
+        if (s === 'ATAK' || s === 'FRONT' || s === 'ANDROID') return s;
+        return 'OTHER';
+    }
+
     function markerVisible(op) {
         if (state.overlayMode === 'none')     return false;
         if (state.overlayMode === 'enemies') return false;   // enemy-only: hide operators
         if (state.overlayMode === 'friendly') return false;  // friendly-only: hide operators
         if (state.overlayMode === 'platoon' && !state.myPlatoonOpIds.has(op.id)) return false;
         if (state.onlineOnly && !op.online) return false;
+        if (!state.deviceTypes.has(opDeviceCategory(op))) return false;
         if (state.selection.size > 0 && !state.selection.has(op.id)) return false;
         return op.latitude != null && op.longitude != null;
     }
@@ -2801,6 +2820,16 @@
 
     document.getElementById('online-only').addEventListener('change', (e) => {
         state.onlineOnly = e.target.checked; refreshAllMarkers(); renderTree();
+    });
+    document.querySelectorAll('.devtype-filter').forEach(cb => {
+        cb.addEventListener('change', () => {
+            state.deviceTypes = new Set(
+                [...document.querySelectorAll('.devtype-filter')]
+                    .filter(x => x.checked).map(x => x.value)
+            );
+            refreshAllMarkers();
+            applyDeviceListFilter();
+        });
     });
     document.getElementById('select-all').addEventListener('click', () => {
         state.selection = new Set(); refreshAllMarkers(); renderTree();
@@ -4354,6 +4383,14 @@
     // Backward-compatible alias for the Live Devices list rows.
     window._zoomToDevice = window.zoomToDevice;
 
+    // Show/hide Live Devices rows to match the device-type checkboxes.
+    function applyDeviceListFilter() {
+        document.querySelectorAll('#atak-clients .atak-client').forEach(row => {
+            const t = row.dataset.devtype || 'OTHER';
+            row.style.display = state.deviceTypes.has(t) ? '' : 'none';
+        });
+    }
+
     async function loadAtakClients() {
         const el  = document.getElementById('atak-clients');
         const cnt = document.getElementById('atak-count');
@@ -4388,7 +4425,7 @@
                 // map (the same source the map markers use), because GPS fixes can
                 // arrive over the WebSocket *after* this list was rendered — baking
                 // the coordinates in here would leave a row permanently un-clickable.
-                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;cursor:pointer" data-op-id="${op.id}">
+                html += `<div class="atak-client" style="border-left-color:#22c55e;background:#0a1f0e;cursor:pointer" data-op-id="${op.id}" data-devtype="${opDeviceCategory(op)}">
                     <div class="atak-client-cs">🖥 ${escHtml(op.callsign)}</div>
                     <div class="atak-client-meta">${escHtml(op.role || '')}${via}</div>
                 </div>`;
@@ -4400,12 +4437,13 @@
                 const hasPos  = c.last_lat && c.last_lon && !(c.last_lat === 0 && c.last_lon === 0);
                 const cursor  = hasPos ? 'cursor:pointer' : '';
                 const posAttr = hasPos ? `data-lat="${c.last_lat}" data-lon="${c.last_lon}"` : '';
-                html += `<div class="atak-client" style="${cursor}" ${posAttr}>
+                html += `<div class="atak-client" style="${cursor}" ${posAttr} data-devtype="ATAK">
                     <div class="atak-client-cs">📡 ${escHtml(c.callsign || c.uid)}</div>
                     <div class="atak-client-meta">${escHtml(c.ip)} · ${escHtml(c.cot_type || '?')} · ${ago} · rx:${c.rx_count}</div>
                 </div>`;
             });
             el.innerHTML = html;
+            applyDeviceListFilter();
 
             // Wire clicks via addEventListener (robust — no dependency on inline
             // onclick handlers resolving a window-scoped function).

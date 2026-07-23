@@ -131,7 +131,7 @@ class ArrowClient:
         Persists lat/lon on the Operator row (marking it ONLINE) and broadcasts
         on the `tracking` channel so the web COP can render and zoom to us.
         """
-        body: dict = {"latitude": float(lat), "longitude": float(lon)}
+        body: dict = {"latitude": float(lat), "longitude": float(lon), "client": "FRONT"}
         if altitude is not None:
             body["altitude"] = float(altitude)
         return self._post("/tracking/position", body)

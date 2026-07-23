@@ -1,5 +1,7 @@
 package com.arrow.tactical.network
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
@@ -85,11 +87,17 @@ data class CompanyDto(
     val name: String,
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class PositionPayload(
     val latitude: Double,
     val longitude: Double,
     val altitude: Double? = null,
+    // Identifies this client so the COP can filter devices by source. The Json
+    // config leaves encodeDefaults off, so force it — otherwise the default
+    // value is omitted and the backend never sees the client type.
+    @EncodeDefault(EncodeDefault.Mode.ALWAYS)
+    val client: String = "ANDROID",
 )
 
 @Serializable

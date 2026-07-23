@@ -254,6 +254,9 @@ class PositionIn(BaseModel):
     latitude: float
     longitude: float
     altitude: float | None = None
+    # Reporting client type, so the COP can filter devices by source.
+    # "FRONT" (Arrow desktop), "ANDROID" (Arrow app); anything else → generic "APP".
+    client: str | None = None
 
 
 class PositionHistoryOut(ORMModel):
