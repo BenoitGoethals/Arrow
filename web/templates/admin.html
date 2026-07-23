@@ -66,11 +66,11 @@
 .form-error { color: #ef4444; font-size: 0.8rem; margin-top: 0.4rem; }
 
 /* ── Personnel (hierarchy tree + operators table) ───────────────────────── */
-.pt-shell    { display: grid; grid-template-columns: 340px 1fr; gap: 1.25rem; align-items: start; }
-.pt-panel    { background: #161b25; border: 1px solid #2a3142; border-radius: 8px; }
-.pt-panel-hdr { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid #2a3142; }
+.pt-shell    { display: grid; grid-template-columns: 340px 1fr; gap: 1.25rem; align-items: stretch; height: calc(100vh - 170px); }
+.pt-panel    { background: #161b25; border: 1px solid #2a3142; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+.pt-panel-hdr { display: flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.85rem; border-bottom: 1px solid #2a3142; flex-shrink: 0; }
 .pt-panel-hdr h3 { margin: 0; font-size: 0.88rem; flex: 1; }
-.pt-panel-body { padding: 0.6rem 0.75rem; max-height: 70vh; overflow-y: auto; }
+.pt-panel-body { padding: 0.6rem 0.75rem; flex: 1; overflow-y: auto; }
 .pt-tree-node { }
 .pt-children  { padding-left: 1.1rem; }
 .pt-row       { display: flex; align-items: center; gap: 0.35rem; padding: 0.22rem 0.3rem; border-radius: 4px; min-height: 26px; }
@@ -725,17 +725,6 @@ main { padding: 0; }
     function renderOperators(el) {
         const missionMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
         const teamPath = ptTeamPaths();
-        const q = (el.querySelector('#pt-search')?.value || '').toLowerCase();
-        const filtered = q
-            ? operators.filter(o => o.callsign.toLowerCase().includes(q) || (o.rank||'').toLowerCase().includes(q))
-            : operators;
-        const unassigned = operators.filter(o => !o.team_id);
-        const warnBanner = unassigned.length
-            ? `<div style="background:#78350f22;border:1px solid #d97706;border-radius:6px;padding:0.65rem 1rem;margin-bottom:1rem;color:#fde68a;font-size:0.83rem">
-                ⚠️  <strong>${unassigned.length} operator${unassigned.length>1?'s':''} unassigned</strong>:
-                ${unassigned.map(o => `<span style="font-family:monospace">${esc(o.callsign)}</span>`).join(', ')}
-                — drag to a team or edit.
-               </div>` : '';
 
         el.innerHTML = `
         <div class="sec-header">
@@ -760,9 +749,8 @@ main { padding: 0; }
               <button class="btn btn-ghost btn-sm" onclick="ptOpenImportModal('operators')" title="Import Excel">⬆</button>
               <button class="btn btn-ghost btn-sm" onclick="ptDownloadTemplate('operators')" title="Download template">⬇</button>
             </div>
-            <div class="pt-panel-body" style="max-height:none">
-              <div class="pt-toolbar"><input class="pt-search" id="pt-search" placeholder="Search callsign / rank…" oninput="render('operators')"/></div>
-              ${warnBanner}
+            <div class="pt-panel-body">
+              <div class="pt-toolbar"><input class="pt-search" id="pt-search" placeholder="Search callsign / rank…" oninput="ptFilterOps()"/></div>
               <table class="adm-table">
                 <thead><tr>
                     <th style="width:20px"></th><th style="width:10px"></th>
@@ -770,14 +758,14 @@ main { padding: 0; }
                     <th>Team</th><th>Mission</th><th>Status</th><th>Last seen</th><th></th>
                 </tr></thead>
                 <tbody id="pt-ops-tbody">
-                ${filtered.map(op => {
+                ${operators.map(op => {
                     const badge = op.role === 'ADMIN' ? 'badge-adm' : op.role === 'BATTLE_CAPTAIN' ? 'badge-bc' : 'badge-op';
                     const team  = op.team_id ? teamPath[op.team_id] || `#${op.team_id}` : '—';
                     const trLabel = op.team_role ? op.team_role.replace(/_/g,' ').toLowerCase() : '—';
                     const mission = op.mission_id ? missionMap[op.mission_id] || `#${op.mission_id}` : '—';
                     const ts = (op.last_seen || '').slice(0, 16).replace('T', ' ');
                     const opJson = esc(JSON.stringify(op));
-                    return `<tr draggable="true" data-op-id="${op.id}">
+                    return `<tr draggable="true" data-op-id="${op.id}" data-search="${esc((op.callsign + ' ' + (op.rank||'')).toLowerCase())}">
                         <td><span class="pt-drag-hdl" title="Drag to assign to a team">⋮⋮</span></td>
                         <td>${op.online ? '<span class="dot-online"></span>' : '<span class="dot-offline"></span>'}</td>
                         <td style="font-weight:600">${esc(op.callsign)}</td>
@@ -802,6 +790,14 @@ main { padding: 0; }
         </div>`;
         ptBindTreeDnD();
     }
+
+    // Live-filter the operators table in place so the search box keeps focus.
+    window.ptFilterOps = function () {
+        const q = (document.getElementById('pt-search')?.value || '').trim().toLowerCase();
+        document.querySelectorAll('#pt-ops-tbody tr').forEach(tr => {
+            tr.style.display = (!q || (tr.dataset.search || '').includes(q)) ? '' : 'none';
+        });
+    };
 
     window.openCreateOp = function() {
         document.getElementById('new-callsign').value = '';
