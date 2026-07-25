@@ -12,7 +12,7 @@ from sqlalchemy import and_, false, or_
 from sqlalchemy.orm import Session
 
 from backend.api.schemas import ChatRoomIn, ChatRoomMemberIn, ChatRoomOut
-from backend.auth.jwt_auth import get_current_operator
+from backend.auth.jwt_auth import get_current_operator, require_role
 from backend.missions.dependencies import get_active_mission
 from backend.storage.database import get_db
 from backend.storage.models import ChatRoom, ChatRoomMember, Mission, Operator
@@ -158,7 +158,7 @@ def list_rooms(
 async def create_room(
     payload: ChatRoomIn,
     db: Session = Depends(get_db),
-    current: Operator = Depends(get_current_operator),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
     mission: Mission | None = Depends(get_active_mission),
 ) -> dict:
     room = ChatRoom(
@@ -237,12 +237,11 @@ async def remove_room_member(
 async def delete_room(
     room_id: int,
     db: Session = Depends(get_db),
-    current: Operator = Depends(get_current_operator),
+    current: Operator = Depends(require_role("ADMIN", "BATTLE_CAPTAIN")),
 ) -> None:
     room = db.get(ChatRoom, room_id)
     if not room:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    _require_manage(db, room, current)
     mid = room.mission_id
     rid = room.id
     db.delete(room)

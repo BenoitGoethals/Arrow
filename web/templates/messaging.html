@@ -97,6 +97,7 @@
     const api = (p, opts = {}) => fetch(window.ARROW_BACKEND_URL + p, { ...opts, headers: { ...headers, ...(opts.headers || {}) } });
 
     const canManage = (role === 'ADMIN' || role === 'BATTLE_CAPTAIN');
+    if (!canManage) document.getElementById('new-room-btn').style.display = 'none';
 
     const state = {
         me: null,
@@ -244,11 +245,13 @@
             const sender = m.sender_callsign || nameFor(m.sender_id);
             let mediaHtml = '';
             if (m.photo_id) {
-                const src = `${window.ARROW_BACKEND_URL}/photos/${m.photo_id}`;
+                // /photos/{id} requires a Bearer token, which a bare <img>/<video src>
+                // can't send — render a placeholder and blob-fetch it below (same
+                // pattern as photos.html / map.html) instead of hitting the URL directly.
                 if (m.photo_mime_type && m.photo_mime_type.startsWith('video/')) {
-                    mediaHtml = `<video class="msg-video" src="${src}" controls></video>`;
+                    mediaHtml = `<video class="msg-video" data-photo-id="${m.photo_id}" controls></video>`;
                 } else {
-                    mediaHtml = `<img class="msg-photo" src="${src}" alt="photo" onclick="window.open(this.src)">`;
+                    mediaHtml = `<img class="msg-photo" data-photo-id="${m.photo_id}" alt="photo" onclick="if(this.src) window.open(this.src)">`;
                 }
             }
             const photoHtml = mediaHtml;
@@ -266,6 +269,17 @@
             </div>`;
         }).join('') || '<small style="color:#94a3b8;align-self:center">no messages in this channel yet</small>';
         log.scrollTop = log.scrollHeight;
+
+        // Auth-load photo/video attachments (see comment above).
+        log.querySelectorAll('[data-photo-id]').forEach(async (el) => {
+            const id = el.dataset.photoId;
+            try {
+                const r = await api(`/photos/${id}`);
+                if (!r.ok) return;
+                const blob = await r.blob();
+                el.src = URL.createObjectURL(blob);
+            } catch (_) {}
+        });
     }
 
     // Origin marker on every chat/room message: ARROW (native), JDSS, or TAK.
@@ -291,10 +305,19 @@
         return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     }
 
+    // refresh() is triggered from three uncoordinated sources — a 5s poll, the
+    // WS 'chat' handler, and send() itself — so an older in-flight call can
+    // resolve after a newer one and clobber state.messages with stale data
+    // (e.g. dropping the message you just sent). _refreshSeq discards any
+    // response that isn't from the most recently *started* call.
+    let _refreshSeq = 0;
+
     async function refresh() {
+        const seq = ++_refreshSeq;
         const [meR, opsR, msgsR, roomsR] = await Promise.all([
             api('/auth/me'), api('/operators'), api('/messages'), api('/chatrooms'),
         ]);
+        if (seq !== _refreshSeq) return; // a newer refresh() has since started — drop this stale result
         if (meR.ok) state.me = await meR.json();
         if (opsR.ok) state.operators = await opsR.json();
         if (msgsR.ok) state.messages = await msgsR.json();
@@ -345,7 +368,7 @@
             <div style="color:#64748b;font-size:0.74rem;margin-bottom:0.7rem">Tick operators to add, untick to remove.</div>
             <div style="max-height:46vh;overflow-y:auto;border:1px solid #2a3142;border-radius:6px;padding:0.3rem">${rows}</div>
             <div style="display:flex;gap:0.5rem;justify-content:space-between;margin-top:0.9rem">
-              <button id="room-del" style="background:#3a1212;color:#fca5a5;border:1px solid #7f1d1d;border-radius:6px;padding:0.4rem 0.9rem;cursor:pointer">Delete room</button>
+              ${canManage ? '<button id="room-del" style="background:#3a1212;color:#fca5a5;border:1px solid #7f1d1d;border-radius:6px;padding:0.4rem 0.9rem;cursor:pointer">Delete room</button>' : '<span></span>'}
               <div style="display:flex;gap:0.5rem">
                 <button onclick="document.getElementById('room-mgr-modal').remove()" style="background:#1f2937;color:#94a3b8;border:1px solid #2a3142;border-radius:6px;padding:0.4rem 1rem;cursor:pointer">Close</button>
                 <button id="room-save" style="background:#34d399;color:#0d1117;border:0;border-radius:6px;padding:0.4rem 1.2rem;font-weight:600;cursor:pointer">Save</button>
@@ -373,7 +396,7 @@
             modal.remove();
             await refresh();
         });
-        document.getElementById('room-del').addEventListener('click', async () => {
+        document.getElementById('room-del')?.addEventListener('click', async () => {
             if (!confirm('Delete room "' + room.name + '"?')) return;
             const r = await api(`/chatrooms/${roomId}`, { method: 'DELETE' });
             if (r.ok || r.status === 204) { modal.remove(); if (state.recipient.kind === 'room' && state.recipient.room.id === roomId) state.recipient = { kind: 'broadcast' }; await refresh(); }
