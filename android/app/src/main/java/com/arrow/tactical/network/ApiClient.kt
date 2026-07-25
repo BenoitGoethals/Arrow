@@ -59,6 +59,10 @@ class ApiClient(
             val builder = chain.request().newBuilder()
             if (!token.isNullOrBlank()) builder.header("Authorization", "Bearer $token")
             if (mid != null)            builder.header("X-Mission-ID", mid.toString())
+            // Identify this client so the backend categorises the device (COP filter).
+            // Sent on every request, including /auth/login, so we're tagged before the
+            // first position fix — mirrors the C# front's X-Client-Type header.
+            builder.header("X-Client-Type", "ANDROID")
             val response = chain.proceed(builder.build())
             if (response.code == 401 && !token.isNullOrBlank()) {
                 CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { tokenStore.clear() }
