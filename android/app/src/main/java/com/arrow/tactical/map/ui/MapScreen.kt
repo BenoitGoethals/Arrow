@@ -161,7 +161,7 @@ fun MapScreen(
     var kmlPanelOpen by remember { mutableStateOf(false) }
     // Lets the operator collapse the entire SitaWare chrome off to the left
     // when they need a clean view. A small handle at top-left brings it back.
-    var topBarCollapsed by remember { mutableStateOf(false) }
+    var topBarCollapsed by remember { mutableStateOf(true) }
     var zoomLevel by remember { mutableFloatStateOf(8f) }
 
     // ── Saved overlays — per-device active set, mirrors web localStorage.
@@ -1677,62 +1677,16 @@ fun MapScreen(
             )
         }
 
-        // ── Free-draw control — pen toggle + colour swatches (bottom-right).
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 12.dp, bottom = 110.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (penMode) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("#EF4444", "#F59E0B", "#22C55E", "#3B82F6", "#F1F5F9").forEach { c ->
-                        Box(
-                            Modifier
-                                .size(26.dp)
-                                .background(
-                                    Color(android.graphics.Color.parseColor(c)),
-                                    androidx.compose.foundation.shape.CircleShape,
-                                )
-                                .border(
-                                    if (c == penColorHex) 2.dp else 0.5.dp,
-                                    Color.White,
-                                    androidx.compose.foundation.shape.CircleShape,
-                                )
-                                .clickable { penColorHex = c }
-                        )
-                    }
-                }
-            }
-            Box(
-                Modifier
-                    .size(48.dp)
-                    .background(
-                        if (penMode) Color(0xFFEF4444) else Color(0xCC0E1217),
-                        androidx.compose.foundation.shape.CircleShape,
-                    )
-                    .border(0.5.dp, Color(0xFF2A3142), androidx.compose.foundation.shape.CircleShape)
-                    .clickable {
-                        penMode = !penMode
-                        if (penMode) { kmlPanelOpen = false; overlayPanelOpen = false; wxPanelOpen = false }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("✏", fontSize = 22.sp)
-            }
-        }
+        // Free-draw control now lives inside the left tool column (see the
+        // compass/north-lock/search/pen stack anchored at TopStart below).
 
-        // ── Weather panel — slides in from the right, stacks alongside KML/Overlay panels.
+        // ── Weather panel — centred on screen so its controls & close button
+        //    stay clear of the right-side FAB column.
         androidx.compose.animation.AnimatedVisibility(
             visible = wxPanelOpen,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = kmlPanelTop, end = 12.dp),
-            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }) +
-                    androidx.compose.animation.fadeIn(),
-            exit  = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it }) +
-                    androidx.compose.animation.fadeOut(),
+            modifier = Modifier.align(Alignment.Center),
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.92f),
+            exit  = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.92f),
         ) {
             WeatherPanel(
                 radarFrames       = wxFrames,
@@ -1820,19 +1774,19 @@ fun MapScreen(
             }
         }
 
-        // ── Compass + north-lock — top-left, below the SitaWare chrome ───
+        // ── Left tool column — compass · north-lock · search · pen ───────
         // The needle always points to true North on the ground: its rendering
         // is rotated by -mapOrientation so it cancels out the map rotation.
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(start = 12.dp, top = 92.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalAlignment = Alignment.Start,
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(Color(0xE50F2540))
                     .border(1.dp, Color(0xFF334155), CircleShape)
@@ -1847,7 +1801,7 @@ fun MapScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(40.dp)
                         .rotate(-mapOrientation),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1882,7 +1836,7 @@ fun MapScreen(
             }
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(if (northLocked) Color(0xFF1E3A2F) else Color(0xE50F2540))
                     .border(
@@ -1903,7 +1857,7 @@ fun MapScreen(
             // Go To — navigate to MGRS / lat-lon / address
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(Color(0xE50F2540))
                     .border(1.dp, Color(0xFF334155), CircleShape)
@@ -1911,6 +1865,46 @@ fun MapScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text("🔍", fontSize = 16.sp)
+            }
+            // Free-draw pen — toggles pen mode; colour swatches expand to the right.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(if (penMode) Color(0xFFEF4444) else Color(0xE50F2540))
+                        .border(1.dp, Color(0xFF334155), CircleShape)
+                        .clickable {
+                            penMode = !penMode
+                            if (penMode) { kmlPanelOpen = false; overlayPanelOpen = false; wxPanelOpen = false }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("✏", fontSize = 20.sp)
+                }
+                if (penMode) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("#EF4444", "#F59E0B", "#22C55E", "#3B82F6", "#F1F5F9").forEach { c ->
+                            Box(
+                                Modifier
+                                    .size(26.dp)
+                                    .background(
+                                        Color(android.graphics.Color.parseColor(c)),
+                                        CircleShape,
+                                    )
+                                    .border(
+                                        if (c == penColorHex) 2.dp else 0.5.dp,
+                                        Color.White,
+                                        CircleShape,
+                                    )
+                                    .clickable { penColorHex = c }
+                            )
+                        }
+                    }
+                }
             }
         }
 

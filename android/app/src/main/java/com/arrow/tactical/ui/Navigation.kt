@@ -245,7 +245,7 @@ private fun MainShell(
             }
         },
     ) {
-        var bottomBarExpanded by remember { mutableStateOf(value = true) }
+        var bottomBarExpanded by remember { mutableStateOf(value = false) }
         Scaffold(
             topBar = {
                 if (!onMapTab) {
